@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import { acceptOrderBody, balance, createOrderBody, effectsOf, type MarketOrderView, type MarketResponse, type TradeResource } from "@lastthaw/shared";
+import { acceptOrderBody, balance, createOrderBody, effectsOf, storageCaps, type MarketOrderView, type MarketResponse, type TradeResource } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { marketOrders, matchRegions, matches, messages, players, transfers } from "../db/schema.js";
 import { requireUser } from "../auth/session.js";
@@ -15,7 +15,7 @@ type OrderRow = typeof marketOrders.$inferSelect;
 
 /** Storage cap for one resource in a region. */
 function capFor(row: MatchRegionRow, res: TradeResource): number {
-  if (res === "food" || res === "wood" || res === "stone") return effectsOf(row.buildings).storage * balance.economy.baseStorage[res];
+  if (res === "food" || res === "wood" || res === "stone") return storageCaps(effectsOf(row.buildings))[res];
   return balance.economy.specialStorage;
 }
 

@@ -7,6 +7,7 @@ import {
   regionById,
   settle,
   startingEconomy,
+  storageCaps,
   SPECIAL_RESOURCES,
   type Cost,
   type Rates,
@@ -28,8 +29,6 @@ export function traitsOf(regionId: string): RegionTraits {
 }
 
 export function economyOf(row: MatchRegionRow, effects: RegionEffects = effectsOf(row.buildings)): RegionEconomy {
-  const base = balance.economy.baseStorage;
-  const mult = effects.storage;
   const special = { ...emptySpecial(), ...(row.special as Partial<Record<(typeof SPECIAL_RESOURCES)[number], number>>) };
   return {
     popWorkers: row.popWorkers,
@@ -40,7 +39,7 @@ export function economyOf(row: MatchRegionRow, effects: RegionEffects = effectsO
     stone: row.stone,
     special,
     assignment: row.assignment,
-    storage: { food: base.food * mult, wood: base.wood * mult, stone: base.stone * mult },
+    storage: storageCaps(effects),
     capacity: balance.economy.baseCapacity + effects.capacity,
     yieldMult: effects.yield,
     extract: effects.extract,

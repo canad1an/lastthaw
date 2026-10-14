@@ -5,6 +5,7 @@ import {
   computeRates,
   effectsOf,
   regionById,
+  storageCaps,
   techById,
   type BuildingDef,
   type RegionEconomy,
@@ -26,11 +27,10 @@ export function buildingPreview(def: BuildingDef, level: number, buildings: Reco
   const traits = { terrain: region.terrain, resources: region.resources, coastal: region.coastal, river: region.river };
   const before = effectsOf(buildings);
   const after = effectsOf({ ...buildings, [def.id]: level });
-  const base = balance.economy.baseStorage;
   const withEffects = (f: typeof before): RegionEconomy => ({
     ...economy,
     capacity: balance.economy.baseCapacity + f.capacity,
-    storage: { food: base.food * f.storage, wood: base.wood * f.storage, stone: base.stone * f.storage },
+    storage: storageCaps(f),
     yieldMult: f.yield,
     extract: f.extract,
   });
@@ -44,10 +44,14 @@ export function buildingPreview(def: BuildingDef, level: number, buildings: Reco
   if (e.yield?.food || e.capacity) rows.push({ label: "Food", before: perHour(rb.food), after: perHour(ra.food), tone: ra.food >= rb.food ? "up" : "down" });
   if (e.yield?.wood) rows.push({ label: "Wood", before: perHour(rb.wood), after: perHour(ra.wood), tone: "up" });
   if (e.yield?.stone) rows.push({ label: "Stone", before: perHour(rb.stone), after: perHour(ra.stone), tone: "up" });
-  if (e.storage) {
-    rows.push({ label: "Food storage", before: fmt(base.food * before.storage), after: fmt(base.food * after.storage), tone: "up" });
-    rows.push({ label: "Wood storage", before: fmt(base.wood * before.storage), after: fmt(base.wood * after.storage), tone: "up" });
-    rows.push({ label: "Stone storage", before: fmt(base.stone * before.storage), after: fmt(base.stone * after.storage), tone: "up" });
+  if (e.storage || e.foodStorage) {
+    const cb = storageCaps(before);
+    const ca = storageCaps(after);
+    rows.push({ label: "Food storage", before: fmt(cb.food), after: fmt(ca.food), tone: "up" });
+    if (e.storage) {
+      rows.push({ label: "Wood storage", before: fmt(cb.wood), after: fmt(ca.wood), tone: "up" });
+      rows.push({ label: "Stone storage", before: fmt(cb.stone), after: fmt(ca.stone), tone: "up" });
+    }
   }
   if (e.protect) rows.push({ label: "Safe from raids (each)", before: fmt(before.protect), after: fmt(after.protect), tone: "up" });
   if (e.extract) {
@@ -79,6 +83,7 @@ function describeBuilding(def: BuildingDef): string {
   if (e.yield?.wood) per.push(`+${pct(e.yield.wood)} wood`);
   if (e.yield?.stone) per.push(`+${pct(e.yield.stone)} stone`);
   if (e.storage) per.push(`+${pct(e.storage)} storage`);
+  if (e.foodStorage) per.push(`+${pct(e.foodStorage)} food storage`);
   if (e.protect) per.push(`${e.protect} of each resource hidden from raiders`);
   if (e.extract) per.push(`extracts ${Object.entries(e.extract).map(([k, v]) => `${v} ${k}/h`).join(", ")} where available`);
   if (e.defense) per.push(`+${pct(e.defense)} defence`);

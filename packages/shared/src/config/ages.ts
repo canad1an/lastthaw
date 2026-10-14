@@ -20,6 +20,8 @@ export interface BuildingEffect {
   capacity?: number;
   /** Multiplier on storage caps per level (additive: level 2 = 1 + 2 * storage). */
   storage?: number;
+  /** Extra multiplier on food storage only, per level. */
+  foodStorage?: number;
   /** Yield multipliers per level (additive bonus; 0.1 = +10 % per level). */
   yield?: Partial<Record<"food" | "wood" | "stone", number>>;
   /** Extracts this special resource from a region that has it, units per game hour per level. */
@@ -103,7 +105,7 @@ export const BUILDINGS: readonly BuildingDef[] = [
   { id: "mine", name: "Mine", age: 1, description: "Extracts copper, tin or iron where the region has it.", maxLevel: 10, cost: { wood: 150, stone: 100 }, baseSeconds: 200, effect: { extract: { copper: 1.5, tin: 1.0, iron: 1.2 } }, requires: "mining" },
   { id: "palisade", name: "Palisade", age: 1, description: "A wooden wall that helps defenders.", maxLevel: 10, cost: { wood: 200, stone: 30 }, baseSeconds: 180, effect: { defense: 0.1 } },
   { id: "stables", name: "Stables", age: 1, description: "Breeds horses where wild herds roam.", maxLevel: 10, cost: { wood: 120, food: 150 }, baseSeconds: 160, effect: { extract: { horses: 0.6 } }, requires: "animal_husbandry" },
-  { id: "granary", name: "Granary", age: 1, description: "Keeps food safe and plentiful.", maxLevel: 10, cost: { wood: 100, stone: 120 }, baseSeconds: 150, effect: { storage: 0.4, protect: 120 } },
+  { id: "granary", name: "Granary", age: 1, description: "Dry, sealed pits for grain: doubles food storage per level and hides stock from raiders.", maxLevel: 10, cost: { wood: 100, stone: 120 }, baseSeconds: 150, effect: { foodStorage: 1.0, protect: 120 } },
   // Iron
   { id: "forge", name: "Forge", age: 2, description: "Works iron faster; speeds up training.", maxLevel: 10, cost: { wood: 200, stone: 200, iron: 20 }, baseSeconds: 400, effect: { trainSpeed: 0.06, extract: { iron: 0.8 } }, requires: "iron_working" },
   { id: "walls", name: "Stone walls", age: 2, description: "Solid walls around the settlement.", maxLevel: 10, cost: { stone: 400, wood: 100 }, baseSeconds: 500, effect: { defense: 0.18 } },

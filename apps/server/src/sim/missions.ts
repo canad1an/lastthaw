@@ -1,5 +1,5 @@
 import { and, eq, inArray, isNull } from "drizzle-orm";
-import { balance, effectsOf, emptySpecial, regionById, resolveCombat, carryCapacity, travelSeconds, findRoute, armySpeed, type UnitCounts } from "@lastthaw/shared";
+import { balance, effectsOf, emptySpecial, storageCaps, regionById, resolveCombat, carryCapacity, travelSeconds, findRoute, armySpeed, type UnitCounts } from "@lastthaw/shared";
 import { armies, battles, jobs, matchRegions, players, regionSightings } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
 import { settleAndLockRegion, type MatchRegionRow, type Tx } from "./regions.js";
@@ -126,13 +126,13 @@ async function comeHome(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher:
 async function depositInto(tx: Tx, row: MatchRegionRow, units: UnitCounts, cargo: Record<string, number>): Promise<void> {
   const special = { ...emptySpecial(), ...(row.special as Record<string, number>) };
   const effects = effectsOf(row.buildings);
-  const cap = balance.economy.baseStorage;
+  const cap = storageCaps(effects);
   const set: Partial<MatchRegionRow> = {
     units: addUnits(row.units, units),
     popSoldiers: row.popSoldiers + sumUnits(units),
     popWorkers: row.popWorkers + (cargo.people ?? 0),
   };
-  for (const r of BASE) set[r] = Math.min(cap[r] * effects.storage, row[r] + (cargo[r] ?? 0));
+  for (const r of BASE) set[r] = Math.min(cap[r], row[r] + (cargo[r] ?? 0));
   for (const s of SPECIAL) special[s] = Math.min(balance.economy.specialStorage, (special[s] ?? 0) + (cargo[s] ?? 0));
   set.special = special;
   await tx.update(matchRegions).set(set).where(and(eq(matchRegions.matchId, row.matchId), eq(matchRegions.regionId, row.regionId)));

@@ -225,11 +225,13 @@ const IceLayer = memo(function IceLayer({ ice, k: zoom }: { ice: { latitude: num
             <g key={d} opacity={0.95 - d * 0.1}>
               <line x1={0} x2={W} y1={n} y2={n} stroke="#7dd3fc" strokeDasharray={`${px(3)} ${px(5)}`} strokeWidth={px(1)} />
               <line x1={0} x2={W} y1={s} y2={s} stroke="#7dd3fc" strokeDasharray={`${px(3)} ${px(5)}`} strokeWidth={px(1)} />
-              {[n, s].map((y, i) => (
-                <text key={i} x={labelX} y={y - px(3)} fill="#e0f2fe" fontSize={px(11)} fontWeight={600} fontFamily="ui-sans-serif, system-ui" paintOrder="stroke" stroke="#0b1a2b" strokeWidth={px(3)}>
+              {[n, s].flatMap((y, i) =>
+                [0, 1, 2, 3].map((j) => (
+                <text key={`${i}-${j}`} x={labelX + (j * W) / 4} y={y - px(3)} fill="#e0f2fe" fontSize={px(11)} fontWeight={600} fontFamily="ui-sans-serif, system-ui" paintOrder="stroke" stroke="#0b1a2b" strokeWidth={px(3)}>
                   Day {day} · {lat.toFixed(0)}°
                 </text>
-              ))}
+                )),
+              )}
             </g>
           );
         })}
