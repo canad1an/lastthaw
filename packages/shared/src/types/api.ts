@@ -154,6 +154,8 @@ export const armyView = z.object({
   departsAt: z.string(),
   arrivesAt: z.string(),
   returnsAt: z.string().nullable(),
+  /** Region ids from origin to target. */
+  path: z.array(z.string()).default([]),
 });
 export type ArmyView = z.infer<typeof armyView>;
 

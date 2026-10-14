@@ -14,6 +14,7 @@ import { useNow } from "../hooks/useNow.js";
 import { useServerInfo } from "../hooks/useServerInfo.js";
 import { useMe } from "../api/auth.js";
 import { WorldMap, terrainFill, type RegionPaint } from "../map/WorldMap.js";
+import { armyMarkers } from "../map/armyMarkers.js";
 
 const PLAYER_COLORS = ["#38bdf8", "#f472b6", "#a3e635", "#fb923c", "#c084fc", "#2dd4bf", "#facc15", "#f87171"];
 
@@ -140,6 +141,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
   const [forecast, setForecast] = useState(false);
   const matchDay = Math.min(balance.match.lengthDays, Math.max(0, ((now + clockOffsetMs - Date.parse(state.match.startsAt)) / 86400_000) * state.match.speed));
   const ice = useMemo(() => ({ latitude: iceLatitudeOnDay(matchDay), forecast, day: matchDay }), [matchDay, forecast]);
+  const markers = useMemo(() => armyMarkers(state.armies, state.incoming, now + clockOffsetMs, formatCountdown), [state.armies, state.incoming, now, clockOffsetMs]);
   const finished = state.match.status === "finished";
   const eliminated = state.owned.length === 0 && !finished;
 
@@ -184,6 +186,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
           ice={ice}
           flags={state.me.capitalRegionId ? [state.me.capitalRegionId] : []}
           dashed={state.frontier}
+          armies={markers}
         />
         {picking && <div className="pointer-events-none absolute inset-x-0 top-2 text-center text-sm text-amber-300">Click a region to target it</div>}
         <div className="pointer-events-none absolute bottom-2 left-2 hidden flex-wrap gap-2 text-xs lg:flex">

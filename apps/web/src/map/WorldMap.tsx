@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
 import { allRegions, balance, freezeDayForLatitude, iceLatitudeOnDay, world, type MapRegion } from "@lastthaw/shared";
+import type { ArmyMarker } from "./armyMarkers.js";
 
 export type RegionPaint = {
   fill?: string;
@@ -21,6 +22,8 @@ export interface WorldMapProps {
   flags?: string[];
   /** Region ids drawn with an "unclaimed" dashed outline. */
   dashed?: string[];
+  /** Armies to draw as moving markers. */
+  armies?: ArmyMarker[];
 }
 
 const TERRAIN_FILL: Record<string, string> = {
@@ -51,7 +54,9 @@ const MAX_K = 14;
  * Rendering ~400 paths is cheap; the expensive part is re-rendering on every
  * state change, so the static layer is memoized and only the paint changes.
  */
-export function WorldMap({ paint, selected, onSelect, focus, className = "", ice, flags = [], dashed = [] }: WorldMapProps) {
+export function WorldMap({ paint, selected, onSelect, focus, className = "", ice, flags = [], dashed = [], armies = [] }: WorldMapProps) {
+  const [hoverArmy, setHoverArmy] = useState<string | null>(null);
+  const [routeArmy, setRouteArmy] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [view, setView] = useState<View>({ x: 0, y: 0, k: 1 });
   // Map units per screen pixel at zoom 1, so overlays can be sized in real pixels.
@@ -154,6 +159,12 @@ export function WorldMap({ paint, selected, onSelect, focus, className = "", ice
     if (d && d.id === e.pointerId) {
       drag.current = null;
       if (!d.moved) {
+        const armyEl = (e.target as Element).closest("[data-army]");
+        if (armyEl) {
+          const id = armyEl.getAttribute("data-army");
+          setRouteArmy((cur) => (cur === id ? null : id));
+          return;
+        }
         const target = (e.target as Element).closest("[data-region]");
         onSelect(target ? (target.getAttribute("data-region") ?? null) : null);
       }
@@ -180,6 +191,17 @@ export function WorldMap({ paint, selected, onSelect, focus, className = "", ice
             const u = unitsPerPx / view.k;
             return r ? <path key={id} d={r.path} fill="none" stroke="#fde68a" strokeWidth={1.2 * u} strokeDasharray={`${4 * u} ${3 * u}`} /> : null;
           })}
+          {armies.map((a) => {
+            const u = unitsPerPx / view.k;
+            const showRoute = routeArmy === a.id && a.route.length > 1;
+            return (
+              <g key={a.id}>
+                {showRoute && (
+                  <polyline points={a.route.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke={a.hostile ? "#f43f5e" : "#38bdf8"} strokeWidth={1.5 * u} strokeDasharray={`${5 * u} ${4 * u}`} strokeLinejoin="round" />
+                )}
+              </g>
+            );
+          })}
           {flags.map((id) => {
             const r = allRegions().find((x) => x.id === id);
             if (!r) return null;
@@ -194,7 +216,45 @@ export function WorldMap({ paint, selected, onSelect, focus, className = "", ice
             );
           })}
         </g>
+        <g>
+          {armies.map((a) => {
+            const s = unitsPerPx / view.k;
+            return (
+              <g
+                key={a.id}
+                data-army={a.id}
+                transform={`translate(${a.x} ${a.y}) scale(${s})`}
+                className="cursor-pointer"
+                onPointerEnter={() => setHoverArmy(a.id)}
+                onPointerLeave={() => setHoverArmy((h) => (h === a.id ? null : h))}
+              >
+                {a.hostile && <circle r={11} fill="none" stroke="#f43f5e" strokeWidth={1.5} className="animate-ping" />}
+                <circle r={7} fill={a.hostile ? "#f43f5e" : "#38bdf8"} stroke="#0b1a2b" strokeWidth={1.5} />
+                <path d={a.mission === "transport" ? "M-3.5 -1h7v4h-7z M-2 -3h4v2h-4z" : a.mission === "settle" ? "M-4 2h8v1h-8z M-3 2v-4l3-2 3 2v4" : "M-3 3L3 -3 M3 -3h-2.5 M3 -3v2.5"} fill={a.mission === "transport" || a.mission === "settle" ? "#0b1a2b" : "none"} stroke="#0b1a2b" strokeWidth={1.4} strokeLinecap="round" />
+              </g>
+            );
+          })}
+        </g>
       </g>
+      {hoverArmy && (() => {
+        const a = armies.find((x) => x.id === hoverArmy);
+        if (!a) return null;
+        const sx = ((a.x * view.k + view.x) / world.width) * 100;
+        const sy = ((a.y * view.k + view.y) / world.height) * 100;
+        return (
+          <foreignObject x={0} y={0} width={world.width} height={world.height} pointerEvents="none">
+            <div style={{ position: "absolute", left: `${sx}%`, top: `${sy}%`, transform: "translate(12px, -50%)" }} className="pointer-events-none w-max max-w-[16rem] rounded-md border border-slate-700 bg-slate-950/95 px-2 py-1.5 text-xs text-slate-200 shadow-xl">
+              <p className="font-medium">{a.title}</p>
+              {a.lines.map((l) => (
+                <p key={l} className="text-slate-400">
+                  {l}
+                </p>
+              ))}
+              <p className="text-slate-500">{routeArmy === a.id ? "click to hide route" : "click to show route"}</p>
+            </div>
+          </foreignObject>
+        );
+      })()}
     </svg>
   );
 }
