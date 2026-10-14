@@ -9,6 +9,7 @@ import { ResearchPanel } from "../components/ResearchPanel.js";
 import { TopMenu } from "../components/TopMenu.js";
 import { IncomingWarnings } from "../components/ArmyPanel.js";
 import { ActivityPanel } from "../components/ActivityPanel.js";
+import { TradeRoutesPanel } from "../components/TradeRoutesPanel.js";
 import { Button, Card, ErrorText, fmt } from "../components/ui.js";
 import { useNow } from "../hooks/useNow.js";
 import { useServerInfo } from "../hooks/useServerInfo.js";
@@ -224,6 +225,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
             <p className="text-sm text-slate-400">Tap a region to see it. Your regions are in your colour, the flag marks your capital, and dashed outlines are unclaimed land you can settle.</p>
           </Card>
         )}
+        <TradeRoutesPanel matchId={matchId} state={state} selectedRegionId={selected} clockOffsetMs={clockOffsetMs} />
         <ResearchPanel matchId={matchId} state={state} clockOffsetMs={clockOffsetMs} />
         <DevTools matchId={matchId} />
       </aside>

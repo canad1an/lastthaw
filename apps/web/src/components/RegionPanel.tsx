@@ -32,7 +32,6 @@ import { Button, Card, ErrorText, fmt, signed } from "./ui.js";
 import { Countdown, CostLine } from "./Countdown.js";
 import { SendArmy } from "./ArmyPanel.js";
 import { ColonizePanel } from "./ColonizePanel.js";
-import { RoutesTab } from "./RoutesTab.js";
 import { BeforeAfter, Tooltip } from "./Tooltip.js";
 import { buildingPreview, unitPreview } from "./previews.js";
 import type { BuildingDef, UnitDef } from "@lastthaw/shared";
@@ -49,7 +48,7 @@ interface Props {
   onPickTarget: (picking: boolean) => void;
 }
 
-type Tab = "overview" | "build" | "train" | "army" | "routes";
+type Tab = "overview" | "build" | "train" | "army";
 
 export function RegionPanel({ matchId, state, regionId, clockOffsetMs, onClose, target, onPickTarget }: Props) {
   const region = regionById(regionId);
@@ -80,7 +79,7 @@ export function RegionPanel({ matchId, state, regionId, clockOffsetMs, onClose, 
       {owned ? (
         <>
           <nav className="flex gap-1 border-b border-slate-800 text-sm">
-            {(["overview", "build", "train", "army", "routes"] as Tab[]).map((t) => (
+            {(["overview", "build", "train", "army"] as Tab[]).map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
@@ -93,7 +92,6 @@ export function RegionPanel({ matchId, state, regionId, clockOffsetMs, onClose, 
           {tab === "overview" && <OwnedDetails matchId={matchId} owned={owned} clockOffsetMs={clockOffsetMs} speed={state.match.speed} />}
           {tab === "build" && <BuildTab matchId={matchId} state={state} owned={owned} clockOffsetMs={clockOffsetMs} />}
           {tab === "train" && <TrainTab matchId={matchId} state={state} owned={owned} clockOffsetMs={clockOffsetMs} />}
-          {tab === "routes" && <RoutesTab matchId={matchId} state={state} owned={owned} clockOffsetMs={clockOffsetMs} />}
           {tab === "army" && (
             <>
               <ArmyTab owned={owned} />

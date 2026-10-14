@@ -11,10 +11,10 @@ const GOODS = ["food", "wood", "stone", "copper", "tin", "iron", "horses"] as co
  * Automated caravan routes from this region: a list of existing routes and a
  * form to add one. "Tribute to capital" is a one-click preset.
  */
-export function RoutesTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; state: MatchStateView; owned: OwnedRegionView; clockOffsetMs: number }) {
+export function RoutesTab({ matchId, state, owned, clockOffsetMs, allRoutes = false }: { matchId: string; state: MatchStateView; owned: OwnedRegionView; clockOffsetMs: number; allRoutes?: boolean }) {
   const qc = useQueryClient();
   const refresh = () => void qc.invalidateQueries({ queryKey: keys.matchState(matchId) });
-  const routes = state.routes.filter((r) => r.fromRegionId === owned.regionId);
+  const routes = allRoutes ? state.routes : state.routes.filter((r) => r.fromRegionId === owned.regionId);
   const caravans = owned.units.caravan ?? 0;
   const perCaravan = unitById.get("caravan")?.carry ?? 500;
   const capital = state.me.capitalRegionId;
@@ -55,15 +55,15 @@ export function RoutesTab({ matchId, state, owned, clockOffsetMs }: { matchId: s
       {routes.length > 0 && (
         <ul className="divide-y divide-slate-800">
           {routes.map((r) => (
-            <RouteRow key={r.id} r={r} clockOffsetMs={clockOffsetMs} onToggle={() => toggle.mutate(r.id)} onDelete={() => remove.mutate(r.id)} onRun={() => run.mutate(r.id)} />
+            <RouteRow key={r.id} r={r} showFrom={allRoutes} clockOffsetMs={clockOffsetMs} onToggle={() => toggle.mutate(r.id)} onDelete={() => remove.mutate(r.id)} onRun={() => run.mutate(r.id)} />
           ))}
         </ul>
       )}
-      {routes.length === 0 && <p className="text-slate-400">No routes from here yet.</p>}
+      {routes.length === 0 && <p className="text-slate-400">{allRoutes ? "No trade routes yet." : "No routes from here yet."}</p>}
       <ErrorText>{(toggle.error ?? remove.error ?? run.error)?.message}</ErrorText>
 
       <div className="space-y-2 border-t border-slate-800 pt-3">
-        <h3 className="text-sm font-medium">New route</h3>
+        <h3 className="text-sm font-medium">New route from {regionById(owned.regionId)?.name}</h3>
         {destinations.length === 0 ? (
           <p className="text-xs text-slate-400">You need a second region (or an ally) to send to.</p>
         ) : (
@@ -131,7 +131,7 @@ export function RoutesTab({ matchId, state, owned, clockOffsetMs }: { matchId: s
   );
 }
 
-function RouteRow({ r, clockOffsetMs, onToggle, onDelete, onRun }: { r: TradeRouteView; clockOffsetMs: number; onToggle: () => void; onDelete: () => void; onRun: () => void }) {
+function RouteRow({ r, showFrom, clockOffsetMs, onToggle, onDelete, onRun }: { r: TradeRouteView; showFrom?: boolean; clockOffsetMs: number; onToggle: () => void; onDelete: () => void; onRun: () => void }) {
   const what =
     r.mode === "share"
       ? `${Math.round(r.share * 100)}% of production`
@@ -143,7 +143,7 @@ function RouteRow({ r, clockOffsetMs, onToggle, onDelete, onRun }: { r: TradeRou
     <li className="space-y-0.5 py-2">
       <div className="flex items-center justify-between gap-2">
         <span className={r.enabled ? "" : "text-slate-500 line-through"}>
-          → {regionById(r.toRegionId)?.name}: {what}
+          {showFrom ? `${regionById(r.fromRegionId)?.name} ` : ""}→ {regionById(r.toRegionId)?.name}: {what}
         </span>
         <span className="text-xs text-slate-500">
           {r.caravans} caravans · every {r.everyHours}h
