@@ -44,6 +44,18 @@ export function useMatchRealtime(matchId: string | null) {
           if (msg.kind === "match.started" || msg.kind === "match.finished" || msg.kind === "player.joined") {
             void qc.invalidateQueries({ queryKey: keys.matches });
           }
+          if (msg.kind === "chat.message") {
+            const ch = (msg.payload as { channel?: string } | null)?.channel;
+            void qc.invalidateQueries({ queryKey: ch ? keys.chat(msg.matchId, ch) : keys.chatAll(msg.matchId) });
+          }
+          if (msg.kind === "alliance.updated") {
+            void qc.invalidateQueries({ queryKey: keys.alliances(msg.matchId) });
+            void qc.invalidateQueries({ queryKey: keys.chatAll(msg.matchId) });
+          }
+          if (msg.kind === "trade.filled") {
+            void qc.invalidateQueries({ queryKey: keys.market(msg.matchId) });
+            void qc.invalidateQueries({ queryKey: keys.messages(msg.matchId) });
+          }
         }
       };
       ws.onclose = () => {

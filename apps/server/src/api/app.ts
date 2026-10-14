@@ -15,6 +15,11 @@ import { matchRoutes } from "../matches/routes.js";
 import { jobRoutes } from "../matches/jobsApi.js";
 import { armyRoutes } from "../matches/armiesApi.js";
 import { messageRoutes } from "../matches/messagesApi.js";
+import { allianceRoutes } from "../matches/alliancesApi.js";
+import { chatRoutes } from "../matches/chatApi.js";
+import { marketRoutes } from "../matches/marketApi.js";
+import { leaderboardRoutes } from "../matches/leaderboardApi.js";
+import { adminRoutes } from "../fairplay/adminApi.js";
 import { registerWebsocket } from "./ws.js";
 
 export const VERSION = "0.1.0";
@@ -59,6 +64,11 @@ export async function buildApp(deps: AppDeps = {}) {
   await app.register(jobRoutes, { db, publisher });
   await app.register(armyRoutes, { db, publisher });
   await app.register(messageRoutes, { db });
+  await app.register(allianceRoutes, { db, publisher });
+  await app.register(chatRoutes, { db, publisher });
+  await app.register(marketRoutes, { db, publisher });
+  await app.register(leaderboardRoutes, { db });
+  await app.register(adminRoutes, { db });
   if (deps.realtime !== false) await app.register(registerWebsocket, { db });
 
   app.addHook("onClose", async () => {

@@ -1,17 +1,17 @@
 # Last Thaw
 
 A 30-day browser strategy game on a freezing Earth. Design brief: [LASTTHAW_SPEC.md](LASTTHAW_SPEC.md).
-Live at [lastthaw.com](https://lastthaw.com) once launched.
+Live at [lastthaw.com](https://lastthaw.com).
 
 ## Layout
 
 | Path | What |
 |---|---|
-| `packages/shared` | Pure game rules, balance config (`src/config/balance.ts`), map data, shared types. No runtime deps beyond zod. |
-| `apps/server` | Fastify API + WebSockets (`src/api`), simulation worker (`src/worker`), Drizzle schema and migrations (`src/db`). |
+| `packages/shared` | Pure game rules, balance config (`src/config/balance.ts`), content tables (`src/config/ages.ts`), map data, shared types. |
+| `apps/server` | Fastify API + WebSockets (`src/api`), simulation worker (`src/worker`), game logic (`src/sim`), Drizzle schema and migrations (`src/db`). |
 | `apps/web` | React + Vite client. |
-| `tools/mapgen` | One-time Natural Earth → `world.json` generator (milestone 1). |
-| `deploy` | Caddyfile and the Lightsail runbook. |
+| `tools/mapgen` | Natural Earth → `world.json` generator. |
+| `deploy` | Caddyfile, deploy scripts and the Lightsail runbook. |
 
 ## Run locally
 
@@ -35,31 +35,36 @@ npm test
 npm run build
 ```
 
-## Milestones and play-tests
+`npm test` runs the pure-rule unit tests and an end-to-end integration test that drives a whole
+10x match through the API against the local Postgres (register → start → build → fight → tick → finish).
 
-Each milestone ends with a play-test before the next begins.
+## Tuning
 
-- [x] **M0 Skeleton**: `npm run dev` shows the Last Thaw page with API status, server time and a live WebSocket tick.
-- [x] **M1 Foundation**: accounts, match lobby, world map with fog of war, first region growing.
+Every "starting value" from the spec is in [packages/shared/src/config/balance.ts](packages/shared/src/config/balance.ts):
+production rates, growth, storage, timer curve, travel speeds, combat, conquest and loyalty,
+ice schedule, AI behaviour, score weights, protection days, weekly schedule. Buildings, units
+and techs are in [ages.ts](packages/shared/src/config/ages.ts). Regenerate the map with
+`npm run generate --workspace=@lastthaw/mapgen` (preview in `tools/mapgen/out/preview.html`).
 
-  Play-test (two browser profiles or one normal + one private window):
-  1. Sign up twice. Open http://localhost:8025 (Mailpit), click each verification link.
-  2. In the lobby, create a match (dev tool): speed 10, starts in 5 minutes. Join with both accounts.
-  3. Open the match: pick a capital from the highlighted options with each account. Options are at least 900 km apart.
-  4. Press "Start now" (dev tool) or wait for the start time. The map now shows your capital in your colour; everything else is fogged.
-  5. Click your capital: people, food, wood and stone tick up live. Drag the worker sliders and Apply; rates change.
-  6. Press "+1d" (dev time-skip): population and stock jump as if a day passed. Set food to 0% and skip a day: starvation warning and shrinking population.
-  7. The other account never sees your region's numbers. Both tabs update live when the match starts (WebSocket).
+## Dev tools
 
-  Regenerate the world map (only needed when the map rules change): `npm run generate --workspace=@lastthaw/mapgen`, then open `tools/mapgen/out/preview.html`.
+With `DEV_TOOLS=true` (local default; refused in production) verified users can create matches
+from the lobby (speed, start delay, how many AI tribes and neutral tribes), start a match early, and
+skip the match clock by +1h / +6h / +1d from the match screen. Time skips move only that match's clock.
 
-- [ ] **M2 Building and tech**
-- [ ] **M3 Armies**
-- [ ] **M4 Conquest and AI**
-- [ ] **M5 Social**
-- [ ] **M6 Endgame**
-- [ ] **M7 Launch readiness**
+## Play-testing by milestone
+
+Use two browser profiles (or a private window) for two accounts. Verification links land in Mailpit.
+
+1. **Foundation**: sign up twice, verify, create a 10x match (AI tribes 3, neutral 20), join both, pick capitals from the highlighted options, press *Start now*. Your capital is in your colour, the rest is fogged. Click it: people, food, wood and stone tick live; slide the worker shares; *+1d* jumps a day.
+2. **Building and tech**: *Build* tab queues up to 3 jobs per region (paid up front, countdowns, cancel refunds). *Research* panel in the side bar researches one tech at a time, paid from the capital. Fire making → Flint tools → Agriculture → Bronze working advances the age; every player gets a message.
+3. **Armies**: *Train* tab turns workers into units. *Army* tab: pick a mission, *Pick target* then click the map, choose units and *Send*. Travel time is previewed. Raid an AI tribe or the other account (after beginner protection, 4 days / speed) and read the battle report in *Messages*; the defender sees a red *Incoming attacks* banner with a countdown. Scouts reveal a region; *Send resources* moves stock out before a raid lands.
+4. **Conquest and AI**: *Conquer* with at least 5 people to occupy. Distant conquests drift in loyalty and can rebel (roads, temples, forts help). AI tribes build, research, train and raid weak neighbours; neutral tribes sit on the map with warriors.
+5. **Social**: create an alliance, invite the other account, accept. Allied regions appear on your map; *Reinforce* and *Send resources* work between allies; alliance and global chat; the market lets you post "200 wood for 100 stone" and accept others' offers.
+6. **Endgame**: toggle *Ice forecast* on the map to see when each region freezes; the ice line creeps toward the equator every day. Frozen regions stop producing and lose people. The leaderboard (link above the map) shows score, regions and age. Holding 60% of regions for 48h ends the match; otherwise day 30 does, and results appear on your profile.
+7. **Launch readiness**: beginner protection blocks attacks on new players (attacking forfeits yours). The worker keeps a weekly match lobby open (Mondays 00:00 UTC). Admins (`users.is_admin`) see a fair-play review page at `/admin` listing accounts that share an IP/device or feed each other resources; nothing is banned automatically.
 
 ## Deploy
 
-See [deploy/lightsail.md](deploy/lightsail.md). Last Thaw runs on its own Lightsail instance.
+See [deploy/lightsail.md](deploy/lightsail.md). `bash deploy/push.sh` pushes `main` to the dedicated
+Lightsail box and redeploys.

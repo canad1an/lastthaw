@@ -39,21 +39,19 @@ export async function runDueJobs(db: Db, publisher: Publisher, log: pino.Logger)
         if (!job || job.completedAt || job.cancelledAt) return;
         const [m] = await tx.select().from(matches).where(eq(matches.id, job.matchId)).for("update");
         if (!m) return;
-        try {
-          await complete(tx, m, job, (fn) => after.push(fn));
-          await tx.update(jobs).set({ completedAt: job.endsAt }).where(eq(jobs.id, id));
-          done += 1;
-        } catch (err) {
-          await tx
-            .update(jobs)
-            .set({ attempts: job.attempts + 1, lastError: String((err as Error).message ?? err) })
-            .where(eq(jobs.id, id));
-          throw err;
-        }
+        await complete(tx, m, job, (fn) => after.push(fn));
+        await tx.update(jobs).set({ completedAt: job.endsAt }).where(eq(jobs.id, id));
+        done += 1;
       });
       for (const fn of after) await fn().catch(() => {});
     } catch (err) {
+      // The transaction rolled back; record the failure separately so a poisoned job is retried a few times then parked.
       log.error({ err, jobId: id }, "job failed");
+      await db
+        .update(jobs)
+        .set({ attempts: sql`${jobs.attempts} + 1`, lastError: String((err as Error).message ?? err).slice(0, 500) })
+        .where(eq(jobs.id, id))
+        .catch(() => {});
     }
   }
   return done;

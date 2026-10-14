@@ -3,6 +3,9 @@ import { TopBar } from "./components/TopBar.js";
 import { ForgotPage, LoginPage, RegisterPage, ResetPage, VerifyPage } from "./routes/auth.js";
 import { LobbyPage } from "./routes/lobby.js";
 import { MatchPage } from "./routes/match.js";
+import { LeaderboardPage } from "./routes/leaderboard.js";
+import { ProfilePage } from "./routes/profile.js";
+import { AdminPage } from "./routes/admin.js";
 
 const rootRoute = createRootRoute({
   component: () => (
@@ -23,6 +26,9 @@ const routes = [
   createRoute({ getParentRoute: () => rootRoute, path: "/forgot", component: ForgotPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/reset", component: ResetPage, validateSearch: tokenSearch }),
   createRoute({ getParentRoute: () => rootRoute, path: "/match/$matchId", component: MatchPage }),
+  createRoute({ getParentRoute: () => rootRoute, path: "/match/$matchId/leaderboard", component: LeaderboardPage }),
+  createRoute({ getParentRoute: () => rootRoute, path: "/profile", component: ProfilePage }),
+  createRoute({ getParentRoute: () => rootRoute, path: "/admin", component: AdminPage }),
 ];
 
 export const router = createRouter({ routeTree: rootRoute.addChildren(routes) });

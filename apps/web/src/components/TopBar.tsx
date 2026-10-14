@@ -13,10 +13,15 @@ export function TopBar() {
       <nav className="flex items-center gap-3 text-sm">
         {me.data ? (
           <>
-            <span className="text-slate-400">
+            <Link to="/profile" className="text-slate-400 hover:text-white">
               {me.data.displayName}
               {!me.data.emailVerified && <span className="ml-2 rounded bg-amber-500/20 px-1.5 py-0.5 text-xs text-amber-300">unverified</span>}
-            </span>
+            </Link>
+            {me.data.isAdmin && (
+              <Link to="/admin" className="text-xs text-slate-500 hover:text-white">
+                admin
+              </Link>
+            )}
             <Button variant="ghost" onClick={() => logout.mutate()} disabled={logout.isPending}>
               Log out
             </Button>

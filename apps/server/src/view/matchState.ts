@@ -1,8 +1,9 @@
 import { and, asc, eq, inArray, isNull, or } from "drizzle-orm";
 import { emptySpecial, type ArmyView, type IncomingView, type JobView, type MatchStateView, type OwnedRegionView, type SightedRegionView } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
-import { armies, jobs, matchRegions, matches, playerTechs, players, regionSightings } from "../db/schema.js";
+import { allianceMembers, alliances, armies, jobs, matchRegions, matches, playerTechs, players, regionSightings } from "../db/schema.js";
 import { matchNow } from "../sim/clock.js";
+import { alliesOf } from "../sim/alliances.js";
 import { countOwnedRegions, projectRegion } from "../sim/regions.js";
 
 /**
@@ -75,6 +76,40 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
       seenAt: s.seenAt.toISOString(),
     };
   });
+
+  // Shared vision: allies' regions are always visible, as of now.
+  const allies = await alliesOf(db, matchId, me.id);
+  const [membership] = await db
+    .select({ allianceId: alliances.id, tag: alliances.tag })
+    .from(allianceMembers)
+    .innerJoin(alliances, eq(alliances.id, allianceMembers.allianceId))
+    .where(eq(allianceMembers.playerId, me.id))
+    .limit(1);
+  if (allies.length) {
+    const allyRows = await db
+      .select()
+      .from(matchRegions)
+      .where(and(eq(matchRegions.matchId, matchId), inArray(matchRegions.ownerPlayerId, allies)));
+    const allyNames = new Map((await db.select({ id: players.id, name: players.name }).from(players).where(inArray(players.id, allies))).map((p) => [p.id, p.name]));
+    const seen = new Set(sighted.map((s) => s.regionId));
+    for (const row of allyRows) {
+      const { economy } = projectRegion(row, now, m.speed);
+      const view: SightedRegionView = {
+        regionId: row.regionId,
+        ownerPlayerId: row.ownerPlayerId,
+        ownerName: row.ownerPlayerId ? (allyNames.get(row.ownerPlayerId) ?? null) : null,
+        population: economy.popWorkers + economy.popSoldiers + economy.popOccupiers,
+        seenAt: now.toISOString(),
+      };
+      if (seen.has(row.regionId)) {
+        const i = sighted.findIndex((s) => s.regionId === row.regionId);
+        sighted[i] = view;
+      } else {
+        sighted.push(view);
+        seen.add(row.regionId);
+      }
+    }
+  }
 
   const techRows = await db.select({ id: playerTechs.techId }).from(playerTechs).where(eq(playerTechs.playerId, me.id));
   const ownedIds = ownedRows.map((r) => r.regionId);
@@ -162,6 +197,8 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
       protectionUntil: me.protectionUntil?.toISOString() ?? null,
       age: me.age,
       techs: techRows.map((t) => t.id),
+      allianceId: membership?.allianceId ?? null,
+      allianceTag: membership?.tag ?? null,
     },
     owned,
     sighted,
@@ -169,5 +206,6 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
     jobs: jobViews,
     armies: armyViews,
     incoming,
+    allies,
   };
 }

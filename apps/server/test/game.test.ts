@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { and, eq, isNull } from "drizzle-orm";
-import { balance, matchStateView, regionById } from "@lastthaw/shared";
+import { balance, iceLatitudeOnDay, matchStateView, regionById } from "@lastthaw/shared";
 import { buildApp } from "../src/api/app.js";
 import { createDb, type Db } from "../src/db/client.js";
-import { jobs, matches, users } from "../src/db/schema.js";
+import { jobs, matchRegions, matches, transfers, users } from "../src/db/schema.js";
 import { runMatchTicks } from "../src/sim/tick.js";
 import { Publisher } from "../src/realtime/publish.js";
 import { createRedis } from "../src/redis.js";
@@ -171,7 +171,7 @@ describe("milestone 1 flow", () => {
     expect(state.me.techs).toContain("fire_making");
     expect(state.owned[0]!.capacity).toBe(balance.economy.baseCapacity + 15);
     const inbox = (await a.call("GET", `/api/matches/${matchId}/messages`)).json() as { unread: number; messages: { subject: string }[] };
-    expect(inbox.unread).toBe(3);
+    expect(inbox.unread).toBeGreaterThanOrEqual(3); // plus any ice notices from the skipped days
     expect(inbox.messages.map((m) => m.subject)).toEqual(expect.arrayContaining(["Huts level 1 finished", "3 Warrior trained", "Fire making researched"]));
 
     // Cancelling a not-yet-started job refunds in full.
@@ -255,5 +255,190 @@ describe("milestone 1 flow", () => {
     await redis.quit().catch(() => {});
     state = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json());
     expect(state.match.status).toBe("finished");
+
+    // Milestone 6: every ice step ran, high-latitude regions are frozen, leaderboard and history are filled in.
+    const iceJobs = await db.select().from(jobs).where(and(eq(jobs.matchId, matchId), eq(jobs.kind, "ice_step")));
+    expect(iceJobs).toHaveLength(balance.match.lengthDays);
+    expect(iceJobs.filter((j) => !j.completedAt).map((j) => j.lastError)).toEqual([]);
+    const finalLat = iceLatitudeOnDay(balance.match.lengthDays);
+    const rows = await db.select().from(matchRegions).where(eq(matchRegions.matchId, matchId));
+    for (const r of rows) {
+      const lat = Math.abs(regionById(r.regionId)!.lat);
+      if (lat >= finalLat) expect(r.frozenAt).not.toBeNull();
+    }
+    const board = (await a.call("GET", `/api/matches/${matchId}/leaderboard`)).json() as { match: { status: string; winnerPlayerId: string | null }; players: { rank: number; score: number }[] };
+    expect(board.match.status).toBe("finished");
+    expect(board.match.winnerPlayerId).toBeTruthy();
+    expect(board.players[0]!.rank).toBe(1);
+    expect(board.players[0]!.score).toBeGreaterThanOrEqual(board.players[1]!.score);
+    const history = (await a.call("GET", "/api/me/history")).json() as { history: { matchId: string; rank: number }[]; played: number };
+    expect(history.played).toBe(1);
+    expect(history.history[0]!.matchId).toBe(matchId);
+    expect(history.history[0]!.rank).toBeGreaterThanOrEqual(1);
+
+    // Milestone 7: admin review is hidden from ordinary users.
+    expect((await a.call("GET", "/api/admin/fairplay")).statusCode).toBe(404);
+  });
+});
+
+describe("milestone 5 social", () => {
+  let app: App;
+  let db: Db;
+  const suffix = `s${Date.now().toString(36)}`;
+  const alice = { email: `alice-${suffix}@example.test`, password: "correct horse battery", displayName: `Alice${suffix}` };
+  const bob = { email: `bob-${suffix}@example.test`, password: "correct horse battery", displayName: `Bob${suffix}` };
+  const createdMatches: string[] = [];
+
+  beforeAll(async () => {
+    db = createDb();
+    app = await buildApp({ db, realtime: false });
+  });
+  afterAll(async () => {
+    for (const id of createdMatches) await db.delete(matches).where(eq(matches.id, id));
+    for (const u of [alice, bob]) await db.delete(users).where(eq(users.email, u.email));
+    await app.close();
+    await db.close();
+  });
+
+  it("alliances, shared vision, chat and the market", async () => {
+    const a = new Client(app);
+    const b = new Client(app);
+    expect((await a.call("POST", "/api/auth/register", alice)).statusCode).toBe(201);
+    expect((await b.call("POST", "/api/auth/register", bob)).statusCode).toBe(201);
+    for (const u of [alice, bob]) await db.update(users).set({ emailVerifiedAt: new Date() }).where(eq(users.email, u.email));
+
+    const created = await a.call("POST", "/api/matches", { name: "social", speed: 10, startsInMinutes: 60, aiFillTo: 2, neutralTribes: 0 });
+    expect(created.statusCode).toBe(201);
+    const matchId = created.json().id as string;
+    createdMatches.push(matchId);
+    expect((await a.call("POST", `/api/matches/${matchId}/join`, {})).statusCode).toBe(201);
+    expect((await b.call("POST", `/api/matches/${matchId}/join`, {})).statusCode).toBe(201);
+    expect((await a.call("POST", `/api/matches/${matchId}/dev/start`, {})).json()).toMatchObject({ started: true });
+
+    const stateOf = async (c: Client) => matchStateView.parse((await c.call("GET", `/api/matches/${matchId}/state`)).json());
+    let aState = await stateOf(a);
+    let bState = await stateOf(b);
+    const aCapital = aState.me.capitalRegionId!;
+    const bCapital = bState.me.capitalRegionId!;
+    expect(aState.me.allianceId).toBeNull();
+    expect(aState.allies).toEqual([]);
+
+    // Alliance chat is refused before anyone is in an alliance.
+    expect((await b.call("GET", `/api/matches/${matchId}/chat?channel=alliance`)).statusCode).toBe(403);
+    expect((await b.call("POST", `/api/matches/${matchId}/chat`, { channel: "alliance", body: "hello?" })).statusCode).toBe(403);
+
+    // Alice founds an alliance and invites Bob; Bob sees the invite and accepts.
+    const made = await a.call("POST", `/api/matches/${matchId}/alliances`, { name: "Northern Pact", tag: "NP" });
+    expect(made.statusCode, JSON.stringify(made.json())).toBe(201);
+    const allianceId = made.json().id as string;
+    expect((await a.call("POST", `/api/matches/${matchId}/alliances`, { name: "Again", tag: "AG" })).statusCode).toBe(409);
+    expect((await b.call("POST", `/api/matches/${matchId}/alliances`, { name: "Clash", tag: "NP" })).statusCode).toBe(409);
+    expect((await b.call("POST", `/api/matches/${matchId}/alliances/invite`, { playerId: aState.me.playerId })).statusCode).toBe(409);
+    expect((await a.call("POST", `/api/matches/${matchId}/alliances/invite`, { playerId: bState.me.playerId })).statusCode).toBe(200);
+
+    // Bob is still outside: alliance chat denied for a non-member.
+    expect((await b.call("GET", `/api/matches/${matchId}/chat?channel=alliance`)).statusCode).toBe(403);
+
+    const bList = (await b.call("GET", `/api/matches/${matchId}/alliances`)).json() as { mine: unknown; invites: { allianceId: string }[]; alliances: { tag: string }[] };
+    expect(bList.mine).toBeNull();
+    expect(bList.invites.map((i) => i.allianceId)).toEqual([allianceId]);
+    expect(bList.alliances.map((x) => x.tag)).toEqual(["NP"]);
+    const bInbox = (await b.call("GET", `/api/matches/${matchId}/messages`)).json() as { messages: { kind: string }[] };
+    expect(bInbox.messages.some((m) => m.kind === "alliance")).toBe(true);
+
+    expect((await b.call("POST", `/api/matches/${matchId}/alliances/accept`, { allianceId })).statusCode).toBe(200);
+    const aList = (await a.call("GET", `/api/matches/${matchId}/alliances`)).json() as { mine: { members: { playerId: string; role: string; regions: number }[] }; myRole: string };
+    expect(aList.myRole).toBe("leader");
+    expect(aList.mine.members.map((m) => m.role).sort()).toEqual(["leader", "member"]);
+    expect(aList.mine.members.every((m) => m.regions === 1)).toBe(true);
+
+    // Both see the alliance on `me`; shared vision shows Bob's capital in Alice's sighted list.
+    aState = await stateOf(a);
+    bState = await stateOf(b);
+    expect(aState.me.allianceId).toBe(allianceId);
+    expect(aState.me.allianceTag).toBe("NP");
+    expect(bState.me.allianceId).toBe(allianceId);
+    expect(aState.allies).toEqual([bState.me.playerId]);
+    const seenBob = aState.sighted.find((s) => s.regionId === bCapital);
+    expect(seenBob).toBeDefined();
+    expect(seenBob!.ownerPlayerId).toBe(bState.me.playerId);
+    expect(seenBob!.ownerName).toBe(bob.displayName);
+    expect(seenBob!.population).toBeGreaterThan(0);
+    expect(bState.sighted.some((s) => s.regionId === aCapital && s.ownerPlayerId === aState.me.playerId)).toBe(true);
+
+    // Chat: global post/list, alliance post/list, rate limit.
+    const g = await a.call("POST", `/api/matches/${matchId}/chat`, { channel: "global", body: "hello world" });
+    expect(g.statusCode, JSON.stringify(g.json())).toBe(201);
+    expect((await a.call("POST", `/api/matches/${matchId}/chat`, { channel: "global", body: "too fast" })).statusCode).toBe(409);
+    const gl = (await b.call("GET", `/api/matches/${matchId}/chat?channel=global`)).json() as { channel: string; messages: { playerName: string; body: string }[] };
+    expect(gl.channel).toBe("global");
+    expect(gl.messages).toHaveLength(1);
+    expect(gl.messages[0]).toMatchObject({ playerName: alice.displayName, body: "hello world" });
+    expect((await b.call("POST", `/api/matches/${matchId}/chat`, { channel: "alliance", body: "allies only" })).statusCode).toBe(201);
+    const al = (await a.call("GET", `/api/matches/${matchId}/chat?channel=alliance`)).json() as { messages: { body: string }[] };
+    expect(al.messages.map((m) => m.body)).toEqual(["allies only"]);
+    expect(((await a.call("GET", `/api/matches/${matchId}/chat?channel=global`)).json() as { messages: unknown[] }).messages).toHaveLength(1);
+
+    // Market: Alice posts 50 wood for 20 stone; the wood is escrowed immediately.
+    const aBefore = (await stateOf(a)).owned.find((o) => o.regionId === aCapital)!;
+    const posted = await a.call("POST", `/api/matches/${matchId}/market`, { regionId: aCapital, offerResource: "wood", offerAmount: 50, askResource: "stone", askAmount: 20 });
+    expect(posted.statusCode, JSON.stringify(posted.json())).toBe(201);
+    const orderId = posted.json().id as string;
+    const aAfterPost = (await stateOf(a)).owned.find((o) => o.regionId === aCapital)!;
+    expect(aAfterPost.wood).toBeLessThan(aBefore.wood - 45);
+    expect((await a.call("POST", `/api/matches/${matchId}/market`, { regionId: aCapital, offerResource: "iron", offerAmount: 5, askResource: "stone", askAmount: 1 })).statusCode).toBe(409);
+    expect((await b.call("POST", `/api/matches/${matchId}/market`, { regionId: aCapital, offerResource: "wood", offerAmount: 1, askResource: "stone", askAmount: 1 })).statusCode).toBe(403);
+    expect((await a.call("POST", `/api/matches/${matchId}/market/${orderId}/accept`, { regionId: aCapital })).statusCode).toBe(400);
+
+    const listing = (await b.call("GET", `/api/matches/${matchId}/market`)).json() as { open: { id: string; playerName: string; regionId: string }[]; mine: unknown[] };
+    expect(listing.open.map((o) => o.id)).toEqual([orderId]);
+    expect(listing.open[0]).toMatchObject({ playerName: alice.displayName, regionId: aCapital });
+    expect(listing.mine).toHaveLength(0);
+
+    // Bob accepts from his capital: he pays stone and gets wood; Alice gets stone.
+    const bBefore = (await stateOf(b)).owned.find((o) => o.regionId === bCapital)!;
+    expect(bBefore.stone).toBeGreaterThanOrEqual(20);
+    const accepted = await b.call("POST", `/api/matches/${matchId}/market/${orderId}/accept`, { regionId: bCapital });
+    expect(accepted.statusCode, JSON.stringify(accepted.json())).toBe(200);
+    expect(accepted.json().received).toBe(50);
+    const bAfter = (await stateOf(b)).owned.find((o) => o.regionId === bCapital)!;
+    const aAfter = (await stateOf(a)).owned.find((o) => o.regionId === aCapital)!;
+    expect(bAfter.stone).toBeLessThan(bBefore.stone - 15);
+    expect(bAfter.wood).toBeGreaterThan(bBefore.wood + 45);
+    expect(aAfter.stone).toBeGreaterThan(aAfterPost.stone + 15);
+    expect(aAfter.wood).toBeLessThan(aBefore.wood - 45); // escrow is gone for good
+    expect((await b.call("POST", `/api/matches/${matchId}/market/${orderId}/accept`, { regionId: bCapital })).statusCode).toBe(409);
+
+    const rows = await db.select().from(transfers).where(eq(transfers.matchId, matchId));
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => `${r.resource}:${r.amount}:${r.via}`).sort()).toEqual(["stone:20:trade", "wood:50:trade"]);
+    const filled = (await a.call("GET", `/api/matches/${matchId}/market`)).json() as { open: unknown[]; mine: { id: string; status: string }[] };
+    expect(filled.open).toHaveLength(0);
+    expect(filled.mine).toEqual([expect.objectContaining({ id: orderId, status: "filled" })]);
+    for (const c of [a, b]) {
+      const inbox = (await c.call("GET", `/api/matches/${matchId}/messages`)).json() as { messages: { kind: string }[] };
+      expect(inbox.messages.some((m) => m.kind === "trade")).toBe(true);
+    }
+
+    // Cancel refunds the escrow to the region.
+    const beforeCancel = (await stateOf(a)).owned.find((o) => o.regionId === aCapital)!;
+    const second = await a.call("POST", `/api/matches/${matchId}/market`, { regionId: aCapital, offerResource: "food", offerAmount: 30, askResource: "stone", askAmount: 5 });
+    expect(second.statusCode).toBe(201);
+    const secondId = second.json().id as string;
+    expect((await b.call("POST", `/api/matches/${matchId}/market/${secondId}/cancel`, {})).statusCode).toBe(403);
+    const cancelled = await a.call("POST", `/api/matches/${matchId}/market/${secondId}/cancel`, {});
+    expect(cancelled.statusCode, JSON.stringify(cancelled.json())).toBe(200);
+    expect(cancelled.json().refundedTo).toBe(aCapital);
+    const afterCancel = (await stateOf(a)).owned.find((o) => o.regionId === aCapital)!;
+    expect(afterCancel.food).toBeGreaterThan(beforeCancel.food - 5);
+    expect((await a.call("POST", `/api/matches/${matchId}/market/${secondId}/cancel`, {})).statusCode).toBe(409);
+
+    // Leaving: Alice (leader) leaves, Bob inherits; Bob leaves, the alliance dissolves.
+    expect((await a.call("POST", `/api/matches/${matchId}/alliances/leave`, {})).json()).toMatchObject({ ok: true, dissolved: false });
+    const bRole = (await b.call("GET", `/api/matches/${matchId}/alliances`)).json() as { myRole: string };
+    expect(bRole.myRole).toBe("leader");
+    expect((await stateOf(a)).allies).toEqual([]);
+    expect((await b.call("POST", `/api/matches/${matchId}/alliances/leave`, {})).json()).toMatchObject({ ok: true, dissolved: true });
+    expect(((await b.call("GET", `/api/matches/${matchId}/alliances`)).json() as { alliances: unknown[] }).alliances).toHaveLength(0);
   });
 });

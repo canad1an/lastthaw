@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { allRegions, balance, iceLatitudeOnDay, regionById } from "@lastthaw/shared";
 import { events, jobs, matchRegions, players } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
@@ -26,7 +26,7 @@ export async function applyIceStep(tx: Tx, m: MatchRow, job: JobRow, publisher: 
   const rows = await tx
     .select({ regionId: matchRegions.regionId, owner: matchRegions.ownerPlayerId })
     .from(matchRegions)
-    .where(and(eq(matchRegions.matchId, m.id), isNull(matchRegions.frozenAt), sql`${matchRegions.regionId} = any(${toFreeze})`));
+    .where(and(eq(matchRegions.matchId, m.id), isNull(matchRegions.frozenAt), inArray(matchRegions.regionId, toFreeze)));
   const byOwner = new Map<string, string[]>();
   for (const r of rows) {
     await settleAndLockRegion(tx, m.id, r.regionId, job.endsAt, m.speed);

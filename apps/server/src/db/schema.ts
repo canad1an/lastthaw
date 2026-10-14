@@ -26,10 +26,31 @@ export const users = pgTable(
     emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
     passwordHash: text("password_hash").notNull(),
     displayName: text("display_name").notNull(),
+    isAdmin: boolean("is_admin").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
   },
   (t) => [uniqueIndex("users_email_idx").on(t.email)],
+);
+
+/** Multi-account review queue. Flags are for a human to look at, never auto-bans. */
+export const fairplayFlags = pgTable(
+  "fairplay_flags",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userA: uuid("user_a").notNull(),
+    userB: uuid("user_b").notNull(),
+    matchId: uuid("match_id"),
+    reason: text("reason").notNull(),
+    /** Higher is more suspicious. */
+    score: integer("score").notNull().default(1),
+    evidence: jsonb("evidence").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    reviewedBy: uuid("reviewed_by"),
+    verdict: text("verdict"),
+  },
+  (t) => [uniqueIndex("fairplay_pair_idx").on(t.userA, t.userB, t.matchId, t.reason), index("fairplay_open_idx").on(t.reviewedAt)],
 );
 
 export const sessions = pgTable(
@@ -42,9 +63,11 @@ export const sessions = pgTable(
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     ip: text("ip"),
     userAgent: text("user_agent"),
+    /** Client-supplied device fingerprint hash, if any. */
+    fingerprint: text("fingerprint"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("sessions_user_idx").on(t.userId)],
+  (t) => [index("sessions_user_idx").on(t.userId), index("sessions_ip_idx").on(t.ip)],
 );
 
 /** Match history per account: the spec's "keep a history of each player's past matches and finishes". */

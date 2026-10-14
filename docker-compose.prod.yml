@@ -2,11 +2,11 @@
 # Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile app up -d
 services:
   postgres:
-    ports: []
+    ports: !reset []
     restart: unless-stopped
 
   redis:
-    ports: []
+    ports: !reset []
     restart: unless-stopped
 
   mailpit:
@@ -14,7 +14,7 @@ services:
 
   api:
     restart: unless-stopped
-    ports: []
+    ports: !reset []
     environment:
       NODE_ENV: production
       DEV_TOOLS: "false"

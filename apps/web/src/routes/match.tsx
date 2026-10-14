@@ -1,13 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
 import { useCallback, useMemo, useState } from "react";
-import { formatCountdown, regionById, type MapRegion, type MatchStateView } from "@lastthaw/shared";
+import { balance, formatCountdown, iceLatitudeOnDay, regionById, type MapRegion, type MatchStateView } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { useMatchRealtime } from "../api/realtime.js";
 import { RegionPanel, ageName } from "../components/RegionPanel.js";
 import { ResearchPanel } from "../components/ResearchPanel.js";
 import { Messages } from "../components/Messages.js";
 import { IncomingWarnings } from "../components/ArmyPanel.js";
+import { AlliancePanel } from "../components/AlliancePanel.js";
+import { Chat } from "../components/Chat.js";
+import { MarketPanel } from "../components/MarketPanel.js";
 import { Button, Card, ErrorText, fmt } from "../components/ui.js";
 import { useNow } from "../hooks/useNow.js";
 import { WorldMap, terrainFill, type RegionPaint } from "../map/WorldMap.js";
@@ -131,6 +134,11 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
   );
   const clockOffsetMs = Date.parse(state.match.now) - Date.now();
   const endsIn = (Date.parse(state.match.endsAt) - (now + clockOffsetMs)) / 1000;
+  const [forecast, setForecast] = useState(false);
+  const matchDay = Math.min(balance.match.lengthDays, Math.max(0, ((now + clockOffsetMs - Date.parse(state.match.startsAt)) / 86400_000) * state.match.speed));
+  const ice = useMemo(() => ({ latitude: iceLatitudeOnDay(matchDay), forecast, day: matchDay }), [matchDay, forecast]);
+  const finished = state.match.status === "finished";
+  const eliminated = state.owned.length === 0 && !finished;
 
   const colorOf = useMemo(() => {
     const m = new Map<string, string>();
@@ -160,18 +168,37 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
   return (
     <div className="flex h-[calc(100dvh-3rem)] flex-col lg:flex-row">
       <div className="relative h-1/2 w-full lg:h-full lg:flex-1">
-        <WorldMap paint={paint} selected={selected} onSelect={onMapSelect} focus={state.me.capitalRegionId} className={`h-full w-full ${picking ? "cursor-crosshair" : ""}`} />
+        <WorldMap paint={paint} selected={selected} onSelect={onMapSelect} focus={state.me.capitalRegionId} className={`h-full w-full ${picking ? "cursor-crosshair" : ""}`} ice={ice} />
         {picking && <div className="pointer-events-none absolute inset-x-0 bottom-2 text-center text-sm text-amber-300">Click a region to target it</div>}
         <div className="pointer-events-none absolute left-2 top-2 flex flex-wrap gap-2 text-xs">
           <Badge>{state.match.name}</Badge>
           <Badge>{state.match.speed}x</Badge>
-          <Badge>ends in {formatCountdown(endsIn)}</Badge>
+          <Badge>{finished ? "finished" : `day ${Math.floor(matchDay) + 1} · ends in ${formatCountdown(endsIn)}`}</Badge>
           <Badge>{state.owned.length} regions · {fmt(totals.pop)} people</Badge>
           <Badge>{ageName(state.me.age)} Age</Badge>
+          <Badge>ice beyond {ice.latitude.toFixed(0)}°</Badge>
           <Badge muted={rtStatus !== "open"}>live {rtStatus}</Badge>
+        </div>
+        <div className="absolute right-2 top-2 flex gap-2 text-xs">
+          <button onClick={() => setForecast((f) => !f)} className={`rounded px-2 py-1 ${forecast ? "bg-sky-200 text-slate-900" : "bg-slate-950/80 text-slate-200 hover:bg-slate-800"}`}>
+            Ice forecast
+          </button>
+          <Link to="/match/$matchId/leaderboard" params={{ matchId }} className="rounded bg-slate-950/80 px-2 py-1 text-slate-200 hover:bg-slate-800">
+            Leaderboard
+          </Link>
         </div>
       </div>
       <aside className="w-full space-y-3 overflow-y-auto border-t border-slate-800 p-4 lg:w-96 lg:border-l lg:border-t-0">
+        {finished && (
+          <Card className="border-amber-500/40 bg-amber-500/10 text-sm text-amber-100">
+            The match is over.{" "}
+            <Link to="/match/$matchId/leaderboard" params={{ matchId }} className="underline">
+              See the final standings
+            </Link>
+            .
+          </Card>
+        )}
+        {eliminated && <Card className="border-slate-600 text-sm text-slate-300">You have no regions left. You can keep watching the match and chat; join the next match from the lobby.</Card>}
         <IncomingWarnings state={state} clockOffsetMs={clockOffsetMs} onSelect={setSelected} />
         {selected ? (
           <RegionPanel matchId={matchId} state={state} regionId={selected} clockOffsetMs={clockOffsetMs} onClose={() => setSelected(null)} target={target} onPickTarget={setPicking} />
@@ -182,6 +209,9 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
         )}
         <Messages matchId={matchId} />
         <ResearchPanel matchId={matchId} state={state} clockOffsetMs={clockOffsetMs} />
+        <AlliancePanel matchId={matchId} state={state} />
+        <Chat matchId={matchId} state={state} />
+        <MarketPanel matchId={matchId} state={state} selectedRegionId={selected} />
         <Card>
           <h2 className="mb-2 text-sm font-medium">Players</h2>
           <ul className="space-y-1 text-sm">

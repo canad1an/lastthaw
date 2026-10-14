@@ -1,72 +1,65 @@
 # Deploying Last Thaw to AWS Lightsail
 
-Last Thaw runs on its **own, new Lightsail instance**. It must never share the
+Last Thaw runs on its **own, dedicated Lightsail instance**. It never shares the
 instance, database or Caddy config used by boatbuildlog.com.
 
-## 1. Create the instance
+## What exists (created 2026-10-13)
 
-1. Lightsail console → Create instance → Linux/Unix → OS only → **Ubuntu 24.04 LTS**.
-2. Plan: 4 GB RAM / 2 vCPU is enough for the friends test and early launch. Upgrade the plan later if needed.
-3. Name it `lastthaw-prod`. Create it.
-4. Networking → attach a **static IP** and name it `lastthaw-ip`.
-5. Firewall: allow TCP 22 (restrict to your IP), 80 and 443. Nothing else.
+| Thing | Value |
+|---|---|
+| Instance | `lastthaw-prod`, Ubuntu 24.04, 4 GB / 2 vCPU (`medium_3_0`, $24/mo), us-east-1a |
+| Static IP | `lastthaw-ip` = **44.221.111.218** |
+| Firewall | TCP 22, 80, 443 |
+| SSH | `ssh -i ~/.ssh/lastthaw-aws ubuntu@44.221.111.218` (Lightsail key pair `lastthaw-aws`) |
+| DNS | Route 53 zone for lastthaw.com: `A @` and `A www` → 44.221.111.218; SES DKIM/SPF/DMARC records |
+| Email | SES domain identity `lastthaw.com` (verified, DKIM ok), custom MAIL FROM `mail.lastthaw.com`, IAM user `lastthaw-smtp` with SMTP credentials in the server's `.env` |
+| Code on the box | bare repo `~/lastthaw.git`, working checkout `~/lastthaw`, env file `~/lastthaw/.env` |
 
-## 2. DNS
+SES is still in the **sandbox**: it only delivers to verified addresses (mattadam07@gmail.com is verified).
+Request production access in the SES console (Account dashboard → Request production access) before
+inviting friends, or their verification emails will not arrive.
 
-At the registrar for lastthaw.com (or a Lightsail DNS zone), add:
+## Deploy a new version
 
-| Type | Name | Value |
-|---|---|---|
-| A | `@` | the static IP |
-| A | `www` | the static IP |
-
-Caddy issues the TLS certificate automatically once DNS resolves.
-
-## 3. Install Docker on the box
+From your machine, with the `prod` git remote (`ubuntu@44.221.111.218:lastthaw.git`):
 
 ```bash
-curl -fsSL https://get.docker.com | sudo sh
-sudo usermod -aG docker ubuntu
+bash deploy/push.sh
 ```
 
-Log out and back in so the group change applies.
+That pushes `main` to the server and runs `deploy/deploy.sh` there, which pulls, builds the
+images, applies migrations and restarts `api`, `worker`, `web` and `caddy`. Caddy obtains the
+TLS certificate for lastthaw.com automatically.
 
-## 4. First deploy
+## Useful commands on the server
 
 ```bash
-git clone https://github.com/canad1an/lastthaw.git ~/lastthaw
 cd ~/lastthaw
-cp .env.example .env
+docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile app ps
+docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f api worker
+docker compose -f docker-compose.yml -f docker-compose.prod.yml exec postgres psql -U lastthaw lastthaw
 ```
 
-Edit `.env`: set a real `SESSION_SECRET` (`openssl rand -hex 32`), `NODE_ENV=production`,
-`DEV_TOOLS=false`, `PUBLIC_URL=https://lastthaw.com`, and the SES SMTP settings
-(`SMTP_HOST=email-smtp.<region>.amazonaws.com`, port 587, SMTP user and password from
-an SES SMTP credential, `MAIL_FROM` on a verified SES domain).
+Make yourself an admin (fair-play review page at /admin):
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile app up -d --build
-docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm api node dist/db/migrate.js
+docker compose -f docker-compose.yml -f docker-compose.prod.yml exec postgres psql -U lastthaw lastthaw -c "update users set is_admin = true where email = 'you@example.com'"
 ```
 
-## 5. Updates
+## Backups
 
-```bash
-cd ~/lastthaw && git pull
-docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile app up -d --build
-docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm api node dist/db/migrate.js
+Nightly dump to the home directory (add to `crontab -e` on the server):
+
+```
+15 3 * * * cd ~/lastthaw && docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T postgres pg_dump -U lastthaw lastthaw | gzip > ~/backups/lastthaw-$(date +\%F).sql.gz
 ```
 
-## 6. Backups
+Create `~/backups` first. Copy the dumps to a Lightsail bucket or S3 when you want off-box copies.
 
-Nightly Postgres dump to a Lightsail bucket (set up in milestone 7):
+## Rebuilding from scratch
 
-```bash
-docker compose exec -T postgres pg_dump -U lastthaw lastthaw | gzip > /tmp/lastthaw-$(date +%F).sql.gz
-```
-
-## 7. SES
-
-Verify the `lastthaw.com` domain in SES (same region as the instance), request production
-access (out of the sandbox), and create SMTP credentials. Verification and password reset mail
-are the only emails version 1 sends.
+The instance, static IP, firewall, DNS and SES setup were created with small Node scripts using the
+AWS SDK (default profile in `~/.aws`). Doing it by hand: create an Ubuntu 24.04 instance named
+`lastthaw-prod`, attach a static IP, open 22/80/443, point the A records at it, install Docker
+(`curl -fsSL https://get.docker.com | sudo sh`), create `~/lastthaw.git` as a bare repo, clone it to
+`~/lastthaw`, copy `.env.example` to `.env` with production values, then run `bash deploy/deploy.sh`.

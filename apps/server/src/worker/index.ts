@@ -7,6 +7,9 @@ import { Publisher } from "../realtime/publish.js";
 import { startMatch } from "../matches/start.js";
 import { runDueJobs } from "./jobs.js";
 import { runMatchTicks } from "../sim/tick.js";
+import { ensureWeeklyMatch } from "./weekly.js";
+import { detectMultiAccounts } from "../fairplay/detect.js";
+import { balance } from "@lastthaw/shared";
 
 /**
  * Simulation worker. One process serves every concurrent match.
@@ -62,4 +65,9 @@ await Promise.all([
     await runDueJobs(db, publisher, log);
   }),
   every(30_000, "tick", () => runMatchTicks(db, publisher, log)),
+  every(60_000, "weekly", () => ensureWeeklyMatch(db, log)),
+  every(balance.fairplay.scanMinutes * 60_000, "fairplay", async () => {
+    const n = await detectMultiAccounts(db);
+    if (n) log.info({ flags: n }, "fairplay flags created");
+  }),
 ]);

@@ -13,6 +13,7 @@ export interface SessionUser {
   email: string;
   displayName: string;
   emailVerified: boolean;
+  isAdmin: boolean;
 }
 
 declare module "fastify" {
@@ -39,6 +40,7 @@ export const sessionPlugin = fp(async (app: FastifyInstance, opts: { db: Db }) =
         email: users.email,
         displayName: users.displayName,
         emailVerifiedAt: users.emailVerifiedAt,
+        isAdmin: users.isAdmin,
       })
       .from(sessions)
       .innerJoin(users, eq(users.id, sessions.userId))
@@ -47,15 +49,16 @@ export const sessionPlugin = fp(async (app: FastifyInstance, opts: { db: Db }) =
     const row = rows[0];
     if (!row) return;
     req.sessionId = row.sessionId;
-    req.user = { id: row.id, email: row.email, displayName: row.displayName, emailVerified: row.emailVerifiedAt !== null };
+    req.user = { id: row.id, email: row.email, displayName: row.displayName, emailVerified: row.emailVerifiedAt !== null, isAdmin: row.isAdmin };
   });
 });
 
 export async function createSession(db: Db, req: FastifyRequest, reply: FastifyReply, userId: string): Promise<void> {
   const expiresAt = new Date(Date.now() + SESSION_DAYS * 86400_000);
+  const fp = req.headers["x-device"];
   const [row] = await db
     .insert(sessions)
-    .values({ userId, expiresAt, ip: req.ip, userAgent: req.headers["user-agent"] ?? null })
+    .values({ userId, expiresAt, ip: req.ip, userAgent: req.headers["user-agent"] ?? null, fingerprint: typeof fp === "string" ? fp.slice(0, 64) : null })
     .returning({ id: sessions.id });
   if (!row) throw new Error("failed to create session");
   reply.setCookie(SESSION_COOKIE, row.id, {
@@ -77,6 +80,13 @@ export async function destroySession(db: Db, req: FastifyRequest, reply: Fastify
 export function requireUser(req: FastifyRequest): SessionUser {
   if (!req.user) throw Object.assign(new Error("login required"), { statusCode: 401 });
   return req.user;
+}
+
+/** Route guard: 404 (not 403, to avoid revealing the route) unless the user is an admin. */
+export function requireAdmin(req: FastifyRequest): SessionUser {
+  const u = requireUser(req);
+  if (!u.isAdmin) throw Object.assign(new Error("not found"), { statusCode: 404 });
+  return u;
 }
 
 /** Route guard: 403 unless the email is verified. */

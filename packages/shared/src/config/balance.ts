@@ -139,6 +139,17 @@ export const balance = {
     /** Occupiers needed per 100 people in a region to keep it quiet. */
     occupiersPerHundred: 10,
   },
+  schedule: {
+    /** The worker keeps one upcoming weekly lobby open when enabled. */
+    enabled: true,
+    /** 0 = Sunday ... 6 = Saturday. */
+    weekday: 1,
+    hourUtc: 0,
+  },
+  fairplay: {
+    /** How often the worker scans for multi-account signals, in real minutes. */
+    scanMinutes: 60,
+  },
   ice: {
     /** Absolute latitude of the ice edge by match day; interpolated between points. */
     schedule: [

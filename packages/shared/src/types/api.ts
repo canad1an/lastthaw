@@ -27,6 +27,7 @@ export const userView = z.object({
   email: z.string(),
   displayName: z.string(),
   emailVerified: z.boolean(),
+  isAdmin: z.boolean().default(false),
 });
 export type UserView = z.infer<typeof userView>;
 
@@ -213,6 +214,8 @@ export const matchStateView = z.object({
     protectionUntil: z.string().nullable(),
     age: z.number(),
     techs: z.array(z.string()),
+    allianceId: z.string().nullable(),
+    allianceTag: z.string().nullable(),
   }),
   owned: z.array(ownedRegionView),
   sighted: z.array(sightedRegionView),
@@ -223,6 +226,8 @@ export const matchStateView = z.object({
   armies: z.array(armyView),
   /** Hostile armies heading for my regions. */
   incoming: z.array(incomingView),
+  /** Player ids of my alliance mates (their regions are always visible). */
+  allies: z.array(z.string()),
 });
 export type MatchStateView = z.infer<typeof matchStateView>;
 
@@ -271,5 +276,91 @@ export const EVENT_KINDS = [
   "army.incoming",
   "army.arrived",
   "region.conquered",
+  "alliance.updated",
+  "chat.message",
+  "trade.filled",
 ] as const;
 export type EventKind = (typeof EVENT_KINDS)[number];
+
+// ---------------------------------------------------------------------------
+// Milestone 5: alliances, chat and the market
+// ---------------------------------------------------------------------------
+
+export const createAllianceBody = z.object({
+  name: z.string().trim().min(2).max(30),
+  tag: z.string().trim().min(2).max(5).regex(/^[A-Z0-9]+$/, "tag must be uppercase letters or digits"),
+});
+export const allianceInviteBody = z.object({ playerId: z.string() });
+export const allianceIdBody = z.object({ allianceId: z.string() });
+export const allianceKickBody = z.object({ playerId: z.string() });
+
+export const allianceMemberView = z.object({
+  playerId: z.string(),
+  name: z.string(),
+  role: z.string(),
+  regions: z.number(),
+  joinedAt: z.string(),
+});
+export const allianceView = z.object({
+  id: z.string(),
+  name: z.string(),
+  tag: z.string(),
+  leaderPlayerId: z.string(),
+  members: z.array(allianceMemberView),
+  regions: z.number(),
+});
+export type AllianceView = z.infer<typeof allianceView>;
+export const allianceInviteView = z.object({
+  id: z.string(),
+  allianceId: z.string(),
+  name: z.string(),
+  tag: z.string(),
+  createdAt: z.string(),
+});
+export const alliancesResponse = z.object({
+  alliances: z.array(allianceView),
+  mine: allianceView.nullable(),
+  myRole: z.string().nullable(),
+  invites: z.array(allianceInviteView),
+});
+export type AlliancesResponse = z.infer<typeof alliancesResponse>;
+
+export const chatChannel = z.enum(["global", "alliance"]);
+export const chatPostBody = z.object({ channel: chatChannel, body: z.string().trim().min(1).max(500) });
+export const chatMessageView = z.object({
+  id: z.string(),
+  channel: z.string(),
+  playerId: z.string(),
+  playerName: z.string(),
+  body: z.string(),
+  sentAt: z.string(),
+});
+export type ChatMessageView = z.infer<typeof chatMessageView>;
+export const chatResponse = z.object({ channel: z.string(), messages: z.array(chatMessageView) });
+export type ChatResponse = z.infer<typeof chatResponse>;
+
+export const tradeResource = z.enum(["food", "wood", "stone", "copper", "tin", "iron", "horses"]);
+export type TradeResource = z.infer<typeof tradeResource>;
+export const createOrderBody = z.object({
+  regionId: z.string(),
+  offerResource: tradeResource,
+  offerAmount: z.number().positive().max(1_000_000),
+  askResource: tradeResource,
+  askAmount: z.number().positive().max(1_000_000),
+});
+export const acceptOrderBody = z.object({ regionId: z.string() });
+export const marketOrderView = z.object({
+  id: z.string(),
+  playerId: z.string(),
+  playerName: z.string(),
+  regionId: z.string(),
+  offerResource: tradeResource,
+  offerAmount: z.number(),
+  askResource: tradeResource,
+  askAmount: z.number(),
+  status: z.string(),
+  createdAt: z.string(),
+});
+export type MarketOrderView = z.infer<typeof marketOrderView>;
+export const marketResponse = z.object({ open: z.array(marketOrderView), mine: z.array(marketOrderView) });
+export type MarketResponse = z.infer<typeof marketResponse>;

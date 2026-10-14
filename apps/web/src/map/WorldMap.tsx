@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
-import { allRegions, world, type MapRegion } from "@lastthaw/shared";
+import { allRegions, freezeDayForLatitude, world, type MapRegion } from "@lastthaw/shared";
 
 export type RegionPaint = {
   fill?: string;
@@ -15,6 +15,8 @@ export interface WorldMapProps {
   /** Region id to center on when it changes (e.g. the capital). */
   focus?: string | null;
   className?: string;
+  /** Ice: current edge latitude, and whether to shade the forecast (day each region freezes). */
+  ice?: { latitude: number; forecast: boolean; day: number };
 }
 
 const TERRAIN_FILL: Record<string, string> = {
@@ -45,7 +47,7 @@ const MAX_K = 14;
  * Rendering ~400 paths is cheap; the expensive part is re-rendering on every
  * state change, so the static layer is memoized and only the paint changes.
  */
-export function WorldMap({ paint, selected, onSelect, focus, className = "" }: WorldMapProps) {
+export function WorldMap({ paint, selected, onSelect, focus, className = "", ice }: WorldMapProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [view, setView] = useState<View>({ x: 0, y: 0, k: 1 });
   const drag = useRef<{ id: number; sx: number; sy: number; ox: number; oy: number; moved: boolean } | null>(null);
@@ -156,10 +158,38 @@ export function WorldMap({ paint, selected, onSelect, focus, className = "" }: W
     >
       <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>
         <Regions paint={paint} selected={selected} strokeWidth={0.8 / view.k} />
+        {ice && <IceLayer ice={ice} />}
       </g>
     </svg>
   );
 }
+
+/**
+ * Ice overlay: frozen regions are washed out in white; in forecast mode every
+ * region is tinted by the day it freezes (soon = bright, never = none). The
+ * current ice edge is drawn as two dashed lines.
+ */
+const IceLayer = memo(function IceLayer({ ice }: { ice: { latitude: number; forecast: boolean; day: number } }) {
+  const H = world.height;
+  const W = world.width;
+  const yN = ((90 - ice.latitude) / 180) * H;
+  const yS = ((90 + ice.latitude) / 180) * H;
+  return (
+    <g pointerEvents="none">
+      {allRegions().map((r) => {
+        const frozen = Math.abs(r.lat) >= ice.latitude;
+        if (frozen) return <path key={r.id} d={r.path} fill="#e0f2fe" fillOpacity={0.75} />;
+        if (!ice.forecast) return null;
+        const day = freezeDayForLatitude(Math.abs(r.lat));
+        if (day === null) return null;
+        const soon = Math.max(0, 1 - (day - ice.day) / 20);
+        return <path key={r.id} d={r.path} fill="#7dd3fc" fillOpacity={0.15 + soon * 0.45} />;
+      })}
+      <line x1={0} x2={W} y1={yN} y2={yN} stroke="#e0f2fe" strokeDasharray="6 4" strokeWidth={1} />
+      <line x1={0} x2={W} y1={yS} y2={yS} stroke="#e0f2fe" strokeDasharray="6 4" strokeWidth={1} />
+    </g>
+  );
+});
 
 const Regions = memo(function Regions({ paint, selected, strokeWidth }: { paint: (r: MapRegion) => RegionPaint; selected: string | null; strokeWidth: number }) {
   const regions = allRegions();

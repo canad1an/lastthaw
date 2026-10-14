@@ -10,8 +10,8 @@ import { resetMail, sendMail, verificationMail } from "../mail.js";
 const VERIFY_HOURS = 24;
 const RESET_HOURS = 1;
 
-function toView(u: { id: string; email: string; displayName: string; emailVerifiedAt: Date | null }): UserView {
-  return { id: u.id, email: u.email, displayName: u.displayName, emailVerified: u.emailVerifiedAt !== null };
+function toView(u: { id: string; email: string; displayName: string; emailVerifiedAt: Date | null; isAdmin: boolean }): UserView {
+  return { id: u.id, email: u.email, displayName: u.displayName, emailVerified: u.emailVerifiedAt !== null, isAdmin: u.isAdmin };
 }
 
 async function issueToken(db: Db, userId: string, kind: "verify" | "reset", hours: number): Promise<string> {

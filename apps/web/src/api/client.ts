@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import { matchStateView, matchSummary, userView } from "@lastthaw/shared";
+import { alliancesResponse, chatResponse, marketResponse, matchStateView, matchSummary, userView, type ChatMessageView, type MarketOrderView, type TradeResource } from "@lastthaw/shared";
 
 export class ApiError extends Error {
   constructor(
@@ -10,10 +10,27 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * A stable per-browser id used only for multi-account review (fair play).
+ * It is random, not derived from anything personal, and lives in localStorage.
+ */
+function deviceId(): string {
+  try {
+    let id = localStorage.getItem("lt_device");
+    if (!id) {
+      id = crypto.randomUUID().replace(/-/g, "");
+      localStorage.setItem("lt_device", id);
+    }
+    return id;
+  } catch {
+    return "unknown";
+  }
+}
+
 async function request<T>(method: string, url: string, body?: unknown, schema?: z.ZodType<T>): Promise<T> {
-  const init: RequestInit = { method, credentials: "include" };
+  const init: RequestInit = { method, credentials: "include", headers: { "x-device": deviceId() } };
   if (body !== undefined) {
-    init.headers = { "content-type": "application/json" };
+    init.headers = { "content-type": "application/json", "x-device": deviceId() };
     init.body = JSON.stringify(body);
   }
   const res = await fetch(url, init);
@@ -55,6 +72,22 @@ export const api = {
   markMessagesRead: (id: string) => request<{ ok: true }>("POST", `/api/matches/${id}/messages/read`, {}),
   devStart: (id: string) => request<{ ok: true; started: boolean }>("POST", `/api/matches/${id}/dev/start`, {}),
   devTimeSkip: (id: string, seconds: number) => request<{ ok: true; clockOffsetSeconds: number }>("POST", `/api/matches/${id}/dev/time-skip`, { seconds }),
+
+  // Milestone 5: alliances, chat, market
+  alliances: (id: string) => request("GET", `/api/matches/${id}/alliances`, undefined, alliancesResponse),
+  createAlliance: (id: string, b: { name: string; tag: string }) => request<{ id: string; name: string; tag: string }>("POST", `/api/matches/${id}/alliances`, b),
+  inviteToAlliance: (id: string, playerId: string) => request<{ ok: true }>("POST", `/api/matches/${id}/alliances/invite`, { playerId }),
+  acceptAllianceInvite: (id: string, allianceId: string) => request<{ ok: true }>("POST", `/api/matches/${id}/alliances/accept`, { allianceId }),
+  declineAllianceInvite: (id: string, allianceId: string) => request<{ ok: true }>("POST", `/api/matches/${id}/alliances/decline`, { allianceId }),
+  leaveAlliance: (id: string) => request<{ ok: true; dissolved: boolean }>("POST", `/api/matches/${id}/alliances/leave`, {}),
+  kickFromAlliance: (id: string, playerId: string) => request<{ ok: true }>("POST", `/api/matches/${id}/alliances/kick`, { playerId }),
+  chat: (id: string, channel: "global" | "alliance") => request("GET", `/api/matches/${id}/chat?channel=${channel}`, undefined, chatResponse),
+  postChat: (id: string, channel: "global" | "alliance", body: string) => request<ChatMessageView>("POST", `/api/matches/${id}/chat`, { channel, body }),
+  market: (id: string) => request("GET", `/api/matches/${id}/market`, undefined, marketResponse),
+  postOrder: (id: string, b: { regionId: string; offerResource: TradeResource; offerAmount: number; askResource: TradeResource; askAmount: number }) =>
+    request<MarketOrderView>("POST", `/api/matches/${id}/market`, b),
+  cancelOrder: (id: string, orderId: string) => request<{ ok: true; refundedTo: string | null }>("POST", `/api/matches/${id}/market/${orderId}/cancel`, {}),
+  acceptOrder: (id: string, orderId: string, regionId: string) => request<{ ok: true; received: number }>("POST", `/api/matches/${id}/market/${orderId}/accept`, { regionId }),
 };
 
 export interface MessageView {
@@ -76,4 +109,8 @@ export const keys = {
   matchState: (id: string) => ["match", id, "state"] as const,
   startOptions: (id: string) => ["match", id, "start-options"] as const,
   messages: (id: string) => ["match", id, "messages"] as const,
+  alliances: (id: string) => ["match", id, "alliances"] as const,
+  chat: (id: string, channel: string) => ["match", id, "chat", channel] as const,
+  chatAll: (id: string) => ["match", id, "chat"] as const,
+  market: (id: string) => ["match", id, "market"] as const,
 };
