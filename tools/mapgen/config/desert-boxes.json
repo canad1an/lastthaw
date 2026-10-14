@@ -1,0 +1,20 @@
+[
+  { "name": "Sahara west", "lonMin": -17, "latMin": 17, "lonMax": 25, "latMax": 31 },
+  { "name": "Sahara east", "lonMin": 10, "latMin": 16, "lonMax": 36, "latMax": 30.5 },
+  { "name": "Horn of Africa", "lonMin": 41, "latMin": 1, "lonMax": 51, "latMax": 12 },
+  { "name": "Sinai / Negev / Jordan", "lonMin": 33, "latMin": 29, "lonMax": 40, "latMax": 32 },
+  { "name": "Arabian Peninsula", "lonMin": 36, "latMin": 16, "lonMax": 56, "latMax": 31 },
+  { "name": "Iranian deserts", "lonMin": 52, "latMin": 28, "lonMax": 62, "latMax": 35 },
+  { "name": "Karakum / Kyzylkum / Ustyurt", "lonMin": 51, "latMin": 37, "lonMax": 68, "latMax": 46 },
+  { "name": "Thar", "lonMin": 69, "latMin": 24, "lonMax": 75, "latMax": 29 },
+  { "name": "Balochistan", "lonMin": 60, "latMin": 25, "lonMax": 68, "latMax": 31 },
+  { "name": "Taklamakan / Xinjiang", "lonMin": 75, "latMin": 36, "lonMax": 95, "latMax": 44 },
+  { "name": "Tibetan plateau", "lonMin": 78, "latMin": 29, "lonMax": 100, "latMax": 37 },
+  { "name": "Gobi / Mongolia south / Inner Mongolia", "lonMin": 88, "latMin": 40, "lonMax": 117, "latMax": 48 },
+  { "name": "Australia interior", "lonMin": 116, "latMin": -32, "lonMax": 141, "latMax": -19 },
+  { "name": "Namib / Kalahari", "lonMin": 14, "latMin": -29, "lonMax": 25, "latMax": -19 },
+  { "name": "Atacama", "lonMin": -71, "latMin": -27, "lonMax": -67, "latMax": -18 },
+  { "name": "Patagonian steppe", "lonMin": -71, "latMin": -52, "lonMax": -65, "latMax": -40 },
+  { "name": "US Southwest", "lonMin": -118, "latMin": 31, "lonMax": -106, "latMax": 40 },
+  { "name": "Mexico north", "lonMin": -115, "latMin": 26, "lonMax": -103, "latMax": 32 }
+]

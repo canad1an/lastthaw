@@ -1,0 +1,237 @@
+[
+  {
+    "a": "es:cadiz",
+    "b": "ma:tanger",
+    "note": "Strait of Gibraltar"
+  },
+  {
+    "a": "gb:kent",
+    "b": "fr:pas-de-calais",
+    "note": "Strait of Dover"
+  },
+  {
+    "a": "it:trapani",
+    "b": "tn:",
+    "note": "Sicily - Tunisia"
+  },
+  {
+    "a": "it:reggio",
+    "b": "it:messina",
+    "note": "Strait of Messina"
+  },
+  {
+    "a": "it:sassari",
+    "b": "fr:corse",
+    "note": "Bonifacio"
+  },
+  {
+    "a": "ru:chukchi",
+    "b": "us:alaska",
+    "note": "Bering Strait"
+  },
+  {
+    "a": "jp:fukuoka",
+    "b": "kr:busan",
+    "note": "Japan - Korea"
+  },
+  {
+    "a": "jp:nagasaki",
+    "b": "kr:busan",
+    "note": "Japan - Korea alt"
+  },
+  {
+    "a": "lk:",
+    "b": "in:tamil nadu",
+    "note": "Sri Lanka - India"
+  },
+  {
+    "a": "my:johor",
+    "b": "id:riau",
+    "note": "Malacca / Singapore"
+  },
+  {
+    "a": "id:lampung",
+    "b": "id:banten",
+    "note": "Sunda Strait"
+  },
+  {
+    "a": "id:jawa timur",
+    "b": "id:bali",
+    "note": "Bali Strait"
+  },
+  {
+    "a": "id:kalimantan selatan",
+    "b": "id:jawa timur",
+    "note": "Java Sea"
+  },
+  {
+    "a": "id:sulawesi selatan",
+    "b": "id:kalimantan timur",
+    "note": "Makassar Strait"
+  },
+  {
+    "a": "id:papua",
+    "b": "pg:",
+    "note": "New Guinea"
+  },
+  {
+    "a": "id:nusa tenggara timur",
+    "b": "au:northern territory",
+    "note": "Timor Sea"
+  },
+  {
+    "a": "ye:",
+    "b": "er:",
+    "note": "Bab-el-Mandeb"
+  },
+  {
+    "a": "om:",
+    "b": "ir:hormozgan",
+    "note": "Strait of Hormuz"
+  },
+  {
+    "a": "ae:",
+    "b": "ir:hormozgan",
+    "note": "Hormuz alt"
+  },
+  {
+    "a": "tr:istanbul",
+    "b": "tr:kocaeli",
+    "note": "Bosporus"
+  },
+  {
+    "a": "tr:canakkale",
+    "b": "tr:balikesir",
+    "note": "Dardanelles"
+  },
+  {
+    "a": "cu:",
+    "b": "us:florida",
+    "note": "Cuba - Florida"
+  },
+  {
+    "a": "cu:",
+    "b": "mx:yucatan",
+    "note": "Yucatan channel"
+  },
+  {
+    "a": "tw:",
+    "b": "cn:fujian",
+    "note": "Taiwan Strait"
+  },
+  {
+    "a": "mg:",
+    "b": "mz:",
+    "note": "Mozambique Channel"
+  },
+  {
+    "a": "gb:pembrokeshire",
+    "b": "ie:",
+    "note": "Irish Sea"
+  },
+  {
+    "a": "gb:dumfries",
+    "b": "ie:",
+    "note": "North Channel"
+  },
+  {
+    "a": "gb:ayrshire",
+    "b": "ie:",
+    "note": "North Channel alt"
+  },
+  {
+    "a": "is:",
+    "b": "no:",
+    "note": "Iceland - Norway"
+  },
+  {
+    "a": "is:",
+    "b": "gb:highland",
+    "note": "Iceland - Scotland"
+  },
+  {
+    "a": "gl:",
+    "b": "is:",
+    "note": "Greenland - Iceland"
+  },
+  {
+    "a": "gl:",
+    "b": "ca:nunavut",
+    "note": "Davis Strait"
+  },
+  {
+    "a": "dk:",
+    "b": "se:skane",
+    "note": "Oresund"
+  },
+  {
+    "a": "ee:",
+    "b": "fi:",
+    "note": "Gulf of Finland"
+  },
+  {
+    "a": "jp:hokkaido",
+    "b": "ru:sakhalin",
+    "note": "La Perouse"
+  },
+  {
+    "a": "jp:hokkaido",
+    "b": "jp:aomori",
+    "note": "Tsugaru"
+  },
+  {
+    "a": "jp:yamaguchi",
+    "b": "jp:fukuoka",
+    "note": "Kanmon"
+  },
+  {
+    "a": "jp:kagawa",
+    "b": "jp:okayama",
+    "note": "Seto Inland Sea"
+  },
+  {
+    "a": "gr:kriti",
+    "b": "gr:",
+    "note": "Crete"
+  },
+  {
+    "a": "nz:wellington",
+    "b": "nz:marlborough",
+    "note": "Cook Strait"
+  },
+  {
+    "a": "au:tasmania",
+    "b": "au:victoria",
+    "note": "Bass Strait"
+  },
+  {
+    "a": "ph:",
+    "b": "tw:",
+    "note": "Luzon Strait"
+  },
+  {
+    "a": "ph:",
+    "b": "my:sabah",
+    "note": "Sulu Sea"
+  },
+  {
+    "a": "ca:newfoundland",
+    "b": "ca:nova scotia",
+    "note": "Cabot Strait"
+  },
+  {
+    "a": "ht:",
+    "b": "cu:",
+    "note": "Windward Passage"
+  },
+  {
+    "a": "sa:",
+    "b": "eg:",
+    "note": "Red Sea crossing"
+  },
+  {
+    "a": "in:gujarat",
+    "b": "om:",
+    "note": "Arabian Sea"
+  }
+]

@@ -1,4 +1,18 @@
-import { boolean, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import {
+  boolean,
+  doublePrecision,
+  index,
+  integer,
+  jsonb,
+  pgEnum,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from "drizzle-orm/pg-core";
 
 // ---------------------------------------------------------------------------
 // Accounts: carry over between matches. Never hold match state.
@@ -101,4 +115,123 @@ export const players = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("players_match_idx").on(t.matchId), uniqueIndex("players_match_user_idx").on(t.matchId, t.userId)],
+);
+
+// ---------------------------------------------------------------------------
+// Territory and economy. A row exists only for regions somebody owns or that
+// hold population; every other region is implicitly neutral and empty.
+// ---------------------------------------------------------------------------
+
+export const matchRegions = pgTable(
+  "match_regions",
+  {
+    matchId: uuid("match_id")
+      .notNull()
+      .references(() => matches.id, { onDelete: "cascade" }),
+    regionId: text("region_id").notNull(),
+    ownerPlayerId: uuid("owner_player_id").references(() => players.id, { onDelete: "set null" }),
+    popWorkers: doublePrecision("pop_workers").notNull().default(0),
+    popSoldiers: doublePrecision("pop_soldiers").notNull().default(0),
+    popOccupiers: doublePrecision("pop_occupiers").notNull().default(0),
+    food: doublePrecision("food").notNull().default(0),
+    wood: doublePrecision("wood").notNull().default(0),
+    stone: doublePrecision("stone").notNull().default(0),
+    /** Worker shares per gathering job: { food, wood, stone } summing to 1. */
+    assignment: jsonb("assignment").$type<{ food: number; wood: number; stone: number }>().notNull(),
+    storageLevel: integer("storage_level").notNull().default(0),
+    buildings: jsonb("buildings").$type<Record<string, number>>().notNull().default({}),
+    loyalty: doublePrecision("loyalty").notNull().default(1),
+    frozenAt: timestamp("frozen_at", { withTimezone: true }),
+    /** Match-clock time the amounts above were last settled to. */
+    settledAt: timestamp("settled_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.matchId, t.regionId] }), index("match_regions_owner_idx").on(t.matchId, t.ownerPlayerId)],
+);
+
+/** Partial index predicate for the due-job scan. */
+const sqlNullCompleted = sql`completed_at is null and cancelled_at is null`;
+
+export const jobKind = pgEnum("job_kind", ["build", "research", "train", "mission", "ice_step", "win_hold", "match_end"]);
+
+export const jobs = pgTable(
+  "jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    matchId: uuid("match_id")
+      .notNull()
+      .references(() => matches.id, { onDelete: "cascade" }),
+    playerId: uuid("player_id").references(() => players.id, { onDelete: "cascade" }),
+    regionId: text("region_id"),
+    kind: jobKind("kind").notNull(),
+    refId: text("ref_id"),
+    level: integer("level"),
+    qty: integer("qty"),
+    slot: integer("slot"),
+    payload: jsonb("payload").notNull().default({}),
+    startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+    endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    attempts: integer("attempts").notNull().default(0),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("jobs_due_idx").on(t.endsAt).where(sqlNullCompleted),
+    index("jobs_region_idx").on(t.matchId, t.regionId),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// Fog of war, messaging and audit
+// ---------------------------------------------------------------------------
+
+export const regionSightings = pgTable(
+  "region_sightings",
+  {
+    matchId: uuid("match_id")
+      .notNull()
+      .references(() => matches.id, { onDelete: "cascade" }),
+    playerId: uuid("player_id")
+      .notNull()
+      .references(() => players.id, { onDelete: "cascade" }),
+    regionId: text("region_id").notNull(),
+    seenAt: timestamp("seen_at", { withTimezone: true }).notNull(),
+    snapshot: jsonb("snapshot").notNull().default({}),
+  },
+  (t) => [primaryKey({ columns: [t.matchId, t.playerId, t.regionId] })],
+);
+
+export const messages = pgTable(
+  "messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    matchId: uuid("match_id")
+      .notNull()
+      .references(() => matches.id, { onDelete: "cascade" }),
+    playerId: uuid("player_id")
+      .notNull()
+      .references(() => players.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    subject: text("subject").notNull(),
+    payload: jsonb("payload").notNull().default({}),
+    readAt: timestamp("read_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("messages_player_idx").on(t.playerId, t.readAt)],
+);
+
+export const events = pgTable(
+  "events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    matchId: uuid("match_id")
+      .notNull()
+      .references(() => matches.id, { onDelete: "cascade" }),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+    kind: text("kind").notNull(),
+    payload: jsonb("payload").notNull().default({}),
+  },
+  (t) => [index("events_match_idx").on(t.matchId, t.at)],
 );

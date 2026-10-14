@@ -1,35 +1,60 @@
-import { sql } from "drizzle-orm";
+import { and, eq, lte, sql } from "drizzle-orm";
 import { createDb } from "../db/client.js";
+import { matches } from "../db/schema.js";
 import { logger } from "../logger.js";
+import { createRedis } from "../redis.js";
+import { Publisher } from "../realtime/publish.js";
+import { startMatch } from "../matches/start.js";
+import { runDueJobs } from "./jobs.js";
 
 /**
- * Simulation worker. M0 only proves the loop and database connectivity;
- * M1 adds the due-job loop, match tick and scheduler.
+ * Simulation worker. One process serves every concurrent match.
+ *  - scheduler (5s): starts lobby matches whose start time has passed
+ *  - due-job loop (1s): completes timed actions in ends_at order
  */
 const db = createDb();
+const redis = createRedis();
+const publisher = new Publisher(redis);
 const log = logger.child({ proc: "worker" });
 let stopping = false;
 
-async function loop() {
+async function scheduler() {
+  const due = await db
+    .select({ id: matches.id })
+    .from(matches)
+    .where(and(eq(matches.status, "lobby"), lte(matches.startsAt, sql`now() + make_interval(secs => ${matches.clockOffsetSeconds})`)));
+  for (const m of due) {
+    try {
+      if (await startMatch(db, publisher, m.id)) log.info({ matchId: m.id }, "match started");
+    } catch (err) {
+      log.error({ err, matchId: m.id }, "failed to start match");
+    }
+  }
+}
+
+async function every(ms: number, name: string, fn: () => Promise<void>) {
   while (!stopping) {
     const started = Date.now();
     try {
-      const rows = await db.execute<{ now: string }>(sql`select now()::text as now`);
-      log.debug({ dbNow: rows[0]?.now }, "heartbeat");
+      await fn();
     } catch (err) {
-      log.error({ err }, "loop iteration failed");
+      log.error({ err, loop: name }, "loop iteration failed");
     }
-    const elapsed = Date.now() - started;
-    await new Promise((r) => setTimeout(r, Math.max(0, 1000 - elapsed)));
+    await new Promise((r) => setTimeout(r, Math.max(0, ms - (Date.now() - started))));
   }
 }
 
 for (const sig of ["SIGINT", "SIGTERM"] as const) {
   process.on(sig, () => {
     stopping = true;
-    void db.close().then(() => process.exit(0));
+    void Promise.all([db.close(), redis.quit()]).then(() => process.exit(0));
   });
 }
 
+// Sanity: fail fast if the database is unreachable.
+await db.execute(sql`select 1`);
 log.info("worker started");
-await loop();
+await Promise.all([
+  every(5000, "scheduler", scheduler),
+  every(1000, "jobs", () => runDueJobs(db, publisher, log)),
+]);

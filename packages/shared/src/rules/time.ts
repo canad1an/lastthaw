@@ -9,6 +9,11 @@ export function scaledDuration(baseSeconds: number, speed: number): number {
   return Math.max(1, Math.round(baseSeconds / speed));
 }
 
+/** Convert elapsed real seconds into elapsed game hours at the given speed. */
+export function realSecondsToGameHours(realSeconds: number, speed: number): number {
+  return (realSeconds * speed) / 3600;
+}
+
 /** Human-readable countdown such as "2h 14m" or "45s". */
 export function formatCountdown(seconds: number): string {
   const s = Math.max(0, Math.floor(seconds));

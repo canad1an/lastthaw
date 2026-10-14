@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Last Thaw map preview</title>
+<style>
+  :root { color-scheme: light; }
+  body { margin: 0; background: #1b2838; color: #eee; font: 13px/1.4 system-ui, sans-serif; }
+  #wrap { position: relative; }
+  svg { width: 100%; height: auto; display: block; background: #244c6b; }
+  path { stroke: #0e1a24; stroke-width: 0.6; cursor: pointer; }
+  path:hover { stroke: #fff; stroke-width: 1.5; }
+  line { stroke: #ffe28a; stroke-width: 0.7; stroke-dasharray: 4 3; opacity: 0.8; pointer-events: none; }
+  #tip { position: fixed; pointer-events: none; background: rgba(0,0,0,.85); padding: 6px 9px; border-radius: 4px; display: none; max-width: 320px; }
+  #legend { padding: 8px 12px; display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+  #legend span::before { content: ""; display: inline-block; width: 12px; height: 12px; margin-right: 4px; vertical-align: -1px; background: var(--c); }
+</style>
+</head>
+<body>
+<div id="legend"></div>
+<div id="wrap"><svg id="map" viewBox="0 0 2000 1000"></svg></div>
+<div id="tip"></div>
+<script>
+const COLORS = { plains: "#b9c96a", forest: "#3d7a3a", hills: "#a98c57", mountains: "#8a8a8a", desert: "#e3c77a", tundra: "#d8e3e8", wetland: "#5aa39a" };
+const legend = document.getElementById("legend");
+for (const [k, c] of Object.entries(COLORS)) { const s = document.createElement("span"); s.style.setProperty("--c", c); s.textContent = k; legend.appendChild(s); }
+const stats = document.createElement("span"); stats.id = "stats"; legend.appendChild(stats);
+const svg = document.getElementById("map"), tip = document.getElementById("tip"), NS = "http://www.w3.org/2000/svg";
+fetch("../../../packages/shared/src/map/world.json").then(r => r.json()).then(world => {
+  const byId = new Map(world.regions.map(r => [r.id, r]));
+  const gRoutes = document.createElementNS(NS, "g"), gLand = document.createElementNS(NS, "g");
+  svg.append(gLand, gRoutes);
+  for (const r of world.regions) {
+    const p = document.createElementNS(NS, "path");
+    p.setAttribute("d", r.path); p.setAttribute("fill", COLORS[r.terrain] || "#f0f");
+    p.addEventListener("mousemove", e => {
+      tip.style.display = "block"; tip.style.left = (e.clientX + 14) + "px"; tip.style.top = (e.clientY + 14) + "px";
+      tip.innerHTML = "<b>" + r.id + "</b><br>" + r.name + " (" + r.countryName + ")<br>" + r.terrain +
+        (r.coastal ? ", coastal" : "") + (r.river ? ", river" : "") + "<br>resources: " + r.resources.join(", ") +
+        "<br>neighbors: " + r.neighbors.length + " land, " + r.seaRoutes.length + " sea<br>value " + r.value + ", " + r.areaKm2.toLocaleString() + " km2";
+    });
+    p.addEventListener("mouseleave", () => tip.style.display = "none");
+    gLand.appendChild(p);
+  }
+  const seen = new Set();
+  for (const r of world.regions) for (const id of r.seaRoutes) {
+    const key = [r.id, id].sort().join("|"); if (seen.has(key)) continue; seen.add(key);
+    const o = byId.get(id); if (!o) continue;
+    const segs = Math.abs(r.x - o.x) > 1000
+      ? (r.x < o.x ? [[r.x, r.y, 0, (r.y + o.y) / 2], [2000, (r.y + o.y) / 2, o.x, o.y]] : [[r.x, r.y, 2000, (r.y + o.y) / 2], [0, (r.y + o.y) / 2, o.x, o.y]])
+      : [[r.x, r.y, o.x, o.y]];
+    for (const [x1, y1, x2, y2] of segs) {
+      const l = document.createElementNS(NS, "line");
+      l.setAttribute("x1", x1); l.setAttribute("y1", y1); l.setAttribute("x2", x2); l.setAttribute("y2", y2);
+      gRoutes.appendChild(l);
+    }
+  }
+  stats.textContent = world.regions.length + " regions, " + world.regions.filter(r => r.coastal).length + " coastal, " + seen.size + " sea routes, generated " + world.generatedAt;
+}).catch(e => { legend.textContent = "Failed to load world.json (serve the repo root over http): " + e; });
+</script>
+</body>
+</html>

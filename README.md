@@ -40,7 +40,19 @@ npm run build
 Each milestone ends with a play-test before the next begins.
 
 - [x] **M0 Skeleton**: `npm run dev` shows the Last Thaw page with API status, server time and a live WebSocket tick.
-- [ ] **M1 Foundation**: accounts, match lobby, world map with fog of war, first region growing.
+- [x] **M1 Foundation**: accounts, match lobby, world map with fog of war, first region growing.
+
+  Play-test (two browser profiles or one normal + one private window):
+  1. Sign up twice. Open http://localhost:8025 (Mailpit), click each verification link.
+  2. In the lobby, create a match (dev tool): speed 10, starts in 5 minutes. Join with both accounts.
+  3. Open the match: pick a capital from the highlighted options with each account. Options are at least 900 km apart.
+  4. Press "Start now" (dev tool) or wait for the start time. The map now shows your capital in your colour; everything else is fogged.
+  5. Click your capital: people, food, wood and stone tick up live. Drag the worker sliders and Apply; rates change.
+  6. Press "+1d" (dev time-skip): population and stock jump as if a day passed. Set food to 0% and skip a day: starvation warning and shrinking population.
+  7. The other account never sees your region's numbers. Both tabs update live when the match starts (WebSocket).
+
+  Regenerate the world map (only needed when the map rules change): `npm run generate --workspace=@lastthaw/mapgen`, then open `tools/mapgen/out/preview.html`.
+
 - [ ] **M2 Building and tech**
 - [ ] **M3 Armies**
 - [ ] **M4 Conquest and AI**

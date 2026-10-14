@@ -8,7 +8,7 @@ process.env.SESSION_SECRET ??= "test-secret-test-secret-test-secret";
 describe("GET /api/health", () => {
   let app: Awaited<ReturnType<typeof buildApp>>;
   beforeAll(async () => {
-    app = await buildApp();
+    app = await buildApp({ realtime: false });
   });
   afterAll(async () => {
     await app.close();

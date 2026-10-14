@@ -1,0 +1,88 @@
+import { and, eq } from "drizzle-orm";
+import type { MatchStateView, OwnedRegionView, SightedRegionView } from "@lastthaw/shared";
+import type { Db } from "../db/client.js";
+import { matchRegions, matches, players, regionSightings } from "../db/schema.js";
+import { matchNow } from "../sim/clock.js";
+import { countOwnedRegions, projectRegion } from "../sim/regions.js";
+
+/**
+ * The only path from database to a player's screen. Everything a player can
+ * see about a match goes through here, so fog of war is enforced in one place.
+ */
+export async function buildMatchState(db: Db, matchId: string, userId: string): Promise<MatchStateView | null> {
+  const [m] = await db.select().from(matches).where(eq(matches.id, matchId)).limit(1);
+  if (!m) return null;
+  const [me] = await db
+    .select()
+    .from(players)
+    .where(and(eq(players.matchId, matchId), eq(players.userId, userId)))
+    .limit(1);
+  if (!me) return null;
+
+  const now = matchNow(m);
+  const ownedRows = await db
+    .select()
+    .from(matchRegions)
+    .where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.ownerPlayerId, me.id)));
+
+  const owned: OwnedRegionView[] = ownedRows.map((row) => {
+    const { economy, rates } = projectRegion(row, now, m.speed);
+    return {
+      regionId: row.regionId,
+      ownerPlayerId: me.id,
+      popWorkers: economy.popWorkers,
+      popSoldiers: economy.popSoldiers,
+      popOccupiers: economy.popOccupiers,
+      food: economy.food,
+      wood: economy.wood,
+      stone: economy.stone,
+      assignment: economy.assignment,
+      storage: economy.storage,
+      capacity: economy.capacity,
+      frozen: economy.frozen,
+      asOf: now.toISOString(),
+      rates: { food: rates.food, wood: rates.wood, stone: rates.stone, population: rates.population, starving: rates.starving },
+      isCapital: row.regionId === me.capitalRegionId,
+    };
+  });
+
+  const sightRows = await db
+    .select()
+    .from(regionSightings)
+    .where(and(eq(regionSightings.matchId, matchId), eq(regionSightings.playerId, me.id)));
+  const sighted: SightedRegionView[] = sightRows.map((s) => {
+    const snap = s.snapshot as { ownerPlayerId?: string | null; ownerName?: string | null; population?: number | null };
+    return {
+      regionId: s.regionId,
+      ownerPlayerId: snap.ownerPlayerId ?? null,
+      ownerName: snap.ownerName ?? null,
+      population: snap.population ?? null,
+      seenAt: s.seenAt.toISOString(),
+    };
+  });
+
+  const all = await db.select().from(players).where(eq(players.matchId, matchId));
+  const counts = await countOwnedRegions(db, matchId);
+
+  return {
+    match: {
+      id: m.id,
+      name: m.name,
+      status: m.status,
+      speed: m.speed,
+      startsAt: m.startsAt.toISOString(),
+      endsAt: m.endsAt.toISOString(),
+      now: now.toISOString(),
+      clockOffsetSeconds: m.clockOffsetSeconds,
+    },
+    me: {
+      playerId: me.id,
+      name: me.name,
+      capitalRegionId: me.capitalRegionId,
+      protectionUntil: me.protectionUntil?.toISOString() ?? null,
+    },
+    owned,
+    sighted,
+    players: all.map((p) => ({ id: p.id, name: p.name, isAi: p.isAi, age: p.age, score: p.score, regions: counts.get(p.id) ?? 0 })),
+  };
+}

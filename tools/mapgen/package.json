@@ -1,0 +1,27 @@
+{
+  "name": "@lastthaw/mapgen",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "One-time world map generator for Last Thaw (Natural Earth admin-1 -> ~400 regions)",
+  "scripts": {
+    "generate": "tsx src/generate.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "d3-geo": "^3.1.1",
+    "topojson-client": "^3.1.0",
+    "topojson-server": "^3.0.1",
+    "topojson-simplify": "^3.0.3"
+  },
+  "devDependencies": {
+    "@types/d3-geo": "^3.1.0",
+    "@types/geojson": "^7946.0.16",
+    "@types/node": "^22.0.0",
+    "@types/topojson-client": "^3.1.5",
+    "@types/topojson-server": "^3.0.4",
+    "@types/topojson-simplify": "^3.0.3",
+    "@types/topojson-specification": "^1.0.5",
+    "tsx": "^4.20.0"
+  }
+}

@@ -1,0 +1,1290 @@
+[
+  {
+    "match": {
+      "country": "ch"
+    },
+    "terrain": "mountains",
+    "note": "Switzerland / Alps"
+  },
+  {
+    "match": {
+      "country": "at",
+      "name": "tirol"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "at",
+      "name": "salzburg"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "at",
+      "name": "vorarlberg"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "at",
+      "name": "karnten"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "it",
+      "name": "trent"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "it",
+      "name": "sondrio"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "it",
+      "name": "belluno"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "it",
+      "name": "aosta"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "fr",
+      "name": "savoie"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "fr",
+      "name": "hautes-alpes"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "fr",
+      "name": "pyren"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "fr",
+      "name": "ariege"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "es",
+      "name": "huesca"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "es",
+      "name": "lleida"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "es",
+      "name": "navarra"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "ge"
+    },
+    "terrain": "mountains",
+    "note": "Caucasus"
+  },
+  {
+    "match": {
+      "country": "am"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "ru",
+      "name": "dagestan"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "ru",
+      "name": "chech"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "ru",
+      "name": "kabardin"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "ru",
+      "name": "karachay"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "ru",
+      "name": "ossetia"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "ru",
+      "name": "ingush"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "ru",
+      "name": "altay"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "np"
+    },
+    "terrain": "mountains",
+    "note": "Himalaya"
+  },
+  {
+    "match": {
+      "country": "bt"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "cn",
+      "name": "xizang"
+    },
+    "terrain": "mountains",
+    "name": "Tibet"
+  },
+  {
+    "match": {
+      "country": "cn",
+      "name": "tibet"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "cn",
+      "name": "qinghai"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "cn",
+      "name": "yunnan"
+    },
+    "terrain": "hills"
+  },
+  {
+    "match": {
+      "country": "cn",
+      "name": "guizhou"
+    },
+    "terrain": "hills"
+  },
+  {
+    "match": {
+      "country": "in",
+      "name": "himachal"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "in",
+      "name": "uttarakhand"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "in",
+      "name": "jammu"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "in",
+      "name": "ladakh"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "in",
+      "name": "sikkim"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "in",
+      "name": "arunachal"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "pk",
+      "name": "gilgit"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "pk",
+      "name": "northern areas"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "pk",
+      "name": "khyber"
+    },
+    "terrain": "mountains",
+    "note": "Hindu Kush"
+  },
+  {
+    "match": {
+      "country": "pk",
+      "name": "azad kashmir"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "af",
+      "name": "badakhshan"
+    },
+    "terrain": "mountains",
+    "note": "Hindu Kush"
+  },
+  {
+    "match": {
+      "country": "af",
+      "name": "bamyan"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "af",
+      "name": "nuristan"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "af",
+      "name": "baghlan"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "af",
+      "name": "ghor"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "af",
+      "name": "kabul"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "tj"
+    },
+    "terrain": "mountains",
+    "note": "Pamir"
+  },
+  {
+    "match": {
+      "country": "kg"
+    },
+    "terrain": "mountains",
+    "note": "Tian Shan"
+  },
+  {
+    "match": {
+      "country": "ir",
+      "name": "kordestan"
+    },
+    "terrain": "mountains",
+    "note": "Zagros"
+  },
+  {
+    "match": {
+      "country": "ir",
+      "name": "kermanshah"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "ir",
+      "name": "lorestan"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "ir",
+      "name": "chahar mahal"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "ir",
+      "name": "kohgiluyeh"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "ir",
+      "name": "ilam"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "ir",
+      "name": "mazandaran"
+    },
+    "terrain": "forest"
+  },
+  {
+    "match": {
+      "country": "ir",
+      "name": "gilan"
+    },
+    "terrain": "forest"
+  },
+  {
+    "match": {
+      "country": "iq",
+      "name": "sulaymaniyah"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "iq",
+      "name": "erbil"
+    },
+    "terrain": "hills"
+  },
+  {
+    "match": {
+      "country": "tr",
+      "name": "erzurum"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "tr",
+      "name": "kars"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "tr",
+      "name": "hakkari"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "tr",
+      "name": "van"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "tr",
+      "name": "agri"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "ma",
+      "name": "marrakech"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "ma",
+      "name": "fes"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "dz",
+      "name": "tizi ouzou"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "dz",
+      "name": "bejaia"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "et",
+      "name": "amhara"
+    },
+    "terrain": "mountains",
+    "note": "Ethiopian highlands"
+  },
+  {
+    "match": {
+      "country": "et",
+      "name": "tigray"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "et",
+      "name": "oromia"
+    },
+    "terrain": "hills"
+  },
+  {
+    "match": {
+      "country": "et",
+      "name": "addis"
+    },
+    "terrain": "hills"
+  },
+  {
+    "match": {
+      "country": "er"
+    },
+    "terrain": "hills"
+  },
+  {
+    "match": {
+      "country": "ls"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "rw"
+    },
+    "terrain": "hills"
+  },
+  {
+    "match": {
+      "country": "bi"
+    },
+    "terrain": "hills"
+  },
+  {
+    "match": {
+      "country": "cl"
+    },
+    "terrain": "mountains",
+    "note": "Andes - whole of Chile"
+  },
+  {
+    "match": {
+      "country": "cl",
+      "name": "antofagasta"
+    },
+    "terrain": "desert"
+  },
+  {
+    "match": {
+      "country": "cl",
+      "name": "atacama"
+    },
+    "terrain": "desert"
+  },
+  {
+    "match": {
+      "country": "cl",
+      "name": "tarapaca"
+    },
+    "terrain": "desert"
+  },
+  {
+    "match": {
+      "country": "pe",
+      "name": "cusco"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "pe",
+      "name": "puno"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "pe",
+      "name": "junin"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "pe",
+      "name": "huancavelica"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "pe",
+      "name": "ayacucho"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "pe",
+      "name": "ancash"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "pe",
+      "name": "apurimac"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "pe",
+      "name": "pasco"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "pe",
+      "name": "huanuco"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "pe",
+      "name": "cajamarca"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "pe",
+      "name": "arequipa"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "pe",
+      "name": "loreto"
+    },
+    "terrain": "forest"
+  },
+  {
+    "match": {
+      "country": "pe",
+      "name": "ucayali"
+    },
+    "terrain": "forest"
+  },
+  {
+    "match": {
+      "country": "pe",
+      "name": "madre de dios"
+    },
+    "terrain": "forest"
+  },
+  {
+    "match": {
+      "country": "bo",
+      "name": "la paz"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "bo",
+      "name": "oruro"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "bo",
+      "name": "potosi"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "bo",
+      "name": "cochabamba"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "bo",
+      "name": "chuquisaca"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "bo",
+      "name": "beni"
+    },
+    "terrain": "wetland"
+  },
+  {
+    "match": {
+      "country": "ar",
+      "name": "mendoza"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "ar",
+      "name": "san juan"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "ar",
+      "name": "neuquen"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "ar",
+      "name": "salta"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "ar",
+      "name": "jujuy"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "ar",
+      "name": "catamarca"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "ar",
+      "name": "la rioja"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "co",
+      "name": "antioquia"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "co",
+      "name": "boyaca"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "co",
+      "name": "cundinamarca"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "co",
+      "name": "narino"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "co",
+      "name": "cauca"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "co",
+      "name": "tolima"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "ec",
+      "name": "pichincha"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "ec",
+      "name": "azuay"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "ec",
+      "name": "chimborazo"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "ec",
+      "name": "tungurahua"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "us",
+      "name": "colorado"
+    },
+    "terrain": "mountains",
+    "note": "Rockies"
+  },
+  {
+    "match": {
+      "country": "us",
+      "name": "montana"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "us",
+      "name": "idaho"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "us",
+      "name": "wyoming"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "us",
+      "name": "west virginia"
+    },
+    "terrain": "hills"
+  },
+  {
+    "match": {
+      "country": "us",
+      "name": "louisiana"
+    },
+    "terrain": "wetland",
+    "river": true
+  },
+  {
+    "match": {
+      "country": "us",
+      "name": "mississippi"
+    },
+    "river": true
+  },
+  {
+    "match": {
+      "country": "ca",
+      "name": "british columbia"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "ca",
+      "name": "yukon"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "ca",
+      "name": "alberta"
+    },
+    "terrain": "plains"
+  },
+  {
+    "match": {
+      "country": "ca",
+      "name": "saskatchewan"
+    },
+    "terrain": "plains"
+  },
+  {
+    "match": {
+      "country": "mx",
+      "name": "oaxaca"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "mx",
+      "name": "guerrero"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "mx",
+      "name": "michoacan"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "no",
+      "name": "hordaland"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "no",
+      "name": "sogn og fjordane"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "no",
+      "name": "more og romsdal"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "no",
+      "name": "rogaland"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "no",
+      "name": "oppland"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "no",
+      "name": "nordland"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "no",
+      "name": "troms"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "gb",
+      "name": "highland"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "gb",
+      "name": "gwynedd"
+    },
+    "terrain": "hills"
+  },
+  {
+    "match": {
+      "country": "gb",
+      "name": "powys"
+    },
+    "terrain": "hills"
+  },
+  {
+    "match": {
+      "country": "jp",
+      "name": "nagano"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "jp",
+      "name": "gifu"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "jp",
+      "name": "yamanashi"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "jp",
+      "name": "toyama"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "kr",
+      "name": "gangwon"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "mm",
+      "name": "kachin"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "mm",
+      "name": "chin"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "mm",
+      "name": "shan"
+    },
+    "terrain": "hills"
+  },
+  {
+    "match": {
+      "country": "la"
+    },
+    "terrain": "hills"
+  },
+  {
+    "match": {
+      "country": "pg"
+    },
+    "terrain": "mountains",
+    "note": "PNG highlands"
+  },
+  {
+    "match": {
+      "country": "nz",
+      "name": "west coast"
+    },
+    "terrain": "mountains",
+    "note": "Southern Alps"
+  },
+  {
+    "match": {
+      "country": "nz",
+      "name": "canterbury"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "nz",
+      "name": "otago"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "nz",
+      "name": "southland"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "ro",
+      "name": "brasov"
+    },
+    "terrain": "mountains",
+    "note": "Carpathians"
+  },
+  {
+    "match": {
+      "country": "ro",
+      "name": "harghita"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "ro",
+      "name": "maramures"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "ro",
+      "name": "suceava"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "ro",
+      "name": "hunedoara"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "sk",
+      "name": "zilin"
+    },
+    "terrain": "mountains",
+    "note": "Tatra"
+  },
+  {
+    "match": {
+      "country": "sk",
+      "name": "presov"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "ba"
+    },
+    "terrain": "mountains",
+    "note": "Dinaric Alps"
+  },
+  {
+    "match": {
+      "country": "al"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "mk"
+    },
+    "terrain": "hills"
+  },
+  {
+    "match": {
+      "country": "bg",
+      "name": "smolyan"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "bg",
+      "name": "blagoevgrad"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "gr",
+      "name": "ipeiros"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "gr",
+      "name": "epirus"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "ye",
+      "name": "sana"
+    },
+    "terrain": "mountains",
+    "note": "Yemen highlands"
+  },
+  {
+    "match": {
+      "country": "ye",
+      "name": "ibb"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "ye",
+      "name": "taizz"
+    },
+    "terrain": "mountains"
+  },
+  {
+    "match": {
+      "country": "mg",
+      "name": "antananarivo"
+    },
+    "terrain": "hills"
+  },
+  {
+    "match": {
+      "country": "eg"
+    },
+    "river": true,
+    "note": "Nile"
+  },
+  {
+    "match": {
+      "country": "iq"
+    },
+    "river": true,
+    "note": "Tigris / Euphrates"
+  },
+  {
+    "match": {
+      "country": "bd"
+    },
+    "terrain": "wetland",
+    "river": true,
+    "note": "Ganges delta"
+  },
+  {
+    "match": {
+      "country": "nl"
+    },
+    "terrain": "wetland",
+    "river": true
+  },
+  {
+    "match": {
+      "country": "br",
+      "name": "amazonas"
+    },
+    "terrain": "forest",
+    "river": true
+  },
+  {
+    "match": {
+      "country": "br",
+      "name": "para"
+    },
+    "terrain": "forest",
+    "river": true
+  },
+  {
+    "match": {
+      "country": "br",
+      "name": "mato grosso do sul"
+    },
+    "terrain": "wetland",
+    "note": "Pantanal"
+  },
+  {
+    "match": {
+      "country": "ss"
+    },
+    "terrain": "wetland",
+    "river": true,
+    "note": "Sudd"
+  },
+  {
+    "match": {
+      "country": "ua"
+    },
+    "terrain": "plains",
+    "note": "Steppe"
+  }
+]
