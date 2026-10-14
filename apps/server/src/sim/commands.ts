@@ -4,10 +4,10 @@
  * Every function validates, settles the regions it touches under a lock,
  * pays costs up front and returns what it created. Errors carry statusCode.
  */
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { armySpeed, balance, buildingBlockedBy, carryCapacity, buildingById, buildingCost, buildingSeconds, canAfford, effectsOf, findRoute, missingFor, realSeconds, regionById, techById, techCost, techSeconds, trainSeconds, travelSeconds, unitById, unitCost, type Cost, type MissionKind, caravanCarry, techEffectsOf, distanceKm } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
-import { armies, jobs, matchRegions, players } from "../db/schema.js";
+import { armies, jobs, matchRegions, players, tradeRoutes } from "../db/schema.js";
 import { matchDayAt, matchNow } from "./clock.js";
 import { applyCost, settleAndLockRegion, stockOf, type MatchRegionRow, type Tx, roadSetFor } from "./regions.js";
 import { alliesOf, areAllied } from "./alliances.js";
@@ -74,29 +74,75 @@ export async function queueBuild(ctx: CommandContext, regionId: string, building
     const pooled: Record<string, number> = {};
     for (const r of payers) for (const [k, v] of Object.entries(stockOf(r))) pooled[k] = (pooled[k] ?? 0) + v;
     if (!canAfford(pooled, cost)) throw httpError(409, `not enough ${missingFor(pooled, cost).join(", ")} across your regions`);
-    const remaining: Record<string, number> = { ...cost };
-    for (const r of payers) {
-      const have = stockOf(r);
-      const take: Record<string, number> = {};
-      for (const [k, v] of Object.entries(remaining)) {
-        const t = Math.min(v, have[k] ?? 0);
-        if (t > 0) take[k] = t;
-      }
-      if (Object.keys(take).length) {
-        await applyCost(tx, r, take as Cost);
-        for (const [k, t] of Object.entries(take)) {
-          remaining[k] = (remaining[k] ?? 0) - t;
-          if (remaining[k]! <= 1e-9) delete remaining[k];
-        }
-      }
-      if (Object.keys(remaining).length === 0) break;
+    // Pay what this region has now. Anything short is owed, and must arrive by caravan before the build starts.
+    const here = stockOf(row);
+    const paid: Record<string, number> = {};
+    const owed: Record<string, number> = {};
+    for (const [k, v] of Object.entries(cost)) {
+      const local = Math.min(v, here[k] ?? 0);
+      if (local > 0) paid[k] = local;
+      if (v - local > 0.5) owed[k] = Math.ceil(v - local);
     }
-    const startsAt = pending.length ? pending[pending.length - 1]!.endsAt : now;
-    const endsAt = new Date(startsAt.getTime() + realSeconds(buildingSeconds(def, level), 0, m.speed) * 1000);
+    if (Object.keys(paid).length) await applyCost(tx, row, paid as Cost);
+    const active = pending.filter((j) => !j.waitingFor);
+    if (Object.keys(owed).length === 0) {
+      const startsAt = active.length ? active[active.length - 1]!.endsAt : now;
+      const endsAt = new Date(startsAt.getTime() + realSeconds(buildingSeconds(def, level), 0, m.speed) * 1000);
+      const [j] = await tx
+        .insert(jobs)
+        .values({ matchId: m.id, playerId: p.id, regionId, kind: "build", refId: buildingId, level, slot: pending.length, payload: { cost, paid }, startsAt, endsAt })
+        .returning();
+      return j!;
+    }
+    // Waiting job: parked until the materials are delivered (endsAt is only a placeholder; the job loop skips waiting jobs).
     const [j] = await tx
       .insert(jobs)
-      .values({ matchId: m.id, playerId: p.id, regionId, kind: "build", refId: buildingId, level, slot: pending.length, payload: { cost }, startsAt, endsAt })
+      .values({ matchId: m.id, playerId: p.id, regionId, kind: "build", refId: buildingId, level, slot: pending.length, payload: { cost, paid }, startsAt: now, endsAt: m.endsAt ?? new Date(now.getTime() + 365 * 86400_000), waitingFor: owed })
       .returning();
+    // One stock-up route per source region: capital first, then nearest, each sending what it can spare.
+    const still: Record<string, number> = { ...owed };
+    for (const src of payers.slice(1)) {
+      const have = stockOf(src);
+      const part: Record<string, number> = {};
+      for (const [k, v] of Object.entries(still)) {
+        const t = Math.min(v, Math.floor(have[k] ?? 0));
+        if (t >= 1) part[k] = t;
+      }
+      if (Object.keys(part).length === 0) continue;
+      // Merge into an existing materials route from the same source, so one convoy carries everything queued.
+      const [existing] = await tx
+        .select()
+        .from(tradeRoutes)
+        .where(and(eq(tradeRoutes.matchId, m.id), eq(tradeRoutes.fromRegionId, src.regionId), eq(tradeRoutes.toRegionId, regionId), sql`${tradeRoutes.forJobId} is not null`))
+        .limit(1)
+        .for("update");
+      if (existing) {
+        const target = { ...(existing.target ?? {}) };
+        for (const [k, t] of Object.entries(part)) target[k] = (target[k] ?? 0) + t;
+        await tx.update(tradeRoutes).set({ target, load: target, nextAt: new Date(Math.min(existing.nextAt.getTime(), now.getTime())) }).where(eq(tradeRoutes.id, existing.id));
+      } else {
+        await tx.insert(tradeRoutes).values({
+          matchId: m.id,
+          playerId: p.id,
+          fromRegionId: src.regionId,
+          toRegionId: regionId,
+          mode: "fixed",
+          load: part,
+          share: 0,
+          caravans: 3,
+          everyHours: 1,
+          target: part,
+          delivered: {},
+          nextAt: now,
+          forJobId: j!.id,
+        });
+      }
+      for (const [k, t] of Object.entries(part)) {
+        still[k] = (still[k] ?? 0) - t;
+        if (still[k]! <= 0) delete still[k];
+      }
+      if (Object.keys(still).length === 0) break;
+    }
     return j!;
   });
 }
@@ -125,7 +171,8 @@ export async function queueTrain(ctx: CommandContext, regionId: string, unitId: 
     if (!canAfford(stock, cost)) throw httpError(409, `not enough ${missingFor(stock, cost).join(", ")}`);
     await applyCost(tx, row, cost);
     const effects = effectsOf(row.buildings);
-    const startsAt = pending.length ? pending[pending.length - 1]!.endsAt : now;
+    const active = pending.filter((j) => !j.waitingFor);
+    const startsAt = active.length ? active[active.length - 1]!.endsAt : now;
     const endsAt = new Date(startsAt.getTime() + realSeconds(trainSeconds(def, qty), effects.trainSpeed + techEffectsOf(techs).trainSpeed, m.speed) * 1000);
     const [j] = await tx
       .insert(jobs)
@@ -312,4 +359,33 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
     await tx.insert(jobs).values({ matchId: m.id, playerId: p.id, regionId: body.targetRegionId, kind: "mission", refId: a!.id, startsAt: now, endsAt: arrivesAt });
     return { army: a!, targetOwner, route };
   });
+}
+
+/**
+ * Materials arrived in a region: start any build jobs that were waiting for
+ * them, in queue order, paying the owed part from the region's stock now.
+ */
+export async function startWaitingBuilds(tx: Tx, m: MatchRow, regionId: string, at: Date): Promise<number> {
+  const pending = await pendingRegionJobs(tx, m.id, regionId);
+  const waiting = pending.filter((j) => j.waitingFor && j.kind === "build");
+  if (waiting.length === 0) return 0;
+  let row = await settleAndLockRegion(tx, m.id, regionId, at, m.speed);
+  let started = 0;
+  for (const j of waiting) {
+    const owed = j.waitingFor as Record<string, number>;
+    const stock = stockOf(row);
+    if (!canAfford(stock, owed as Cost)) break;
+    row = await applyCost(tx, row, owed as Cost);
+    const def = buildingById.get(j.refId ?? "");
+    if (!def) continue;
+    const active = (await pendingRegionJobs(tx, m.id, regionId)).filter((x) => !x.waitingFor);
+    const startsAt = new Date(Math.max(at.getTime(), active.length ? active[active.length - 1]!.endsAt.getTime() : 0));
+    const endsAt = new Date(startsAt.getTime() + realSeconds(buildingSeconds(def, j.level ?? 1), 0, m.speed) * 1000);
+    const payload = (j.payload ?? {}) as { cost?: Cost; paid?: Record<string, number> };
+    const paid = { ...(payload.paid ?? {}) };
+    for (const [k, v] of Object.entries(owed)) paid[k] = (paid[k] ?? 0) + v;
+    await tx.update(jobs).set({ waitingFor: null, startsAt, endsAt, payload: { ...payload, paid } }).where(eq(jobs.id, j.id));
+    started += 1;
+  }
+  return started;
 }

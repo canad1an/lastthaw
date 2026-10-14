@@ -133,6 +133,8 @@ export const jobView = z.object({
   qty: z.number().nullable(),
   startsAt: z.string(),
   endsAt: z.string(),
+  /** Build jobs waiting for materials to arrive by caravan: what is still owed. */
+  waitingFor: z.record(z.string(), z.number()).nullable().default(null),
 });
 export type JobView = z.infer<typeof jobView>;
 

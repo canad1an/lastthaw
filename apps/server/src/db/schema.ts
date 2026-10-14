@@ -219,6 +219,8 @@ export const jobs = pgTable(
     playerId: uuid("player_id").references(() => players.id, { onDelete: "cascade" }),
     regionId: text("region_id"),
     kind: jobKind("kind").notNull(),
+    /** Build jobs only: materials still to arrive by caravan before the build can start. Null once started. */
+    waitingFor: jsonb("waiting_for").$type<Record<string, number>>(),
     refId: text("ref_id"),
     level: integer("level"),
     qty: integer("qty"),
@@ -314,6 +316,8 @@ export const tradeRoutes = pgTable(
     lastResult: text("last_result"),
     /** Stock-up routes: total goods to deliver, after which the route removes itself. */
     target: jsonb("target").$type<Record<string, number>>(),
+    /** Set when the route carries materials for a waiting build job; removed with the job. */
+    forJobId: uuid("for_job_id"),
     delivered: jsonb("delivered").$type<Record<string, number>>().notNull().default({}),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

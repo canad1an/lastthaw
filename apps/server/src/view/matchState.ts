@@ -141,6 +141,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
     qty: j.qty,
     startsAt: j.startsAt.toISOString(),
     endsAt: j.endsAt.toISOString(),
+    waitingFor: j.waitingFor ?? null,
   }));
 
   const all = await db.select().from(players).where(eq(players.matchId, matchId)).orderBy(asc(players.createdAt), asc(players.id));

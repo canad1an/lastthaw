@@ -5,6 +5,7 @@ import type { Publisher } from "../realtime/publish.js";
 import { settleAndLockRegion, type MatchRegionRow, type Tx, setCapital, roadSetFor, ownerTechEffects } from "./regions.js";
 import { notify, type JobRow, type MatchRow } from "../worker/jobs.js";
 import { areAllied, alliesOf } from "./alliances.js";
+import { startWaitingBuilds } from "./commands.js";
 
 type ArmyRow = typeof armies.$inferSelect;
 type After = (fn: () => Promise<void>) => void;
@@ -226,6 +227,10 @@ async function deliverCargo(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publis
   }
   const { people: _people, ...goods } = army.cargo;
   await depositInto(tx, target, {}, army.cargo);
+  if (target.ownerPlayerId === army.playerId) {
+    const started = await startWaitingBuilds(tx, m, army.targetRegionId, at);
+    if (started) await notify(tx, m.id, army.playerId, "build", `Materials arrived in ${regionById(army.targetRegionId)?.name}: ${started} build${started === 1 ? "" : "s"} started`, { regionId: army.targetRegionId });
+  }
   if (target.ownerPlayerId && target.ownerPlayerId !== army.playerId) {
     const { transfers } = await import("../db/schema.js");
     for (const [k, v] of Object.entries(goods)) {

@@ -1,8 +1,8 @@
 import type { FastifyInstance } from "fastify";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { balance, buildBody, researchBody, trainBody, type Cost } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
-import { jobs, matches, playerTechs, players } from "../db/schema.js";
+import { jobs, matches, playerTechs, players, tradeRoutes } from "../db/schema.js";
 import { requireUser } from "../auth/session.js";
 import type { Publisher } from "../realtime/publish.js";
 import { matchNow } from "../sim/clock.js";
@@ -69,8 +69,31 @@ export async function jobRoutes(app: FastifyInstance, opts: { db: Db; publisher:
       if (job.completedAt || job.cancelledAt) throw httpError(409, "job already finished");
       if (!["build", "train", "research"].includes(job.kind)) throw httpError(400, "cannot cancel that");
       const refundRegion = job.regionId ?? p.capitalRegionId;
-      const cost = ((job.payload as { cost?: Cost }).cost ?? {}) as Cost;
-      const started = job.startsAt.getTime() <= now.getTime();
+      const payload = job.payload as { cost?: Cost; paid?: Record<string, number> };
+      const cost = (payload.paid ?? payload.cost ?? {}) as Cost;
+      const started = !job.waitingFor && job.startsAt.getTime() <= now.getTime();
+      if (job.waitingFor && job.regionId) {
+        // Take this job's share out of the materials routes heading here; drop a route once nothing is owed on it.
+        const routes = await tx
+          .select()
+          .from(tradeRoutes)
+          .where(and(eq(tradeRoutes.matchId, matchId), eq(tradeRoutes.toRegionId, job.regionId), sql`${tradeRoutes.forJobId} is not null`))
+          .for("update");
+        const owed: Record<string, number> = { ...(job.waitingFor as Record<string, number>) };
+        for (const r of routes) {
+          const target = { ...(r.target ?? {}) };
+          for (const k of Object.keys(owed)) {
+            if (!target[k] || owed[k]! <= 0) continue;
+            const cut = Math.min(target[k]!, owed[k]!);
+            target[k] = target[k]! - cut;
+            owed[k] = owed[k]! - cut;
+            if (target[k]! <= 0) delete target[k];
+          }
+          const stillOwed = Object.entries(target).some(([k, v]) => v > (r.delivered[k] ?? 0) + 0.5);
+          if (!stillOwed) await tx.delete(tradeRoutes).where(eq(tradeRoutes.id, r.id));
+          else await tx.update(tradeRoutes).set({ target, load: target }).where(eq(tradeRoutes.id, r.id));
+        }
+      }
       const factor = started ? balance.timers.cancelRefundStarted : 1;
       if (refundRegion) {
         const row = await settleAndLockRegion(tx, matchId, refundRegion, now, m.speed);
@@ -85,7 +108,7 @@ export async function jobRoutes(app: FastifyInstance, opts: { db: Db; publisher:
               .select()
               .from(jobs)
               .where(and(eq(jobs.playerId, p.id), eq(jobs.kind, "research"), isNull(jobs.completedAt), isNull(jobs.cancelledAt)));
-        const later = queue.filter((j) => j.id !== job.id && j.startsAt.getTime() >= job.endsAt.getTime());
+        const later = job.waitingFor ? [] : queue.filter((j) => j.id !== job.id && !j.waitingFor && j.startsAt.getTime() >= job.endsAt.getTime());
         const shift = job.endsAt.getTime() - Math.max(job.startsAt.getTime(), now.getTime());
         for (const l of later) {
           await tx

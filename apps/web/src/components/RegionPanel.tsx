@@ -337,7 +337,7 @@ function BuildTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
                     {!maxed && (
                       <p>
                         <CostLine cost={cost} stock={stock} suffix={formatCountdown(secs)} />
-                        {fromElsewhere(cost).length > 0 && <span className="ml-1 text-xs text-sky-300">({fromElsewhere(cost).join(", ")} from {owned.isCapital ? "other regions" : "the capital or other regions"})</span>}
+                        {fromElsewhere(cost).length > 0 && <span className="ml-1 text-xs text-sky-300">({fromElsewhere(cost).join(", ")} will come by caravan from {owned.isCapital ? "other regions" : "the capital or other regions"}; the build starts when it arrives)</span>}
                       </p>
                     )}
                   </div>
@@ -560,7 +560,13 @@ function QueueList({ matchId, state, regionId, clockOffsetMs }: { matchId: strin
               {j.kind === "build" ? `${buildingById.get(j.refId ?? "")?.name ?? j.refId} lvl ${j.level}` : `${j.qty} ${unitById.get(j.refId ?? "")?.name ?? j.refId}`}
             </span>
             <span className="text-slate-400">
-              <Countdown to={j.endsAt} clockOffsetMs={clockOffsetMs} />
+              {j.waitingFor ? (
+                <span className="text-xs text-amber-300" title={`Waiting for ${Object.entries(j.waitingFor).map(([k, v]) => `${Math.round(v)} ${k}`).join(", ")} to arrive by caravan`}>
+                  waiting for materials
+                </span>
+              ) : (
+                <Countdown to={j.endsAt} clockOffsetMs={clockOffsetMs} />
+              )}
             </span>
             <button className="text-xs text-slate-500 hover:text-rose-400" onClick={() => cancel.mutate(j.id)} title="Cancel">
               ✕

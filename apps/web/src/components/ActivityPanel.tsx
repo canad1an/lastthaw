@@ -106,10 +106,11 @@ export function ActivityPanel({ matchId, state, clockOffsetMs, onSelect }: { mat
             <Row
               key={j.id}
               name={label(j)}
-              note={regionById(j.regionId ?? "")?.name ?? ""}
+              note={`${regionById(j.regionId ?? "")?.name ?? ""}${j.waitingFor ? ` · waiting for ${Object.entries(j.waitingFor).map(([k, v]) => `${Math.round(v)} ${k}`).join(", ")} by caravan` : ""}`}
               to={j.endsAt}
               clockOffsetMs={clockOffsetMs}
               waiting={Date.parse(j.startsAt) > now}
+              status={j.waitingFor ? "materials" : undefined}
               onCancel={() => cancel.mutate(j.id)}
               onClick={j.regionId ? () => onSelect(j.regionId!) : undefined}
             />
@@ -170,7 +171,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function Row({ name, note, to, clockOffsetMs, waiting, onCancel, onClick, cancelTitle = "Cancel" }: { name: string; note: string; to: string; clockOffsetMs: number; waiting?: boolean | undefined; onCancel?: (() => void) | undefined; onClick?: (() => void) | undefined; cancelTitle?: string }) {
+function Row({ name, note, to, clockOffsetMs, waiting, onCancel, onClick, cancelTitle = "Cancel", status }: { name: string; note: string; to: string; clockOffsetMs: number; waiting?: boolean | undefined; onCancel?: (() => void) | undefined; onClick?: (() => void) | undefined; cancelTitle?: string; status?: string | undefined }) {
   return (
     <li className="flex items-center gap-2 text-sm">
       <button className={`min-w-0 flex-1 truncate text-left ${onClick ? "hover:text-white" : "cursor-default"}`} onClick={onClick}>
@@ -178,7 +179,7 @@ function Row({ name, note, to, clockOffsetMs, waiting, onCancel, onClick, cancel
         {note && <span className="ml-1 text-xs text-slate-500">{note}</span>}
       </button>
       <span className={`tabular-nums ${waiting ? "text-slate-500" : "text-sky-300"}`}>
-        <Countdown to={to} clockOffsetMs={clockOffsetMs} />
+        {status ? <span className="text-xs text-amber-300">{status}</span> : <Countdown to={to} clockOffsetMs={clockOffsetMs} />}
       </span>
       {onCancel && (
         <button className="text-xs text-slate-600 hover:text-rose-400" onClick={onCancel} title={cancelTitle}>
