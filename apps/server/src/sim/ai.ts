@@ -24,6 +24,7 @@ import type { Publisher } from "../realtime/publish.js";
 import { applyCost, projectRegion, settleAndLockRegion, stockOf, type MatchRegionRow } from "./regions.js";
 import { queueBuild, queueResearch, queueTrain, sendArmy, type CommandContext, type PlayerRow } from "./commands.js";
 import { areAllied } from "./alliances.js";
+import { acceptMarketOrder } from "../matches/marketApi.js";
 import type { MatchRow } from "../worker/jobs.js";
 
 export type Difficulty = "easy" | "medium" | "hard";
@@ -86,7 +87,7 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
     .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.ownerPlayerId, p.id)));
   if (owned.length === 0) return;
   const pendingJobs = await db
-    .select({ regionId: jobs.regionId, kind: jobs.kind })
+    .select({ regionId: jobs.regionId, kind: jobs.kind, refId: jobs.refId })
     .from(jobs)
     .where(and(eq(jobs.matchId, m.id), eq(jobs.playerId, p.id), isNull(jobs.completedAt), isNull(jobs.cancelledAt)));
   const researching = pendingJobs.some((j) => j.kind === "research");
@@ -153,6 +154,14 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
       );
     }
 
+    // Caravans: once a store nears its cap, keep a couple of caravans here so overflow and trade routes can run.
+    const nearCap = (["food", "wood", "stone"] as const).some((k) => economy[k] >= economy.storage[k] * 0.85);
+    const wantCaravans = balance.ai.caravansPerRegion + (difficulty === "hard" ? 1 : 0);
+    const caravansQueued = pendingJobs.some((j) => j.regionId === row.regionId && j.kind === "train" && j.refId === "caravan");
+    if (nearCap && (row.units.caravan ?? 0) < wantCaravans && !caravansQueued && queueLen(row.regionId) < balance.queue.slotsPerRegion && economy.popWorkers > 12) {
+      await attempt(() => queueTrain(ctx, row.regionId, "caravan", wantCaravans - (row.units.caravan ?? 0)));
+    }
+
     // Soldiers: keep a share under arms; double it while threatened.
     const share = (balance.ai.soldierShare[temperament] ?? 0.2) * (underThreat ? 2 : 1);
     if (queueLen(row.regionId) < balance.queue.slotsPerRegion && economy.popSoldiers < pop * share && economy.popWorkers > 8) {
@@ -210,6 +219,8 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
 
   // Ore for sale: a tribe sitting on more ore than it needs lists half of it for wood.
   await sellOre(ctx, owned, now);
+  // Ore to buy: short of the ore the next age needs, buy the cheapest open offer with the capital's wood.
+  if (!tier.hoards) await buyOre(ctx, owned, matchDay);
 
   // Aggression: raid or conquer a weak neighbour. Hard tribes get hungrier when they fall behind.
   const standings = await db.select({ owner: matchRegions.ownerPlayerId, n: sql<number>`count(*)::int` }).from(matchRegions).where(and(eq(matchRegions.matchId, m.id), sql`${matchRegions.ownerPlayerId} is not null`)).groupBy(matchRegions.ownerPlayerId);
@@ -395,5 +406,37 @@ async function sellOre(ctx: CommandContext, owned: MatchRegionRow[], now: Date):
         // Market full or region changed hands; try again next pass.
       }
     }
+  }
+}
+
+/** Buy ore on the market when the next age advance needs more than the tribe holds. One purchase per pass. */
+async function buyOre(ctx: CommandContext, owned: MatchRegionRow[], matchDay: number): Promise<void> {
+  const { db, m, p, techs } = ctx;
+  const next = availableTechs(p.age, techs).find((t) => t.advancesTo !== undefined);
+  if (!next) return;
+  const cost = techCost(next, matchDay);
+  const capital = owned.find((r) => r.regionId === p.capitalRegionId);
+  if (!capital || capital.frozenAt) return;
+  const pooled: Record<string, number> = {};
+  for (const r of owned) for (const [k, v] of Object.entries(r.special as Record<string, number>)) pooled[k] = (pooled[k] ?? 0) + v;
+  for (const ore of ["copper", "tin", "iron"] as const) {
+    const need = (cost[ore] ?? 0) - (pooled[ore] ?? 0);
+    if (need <= 0) continue;
+    const offers = await db
+      .select()
+      .from(marketOrders)
+      .where(and(eq(marketOrders.matchId, m.id), eq(marketOrders.status, "open"), eq(marketOrders.offerResource, ore), sql`${marketOrders.playerId} <> ${p.id}`));
+    const stock = stockOf(capital);
+    const affordable = offers
+      .filter((o) => (stock[o.askResource] ?? 0) >= o.askAmount && (stock[o.askResource] ?? 0) - o.askAmount > 2000)
+      .sort((a, b) => a.askAmount / a.offerAmount - b.askAmount / b.offerAmount);
+    const pick = affordable[0];
+    if (!pick) continue;
+    try {
+      await acceptMarketOrder(db, m, p, pick.id, capital.regionId);
+    } catch {
+      // Someone else got it first, or the seller changed; try again next pass.
+    }
+    return;
   }
 }

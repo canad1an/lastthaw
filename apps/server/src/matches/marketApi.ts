@@ -2,6 +2,8 @@ import type { FastifyInstance } from "fastify";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { acceptOrderBody, balance, createOrderBody, effectsOf, storageCaps, type MarketOrderView, type MarketResponse, type TradeResource } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
+import type { MatchRow } from "../worker/jobs.js";
+import type { PlayerRow } from "../sim/commands.js";
 import { marketOrders, matchRegions, matches, messages, players, transfers } from "../db/schema.js";
 import { requireUser } from "../auth/session.js";
 import type { Publisher } from "../realtime/publish.js";
@@ -28,6 +30,31 @@ async function credit(tx: Tx, row: MatchRegionRow, res: TradeResource, amount: n
 }
 
 /** A basic player-to-player market: post an offer (escrowed), accept it, or cancel it. */
+async function lockOrder(tx: Tx, matchId: string, orderId: string): Promise<OrderRow> {
+  const rows = await tx
+    .select()
+    .from(marketOrders)
+    .where(and(eq(marketOrders.matchId, matchId), eq(marketOrders.id, orderId)))
+    .for("update");
+  const o = rows[0];
+  if (!o) throw httpError(404, "order not found");
+  return o;
+}
+
+async function notify(tx: Tx, matchId: string, playerId: string, subject: string, payload: Record<string, unknown>) {
+  await tx.insert(messages).values({ matchId, playerId, kind: "trade", subject, payload });
+}
+
+/** Owner of a region without locking it; used only to choose which rows to lock. */
+async function ownerOf(tx: Tx, matchId: string, regionId: string): Promise<string | null> {
+  const [r] = await tx
+    .select({ owner: matchRegions.ownerPlayerId })
+    .from(matchRegions)
+    .where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, regionId)))
+    .limit(1);
+  return r?.owner ?? null;
+}
+
 export async function marketRoutes(app: FastifyInstance, opts: { db: Db; publisher: Publisher }) {
   const { db, publisher } = opts;
 
@@ -44,30 +71,6 @@ export async function marketRoutes(app: FastifyInstance, opts: { db: Db; publish
     return { m, p };
   }
 
-  async function lockOrder(tx: Tx, matchId: string, orderId: string): Promise<OrderRow> {
-    const rows = await tx
-      .select()
-      .from(marketOrders)
-      .where(and(eq(marketOrders.matchId, matchId), eq(marketOrders.id, orderId)))
-      .for("update");
-    const o = rows[0];
-    if (!o) throw httpError(404, "order not found");
-    return o;
-  }
-
-  async function notify(tx: Tx, matchId: string, playerId: string, subject: string, payload: Record<string, unknown>) {
-    await tx.insert(messages).values({ matchId, playerId, kind: "trade", subject, payload });
-  }
-
-  /** Owner of a region without locking it; used only to choose which rows to lock. */
-  async function ownerOf(tx: Tx, matchId: string, regionId: string): Promise<string | null> {
-    const [r] = await tx
-      .select({ owner: matchRegions.ownerPlayerId })
-      .from(matchRegions)
-      .where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, regionId)))
-      .limit(1);
-    return r?.owner ?? null;
-  }
 
   function toView(o: OrderRow, name: string): MarketOrderView {
     return {
@@ -182,54 +185,7 @@ export async function marketRoutes(app: FastifyInstance, opts: { db: Db; publish
     const { m, p } = await loadContext(matchId, user.id);
     const now = matchNow(m);
 
-    const result = await db.transaction(async (tx) => {
-      const o = await lockOrder(tx, matchId, orderId);
-      if (o.status !== "open") throw httpError(409, "that order is no longer open");
-      if (o.playerId === p.id) throw httpError(400, "you cannot accept your own order");
-      const [seller] = await tx.select().from(players).where(eq(players.id, o.playerId)).limit(1);
-      if (!seller) throw httpError(404, "seller not found");
-      const offerRes = o.offerResource as TradeResource;
-      const askRes = o.askResource as TradeResource;
-
-      // Decide which seller region receives payment, then lock both regions in ascending id order.
-      const sellerDest = (await ownerOf(tx, matchId, o.regionId)) === seller.id ? o.regionId : seller.capitalRegionId;
-      if (sellerDest === body.regionId) throw httpError(400, "that region is not yours");
-      const ids = [body.regionId, ...(sellerDest ? [sellerDest] : [])].sort();
-      const locked = new Map<string, MatchRegionRow>();
-      for (const id of ids) locked.set(id, await settleAndLockRegion(tx, matchId, id, now, m.speed));
-
-      const buyerRow = locked.get(body.regionId)!;
-      if (buyerRow.ownerPlayerId !== p.id) throw httpError(403, "not your region");
-      if (buyerRow.frozenAt) throw httpError(409, "this region is frozen");
-      if ((stockOf(buyerRow)[askRes] ?? 0) < o.askAmount) throw httpError(409, `not enough ${askRes}`);
-
-      const paid = await applyCost(tx, buyerRow, { [askRes]: o.askAmount });
-      const received = await credit(tx, paid, offerRes, o.offerAmount);
-
-      let sellerRow = sellerDest ? (locked.get(sellerDest) ?? null) : null;
-      if (sellerRow && sellerRow.ownerPlayerId !== seller.id) sellerRow = null;
-      const sellerGot = sellerRow ? await credit(tx, sellerRow, askRes, o.askAmount) : 0;
-
-      await tx.update(marketOrders).set({ status: "filled", filledByPlayerId: p.id, filledAt: now }).where(eq(marketOrders.id, o.id));
-      await tx.insert(transfers).values([
-        { matchId, fromPlayerId: seller.id, toPlayerId: p.id, resource: offerRes, amount: o.offerAmount, via: "trade" },
-        { matchId, fromPlayerId: p.id, toPlayerId: seller.id, resource: askRes, amount: o.askAmount, via: "trade" },
-      ]);
-      const summary = { orderId: o.id, offerResource: offerRes, offerAmount: o.offerAmount, askResource: askRes, askAmount: o.askAmount };
-      await notify(tx, matchId, seller.id, `${p.name} bought your ${Math.round(o.offerAmount)} ${offerRes} for ${Math.round(o.askAmount)} ${askRes}`, {
-        ...summary,
-        buyer: p.name,
-        received: sellerGot,
-        regionId: sellerRow?.regionId ?? null,
-      });
-      await notify(tx, matchId, p.id, `You bought ${Math.round(o.offerAmount)} ${offerRes} from ${seller.name} for ${Math.round(o.askAmount)} ${askRes}`, {
-        ...summary,
-        seller: seller.name,
-        received,
-        regionId: body.regionId,
-      });
-      return { sellerId: seller.id, sellerRegionId: sellerRow?.regionId ?? null, received, sellerGot };
-    });
+    const result = await acceptMarketOrder(db, m, p, orderId, body.regionId);
 
     await publisher.toPlayer(matchId, p.id, "region.updated", { regionId: body.regionId });
     if (result.sellerRegionId) await publisher.toPlayer(matchId, result.sellerId, "region.updated", { regionId: result.sellerRegionId });
@@ -239,4 +195,58 @@ export async function marketRoutes(app: FastifyInstance, opts: { db: Db; publish
     }
     return { ok: true, received: result.received };
   });
+}
+
+/** Fill an open order: the buyer's region pays the ask and receives the offer; the seller is paid at the order's region (or their capital). */
+export async function acceptMarketOrder(db: Db, m: MatchRow, p: PlayerRow, orderId: string, regionId: string) {
+  const now = matchNow(m);
+return db.transaction(async (tx) => {
+    const o = await lockOrder(tx, m.id, orderId);
+    if (o.status !== "open") throw httpError(409, "that order is no longer open");
+    if (o.playerId === p.id) throw httpError(400, "you cannot accept your own order");
+    const [seller] = await tx.select().from(players).where(eq(players.id, o.playerId)).limit(1);
+    if (!seller) throw httpError(404, "seller not found");
+    const offerRes = o.offerResource as TradeResource;
+    const askRes = o.askResource as TradeResource;
+
+    // Decide which seller region receives payment, then lock both regions in ascending id order.
+    const sellerDest = (await ownerOf(tx, m.id, o.regionId)) === seller.id ? o.regionId : seller.capitalRegionId;
+    if (sellerDest === regionId) throw httpError(400, "that region is not yours");
+    const ids = [regionId, ...(sellerDest ? [sellerDest] : [])].sort();
+    const locked = new Map<string, MatchRegionRow>();
+    for (const id of ids) locked.set(id, await settleAndLockRegion(tx, m.id, id, now, m.speed));
+
+    const buyerRow = locked.get(regionId)!;
+    if (buyerRow.ownerPlayerId !== p.id) throw httpError(403, "not your region");
+    if (buyerRow.frozenAt) throw httpError(409, "this region is frozen");
+    if ((stockOf(buyerRow)[askRes] ?? 0) < o.askAmount) throw httpError(409, `not enough ${askRes}`);
+
+    const paid = await applyCost(tx, buyerRow, { [askRes]: o.askAmount });
+    const received = await credit(tx, paid, offerRes, o.offerAmount);
+
+    let sellerRow = sellerDest ? (locked.get(sellerDest) ?? null) : null;
+    if (sellerRow && sellerRow.ownerPlayerId !== seller.id) sellerRow = null;
+    const sellerGot = sellerRow ? await credit(tx, sellerRow, askRes, o.askAmount) : 0;
+
+    await tx.update(marketOrders).set({ status: "filled", filledByPlayerId: p.id, filledAt: now }).where(eq(marketOrders.id, o.id));
+    await tx.insert(transfers).values([
+      { matchId: m.id, fromPlayerId: seller.id, toPlayerId: p.id, resource: offerRes, amount: o.offerAmount, via: "trade" },
+      { matchId: m.id, fromPlayerId: p.id, toPlayerId: seller.id, resource: askRes, amount: o.askAmount, via: "trade" },
+    ]);
+    const summary = { orderId: o.id, offerResource: offerRes, offerAmount: o.offerAmount, askResource: askRes, askAmount: o.askAmount };
+    await notify(tx, m.id, seller.id, `${p.name} bought your ${Math.round(o.offerAmount)} ${offerRes} for ${Math.round(o.askAmount)} ${askRes}`, {
+      ...summary,
+      buyer: p.name,
+      received: sellerGot,
+      regionId: sellerRow?.regionId ?? null,
+    });
+    await notify(tx, m.id, p.id, `You bought ${Math.round(o.offerAmount)} ${offerRes} from ${seller.name} for ${Math.round(o.askAmount)} ${askRes}`, {
+      ...summary,
+      seller: seller.name,
+      received,
+      regionId: regionId,
+    });
+    return { sellerId: seller.id, sellerRegionId: sellerRow?.regionId ?? null, received, sellerGot };
+  });
+
 }
