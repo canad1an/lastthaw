@@ -280,7 +280,9 @@ async function battle(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher: P
   const defenderUnits: UnitCounts = militia > 0 ? addUnits(target.units, { militia }) : { ...target.units };
   const bonus = effects.defense + (balance.combat.terrainDefense[region.terrain] ?? 0);
   const seed = `${m.seed}:${army.id}:${at.getTime()}`;
-  const result = resolveCombat({ units: army.units, bonus: 0 }, { units: defenderUnits, bonus }, seed);
+  // Settlers travelling with a conquest wait behind the lines; they occupy if the battle is won.
+  const { settler: settlersAlong = 0, ...fighting } = army.units;
+  const result = resolveCombat({ units: fighting, bonus: 0 }, { units: defenderUnits, bonus }, seed);
 
   // Apply defender losses (militia losses cost population).
   const { militia: militiaLost = 0, ...unitLosses } = result.defenderLosses;
@@ -323,15 +325,15 @@ async function battle(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher: P
   }
 
   if (result.attackerWon && army.mission === "conquer") {
-    const people = army.cargo.people ?? 0;
-    if (people >= balance.conquest.occupiersRequired) {
+    const occupiers = settlersAlong + (army.cargo.people ?? 0);
+    if (occupiers >= balance.conquest.occupiersRequired) {
       conquered = true;
       Object.assign(set, {
         ownerPlayerId: army.playerId,
         isCapital: false,
         units: survivors,
         popSoldiers: sumUnits(survivors),
-        popOccupiers: people,
+        popOccupiers: occupiers,
         loyalty: balance.conquest.startingLoyalty,
         assignment: { ...balance.start.assignment },
         food: Math.max((set.food as number | undefined) ?? target.food, balance.conquest.seedFood),
@@ -368,7 +370,7 @@ async function battle(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher: P
     await tx.update(armies).set({ status: "done", units: survivors }).where(eq(armies.id, army.id));
     if (defenderId) await handleRegionLost(tx, m, defenderId, army.targetRegionId, at);
   } else {
-    await sendHome(tx, m, army, at, survivors, { ...loot, people: army.cargo.people ?? 0 });
+    await sendHome(tx, m, army, at, settlersAlong > 0 ? { ...survivors, settler: settlersAlong } : survivors, { ...loot, people: army.cargo.people ?? 0 });
   }
 
   const pid = army.playerId;

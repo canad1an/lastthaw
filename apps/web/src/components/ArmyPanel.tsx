@@ -8,7 +8,7 @@ import { Countdown } from "./Countdown.js";
 const MISSIONS: Array<{ id: MissionKind; label: string; hint: string }> = [
   { id: "settle", label: "Settle", hint: "Send 5+ settlers to claim empty land; they become its first workers." },
   { id: "raid", label: "Raid", hint: "Fight, then carry off unprotected stock." },
-  { id: "conquer", label: "Conquer", hint: "Fight, then occupy with the people you bring." },
+  { id: "conquer", label: "Conquer", hint: "Fight, then settlers you bring occupy the region (at least five)." },
   { id: "scout", label: "Scout", hint: "Look at the region and come back." },
   { id: "move", label: "Move", hint: "Station units in your own or an ally's region." },
   { id: "reinforce", label: "Reinforce", hint: "Same as move, for allies." },
@@ -51,7 +51,7 @@ export function SendArmy({
     enabled: !!target && target !== owned.regionId,
   });
   const send = useMutation({
-    mutationFn: () => api.sendArmy(matchId, owned.regionId, { mission, targetRegionId: target!, units: chosen, people, cargo }),
+    mutationFn: () => api.sendArmy(matchId, owned.regionId, { mission, targetRegionId: target!, units: chosen, people: mission === "conquer" ? 0 : people, cargo }),
     onSuccess: () => {
       setUnits({});
       setPeople(0);
@@ -60,10 +60,11 @@ export function SendArmy({
     },
   });
   const targetRegion = target ? regionById(target) : null;
-  const needsPeople = mission === "conquer";
   const settlers = chosen.settler ?? 0;
+  const settlersHome = owned.units.settler ?? 0;
   const settleOk = mission !== "settle" || (settlers >= balance.settle.settlersRequired && Object.keys(chosen).every((id) => id === "settler"));
-  const canSend = !!target && target !== owned.regionId && Object.keys(chosen).length > 0 && (!needsPeople || people >= balance.conquest.occupiersRequired) && settleOk;
+  const conquerOk = mission !== "conquer" || (settlers >= balance.conquest.occupiersRequired && Object.keys(chosen).some((id) => id !== "settler"));
+  const canSend = !!target && target !== owned.regionId && Object.keys(chosen).length > 0 && settleOk && conquerOk;
 
   return (
     <div className="space-y-3 text-sm">
@@ -122,12 +123,20 @@ export function SendArmy({
         </ul>
       )}
 
-      {(mission === "conquer" || mission === "move" || mission === "reinforce") && (
+      {(mission === "move" || mission === "reinforce") && (
         <label className="flex items-center gap-2">
           <span className="w-24 text-slate-400">People</span>
           <input type="number" min={0} max={Math.floor(owned.popWorkers)} value={people} onChange={(e) => setPeople(Math.max(0, Number(e.target.value)))} className="w-24 rounded border border-slate-700 bg-slate-900 px-2 py-1" />
-          {needsPeople && <span className="text-xs text-slate-500">min {balance.conquest.occupiersRequired}</span>}
         </label>
+      )}
+      {mission === "conquer" && (
+        <p className={`text-xs ${settlersHome < balance.conquest.occupiersRequired ? "text-amber-300" : settlers < balance.conquest.occupiersRequired ? "text-slate-400" : "text-emerald-400"}`}>
+          {settlersHome < balance.conquest.occupiersRequired
+            ? `Conquest needs at least ${balance.conquest.occupiersRequired} Settlers ready here to occupy the region; you have ${settlersHome}. Train them under the Train tab.`
+            : settlers < balance.conquest.occupiersRequired
+              ? `Add at least ${balance.conquest.occupiersRequired} Settlers to the army; they stay out of the fight and become the occupiers.`
+              : `${settlers} settlers will occupy the region if the attack succeeds.`}
+        </p>
       )}
       {mission === "transport" && (
         <div className="space-y-1">

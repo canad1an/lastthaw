@@ -188,18 +188,20 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
   // People may travel unescorted on friendly moves (evacuations); every other mission needs units.
   const unescorted = (body.mission === "move" || body.mission === "reinforce") && body.people > 0;
   if (unitCount === 0 && !unescorted) throw httpError(400, body.mission === "transport" ? "send at least one caravan to carry the goods" : "send at least one unit");
-  if (body.mission === "conquer" && body.people < balance.conquest.occupiersRequired) {
-    throw httpError(400, `conquering needs at least ${balance.conquest.occupiersRequired} people to occupy the region`);
+  if (body.mission === "conquer") {
+    if ((units.settler ?? 0) < balance.conquest.occupiersRequired) throw httpError(400, `conquering needs at least ${balance.conquest.occupiersRequired} settlers ready to occupy the region; train them under the Train tab`);
+    if (Object.keys(units).every((id) => id === "settler")) throw httpError(400, "settlers cannot fight: send soldiers with them");
+    if (body.people > 0) throw httpError(400, "conquest takes settlers as occupiers, not people");
   }
-  const civilians = Object.keys(units).filter((id) => unitById.get(id)?.civilian);
-  if ((HOSTILE.has(body.mission) || body.mission === "scout") && civilians.length) throw httpError(400, "caravans and settlers cannot raid, conquer or scout");
+  const civilians = Object.keys(units).filter((id) => unitById.get(id)?.civilian && !(body.mission === "conquer" && id === "settler"));
+  if ((HOSTILE.has(body.mission) || body.mission === "scout") && civilians.length) throw httpError(400, "caravans cannot raid, conquer or scout; settlers only go along to occupy a conquest");
   if (body.mission === "relocate") throw httpError(400, "move the capital from the region panel");
   if (body.mission === "settle") {
     const settlers = units.settler ?? 0;
     if (settlers < balance.settle.settlersRequired) throw httpError(400, `settling needs at least ${balance.settle.settlersRequired} settlers`);
     if (Object.keys(units).some((id) => id !== "settler")) throw httpError(400, "only settlers can settle; send escorts separately");
   }
-  if (body.mission !== "settle" && (units.settler ?? 0) > 0) throw httpError(400, "settlers only go on settle missions");
+  if (body.mission !== "settle" && body.mission !== "conquer" && (units.settler ?? 0) > 0) throw httpError(400, "settlers only go on settle and conquer missions");
   const goods = Object.entries(body.cargo).reduce((a, [, v]) => a + v, 0);
   if (goods > 0) {
     const cap = carryCapacity(units, techs) + (HOSTILE.has(body.mission) ? 0 : body.people * balance.travel.carryPerPerson);

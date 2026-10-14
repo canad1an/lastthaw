@@ -267,10 +267,17 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
         const target = candidates[0];
         if (target) {
           const send: Record<string, number> = {};
-          for (const [id, n] of Object.entries(strong.units)) send[id] = Math.floor(n * (difficulty === "hard" ? 0.8 : 0.7));
-          const people = wantConquer ? balance.conquest.occupiersRequired + 2 : 0;
-          if (!wantConquer || strong.popWorkers > people + 10) {
-            await attempt(() => sendArmy(ctx, strong.regionId, { mission: wantConquer ? "conquer" : "raid", targetRegionId: target.id, units: send, people, cargo: {} }));
+          for (const [id, n] of Object.entries(strong.units)) if (id !== "settler" && id !== "caravan") send[id] = Math.floor(n * (difficulty === "hard" ? 0.8 : 0.7));
+          const need = balance.conquest.occupiersRequired;
+          if (wantConquer) {
+            if ((strong.units.settler ?? 0) >= need) {
+              send.settler = need;
+              await attempt(() => sendArmy(ctx, strong.regionId, { mission: "conquer", targetRegionId: target.id, units: send, people: 0, cargo: {} }));
+            } else if (queueLen(strong.regionId) < balance.queue.slotsPerRegion && !pendingJobs.some((j) => j.regionId === strong.regionId && j.kind === "train")) {
+              await attempt(() => queueTrain(ctx, strong.regionId, "settler", need));
+            }
+          } else {
+            await attempt(() => sendArmy(ctx, strong.regionId, { mission: "raid", targetRegionId: target.id, units: send, people: 0, cargo: {} }));
           }
         }
       }

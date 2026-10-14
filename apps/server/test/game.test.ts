@@ -206,7 +206,12 @@ describe("milestone 1 flow", () => {
       await runJobs();
     };
     const neighbour = regionById(aPick)!.neighbors[0]!;
-    const conquerRes = await a.call("POST", `/api/matches/${matchId}/regions/${aPick}/send`, { mission: "conquer", targetRegionId: neighbour, units: { warrior: 3 }, people: 5, cargo: {} });
+    // Conquest needs settlers along as occupiers, not people.
+    expect((await a.call("POST", `/api/matches/${matchId}/regions/${aPick}/send`, { mission: "conquer", targetRegionId: neighbour, units: { warrior: 3 }, people: 5, cargo: {} })).statusCode).toBe(400);
+    const occupierJob = await a.call("POST", `/api/matches/${matchId}/regions/${aPick}/train`, { unitId: "settler", qty: 5 });
+    expect(occupierJob.statusCode, JSON.stringify(occupierJob.json())).toBe(200);
+    await skipTo((occupierJob.json() as { endsAt: string }).endsAt);
+    const conquerRes = await a.call("POST", `/api/matches/${matchId}/regions/${aPick}/send`, { mission: "conquer", targetRegionId: neighbour, units: { warrior: 3, settler: 5 }, people: 0, cargo: {} });
     expect(conquerRes.statusCode, JSON.stringify(conquerRes.json())).toBe(200);
     state = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json());
     expect(state.armies).toHaveLength(1);
