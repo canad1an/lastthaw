@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
-import { and, eq, isNull } from "drizzle-orm";
-import { balance, colonizeBody, findRoute, sendArmyBody, travelSeconds, setCapitalBody, regionById, convertBody } from "@lastthaw/shared";
+import { and, eq, inArray, isNull } from "drizzle-orm";
+import { balance, colonizeBody, findRoute, sendArmyBody, travelSeconds, setCapitalBody, regionById, convertBody, rallyBody, unitById } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { armies, jobs, matchRegions, matches, playerTechs, players, tradeRoutes } from "../db/schema.js";
 import { matchNow } from "../sim/clock.js";
@@ -178,6 +178,66 @@ export async function armyRoutes(app: FastifyInstance, opts: { db: Db; publisher
     const r = await disbandUnits(ctx, regionId, units);
     await publisher.toPlayer(matchId, ctx.p.id, "region.updated", { regionId });
     return { ok: true, disbanded: r.disbanded };
+  });
+
+  /**
+   * Rally to the capital: stationed soldiers in every other region march there.
+   * With includeMissions, outbound armies are recalled as well (they return to
+   * the region they left from; rally again once they are home).
+   */
+  app.post("/api/matches/:id/rally", async (req) => {
+    const user = requireUser(req);
+    const matchId = (req.params as { id: string }).id;
+    const { includeMissions } = rallyBody.parse(req.body ?? {});
+    const ctx = await loadContext(matchId, user.id);
+    const { m, p } = ctx;
+    if (!p.capitalRegionId) throw httpError(409, "you have no capital");
+    const rows = await db
+      .select({ regionId: matchRegions.regionId, units: matchRegions.units, frozenAt: matchRegions.frozenAt })
+      .from(matchRegions)
+      .where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.ownerPlayerId, p.id)));
+    let groups = 0;
+    let soldiers = 0;
+    const skipped: string[] = [];
+    for (const r of rows) {
+      if (r.regionId === p.capitalRegionId || r.frozenAt) continue;
+      const units: Record<string, number> = {};
+      for (const [id, n] of Object.entries(r.units)) if (n > 0 && !unitById.get(id)?.civilian) units[id] = n;
+      const n = Object.values(units).reduce((a, b) => a + b, 0);
+      if (n === 0) continue;
+      try {
+        await sendArmy(ctx, r.regionId, { mission: "move", targetRegionId: p.capitalRegionId, units, people: 0, cargo: {} });
+        groups += 1;
+        soldiers += n;
+      } catch (err) {
+        skipped.push(`${regionById(r.regionId)?.name ?? r.regionId}: ${(err as Error).message}`);
+      }
+    }
+    let recalled = 0;
+    if (includeMissions) {
+      const now = matchNow(m);
+      const out = await db
+        .select()
+        .from(armies)
+        .where(and(eq(armies.matchId, matchId), eq(armies.playerId, p.id), eq(armies.status, "outbound"), inArray(armies.mission, ["raid", "conquer", "reinforce", "scout", "move"])));
+      for (const army of out) {
+        if (army.targetRegionId === p.capitalRegionId && army.mission === "move") continue;
+        if (Object.entries(army.units).every(([id, n]) => n <= 0 || unitById.get(id)?.civilian)) continue;
+        await db.transaction(async (tx) => {
+          const travelled = Math.max(1000, now.getTime() - army.departsAt.getTime());
+          const returnsAt = new Date(now.getTime() + travelled);
+          await tx
+            .update(jobs)
+            .set({ cancelledAt: now })
+            .where(and(eq(jobs.matchId, matchId), eq(jobs.kind, "mission"), eq(jobs.refId, army.id), isNull(jobs.completedAt), isNull(jobs.cancelledAt)));
+          await tx.update(armies).set({ status: "returning", returnsAt, note: "recalled to rally" }).where(eq(armies.id, army.id));
+          await tx.insert(jobs).values({ matchId, playerId: p.id, regionId: army.originRegionId, kind: "mission", refId: army.id, startsAt: now, endsAt: returnsAt });
+        });
+        recalled += 1;
+      }
+    }
+    await publisher.toPlayer(matchId, p.id, "army.sent", { rally: true });
+    return { ok: true, groups, soldiers, recalled, skipped };
   });
 
   /** Turn an outbound army around. It walks home over the time it has already spent travelling. */

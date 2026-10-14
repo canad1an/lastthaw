@@ -409,8 +409,26 @@ export async function handleRegionLost(tx: Tx, m: MatchRow, playerId: string, re
     return;
   }
   if (p.capitalRegionId === regionId) {
-    const next = [...remaining].sort((a, b) => b.pop - a.pop)[0]!;
-    await setCapital(tx, m.id, playerId, next.regionId);
-    await notify(tx, m.id, playerId, "system", `Your capital has moved to ${regionById(next.regionId)?.name}`, { regionId: next.regionId });
+    // Lose the capital, lose the game: the rest of the realm falls apart into neutral tribes.
+    await eliminatePlayer(tx, m, playerId, at, `Your capital, ${regionById(regionId)?.name ?? regionId}, has fallen. The realm is lost.`);
   }
+}
+
+/** Knock a player out: their regions go neutral, their queues and routes stop, their armies disband where they stand. */
+export async function eliminatePlayer(tx: Tx, m: MatchRow, playerId: string, at: Date, reason: string): Promise<void> {
+  const { tradeRoutes, marketOrders, events } = await import("../db/schema.js");
+  await tx.update(players).set({ eliminatedAt: at, capitalRegionId: null }).where(eq(players.id, playerId));
+  await tx
+    .update(matchRegions)
+    .set({ ownerPlayerId: null, isCapital: false, conquered: false, popOccupiers: 0, loyalty: 1 })
+    .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.ownerPlayerId, playerId)));
+  await tx
+    .update(jobs)
+    .set({ cancelledAt: at })
+    .where(and(eq(jobs.matchId, m.id), eq(jobs.playerId, playerId), isNull(jobs.completedAt), isNull(jobs.cancelledAt)));
+  await tx.update(armies).set({ status: "done" }).where(and(eq(armies.matchId, m.id), eq(armies.playerId, playerId), inArray(armies.status, ["outbound", "returning"])));
+  await tx.delete(tradeRoutes).where(and(eq(tradeRoutes.matchId, m.id), eq(tradeRoutes.playerId, playerId)));
+  await tx.update(marketOrders).set({ status: "cancelled" }).where(and(eq(marketOrders.matchId, m.id), eq(marketOrders.playerId, playerId), eq(marketOrders.status, "open")));
+  await tx.insert(events).values({ matchId: m.id, at, kind: "player.eliminated", payload: { playerId, reason } });
+  await notify(tx, m.id, playerId, "system", `${reason} You can watch the rest of the match and join the next one.`, {});
 }

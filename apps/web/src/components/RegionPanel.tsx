@@ -142,6 +142,7 @@ function OwnedDetails({ matchId, state, owned, clockOffsetMs, speed }: { matchId
   return (
     <div className="space-y-3">
       {owned.isCapital && <span className="inline-block rounded bg-sky-500/20 px-1.5 py-0.5 text-xs text-sky-300">Capital</span>}
+      {owned.isCapital && !owned.frozen && <Rally matchId={matchId} state={state} />}
       {owned.frozen && <span className="ml-2 inline-block rounded bg-cyan-200/20 px-1.5 py-0.5 text-xs text-cyan-200">Frozen</span>}
       {!owned.isCapital && !owned.frozen && <MakeCapital matchId={matchId} state={state} regionId={owned.regionId} clockOffsetMs={clockOffsetMs} />}
       <dl className="grid grid-cols-[auto_1fr_auto] gap-x-3 gap-y-1 text-sm">
@@ -479,6 +480,57 @@ function ArmyTab({ matchId, owned, state }: { matchId: string; owned: OwnedRegio
       )}
       <ErrorText>{disband.error?.message}</ErrorText>
     </div>
+  );
+}
+
+/** Call every soldier home: stationed units in all other regions march to the capital; optionally recall armies on missions too. */
+function Rally({ matchId, state }: { matchId: string; state: MatchStateView }) {
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [includeMissions, setIncludeMissions] = useState(false);
+  const stationed = state.owned
+    .filter((o) => !o.isCapital && !o.frozen)
+    .reduce((a, o) => a + Object.entries(o.units).reduce((x, [id, n]) => x + (unitById.get(id)?.civilian ? 0 : n), 0), 0);
+  const onMissions = state.armies.filter((a) => a.status === "outbound" && ["raid", "conquer", "reinforce", "scout", "move"].includes(a.mission) && Object.entries(a.units).some(([id, n]) => n > 0 && !unitById.get(id)?.civilian)).length;
+  const m = useMutation({
+    mutationFn: () => api.rally(matchId, includeMissions),
+    onSuccess: () => {
+      setOpen(false);
+      void qc.invalidateQueries({ queryKey: keys.matchState(matchId) });
+    },
+  });
+  return (
+    <span className="ml-2 inline-block align-middle">
+      {!open ? (
+        <button type="button" onClick={() => setOpen(true)} className="rounded-md border border-orange-400/40 bg-orange-400/10 px-2 py-0.5 text-xs font-medium text-orange-200 hover:bg-orange-400/20">
+          ⚔ Rally army here
+        </button>
+      ) : (
+        <span className="mt-1 block space-y-1 rounded-md border border-orange-400/30 bg-orange-400/5 p-2 text-xs">
+          <span className="block text-slate-300">
+            {stationed} soldier{stationed === 1 ? "" : "s"} stationed in other regions will march here. Caravans, settlers and wagons stay.
+          </span>
+          <label className="flex items-center gap-2 text-slate-300">
+            <input type="checkbox" checked={includeMissions} onChange={(e) => setIncludeMissions(e.target.checked)} className="accent-orange-400" />
+            Also recall the {onMissions} arm{onMissions === 1 ? "y" : "ies"} on missions (they return to where they left from; rally again when home)
+          </label>
+          <span className="flex gap-2">
+            <Button variant="primary" disabled={m.isPending || (stationed === 0 && !(includeMissions && onMissions > 0))} onClick={() => m.mutate()}>
+              Rally
+            </Button>
+            <Button variant="ghost" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+          </span>
+          {m.data && (
+            <span className="block text-emerald-400">
+              {m.data.soldiers} soldiers in {m.data.groups} groups on their way{m.data.recalled ? `, ${m.data.recalled} armies recalled` : ""}.{m.data.skipped.length ? ` Skipped: ${m.data.skipped.join("; ")}` : ""}
+            </span>
+          )}
+          <ErrorText>{m.error?.message}</ErrorText>
+        </span>
+      )}
+    </span>
   );
 }
 

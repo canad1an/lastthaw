@@ -154,7 +154,8 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
     }
 
     // Soldiers: keep a share under arms; double it while threatened.
-    const share = (balance.ai.soldierShare[temperament] ?? 0.2) * (underThreat ? 2 : 1);
+    // The capital is the realm: losing it loses the game, so it keeps twice the usual garrison.
+    const share = (balance.ai.soldierShare[temperament] ?? 0.2) * (underThreat ? 2 : 1) * (row.regionId === p.capitalRegionId ? 2 : 1);
     if (queueLen(row.regionId) < balance.queue.slotsPerRegion && economy.popSoldiers < pop * share && economy.popWorkers > 8) {
       const units = availableUnits(p.age, techs).filter((u) => !u.needsResource || region.resources.includes(u.needsResource));
       const best = [...units].sort((a, b) => b.attack + b.defense - (a.attack + a.defense))[0];
@@ -269,7 +270,9 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
         const target = candidates[0];
         if (target) {
           const send: Record<string, number> = {};
-          for (const [id, n] of Object.entries(strong.units)) if (!unitById.get(id)?.civilian) send[id] = Math.floor(n * (difficulty === "hard" ? 0.8 : 0.7));
+          // Never strip the capital: attacks launched from it take at most half its garrison.
+          const sendShare = strong.regionId === p.capitalRegionId ? 0.5 : difficulty === "hard" ? 0.8 : 0.7;
+          for (const [id, n] of Object.entries(strong.units)) if (!unitById.get(id)?.civilian) send[id] = Math.floor(n * sendShare);
           const need = balance.conquest.occupiersRequired;
           if (wantConquer) {
             if ((strong.units.settler ?? 0) >= need) {
