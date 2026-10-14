@@ -7,6 +7,7 @@ import { useMatchRealtime } from "../api/realtime.js";
 import { RegionPanel, ageName } from "../components/RegionPanel.js";
 import { ResearchPanel } from "../components/ResearchPanel.js";
 import { TopMenu } from "../components/TopMenu.js";
+import { overlayBadges, useOverlays } from "../map/overlays.js";
 import { IncomingWarnings } from "../components/ArmyPanel.js";
 import { ActivityPanel } from "../components/ActivityPanel.js";
 import { TradeRoutesPanel } from "../components/TradeRoutesPanel.js";
@@ -170,6 +171,8 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
     return out;
   }, [state.owned, state.sighted, state.me.playerId, colorOf]);
   const frontierSet = useMemo(() => new Set(state.frontier), [state.frontier]);
+  const { enabled: overlays, toggle: toggleOverlay } = useOverlays();
+  const badges = useMemo(() => overlayBadges(state, overlays, matchDay), [state, overlays, matchDay]);
   const paint = useCallback(
     (r: MapRegion): RegionPaint => {
       if (r.id === target) return { fill: "#facc15", opacity: 1, stroke: "#fff" };
@@ -189,7 +192,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
 
   return (
     <div className="flex h-[calc(100dvh-3rem)] flex-col">
-      <TopMenu matchId={matchId} state={state} selectedRegionId={selected} colorOf={colorOf} />
+      <TopMenu matchId={matchId} state={state} selectedRegionId={selected} colorOf={colorOf} overlays={overlays} onToggleOverlay={toggleOverlay} />
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
       <div className="relative h-1/2 w-full lg:h-full lg:flex-1">
         <WorldMap
@@ -203,6 +206,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
           dashed={state.frontier}
           armies={markers}
           roads={roadLinks}
+          badges={badges}
         />
         {picking && <div className="pointer-events-none absolute inset-x-0 top-2 text-center text-sm text-amber-300">Click a region to target it</div>}
         <div className="pointer-events-none absolute bottom-2 left-2 hidden flex-wrap gap-2 text-xs lg:flex">

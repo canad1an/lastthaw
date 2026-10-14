@@ -8,14 +8,29 @@ import { Chat } from "./Chat.js";
 import { MarketPanel } from "./MarketPanel.js";
 import { ageName } from "./RegionPanel.js";
 import { LeaderboardTable } from "../routes/leaderboard.js";
+import { OVERLAYS, OVERLAY_HINT } from "../map/overlays.js";
 
-type Menu = "messages" | "alliance" | "chat" | "market" | "players" | "leaderboard";
+type Menu = "messages" | "alliance" | "chat" | "market" | "players" | "leaderboard" | "view";
 
 /**
  * Slim menu bar above the map: Messages (with a 5-second toast for new ones),
  * Alliance, Chat, Market and Players, each opening a dropdown panel.
  */
-export function TopMenu({ matchId, state, selectedRegionId, colorOf }: { matchId: string; state: MatchStateView; selectedRegionId: string | null; colorOf: (id: string) => string }) {
+export function TopMenu({
+  matchId,
+  state,
+  selectedRegionId,
+  colorOf,
+  overlays,
+  onToggleOverlay,
+}: {
+  matchId: string;
+  state: MatchStateView;
+  selectedRegionId: string | null;
+  colorOf: (id: string) => string;
+  overlays: Set<string>;
+  onToggleOverlay: (id: string) => void;
+}) {
   const qc = useQueryClient();
   const [open, setOpen] = useState<Menu | null>(null);
   const { q, toast, clearToast } = useMessageToast(matchId, open === "messages");
@@ -56,6 +71,7 @@ export function TopMenu({ matchId, state, selectedRegionId, colorOf }: { matchId
         <Tab id="market" label="Market" />
         <Tab id="players" label="Players" badge={state.players.length} />
         <Tab id="leaderboard" label="Leaderboard" />
+        <Tab id="view" label="View" badge={overlays.size || undefined} />
         <div className="mx-2 h-5 w-px bg-slate-800" />
         {toast ? (
           <button className="min-w-0 flex-1 truncate text-left text-sm text-slate-100" onClick={() => toggle("messages")}>
@@ -87,6 +103,24 @@ export function TopMenu({ matchId, state, selectedRegionId, colorOf }: { matchId
           {open === "leaderboard" && (
             <div className="overflow-x-auto">
               <LeaderboardTable matchId={matchId} compact />
+            </div>
+          )}
+          {open === "view" && (
+            <div className="space-y-1 p-3 text-sm">
+              <p className="mb-2 text-xs text-slate-400">Map overlays. Each marks your regions with a badge; several can be on at once.</p>
+              {OVERLAYS.map((o) => (
+                <label key={o.id} className="flex cursor-pointer items-start gap-2 rounded px-1 py-1 hover:bg-slate-900">
+                  <input type="checkbox" checked={overlays.has(o.id)} onChange={() => onToggleOverlay(o.id)} className="mt-1 accent-sky-400" />
+                  <span className="mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-slate-950" style={{ background: o.colour }}>
+                    {o.glyph}
+                  </span>
+                  <span>
+                    <span className="text-slate-100">{o.label}</span>
+                    <span className="block text-xs text-slate-400">{o.description}</span>
+                  </span>
+                </label>
+              ))}
+              <p className="pt-1 text-xs text-slate-500">{OVERLAY_HINT}</p>
             </div>
           )}
           {open === "players" && (

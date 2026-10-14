@@ -26,6 +26,8 @@ export interface WorldMapProps {
   armies?: ArmyMarker[];
   /** Road links to draw between adjacent road regions: [a, b, colour]. */
   roads?: Array<[string, string, string]>;
+  /** Overlay badges (View menu): small glyph markers at region centres. */
+  badges?: Array<{ regionId: string; colour: string; glyph: string; label: string }>;
 }
 
 /** Missions drawn as military (orange, sword) rather than civil traffic. */
@@ -59,7 +61,7 @@ const MAX_K = 14;
  * Rendering ~400 paths is cheap; the expensive part is re-rendering on every
  * state change, so the static layer is memoized and only the paint changes.
  */
-export function WorldMap({ paint, selected, onSelect, focus, className = "", ice, flags = [], dashed = [], armies = [], roads = [] }: WorldMapProps) {
+export function WorldMap({ paint, selected, onSelect, focus, className = "", ice, flags = [], dashed = [], armies = [], roads = [], badges = [] }: WorldMapProps) {
   const [hoverArmy, setHoverArmy] = useState<string | null>(null);
   const [routeArmy, setRouteArmy] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -228,6 +230,23 @@ export function WorldMap({ paint, selected, onSelect, focus, className = "", ice
               <g key={`${a}-${b}`}>
                 <line x1={ra.x} y1={ra.y} x2={rb.x} y2={rb.y} stroke="#0f172a" strokeWidth={w * 1.9} strokeLinecap="round" opacity={0.7} />
                 <line x1={ra.x} y1={ra.y} x2={rb.x} y2={rb.y} stroke={colour} strokeWidth={w} strokeLinecap="round" strokeDasharray={`${w * 3} ${w * 1.5}`} />
+              </g>
+            );
+          })}
+          {badges.map((b, i) => {
+            const r = regionById(b.regionId);
+            if (!r) return null;
+            // Fan several badges on one region around its centre so each stays visible.
+            const k = badges.slice(0, i).filter((x) => x.regionId === b.regionId).length;
+            const s = unitsPerPx / view.k;
+            const dx = 9 + k * 11;
+            return (
+              <g key={`${b.regionId}-${i}`} transform={`translate(${r.x} ${r.y}) scale(${s})`} pointerEvents="auto">
+                <title>{b.label}</title>
+                <circle cx={dx} cy={-9} r={5.5} fill={b.colour} stroke="#0b1a2b" strokeWidth={1.2} />
+                <text x={dx} y={-9} textAnchor="middle" dominantBaseline="central" fontSize={7} fontWeight={700} fill="#0b1a2b">
+                  {b.glyph}
+                </text>
               </g>
             );
           })}
