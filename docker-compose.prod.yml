@@ -1,0 +1,57 @@
+# Production overrides for the dedicated Last Thaw Lightsail instance.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile app up -d
+services:
+  postgres:
+    ports: []
+    restart: unless-stopped
+
+  redis:
+    ports: []
+    restart: unless-stopped
+
+  mailpit:
+    profiles: ["never"]
+
+  api:
+    restart: unless-stopped
+    ports: []
+    environment:
+      NODE_ENV: production
+      DEV_TOOLS: "false"
+      SMTP_HOST: ${SMTP_HOST}
+      PUBLIC_URL: https://lastthaw.com
+
+  worker:
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DEV_TOOLS: "false"
+      SMTP_HOST: ${SMTP_HOST}
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    profiles: ["app"]
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - webdist:/srv/web:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+      - web
+    profiles: ["app"]
+
+volumes:
+  webdist:
+  caddy_data:
+  caddy_config:

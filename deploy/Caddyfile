@@ -1,0 +1,15 @@
+# Production reverse proxy for the dedicated Last Thaw Lightsail instance.
+# Caddy obtains and renews the TLS certificate for lastthaw.com automatically.
+lastthaw.com, www.lastthaw.com {
+    encode zstd gzip
+
+    handle /api/* {
+        reverse_proxy api:3000
+    }
+
+    handle {
+        root * /srv/web
+        try_files {path} /index.html
+        file_server
+    }
+}

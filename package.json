@@ -1,0 +1,30 @@
+{
+  "name": "lastthaw",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Last Thaw: a 30-day browser strategy game on a freezing Earth",
+  "workspaces": [
+    "packages/*",
+    "apps/*",
+    "tools/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "npm run dev --workspace=@lastthaw/server & npm run dev --workspace=@lastthaw/web",
+    "dev:api": "npm run dev:api --workspace=@lastthaw/server",
+    "dev:worker": "npm run dev:worker --workspace=@lastthaw/server",
+    "dev:web": "npm run dev --workspace=@lastthaw/web",
+    "db:generate": "npm run db:generate --workspace=@lastthaw/server",
+    "db:migrate": "npm run db:migrate --workspace=@lastthaw/server",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "infra:up": "docker compose up -d postgres redis mailpit",
+    "infra:down": "docker compose down"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}
