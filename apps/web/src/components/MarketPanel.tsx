@@ -39,7 +39,9 @@ export function MarketPanel({ matchId, state, selectedRegionId }: { matchId: str
     <Card className="space-y-2">
       <button className="flex w-full items-center justify-between text-sm font-medium" onClick={() => setOpen((o) => !o)}>
         <span>Market</span>
-        <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-400">{others.length} offers</span>
+        <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-400">
+          {others.length + mine.filter((o) => o.status === "open").length} offers{mine.some((o) => o.status === "open") ? ` (${mine.filter((o) => o.status === "open").length} mine)` : ""}
+        </span>
       </button>
       {open && (
         <div className="space-y-3">

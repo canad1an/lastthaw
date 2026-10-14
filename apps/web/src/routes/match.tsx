@@ -134,7 +134,10 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
     },
     [picking],
   );
-  const clockOffsetMs = Date.parse(state.match.now) - Date.now();
+  // Server-time offset, captured once per state fetch. Recomputing it every render
+  // would pin countdowns to the moment the snapshot was taken.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const clockOffsetMs = useMemo(() => Date.parse(state.match.now) - Date.now(), [state.match.now]);
   const endsIn = (Date.parse(state.match.endsAt) - (now + clockOffsetMs)) / 1000;
   const [forecast, setForecast] = useState(false);
   const matchDay = Math.min(balance.match.lengthDays, Math.max(0, ((now + clockOffsetMs - Date.parse(state.match.startsAt)) / 86400_000) * state.match.speed));
