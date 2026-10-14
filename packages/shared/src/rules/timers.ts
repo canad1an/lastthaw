@@ -25,9 +25,9 @@ export function dayCostMultiplier(day: number): number {
   return pts[pts.length - 1]!.mult;
 }
 
-export function buildingCost(def: BuildingDef, level: number, day = 0): Cost {
+export function buildingCost(def: BuildingDef, level: number, day = 0, neighbors = 1): Cost {
   const g = Math.pow(balance.timers.costGrowth, Math.max(0, level - 1));
-  return scaleCost(def.cost, g * dayCostMultiplier(day));
+  return scaleCost(def.cost, g * dayCostMultiplier(day) * (def.perNeighbor ? Math.max(1, neighbors) : 1));
 }
 
 /** Age advances are priced in absolute empire wealth (paid from every region) and do not scale with the day; other techs do. */

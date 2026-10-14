@@ -53,7 +53,6 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
         trainSpeed: effects.trainSpeed,
         protect: effects.protect,
         harbor: effects.harbor,
-        roads: effects.roads,
       },
       loyalty: row.loyalty,
       iceFactor: economy.iceFactor,
@@ -69,13 +68,14 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
     .from(regionSightings)
     .where(and(eq(regionSightings.matchId, matchId), eq(regionSightings.playerId, me.id)));
   const sighted: SightedRegionView[] = sightRows.map((s) => {
-    const snap = s.snapshot as { ownerPlayerId?: string | null; ownerName?: string | null; population?: number | null };
+    const snap = s.snapshot as { ownerPlayerId?: string | null; ownerName?: string | null; population?: number | null; buildings?: Record<string, number> };
     return {
       regionId: s.regionId,
       ownerPlayerId: snap.ownerPlayerId ?? null,
       ownerName: snap.ownerName ?? null,
       population: snap.population ?? null,
       seenAt: s.seenAt.toISOString(),
+      roads: (snap.buildings?.roads ?? 0) >= 1,
     };
   });
 
@@ -102,6 +102,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
         ownerName: row.ownerPlayerId ? (allyNames.get(row.ownerPlayerId) ?? null) : null,
         population: economy.popWorkers + economy.popSoldiers + economy.popOccupiers,
         seenAt: now.toISOString(),
+        roads: ((row.buildings as Record<string, number>).roads ?? 0) >= 1,
       };
       if (seen.has(row.regionId)) {
         const i = sighted.findIndex((s) => s.regionId === row.regionId);

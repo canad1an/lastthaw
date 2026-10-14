@@ -30,7 +30,7 @@ export type Difficulty = "easy" | "medium" | "hard";
 export type Temperament = "peaceful" | "balanced" | "raider";
 
 const BUILD_ORDER = ["huts", "hunting_grounds", "lumber_camp", "storehouse", "quarry", "farm", "palisade", "granary", "mine", "stables", "walls", "barracks", "roads", "temple", "forge", "market", "aqueduct", "fort", "library", "harbor", "windmill", "castle", "guild_hall", "university", "cathedral"];
-const RESEARCH_ORDER = ["fire_making", "flint_tools", "agriculture", "animal_husbandry", "bronze_working", "mining", "writing", "the_wheel", "iron_working", "masonry", "siegecraft", "drill", "engineering", "shipbuilding", "chivalry", "siege_engines", "scholasticism"];
+const RESEARCH_ORDER = ["fire_making", "flint_tools", "agriculture", "animal_husbandry", "bronze_working", "mining", "writing", "the_wheel", "road_building", "iron_working", "masonry", "siegecraft", "drill", "engineering", "shipbuilding", "chivalry", "siege_engines", "scholasticism"];
 
 /** What each difficulty is allowed to do. Harder tiers never cheat; they just decide better and more often. */
 const TIER = {
@@ -133,7 +133,7 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
       if (buildingBlockedBy(def, region)) continue;
       const level = row.buildings[id] ?? 0;
       if (level >= Math.min(def.maxLevel, tier.buildCap(p.age))) continue;
-      const cost = buildingCost(def, level + 1, matchDay);
+      const cost = buildingCost(def, level + 1, matchDay, region.neighbors.length);
       if (!wanted) wanted = cost;
       if (slots <= 0) break;
       if (tier.hoards && !comfortablyAffordable(economy, cost)) continue;

@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   balance,
   computeRates,
@@ -143,6 +143,16 @@ export async function setCapital(tx: Tx, matchId: string, playerId: string, regi
   await tx.update(matchRegions).set({ isCapital: false }).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.ownerPlayerId, playerId), eq(matchRegions.isCapital, true)));
   await tx.update(matchRegions).set({ isCapital: true }).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, regionId)));
   await tx.update(players).set({ capitalRegionId: regionId }).where(eq(players.id, playerId));
+}
+
+/** Regions with Roads that this player may use: their own and their allies'. */
+export async function roadSetFor(db: Db | Tx, matchId: string, playerId: string, allies: readonly string[]): Promise<Set<string>> {
+  const owners = [playerId, ...allies];
+  const rows = await db
+    .select({ regionId: matchRegions.regionId, buildings: matchRegions.buildings })
+    .from(matchRegions)
+    .where(and(eq(matchRegions.matchId, matchId), inArray(matchRegions.ownerPlayerId, owners), isNull(matchRegions.frozenAt)));
+  return new Set(rows.filter((r) => ((r.buildings as Record<string, number>).roads ?? 0) >= 1).map((r) => r.regionId));
 }
 
 export async function countOwnedRegions(db: Db | Tx, matchId: string): Promise<Map<string, number>> {

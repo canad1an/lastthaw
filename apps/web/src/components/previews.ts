@@ -68,7 +68,8 @@ export function buildingPreview(def: BuildingDef, level: number, buildings: Reco
   if (e.loyalty) rows.push({ label: "Loyalty bonus", before: `+${pct(before.loyalty)}`, after: `+${pct(after.loyalty)}`, tone: "up" });
   if (e.trainSpeed) rows.push({ label: "Training speed", before: `+${pct(before.trainSpeed)}`, after: `+${pct(after.trainSpeed)}`, tone: "up" });
   if (e.researchSpeed) rows.push({ label: "Research speed", before: `+${pct(before.researchSpeed)}`, after: `+${pct(after.researchSpeed)}`, tone: "up" });
-  if (e.roads) rows.push({ label: "Travel bonus", before: `+${pct(before.roads)}`, after: `+${pct(after.roads)}`, tone: "up" });
+  if (def.perNeighbor) rows.push({ label: "Connects to", before: "", after: `${region.neighbors.length} neighbouring regions`, tone: "up" });
+  if (def.perNeighbor) rows.push({ label: "Travel on road legs", before: "", after: `${Math.round((1 - balance.travel.roadBothFactor) * 100)}% faster (both ends), ${Math.round((1 - balance.travel.roadOneFactor) * 100)}% (one end)`, tone: "up" });
   if (e.harbor) rows.push({ label: "Sea routes", before: before.harbor ? "yes" : "no", after: "yes", tone: "up" });
 
   const summary = describeBuilding(def);
@@ -91,7 +92,6 @@ function describeBuilding(def: BuildingDef): string {
   if (e.loyalty) per.push(`+${pct(e.loyalty)} loyalty`);
   if (e.trainSpeed) per.push(`+${pct(e.trainSpeed)} training speed`);
   if (e.researchSpeed) per.push(`+${pct(e.researchSpeed)} research speed`);
-  if (e.roads) per.push(`+${pct(e.roads)} travel speed`);
   if (e.harbor) per.push("lets armies use sea routes");
   if (per.length) parts.push(`Per level: ${per.join(", ")}. Max level ${def.maxLevel}.`);
   return parts.join(" ");

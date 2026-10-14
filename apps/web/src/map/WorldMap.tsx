@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
-import { allRegions, balance, freezeDayForLatitude, iceExposure, iceLatitudeOnDay, world, type MapRegion } from "@lastthaw/shared";
+import { allRegions, balance, freezeDayForLatitude, iceExposure, iceLatitudeOnDay, world, type MapRegion, regionById } from "@lastthaw/shared";
 import type { ArmyMarker } from "./armyMarkers.js";
 
 export type RegionPaint = {
@@ -24,6 +24,8 @@ export interface WorldMapProps {
   dashed?: string[];
   /** Armies to draw as moving markers. */
   armies?: ArmyMarker[];
+  /** Road links to draw between adjacent road regions: [a, b, colour]. */
+  roads?: Array<[string, string, string]>;
 }
 
 const TERRAIN_FILL: Record<string, string> = {
@@ -54,7 +56,7 @@ const MAX_K = 14;
  * Rendering ~400 paths is cheap; the expensive part is re-rendering on every
  * state change, so the static layer is memoized and only the paint changes.
  */
-export function WorldMap({ paint, selected, onSelect, focus, className = "", ice, flags = [], dashed = [], armies = [] }: WorldMapProps) {
+export function WorldMap({ paint, selected, onSelect, focus, className = "", ice, flags = [], dashed = [], armies = [], roads = [] }: WorldMapProps) {
   const [hoverArmy, setHoverArmy] = useState<string | null>(null);
   const [routeArmy, setRouteArmy] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -211,6 +213,18 @@ export function WorldMap({ paint, selected, onSelect, focus, className = "", ice
                     ))}
                   </>
                 )}
+              </g>
+            );
+          })}
+          {roads.map(([a, b, colour]) => {
+            const ra = regionById(a);
+            const rb = regionById(b);
+            if (!ra || !rb) return null;
+            const w = (unitsPerPx / view.k) * 1.6;
+            return (
+              <g key={`${a}-${b}`}>
+                <line x1={ra.x} y1={ra.y} x2={rb.x} y2={rb.y} stroke="#0f172a" strokeWidth={w * 1.9} strokeLinecap="round" opacity={0.7} />
+                <line x1={ra.x} y1={ra.y} x2={rb.x} y2={rb.y} stroke={colour} strokeWidth={w} strokeLinecap="round" strokeDasharray={`${w * 3} ${w * 1.5}`} />
               </g>
             );
           })}

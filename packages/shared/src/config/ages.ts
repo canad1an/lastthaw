@@ -38,10 +38,12 @@ export interface BuildingEffect {
   /** Lets armies use sea routes from this region. */
   harbor?: boolean;
   /** Reduces travel time for armies leaving or entering, per level. */
-  roads?: number;
+
 }
 
 export interface BuildingDef {
+  /** Cost is per adjacent region: one build connects the region to all of its neighbours. */
+  perNeighbor?: boolean;
   id: string;
   name: string;
   age: AgeIndex;
@@ -117,7 +119,7 @@ export const BUILDINGS: readonly BuildingDef[] = [
   // Iron
   { id: "forge", name: "Forge", age: 2, description: "Works iron faster; speeds up training.", maxLevel: 10, cost: { wood: 200, stone: 200, iron: 20 }, baseSeconds: 400, effect: { trainSpeed: 0.06, extract: { iron: 0.8 } }, requires: "iron_working" },
   { id: "walls", name: "Stone walls", age: 2, description: "Solid walls around the settlement.", maxLevel: 10, cost: { stone: 400, wood: 100 }, baseSeconds: 500, effect: { defense: 0.18 }, requires: "masonry" },
-  { id: "roads", name: "Roads", age: 2, description: "Faster movement and firmer control of distant lands.", maxLevel: 10, cost: { stone: 250, wood: 80 }, baseSeconds: 350, effect: { roads: 0.05, loyalty: 0.08 }, requires: "masonry" },
+  { id: "roads", name: "Roads", age: 1, description: "Paved roads to every neighbouring region. Built once; legs between two road regions are much faster, and the region is easier to hold.", maxLevel: 1, cost: { stone: 80, wood: 40 }, perNeighbor: true, baseSeconds: 600, effect: { loyalty: 0.1 }, requires: "road_building" },
   { id: "temple", name: "Temple", age: 2, description: "Binds a conquered people to their new rulers.", maxLevel: 10, cost: { stone: 300, wood: 150, food: 100 }, baseSeconds: 450, effect: { loyalty: 0.12 } },
   { id: "barracks", name: "Barracks", age: 2, description: "Trains soldiers faster.", maxLevel: 10, cost: { wood: 300, stone: 150 }, baseSeconds: 400, effect: { trainSpeed: 0.1 } },
   // Classical
@@ -178,11 +180,12 @@ export const TECHS: readonly TechDef[] = [
   // Bronze
   { id: "mining", name: "Mining", age: 1, description: "Dig for metals.", cost: { wood: 300, stone: 300 }, baseSeconds: 600 },
   { id: "the_wheel", name: "The wheel", age: 1, description: "Carts and chariots.", cost: { wood: 400, food: 200 }, baseSeconds: 700, requires: ["animal_husbandry"] },
+  { id: "road_building", name: "Road building", age: 1, description: "Surveyed, drained and paved ways. Lets a region build Roads to all of its neighbours.", cost: { wood: 600, stone: 400 }, baseSeconds: 900, requires: ["the_wheel"] },
   { id: "writing", name: "Writing", age: 1, description: "Records and learning.", cost: { food: 300, wood: 300 }, baseSeconds: 800 },
   { id: "iron_working", name: "Iron working", age: 1, description: "Smelt iron. Enters the Iron Age.", cost: { wood: 5000, stone: 3000, copper: 40 }, baseSeconds: 14400, requires: ["mining"], advancesTo: 2, earliestDay: 4 },
   // Iron
   { id: "siegecraft", name: "Siegecraft", age: 2, description: "Engines to break walls.", cost: { wood: 900, iron: 40 }, baseSeconds: 1800 },
-  { id: "masonry", name: "Masonry", age: 2, description: "Cut and fitted stone. Unlocks Stone walls and Roads, and leads to Drill.", cost: { stone: 1000, wood: 400 }, baseSeconds: 1800 },
+  { id: "masonry", name: "Masonry", age: 2, description: "Cut and fitted stone. Unlocks Stone walls and leads to Drill.", cost: { stone: 1000, wood: 400 }, baseSeconds: 1800 },
   { id: "drill", name: "Drill", age: 2, description: "Professional soldiers. Enters the Classical Age.", cost: { food: 40000, wood: 25000, iron: 800 }, baseSeconds: 21600, requires: ["masonry", "writing"], advancesTo: 3, earliestDay: 11 },
   // Classical
   { id: "shipbuilding", name: "Shipbuilding", age: 3, description: "Boats that cross open sea.", cost: { wood: 2000, stone: 500 }, baseSeconds: 4800 },

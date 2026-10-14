@@ -122,6 +122,9 @@ export const balance = {
     } as Record<string, number>,
     /** Entering a coastal or river region is faster. */
     waterwayFactor: 0.85,
+    /** A leg is this much shorter when both ends have Roads (yours or an ally's), and this much when only one end does. */
+    roadBothFactor: 0.6,
+    roadOneFactor: 0.8,
     /** Sea legs are fast once boats exist. */
     seaFactor: 0.7,
     /** Tech that allows armies to use sea routes. */

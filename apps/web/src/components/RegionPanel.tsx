@@ -275,7 +275,7 @@ function BuildTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
           const queued = pendingHere.filter((j) => j.kind === "build" && j.refId === b.id).length;
           const level = (owned.buildings[b.id] ?? 0) + queued + 1;
           const maxed = level > b.maxLevel;
-          const cost = buildingCost(b, level, matchDayOf(state, clockOffsetMs));
+          const cost = buildingCost(b, level, matchDayOf(state, clockOffsetMs), regionById(owned.regionId)?.neighbors.length ?? 1);
           const blocked = buildingBlockedBy(b, regionById(owned.regionId)!);
           const ok = !maxed && !queueFull && !blocked && canAfford(stock, cost);
           const secs = realSeconds(buildingSeconds(b, level), 0, state.match.speed);

@@ -8,7 +8,8 @@ import { requireUser } from "../auth/session.js";
 import type { Publisher } from "../realtime/publish.js";
 import { httpError, sendArmy, type CommandContext } from "../sim/commands.js";
 import { disbandUnits, evacuateRegion } from "../sim/evacuate.js";
-import { setCapital } from "../sim/regions.js";
+import { roadSetFor, setCapital } from "../sim/regions.js";
+import { alliesOf } from "../sim/alliances.js";
 import { z } from "zod";
 
 export async function armyRoutes(app: FastifyInstance, opts: { db: Db; publisher: Publisher }) {
@@ -34,8 +35,9 @@ export async function armyRoutes(app: FastifyInstance, opts: { db: Db; publisher
     const matchId = (req.params as { id: string }).id;
     const q = req.query as { from?: string; to?: string; speed?: string };
     if (!q.from || !q.to) throw httpError(400, "from and to are required");
-    const { m, techs } = await loadContext(matchId, user.id);
-    const route = findRoute(q.from, q.to, techs.has(balance.travel.seaTech));
+    const { m, p, techs } = await loadContext(matchId, user.id);
+    const roads = await roadSetFor(db, m.id, p.id, await alliesOf(db, m.id, p.id));
+    const route = findRoute(q.from, q.to, techs.has(balance.travel.seaTech), roads);
     if (!route) throw httpError(400, techs.has(balance.travel.seaTech) ? "no route" : "no land route; Shipbuilding allows sea crossings");
     const speed = Number(q.speed ?? 5) || 5;
     return { path: route.path, seconds: travelSeconds(route, speed, m.speed), usesSea: route.usesSea };

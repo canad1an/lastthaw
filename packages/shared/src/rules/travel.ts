@@ -10,7 +10,7 @@ export interface Route {
   usesSea: boolean;
 }
 
-function edgeCost(from: string, to: string, sea: boolean): number {
+function edgeCost(from: string, to: string, sea: boolean, roads?: ReadonlySet<string>): number {
   const a = regionById(from)!;
   const b = regionById(to)!;
   const t = balance.travel;
@@ -18,6 +18,11 @@ function edgeCost(from: string, to: string, sea: boolean): number {
   if (sea) return c * t.seaFactor;
   c *= t.terrain[b.terrain] ?? 1;
   if (b.river || b.coastal) c *= t.waterwayFactor;
+  if (roads) {
+    const n = (roads.has(from) ? 1 : 0) + (roads.has(to) ? 1 : 0);
+    if (n === 2) c *= t.roadBothFactor;
+    else if (n === 1) c *= t.roadOneFactor;
+  }
   return c;
 }
 
@@ -25,7 +30,7 @@ function edgeCost(from: string, to: string, sea: boolean): number {
  * Shortest route over land borders and, if allowed, sea routes. Dijkstra over
  * ~400 nodes; cheap enough to run per request.
  */
-export function findRoute(origin: string, target: string, allowSea: boolean): Route | null {
+export function findRoute(origin: string, target: string, allowSea: boolean, roads?: ReadonlySet<string>): Route | null {
   if (origin === target) return { path: [origin], cost: 0, usesSea: false };
   const dist = new Map<string, number>([[origin, 0]]);
   const prev = new Map<string, { from: string; sea: boolean }>();
@@ -51,7 +56,7 @@ export function findRoute(origin: string, target: string, allowSea: boolean): Ro
     if (allowSea) for (const n of r.seaRoutes) edges.push([n, true]);
     for (const [n, sea] of edges) {
       if (closed.has(n)) continue;
-      const nd = best + edgeCost(cur, n, sea);
+      const nd = best + edgeCost(cur, n, sea, roads);
       if (nd < (dist.get(n) ?? Infinity)) {
         dist.set(n, nd);
         prev.set(n, { from: cur, sea });

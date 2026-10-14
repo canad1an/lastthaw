@@ -108,7 +108,6 @@ export const ownedRegionView = z.object({
     trainSpeed: z.number(),
     protect: z.number(),
     harbor: z.boolean(),
-    roads: z.number(),
   }),
   loyalty: z.number(),
   /** Production multiplier from the ice taper: 1 untouched, down to 0.25 before freezing. */
@@ -233,6 +232,8 @@ export const sightedRegionView = z.object({
   ownerName: z.string().nullable(),
   population: z.number().nullable(),
   seenAt: z.string(),
+  /** The region had Roads when last seen (allies: live). */
+  roads: z.boolean().default(false),
 });
 export type SightedRegionView = z.infer<typeof sightedRegionView>;
 

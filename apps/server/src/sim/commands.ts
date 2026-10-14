@@ -9,8 +9,8 @@ import { armySpeed, balance, buildingBlockedBy, carryCapacity, buildingById, bui
 import type { Db } from "../db/client.js";
 import { armies, jobs, matchRegions, players } from "../db/schema.js";
 import { matchDayAt, matchNow } from "./clock.js";
-import { applyCost, settleAndLockRegion, stockOf, type MatchRegionRow, type Tx } from "./regions.js";
-import { areAllied } from "./alliances.js";
+import { applyCost, settleAndLockRegion, stockOf, type MatchRegionRow, type Tx, roadSetFor } from "./regions.js";
+import { alliesOf, areAllied } from "./alliances.js";
 import type { MatchRow } from "../worker/jobs.js";
 
 export type PlayerRow = typeof players.$inferSelect;
@@ -56,7 +56,7 @@ export async function queueBuild(ctx: CommandContext, regionId: string, building
     const queuedLevels = pending.filter((j) => j.kind === "build" && j.refId === buildingId).length;
     const level = (row.buildings[buildingId] ?? 0) + queuedLevels + 1;
     if (level > def.maxLevel) throw httpError(400, `${def.name} is at its maximum level`);
-    const cost = buildingCost(def, level, matchDayAt(m, now));
+    const cost = buildingCost(def, level, matchDayAt(m, now), regionById(regionId)?.neighbors.length ?? 1);
     const stock = stockOf(row);
     if (!canAfford(stock, cost)) throw httpError(409, `not enough ${missingFor(stock, cost).join(", ")}`);
     await applyCost(tx, row, cost);
@@ -204,18 +204,17 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
     const cap = carryCapacity(units, techs) + (HOSTILE.has(body.mission) ? 0 : body.people * balance.travel.carryPerPerson);
     if (goods > cap) throw httpError(400, `not enough carrying capacity: these units and people carry ${cap}, you are sending ${Math.round(goods)}. Caravans carry ${caravanCarry(techs)} each.`);
   }
-  const route = findRoute(regionId, body.targetRegionId, techs.has(balance.travel.seaTech));
+  const roads = await roadSetFor(db, m.id, p.id, await alliesOf(db, m.id, p.id));
+  const route = findRoute(regionId, body.targetRegionId, techs.has(balance.travel.seaTech), roads);
   if (!route) throw httpError(400, techs.has(balance.travel.seaTech) ? "no route to that region" : "no land route; research Shipbuilding to cross the sea");
   const now = matchNow(m);
 
   return db.transaction(async (tx) => {
     const origin = await settleAndLockRegion(tx, m.id, regionId, now, m.speed);
     if (origin.ownerPlayerId !== p.id) throw httpError(403, "not your region");
-    // Roads at the origin speed up friendly traffic (caravans, moves, reinforcements).
-    const friendlyMission = body.mission === "transport" || body.mission === "move" || body.mission === "reinforce";
-    const roadBonus = friendlyMission ? effectsOf(origin.buildings).roads : 0;
+    // Roads are already in the route cost: legs between road regions are shorter.
     const walking = unitById.get("settler")?.speed ?? 4;
-    const seconds = travelSeconds(route, (unitCount ? armySpeed(units) : walking) * (1 + roadBonus), m.speed);
+    const seconds = travelSeconds(route, unitCount ? armySpeed(units) : walking, m.speed);
 
     const [target] = await tx
       .select()

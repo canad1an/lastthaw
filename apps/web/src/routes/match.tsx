@@ -156,6 +156,19 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
   const sightedBy = useMemo(() => new Map(state.sighted.map((s) => [s.regionId, s])), [state.sighted]);
 
   const incomingSet = useMemo(() => new Set(state.incoming.map((i) => i.targetRegionId)), [state.incoming]);
+  // Road links: between adjacent regions that both have Roads, among mine and what I can see.
+  const roadLinks = useMemo(() => {
+    const colour = new Map<string, string>();
+    for (const o of state.owned) if ((o.buildings.roads ?? 0) >= 1 && !o.frozen) colour.set(o.regionId, colorOf(state.me.playerId));
+    for (const s of state.sighted) if (s.roads && !colour.has(s.regionId)) colour.set(s.regionId, "#cbd5e1");
+    const out: Array<[string, string, string]> = [];
+    for (const [id, c] of colour) {
+      for (const n of regionById(id)?.neighbors ?? []) {
+        if (id < n && colour.has(n)) out.push([id, n, c === colour.get(n) ? c : "#cbd5e1"]);
+      }
+    }
+    return out;
+  }, [state.owned, state.sighted, state.me.playerId, colorOf]);
   const frontierSet = useMemo(() => new Set(state.frontier), [state.frontier]);
   const paint = useCallback(
     (r: MapRegion): RegionPaint => {
@@ -189,6 +202,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
           flags={state.me.capitalRegionId ? [state.me.capitalRegionId] : []}
           dashed={state.frontier}
           armies={markers}
+          roads={roadLinks}
         />
         {picking && <div className="pointer-events-none absolute inset-x-0 top-2 text-center text-sm text-amber-300">Click a region to target it</div>}
         <div className="pointer-events-none absolute bottom-2 left-2 hidden flex-wrap gap-2 text-xs lg:flex">
