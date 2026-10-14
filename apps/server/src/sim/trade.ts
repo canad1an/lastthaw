@@ -36,9 +36,11 @@ export async function runTradeRoutes(db: Db, publisher: Publisher, log: pino.Log
         sent += 1;
         await publisher.toPlayer(m.id, p.id, "army.sent", { routeId: route.id });
       }
+      // A skipped trip (no caravans home, empty stock) retries soon rather than waiting a whole interval.
+      const waitHours = result.startsWith("sent") ? route.everyHours : Math.min(route.everyHours, 0.25);
       await db
         .update(tradeRoutes)
-        .set({ lastResult: result, lastRunAt: now, nextAt: new Date(now.getTime() + (route.everyHours * 3600 * 1000) / m.speed) })
+        .set({ lastResult: result, lastRunAt: now, nextAt: new Date(now.getTime() + (waitHours * 3600 * 1000) / m.speed) })
         .where(eq(tradeRoutes.id, route.id));
     } catch (err) {
       log.warn({ err, routeId: route.id }, "trade route failed");
