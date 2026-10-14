@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
-import { allRegions, balance, freezeDayForLatitude, iceLatitudeOnDay, world, type MapRegion } from "@lastthaw/shared";
+import { allRegions, balance, freezeDayForLatitude, iceExposure, iceLatitudeOnDay, world, type MapRegion } from "@lastthaw/shared";
 import type { ArmyMarker } from "./armyMarkers.js";
 
 export type RegionPaint = {
@@ -285,8 +285,9 @@ const IceLayer = memo(function IceLayer({ ice, k: zoom }: { ice: { latitude: num
   return (
     <g pointerEvents="none">
       {allRegions().map((r) => {
-        const frozen = Math.abs(r.lat) >= ice.latitude;
-        if (frozen) return <path key={r.id} d={r.path} fill="#e0f2fe" fillOpacity={0.75} />;
+        const exp = iceExposure(r, ice.day);
+        if (exp.frozen) return <path key={r.id} d={r.path} fill="#e0f2fe" fillOpacity={0.75} />;
+        if (exp.touched) return <path key={r.id} d={r.path} fill="#e0f2fe" fillOpacity={0.2 + 0.4 * (1 - exp.factor)} />;
         if (!ice.forecast) return null;
         const day = freezeDayForLatitude(Math.abs(r.lat));
         if (day === null) return null;

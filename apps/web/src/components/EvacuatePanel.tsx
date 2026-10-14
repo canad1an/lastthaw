@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { balance, carryCapacity, distanceKm, freezeDayForLatitude, regionById, type MatchStateView, type OwnedRegionView } from "@lastthaw/shared";
+import { balance, carryCapacity, distanceKm, freezeDayForLatitude, iceDaysFor, regionById, type MatchStateView, type OwnedRegionView } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { Button, ErrorText, fmt } from "./ui.js";
 
@@ -11,9 +11,10 @@ import { Button, ErrorText, fmt } from "./ui.js";
 export function EvacuatePanel({ matchId, state, owned, matchDay }: { matchId: string; state: MatchStateView; owned: OwnedRegionView; matchDay: number }) {
   const qc = useQueryClient();
   const region = regionById(owned.regionId)!;
-  const freezeDay = freezeDayForLatitude(Math.abs(region.lat));
+  const { touch: touchDay, freeze: freezeDay } = iceDaysFor(region);
   const daysLeft = freezeDay === null ? null : freezeDay - matchDay;
-  const urgent = owned.frozen || (daysLeft !== null && daysLeft <= 3);
+  const touchLeft = touchDay === null ? null : touchDay - matchDay;
+  const urgent = owned.frozen || (touchLeft !== null && touchLeft <= 3) || owned.iceFactor < 1;
   const [open, setOpen] = useState(false);
 
   // Destinations: my other regions, safest (latest freeze) and nearest first.
@@ -49,9 +50,11 @@ export function EvacuatePanel({ matchId, state, owned, matchDay }: { matchId: st
             ? "Frozen. Nothing grows here and people are dying."
             : freezeDay === null
               ? "The ice never reaches this region."
-              : daysLeft !== null && daysLeft <= 0
-                ? "The ice arrives today."
-                : `Ice arrives on day ${freezeDay} (${daysLeft!.toFixed(1)} days from now).`}
+              : owned.iceFactor < 1
+                ? `Ice is crossing this region: producing at ${Math.round(owned.iceFactor * 100)}%. Fully frozen on day ${freezeDay} (${Math.max(0, daysLeft!).toFixed(1)} days).`
+                : touchDay !== null && touchDay < freezeDay
+                  ? `Ice touches this region on day ${touchDay} (${Math.max(0, touchLeft!).toFixed(1)} days), fully frozen on day ${freezeDay}.`
+                  : `Ice arrives on day ${freezeDay} (${Math.max(0, daysLeft!).toFixed(1)} days from now).`}
         </span>
         {(people > 0 || unitCount > 0) && (
           <Button variant={urgent ? "primary" : "ghost"} onClick={() => setOpen((o) => !o)}>

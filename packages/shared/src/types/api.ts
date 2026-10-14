@@ -110,6 +110,8 @@ export const ownedRegionView = z.object({
     roads: z.number(),
   }),
   loyalty: z.number(),
+  /** Production multiplier from the ice taper: 1 untouched, down to 0.25 before freezing. */
+  iceFactor: z.number().default(1),
   frozen: z.boolean(),
   /** Server time the amounts above are valid for. Clients project forward from here. */
   asOf: z.string(),

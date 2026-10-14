@@ -64,6 +64,13 @@
       "when": 1791994548776,
       "tag": "0008_little_bishop",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791996669313,
+      "tag": "0009_hot_mac_gargan",
+      "breakpoints": true
     }
   ]
 }

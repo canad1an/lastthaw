@@ -1,0 +1,1 @@
+ALTER TABLE "match_regions" ADD COLUMN "ice_factor" double precision DEFAULT 1 NOT NULL;

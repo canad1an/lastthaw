@@ -35,6 +35,8 @@ export interface RegionEconomy {
   yieldMult: Record<BaseResource, number>;
   /** Extraction per game hour from buildings, applied only for resources the region has. */
   extract: Partial<Record<SpecialResource, number>>;
+  /** Production multiplier from the advancing ice (1 = untouched, 0.25 at the centre, then frozen). */
+  iceFactor: number;
   frozen: boolean;
 }
 
@@ -89,10 +91,10 @@ export function computeRates(traits: RegionTraits, e: RegionEconomy): Rates {
   const special = emptySpecial();
   if (!e.frozen) {
     for (const res of BASE_RESOURCES) {
-      gross[res] = e.popWorkers * assignment[res] * yieldPerWorker(traits, res) * (e.yieldMult[res] ?? 1);
+      gross[res] = e.popWorkers * assignment[res] * yieldPerWorker(traits, res) * (e.yieldMult[res] ?? 1) * e.iceFactor;
     }
     for (const s of SPECIAL_RESOURCES) {
-      if (traits.resources.includes(s)) special[s] = e.extract[s] ?? 0;
+      if (traits.resources.includes(s)) special[s] = (e.extract[s] ?? 0) * e.iceFactor;
     }
   }
   const consumption = (e.popWorkers + e.popOccupiers + e.popSoldiers * eco.soldierFoodMultiplier) * eco.foodPerPersonPerHour;
@@ -182,6 +184,7 @@ export function startingEconomy(): RegionEconomy {
     capacity: eco.baseCapacity,
     yieldMult: { food: 1, wood: 1, stone: 1 },
     extract: {},
+    iceFactor: 1,
     frozen: false,
   };
 }

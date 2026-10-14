@@ -35,6 +35,9 @@ export interface MapRegion {
   resources: ResourceKind[];
   /** Spherical centroid. */
   lat: number;
+  /** Northern and southern latitude extents of the shape (for the ice taper). */
+  latNorth?: number;
+  latSouth?: number;
   lon: number;
   /** Projected centroid in the 2000 x 1000 equirectangular viewBox. */
   x: number;

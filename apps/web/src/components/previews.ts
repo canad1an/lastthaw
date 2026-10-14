@@ -33,6 +33,7 @@ export function buildingPreview(def: BuildingDef, level: number, buildings: Reco
     storage: storageCaps(f),
     yieldMult: f.yield,
     extract: f.extract,
+    iceFactor: economy.iceFactor,
   });
   const rb = computeRates(traits, withEffects(before));
   const ra = computeRates(traits, withEffects(after));

@@ -191,6 +191,8 @@ export const matchRegions = pgTable(
     units: jsonb("units").$type<Record<string, number>>().notNull().default({}),
     loyalty: doublePrecision("loyalty").notNull().default(1),
     frozenAt: timestamp("frozen_at", { withTimezone: true }),
+    /** Production multiplier from the ice taper (1 = untouched). Updated by the daily ice step. */
+    iceFactor: doublePrecision("ice_factor").notNull().default(1),
     /** Match-clock time the amounts above were last settled to. */
     settledAt: timestamp("settled_at", { withTimezone: true }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

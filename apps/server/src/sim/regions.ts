@@ -43,6 +43,7 @@ export function economyOf(row: MatchRegionRow, effects: RegionEffects = effectsO
     capacity: balance.economy.baseCapacity + effects.capacity,
     yieldMult: effects.yield,
     extract: effects.extract,
+    iceFactor: row.frozenAt ? 0 : row.iceFactor,
     frozen: row.frozenAt !== null,
   };
 }

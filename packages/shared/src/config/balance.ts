@@ -172,6 +172,8 @@ export const balance = {
     scanMinutes: 60,
   },
   ice: {
+    /** Production multiplier left when the ice line reaches a region's centre (taper from the pole-facing tip). */
+    taperFloor: 0.25,
     /** Absolute latitude of the ice edge by match day; interpolated between points. */
     schedule: [
       { day: 0, latitude: 72 },
