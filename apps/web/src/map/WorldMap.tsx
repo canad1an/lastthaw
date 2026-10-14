@@ -163,6 +163,8 @@ export function WorldMap({ paint, selected, onSelect, focus, className = "", ice
         if (armyEl) {
           const id = armyEl.getAttribute("data-army");
           setRouteArmy((cur) => (cur === id ? null : id));
+          // Touch screens have no hover: a tap also shows the card until the next tap.
+          setHoverArmy((cur) => (cur === id && routeArmy === id ? null : id));
           return;
         }
         const target = (e.target as Element).closest("[data-region]");

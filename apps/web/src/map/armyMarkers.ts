@@ -1,4 +1,4 @@
-import { regionById, type ArmyView, type IncomingView } from "@lastthaw/shared";
+import { balance, carryCapacity, regionById, unitById, type ArmyView, type IncomingView } from "@lastthaw/shared";
 
 export interface ArmyMarker {
   id: string;
@@ -46,7 +46,10 @@ function along(points: Array<{ x: number; y: number }>, p: number): { x: number;
 const fmtUnits = (u: Record<string, number>) =>
   Object.entries(u)
     .filter(([, n]) => n > 0)
-    .map(([id, n]) => `${n} ${id}`)
+    .map(([id, n]) => {
+      const name = unitById.get(id)?.name ?? id;
+      return `${n} ${n === 1 ? name : name.endsWith("s") ? name : `${name}s`}`;
+    })
     .join(", ") || "no units";
 
 /** Where every army is right now, for drawing on the map. */
@@ -63,10 +66,11 @@ export function armyMarkers(armies: ArmyView[], incoming: IncomingView[], nowMs:
     const progress = end > legStart ? Math.min(1, Math.max(0, (nowMs - legStart) / (end - legStart))) : 1;
     const pos = along(route, progress);
     const dest = regionById(returning ? a.originRegionId : a.targetRegionId)?.name ?? "";
-    const cargo = Object.entries(a.cargo)
-      .filter(([, n]) => n > 0)
-      .map(([k, n]) => `${Math.round(n)} ${k}`)
-      .join(", ");
+    const people = Math.round(a.cargo.people ?? 0);
+    const goods = Object.entries(a.cargo).filter(([k, n]) => k !== "people" && n > 0);
+    const goodsTotal = goods.reduce((x, [, n]) => x + n, 0);
+    const capacity = carryCapacity(a.units) + people * balance.travel.carryPerPerson;
+    const cargo = goods.map(([k, n]) => `${Math.round(n)} ${k.replace("_", " ")}`).join(", ");
     const routeIds = returning ? [...ids].reverse() : ids;
     out.push({
       id: a.id,
@@ -75,7 +79,12 @@ export function armyMarkers(armies: ArmyView[], incoming: IncomingView[], nowMs:
       hostile: false,
       mission: a.mission,
       title: `${a.mission[0]!.toUpperCase()}${a.mission.slice(1)} ${returning ? "returning to" : "→"} ${dest}`,
-      lines: [fmtUnits(a.units), cargo ? `carrying ${cargo}` : "", `arrives in ${formatCountdown((end - nowMs) / 1000)}`].filter(Boolean),
+      lines: [
+        `from ${regionById(a.originRegionId)?.name ?? a.originRegionId}`,
+        fmtUnits(a.units) + (people > 0 ? ` and ${people} people` : ""),
+        cargo ? `carrying ${cargo}${capacity > 0 ? ` (${Math.round(goodsTotal)} of ${Math.round(capacity)})` : ""}` : capacity > 0 && !returning ? "carrying nothing" : "",
+        `${returning ? "home" : "arrives"} in ${formatCountdown((end - nowMs) / 1000)}`,
+      ].filter(Boolean),
       route,
       progress,
       routeNames: routeIds.map((id) => regionById(id)?.name ?? id),
