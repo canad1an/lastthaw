@@ -56,5 +56,7 @@ await db.execute(sql`select 1`);
 log.info("worker started");
 await Promise.all([
   every(5000, "scheduler", scheduler),
-  every(1000, "jobs", () => runDueJobs(db, publisher, log)),
+  every(1000, "jobs", async () => {
+    await runDueJobs(db, publisher, log);
+  }),
 ]);

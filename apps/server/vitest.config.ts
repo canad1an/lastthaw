@@ -8,5 +8,5 @@ export default defineConfig({
   resolve: {
     alias: { "@lastthaw/shared": path.resolve(here, "../../packages/shared/src/index.ts") },
   },
-  test: { environment: "node" },
+  test: { environment: "node", env: { LOG_LEVEL: "silent" }, testTimeout: 60_000 },
 });

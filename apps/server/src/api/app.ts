@@ -12,6 +12,8 @@ import { Publisher } from "../realtime/publish.js";
 import { sessionPlugin } from "../auth/session.js";
 import { authRoutes } from "../auth/routes.js";
 import { matchRoutes } from "../matches/routes.js";
+import { jobRoutes } from "../matches/jobsApi.js";
+import { messageRoutes } from "../matches/messagesApi.js";
 import { registerWebsocket } from "./ws.js";
 
 export const VERSION = "0.1.0";
@@ -53,6 +55,8 @@ export async function buildApp(deps: AppDeps = {}) {
 
   await app.register(authRoutes, { db });
   await app.register(matchRoutes, { db, publisher });
+  await app.register(jobRoutes, { db, publisher });
+  await app.register(messageRoutes, { db });
   if (deps.realtime !== false) await app.register(registerWebsocket, { db });
 
   app.addHook("onClose", async () => {

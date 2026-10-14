@@ -1,12 +1,16 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type pino from "pino";
+import { AGES, buildingById, techById, unitById } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
-import { events, jobs, matches } from "../db/schema.js";
+import { events, jobs, matchRegions, matches, messages, playerTechs, players } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
-import type { Tx } from "../sim/regions.js";
+import { settleAndLockRegion, type Tx } from "../sim/regions.js";
+import { resolveMission } from "../sim/missions.js";
+import { applyIceStep } from "../sim/ice.js";
+import { finishMatch, winHoldExpired } from "../sim/endgame.js";
 
-type JobRow = typeof jobs.$inferSelect;
-type MatchRow = typeof matches.$inferSelect;
+export type JobRow = typeof jobs.$inferSelect;
+export type MatchRow = typeof matches.$inferSelect;
 
 const MAX_ATTEMPTS = 5;
 
@@ -14,7 +18,7 @@ const MAX_ATTEMPTS = 5;
  * Complete every due job, strictly in ends_at order, each in its own
  * transaction. "Due" is measured on each match's own clock (with time skip).
  */
-export async function runDueJobs(db: Db, publisher: Publisher, log: pino.Logger): Promise<void> {
+export async function runDueJobs(db: Db, publisher: Publisher, log: pino.Logger): Promise<number> {
   const due = await db
     .select({ id: jobs.id })
     .from(jobs)
@@ -24,9 +28,11 @@ export async function runDueJobs(db: Db, publisher: Publisher, log: pino.Logger)
           and ${jobs.endsAt} <= now() + make_interval(secs => ${matches.clockOffsetSeconds})`,
     )
     .orderBy(jobs.endsAt, jobs.id)
-    .limit(200);
+    .limit(500);
 
+  let done = 0;
   for (const { id } of due) {
+    const after: Array<() => Promise<void>> = [];
     try {
       await db.transaction(async (tx) => {
         const [job] = await tx.select().from(jobs).where(eq(jobs.id, id)).for("update", { skipLocked: true });
@@ -34,8 +40,9 @@ export async function runDueJobs(db: Db, publisher: Publisher, log: pino.Logger)
         const [m] = await tx.select().from(matches).where(eq(matches.id, job.matchId)).for("update");
         if (!m) return;
         try {
-          await complete(tx, publisher, m, job);
+          await complete(tx, m, job, (fn) => after.push(fn));
           await tx.update(jobs).set({ completedAt: job.endsAt }).where(eq(jobs.id, id));
+          done += 1;
         } catch (err) {
           await tx
             .update(jobs)
@@ -44,23 +51,100 @@ export async function runDueJobs(db: Db, publisher: Publisher, log: pino.Logger)
           throw err;
         }
       });
+      for (const fn of after) await fn().catch(() => {});
     } catch (err) {
       log.error({ err, jobId: id }, "job failed");
     }
   }
+  return done;
+
+  /** Dispatch by job kind. Publishing happens after commit via `after`. */
+  async function complete(tx: Tx, m: MatchRow, job: JobRow, after: (fn: () => Promise<void>) => void): Promise<void> {
+    switch (job.kind) {
+      case "build":
+        return completeBuild(tx, m, job, after);
+      case "train":
+        return completeTrain(tx, m, job, after);
+      case "research":
+        return completeResearch(tx, m, job, after);
+      case "mission":
+        return resolveMission(tx, m, job, publisher, after);
+      case "ice_step":
+        return applyIceStep(tx, m, job, publisher, after);
+      case "win_hold":
+        return winHoldExpired(tx, m, job, publisher, after);
+      case "match_end":
+        return finishMatch(tx, m, job.endsAt, publisher, after, null);
+      default:
+        throw new Error(`no handler for job kind ${job.kind}`);
+    }
+  }
+
+  async function completeBuild(tx: Tx, m: MatchRow, job: JobRow, after: (fn: () => Promise<void>) => void) {
+    if (!job.regionId || !job.refId || !job.playerId) throw new Error("malformed build job");
+    const def = buildingById.get(job.refId);
+    if (!def) throw new Error(`unknown building ${job.refId}`);
+    const row = await settleAndLockRegion(tx, m.id, job.regionId, job.endsAt, m.speed);
+    // If the region changed hands while building, the new owner keeps the building.
+    const level = Math.max(row.buildings[job.refId] ?? 0, job.level ?? 1);
+    await tx
+      .update(matchRegions)
+      .set({ buildings: { ...row.buildings, [job.refId]: level } })
+      .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, job.regionId)));
+    await notify(tx, m.id, job.playerId, "build", `${def.name} level ${level} finished`, { regionId: job.regionId, buildingId: job.refId, level });
+    const playerId = job.playerId;
+    const regionId = job.regionId;
+    after(() => publisher.toPlayer(m.id, playerId, "job.completed", { kind: "build", regionId, buildingId: job.refId, level }));
+  }
+
+  async function completeTrain(tx: Tx, m: MatchRow, job: JobRow, after: (fn: () => Promise<void>) => void) {
+    if (!job.regionId || !job.refId || !job.playerId) throw new Error("malformed train job");
+    const def = unitById.get(job.refId);
+    if (!def) throw new Error(`unknown unit ${job.refId}`);
+    const row = await settleAndLockRegion(tx, m.id, job.regionId, job.endsAt, m.speed);
+    const wanted = job.qty ?? 0;
+    const n = Math.max(0, Math.min(wanted, Math.floor(row.popWorkers)));
+    await tx
+      .update(matchRegions)
+      .set({
+        popWorkers: row.popWorkers - n,
+        popSoldiers: row.popSoldiers + n,
+        units: { ...row.units, [job.refId]: (row.units[job.refId] ?? 0) + n },
+      })
+      .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, job.regionId)));
+    const subject = n < wanted ? `${n} of ${wanted} ${def.name} trained (not enough people)` : `${n} ${def.name} trained`;
+    await notify(tx, m.id, job.playerId, "build", subject, { regionId: job.regionId, unitId: job.refId, qty: n });
+    const playerId = job.playerId;
+    const regionId = job.regionId;
+    after(() => publisher.toPlayer(m.id, playerId, "job.completed", { kind: "train", regionId, unitId: job.refId, qty: n }));
+  }
+
+  async function completeResearch(tx: Tx, m: MatchRow, job: JobRow, after: (fn: () => Promise<void>) => void) {
+    if (!job.refId || !job.playerId) throw new Error("malformed research job");
+    const def = techById.get(job.refId);
+    if (!def) throw new Error(`unknown tech ${job.refId}`);
+    const playerId = job.playerId;
+    await tx.insert(playerTechs).values({ matchId: m.id, playerId, techId: def.id, completedAt: job.endsAt }).onConflictDoNothing();
+    await notify(tx, m.id, playerId, "research", `${def.name} researched`, { techId: def.id });
+    if (def.advancesTo !== undefined) {
+      const [p] = await tx.select().from(players).where(eq(players.id, playerId)).for("update");
+      if (p && p.age < def.advancesTo) {
+        await tx.update(players).set({ age: def.advancesTo }).where(eq(players.id, playerId));
+        const ageName = AGES[def.advancesTo];
+        await tx.insert(events).values({ matchId: m.id, at: job.endsAt, kind: "age.advanced", payload: { playerId, age: def.advancesTo } });
+        const everyone = await tx.select({ id: players.id }).from(players).where(and(eq(players.matchId, m.id), eq(players.isAi, false)));
+        for (const other of everyone) {
+          if (other.id === playerId) continue;
+          await notify(tx, m.id, other.id, "system", `${p.name} has entered the ${ageName} Age`, { playerId, age: def.advancesTo });
+        }
+        after(() => publisher.toMatch(m.id, "age.advanced", { playerId, name: p.name, age: def.advancesTo }));
+      }
+    }
+    after(() => publisher.toPlayer(m.id, playerId, "job.completed", { kind: "research", techId: def.id }));
+  }
 }
 
-/** Dispatch by job kind. Later milestones add build, research, train, mission, ice and win-hold. */
-async function complete(tx: Tx, publisher: Publisher, m: MatchRow, job: JobRow): Promise<void> {
-  switch (job.kind) {
-    case "match_end": {
-      if (m.status !== "running") return;
-      await tx.update(matches).set({ status: "finished", finishedAt: job.endsAt }).where(eq(matches.id, m.id));
-      await tx.insert(events).values({ matchId: m.id, at: job.endsAt, kind: "match.finished", payload: {} });
-      await publisher.toMatch(m.id, "match.finished");
-      return;
-    }
-    default:
-      throw new Error(`no handler for job kind ${job.kind}`);
-  }
+/** Insert a message-center entry for a player. */
+export async function notify(tx: Tx, matchId: string, playerId: string, kind: string, subject: string, payload: unknown): Promise<void> {
+  await tx.insert(messages).values({ matchId, playerId, kind, subject, payload: payload as Record<string, unknown> });
 }

@@ -1,7 +1,7 @@
-import { and, eq } from "drizzle-orm";
-import type { MatchStateView, OwnedRegionView, SightedRegionView } from "@lastthaw/shared";
+import { and, asc, eq, inArray, isNull, or } from "drizzle-orm";
+import { emptySpecial, type JobView, type MatchStateView, type OwnedRegionView, type SightedRegionView } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
-import { matchRegions, matches, players, regionSightings } from "../db/schema.js";
+import { jobs, matchRegions, matches, playerTechs, players, regionSightings } from "../db/schema.js";
 import { matchNow } from "../sim/clock.js";
 import { countOwnedRegions, projectRegion } from "../sim/regions.js";
 
@@ -26,7 +26,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
     .where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.ownerPlayerId, me.id)));
 
   const owned: OwnedRegionView[] = ownedRows.map((row) => {
-    const { economy, rates } = projectRegion(row, now, m.speed);
+    const { economy, rates, effects } = projectRegion(row, now, m.speed);
     return {
       regionId: row.regionId,
       ownerPlayerId: me.id,
@@ -36,9 +36,24 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
       food: economy.food,
       wood: economy.wood,
       stone: economy.stone,
+      special: { ...emptySpecial(), ...economy.special },
       assignment: economy.assignment,
       storage: economy.storage,
       capacity: economy.capacity,
+      yieldMult: economy.yieldMult,
+      extract: economy.extract as Record<string, number>,
+      buildings: row.buildings,
+      units: row.units,
+      effects: {
+        defense: effects.defense,
+        loyalty: effects.loyalty,
+        researchSpeed: effects.researchSpeed,
+        trainSpeed: effects.trainSpeed,
+        protect: effects.protect,
+        harbor: effects.harbor,
+        roads: effects.roads,
+      },
+      loyalty: row.loyalty,
       frozen: economy.frozen,
       asOf: now.toISOString(),
       rates: { food: rates.food, wood: rates.wood, stone: rates.stone, population: rates.population, starving: rates.starving },
@@ -61,6 +76,32 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
     };
   });
 
+  const techRows = await db.select({ id: playerTechs.techId }).from(playerTechs).where(eq(playerTechs.playerId, me.id));
+  const ownedIds = ownedRows.map((r) => r.regionId);
+  const jobRows = await db
+    .select()
+    .from(jobs)
+    .where(
+      and(
+        eq(jobs.matchId, matchId),
+        isNull(jobs.completedAt),
+        isNull(jobs.cancelledAt),
+        or(eq(jobs.playerId, me.id), ownedIds.length ? inArray(jobs.regionId, ownedIds) : eq(jobs.playerId, me.id)),
+        inArray(jobs.kind, ["build", "train", "research"]),
+      ),
+    )
+    .orderBy(asc(jobs.startsAt));
+  const jobViews: JobView[] = jobRows.map((j) => ({
+    id: j.id,
+    kind: j.kind,
+    regionId: j.regionId,
+    refId: j.refId,
+    level: j.level,
+    qty: j.qty,
+    startsAt: j.startsAt.toISOString(),
+    endsAt: j.endsAt.toISOString(),
+  }));
+
   const all = await db.select().from(players).where(eq(players.matchId, matchId));
   const counts = await countOwnedRegions(db, matchId);
 
@@ -80,9 +121,12 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
       name: me.name,
       capitalRegionId: me.capitalRegionId,
       protectionUntil: me.protectionUntil?.toISOString() ?? null,
+      age: me.age,
+      techs: techRows.map((t) => t.id),
     },
     owned,
     sighted,
     players: all.map((p) => ({ id: p.id, name: p.name, isAi: p.isAi, age: p.age, score: p.score, regions: counts.get(p.id) ?? 0 })),
+    jobs: jobViews,
   };
 }

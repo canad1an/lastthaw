@@ -2,11 +2,16 @@ import { and, eq, sql } from "drizzle-orm";
 import {
   balance,
   computeRates,
+  effectsOf,
+  emptySpecial,
   regionById,
   settle,
   startingEconomy,
+  SPECIAL_RESOURCES,
+  type Cost,
   type Rates,
   type RegionEconomy,
+  type RegionEffects,
   type RegionTraits,
 } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
@@ -22,9 +27,10 @@ export function traitsOf(regionId: string): RegionTraits {
   return { terrain: r.terrain, resources: r.resources, coastal: r.coastal, river: r.river };
 }
 
-export function economyOf(row: MatchRegionRow): RegionEconomy {
+export function economyOf(row: MatchRegionRow, effects: RegionEffects = effectsOf(row.buildings)): RegionEconomy {
   const base = balance.economy.baseStorage;
-  const mult = 1 + row.storageLevel * 0.5;
+  const mult = effects.storage;
+  const special = { ...emptySpecial(), ...(row.special as Partial<Record<(typeof SPECIAL_RESOURCES)[number], number>>) };
   return {
     popWorkers: row.popWorkers,
     popSoldiers: row.popSoldiers,
@@ -32,18 +38,34 @@ export function economyOf(row: MatchRegionRow): RegionEconomy {
     food: row.food,
     wood: row.wood,
     stone: row.stone,
+    special,
     assignment: row.assignment,
     storage: { food: base.food * mult, wood: base.wood * mult, stone: base.stone * mult },
-    capacity: balance.economy.baseCapacity,
+    capacity: balance.economy.baseCapacity + effects.capacity,
+    yieldMult: effects.yield,
+    extract: effects.extract,
     frozen: row.frozenAt !== null,
   };
 }
 
 /** Pure projection of a row to `asOf`. Does not touch the database. */
-export function projectRegion(row: MatchRegionRow, asOf: Date, speed: number): { economy: RegionEconomy; rates: Rates } {
+export function projectRegion(row: MatchRegionRow, asOf: Date, speed: number): { economy: RegionEconomy; rates: Rates; effects: RegionEffects } {
   const traits = traitsOf(row.regionId);
-  const economy = settle(traits, economyOf(row), elapsedSeconds(row.settledAt, asOf), speed);
-  return { economy, rates: computeRates(traits, economy) };
+  const effects = effectsOf(row.buildings);
+  const economy = settle(traits, economyOf(row, effects), elapsedSeconds(row.settledAt, asOf), speed);
+  return { economy, rates: computeRates(traits, economy), effects };
+}
+
+function economyColumns(e: RegionEconomy) {
+  return {
+    popWorkers: e.popWorkers,
+    popSoldiers: e.popSoldiers,
+    popOccupiers: e.popOccupiers,
+    food: e.food,
+    wood: e.wood,
+    stone: e.stone,
+    special: e.special,
+  };
 }
 
 /**
@@ -62,18 +84,37 @@ export async function settleAndLockRegion(tx: Tx, matchId: string, regionId: str
   const { economy } = projectRegion(row, asOf, speed);
   const [updated] = await tx
     .update(matchRegions)
-    .set({
-      popWorkers: economy.popWorkers,
-      popSoldiers: economy.popSoldiers,
-      popOccupiers: economy.popOccupiers,
-      food: economy.food,
-      wood: economy.wood,
-      stone: economy.stone,
-      settledAt: asOf,
-    })
+    .set({ ...economyColumns(economy), settledAt: asOf })
     .where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, regionId)))
     .returning();
   if (!updated) throw new Error("settle update failed");
+  return updated;
+}
+
+/** Stock of every payable resource in a (settled) row. */
+export function stockOf(row: MatchRegionRow): Record<string, number> {
+  return { food: row.food, wood: row.wood, stone: row.stone, ...emptySpecial(), ...(row.special as Record<string, number>) };
+}
+
+/** Deduct (or with negative factor, refund) a cost from a settled, locked row. Caller checks affordability. */
+export async function applyCost(tx: Tx, row: MatchRegionRow, cost: Cost, factor = 1): Promise<MatchRegionRow> {
+  const special: Record<string, number> = { ...emptySpecial(), ...(row.special as Record<string, number>) };
+  const set: Partial<MatchRegionRow> = {};
+  for (const [k, v] of Object.entries(cost)) {
+    const delta = v * factor;
+    if (k === "food" || k === "wood" || k === "stone") {
+      set[k] = Math.max(0, row[k] - delta);
+    } else if (k in special) {
+      special[k] = Math.max(0, (special[k] ?? 0) - delta);
+    }
+  }
+  set.special = special;
+  const [updated] = await tx
+    .update(matchRegions)
+    .set(set)
+    .where(and(eq(matchRegions.matchId, row.matchId), eq(matchRegions.regionId, row.regionId)))
+    .returning();
+  if (!updated) throw new Error("cost update failed");
   return updated;
 }
 
@@ -86,12 +127,7 @@ export async function foundCapital(tx: Tx, matchId: string, playerId: string, re
       matchId,
       regionId,
       ownerPlayerId: playerId,
-      popWorkers: e.popWorkers,
-      popSoldiers: 0,
-      popOccupiers: 0,
-      food: e.food,
-      wood: e.wood,
-      stone: e.stone,
+      ...economyColumns(e),
       assignment: e.assignment,
       settledAt: at,
     })

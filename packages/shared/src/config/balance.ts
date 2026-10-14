@@ -63,6 +63,8 @@ export const balance = {
     starvationPerHour: 0.01,
     /** Storage cap for each base resource in a region with no storage buildings. */
     baseStorage: { food: 600, wood: 400, stone: 300 },
+    /** Cap for each metal/horse stock per region. */
+    specialStorage: 500,
     /** Settle sub-step in game minutes. Smaller is more accurate and slower. */
     settleStepMinutes: 5,
     /** Beyond this many sub-steps a single settle snaps the remainder in one coarse step. */
@@ -70,6 +72,18 @@ export const balance = {
   },
   queue: {
     slotsPerRegion: 3,
+  },
+  timers: {
+    /** Each building level multiplies build time by this. */
+    levelGrowth: 1.45,
+    /** Each building level multiplies cost by this. */
+    costGrowth: 1.5,
+    /** Longest any single action may take, in game seconds (spec: 8 to 12 hours). */
+    maxSeconds: 10 * 3600,
+    /** Training N units takes baseSeconds * N^batchExponent. */
+    batchExponent: 0.8,
+    /** Full refund when cancelling a job that has not started; this fraction once it has. */
+    cancelRefundStarted: 0.5,
   },
   win: {
     regionShareForEarlyWin: 0.6,

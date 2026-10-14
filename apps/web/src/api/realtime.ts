@@ -38,6 +38,9 @@ export function useMatchRealtime(matchId: string | null) {
         if (msg.type === "event") {
           setLastEvent(`${msg.kind} ${new Date(msg.at).toLocaleTimeString()}`);
           void qc.invalidateQueries({ queryKey: keys.matchState(msg.matchId) });
+          if (msg.kind === "job.completed" || msg.kind === "age.advanced" || msg.kind === "message.new") {
+            void qc.invalidateQueries({ queryKey: keys.messages(msg.matchId) });
+          }
           if (msg.kind === "match.started" || msg.kind === "match.finished" || msg.kind === "player.joined") {
             void qc.invalidateQueries({ queryKey: keys.matches });
           }

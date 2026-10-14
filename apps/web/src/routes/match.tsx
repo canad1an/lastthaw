@@ -4,7 +4,9 @@ import { useCallback, useMemo, useState } from "react";
 import { formatCountdown, regionById, type MapRegion, type MatchStateView } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { useMatchRealtime } from "../api/realtime.js";
-import { RegionPanel } from "../components/RegionPanel.js";
+import { RegionPanel, ageName } from "../components/RegionPanel.js";
+import { ResearchPanel } from "../components/ResearchPanel.js";
+import { Messages } from "../components/Messages.js";
 import { Button, Card, ErrorText, fmt } from "../components/ui.js";
 import { useNow } from "../hooks/useNow.js";
 import { WorldMap, terrainFill, type RegionPaint } from "../map/WorldMap.js";
@@ -148,6 +150,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
           <Badge>{state.match.speed}x</Badge>
           <Badge>ends in {formatCountdown(endsIn)}</Badge>
           <Badge>{state.owned.length} regions · {fmt(totals.pop)} people</Badge>
+          <Badge>{ageName(state.me.age)} Age</Badge>
           <Badge muted={rtStatus !== "open"}>live {rtStatus}</Badge>
         </div>
       </div>
@@ -159,6 +162,8 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
             <p className="text-sm text-slate-400">Tap a region to see it. Your regions are highlighted in your colour.</p>
           </Card>
         )}
+        <Messages matchId={matchId} />
+        <ResearchPanel matchId={matchId} state={state} clockOffsetMs={clockOffsetMs} />
         <Card>
           <h2 className="mb-2 text-sm font-medium">Players</h2>
           <ul className="space-y-1 text-sm">
@@ -168,6 +173,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
                 <li key={p.id} className="flex items-center gap-2 text-slate-300">
                   <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: colorOf(p.id) }} />
                   <span className={p.id === state.me.playerId ? "text-white" : ""}>{p.name}</span>
+                  <span className="text-xs text-slate-500">{ageName(p.age)}</span>
                   <span className="ml-auto text-slate-500">{p.regions} regions</span>
                 </li>
               ))}

@@ -136,10 +136,14 @@ export const matchRegions = pgTable(
     food: doublePrecision("food").notNull().default(0),
     wood: doublePrecision("wood").notNull().default(0),
     stone: doublePrecision("stone").notNull().default(0),
+    /** Metals and horses: { copper, tin, iron, horses }. */
+    special: jsonb("special").$type<Record<string, number>>().notNull().default({}),
     /** Worker shares per gathering job: { food, wood, stone } summing to 1. */
     assignment: jsonb("assignment").$type<{ food: number; wood: number; stone: number }>().notNull(),
     storageLevel: integer("storage_level").notNull().default(0),
     buildings: jsonb("buildings").$type<Record<string, number>>().notNull().default({}),
+    /** Stationed units by unit id. Sum equals popSoldiers. */
+    units: jsonb("units").$type<Record<string, number>>().notNull().default({}),
     loyalty: doublePrecision("loyalty").notNull().default(1),
     frozenAt: timestamp("frozen_at", { withTimezone: true }),
     /** Match-clock time the amounts above were last settled to. */
@@ -181,6 +185,21 @@ export const jobs = pgTable(
     index("jobs_due_idx").on(t.endsAt).where(sqlNullCompleted),
     index("jobs_region_idx").on(t.matchId, t.regionId),
   ],
+);
+
+export const playerTechs = pgTable(
+  "player_techs",
+  {
+    matchId: uuid("match_id")
+      .notNull()
+      .references(() => matches.id, { onDelete: "cascade" }),
+    playerId: uuid("player_id")
+      .notNull()
+      .references(() => players.id, { onDelete: "cascade" }),
+    techId: text("tech_id").notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.playerId, t.techId] })],
 );
 
 // ---------------------------------------------------------------------------

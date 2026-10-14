@@ -1,4 +1,5 @@
 import { balance } from "../config/balance.js";
+import { SPECIAL_RESOURCES, type SpecialResource } from "../config/ages.js";
 import { realSecondsToGameHours } from "./time.js";
 
 export type BaseResource = "food" | "wood" | "stone";
@@ -15,7 +16,7 @@ export interface RegionTraits {
   river: boolean;
 }
 
-/** Mutable economic state of a region. Populations and amounts are floats. */
+/** Mutable economic state of a region plus the modifiers its buildings give it. */
 export interface RegionEconomy {
   popWorkers: number;
   popSoldiers: number;
@@ -23,11 +24,17 @@ export interface RegionEconomy {
   food: number;
   wood: number;
   stone: number;
+  /** Metals and horses on hand. */
+  special: Record<SpecialResource, number>;
   assignment: Assignment;
-  /** Storage cap per resource. */
+  /** Storage cap per base resource. */
   storage: Record<BaseResource, number>;
   /** Population capacity. */
   capacity: number;
+  /** Yield multipliers from buildings (1 = none). */
+  yieldMult: Record<BaseResource, number>;
+  /** Extraction per game hour from buildings, applied only for resources the region has. */
+  extract: Partial<Record<SpecialResource, number>>;
   frozen: boolean;
 }
 
@@ -37,9 +44,14 @@ export interface Rates {
   wood: number;
   stone: number;
   population: number;
+  special: Record<SpecialResource, number>;
   /** Gross gathering per game hour, before consumption. */
   gross: Record<BaseResource, number>;
   starving: boolean;
+}
+
+export function emptySpecial(): Record<SpecialResource, number> {
+  return { copper: 0, tin: 0, iron: 0, horses: 0 };
 }
 
 export function normalizeAssignment(a: Partial<Assignment>): Assignment {
@@ -55,7 +67,7 @@ export function totalPopulation(e: Pick<RegionEconomy, "popWorkers" | "popSoldie
   return e.popWorkers + e.popSoldiers + e.popOccupiers;
 }
 
-/** Gross gathering per worker-hour for one resource in a region. */
+/** Gross gathering per worker-hour for one resource in a region, before building multipliers. */
 export function yieldPerWorker(traits: RegionTraits, res: BaseResource): number {
   const eco = balance.economy;
   let y: number = eco.perWorkerPerHour[res];
@@ -74,9 +86,13 @@ export function computeRates(traits: RegionTraits, e: RegionEconomy): Rates {
   const pop = totalPopulation(e);
   const assignment = normalizeAssignment(e.assignment);
   const gross: Record<BaseResource, number> = { food: 0, wood: 0, stone: 0 };
+  const special = emptySpecial();
   if (!e.frozen) {
     for (const res of BASE_RESOURCES) {
-      gross[res] = e.popWorkers * assignment[res] * yieldPerWorker(traits, res);
+      gross[res] = e.popWorkers * assignment[res] * yieldPerWorker(traits, res) * (e.yieldMult[res] ?? 1);
+    }
+    for (const s of SPECIAL_RESOURCES) {
+      if (traits.resources.includes(s)) special[s] = e.extract[s] ?? 0;
     }
   }
   const consumption = pop * eco.foodPerPersonPerHour;
@@ -91,14 +107,7 @@ export function computeRates(traits: RegionTraits, e: RegionEconomy): Rates {
     population = pop * eco.growthPerHour * room;
   }
 
-  return {
-    food: foodNet,
-    wood: gross.wood,
-    stone: gross.stone,
-    population,
-    gross,
-    starving,
-  };
+  return { food: foodNet, wood: gross.wood, stone: gross.stone, population, special, gross, starving };
 }
 
 /**
@@ -132,6 +141,9 @@ function step(traits: RegionTraits, s: RegionEconomy, hours: number): RegionEcon
   const food = clamp(s.food + r.food * hours, 0, s.storage.food);
   const wood = clamp(s.wood + r.wood * hours, 0, s.storage.wood);
   const stone = clamp(s.stone + r.stone * hours, 0, s.storage.stone);
+  const special = { ...s.special };
+  const specialCap = balance.economy.specialStorage;
+  for (const k of SPECIAL_RESOURCES) special[k] = clamp(special[k] + r.special[k] * hours, 0, specialCap);
   const pop = totalPopulation(s);
   const newPop = Math.max(0, pop + r.population * hours);
   // Growth and starvation apply to workers; soldiers and occupiers are fixed headcounts
@@ -147,7 +159,7 @@ function step(traits: RegionTraits, s: RegionEconomy, hours: number): RegionEcon
     popOccupiers -= takeOcc;
     popSoldiers = Math.max(0, popSoldiers - (deficit - takeOcc));
   }
-  return { ...s, food, wood, stone, popWorkers, popSoldiers, popOccupiers };
+  return { ...s, food, wood, stone, special, popWorkers, popSoldiers, popOccupiers };
 }
 
 function clamp(v: number, lo: number, hi: number): number {
@@ -164,9 +176,12 @@ export function startingEconomy(): RegionEconomy {
     food: balance.start.food,
     wood: balance.start.wood,
     stone: balance.start.stone,
+    special: emptySpecial(),
     assignment: { ...balance.start.assignment },
     storage: { ...eco.baseStorage },
     capacity: eco.baseCapacity,
+    yieldMult: { food: 1, wood: 1, stone: 1 },
+    extract: {},
     frozen: false,
   };
 }

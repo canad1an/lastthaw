@@ -72,6 +72,7 @@ export const timeSkipBody = z.object({ seconds: z.number().int().min(1).max(60 *
 // ---------------------------------------------------------------------------
 
 export const assignment = z.object({ food: z.number(), wood: z.number(), stone: z.number() });
+export const specialStock = z.object({ copper: z.number(), tin: z.number(), iron: z.number(), horses: z.number() });
 
 export const ownedRegionView = z.object({
   regionId: z.string(),
@@ -82,9 +83,24 @@ export const ownedRegionView = z.object({
   food: z.number(),
   wood: z.number(),
   stone: z.number(),
+  special: specialStock,
   assignment,
   storage: z.object({ food: z.number(), wood: z.number(), stone: z.number() }),
   capacity: z.number(),
+  yieldMult: z.object({ food: z.number(), wood: z.number(), stone: z.number() }),
+  extract: z.record(z.string(), z.number()),
+  buildings: z.record(z.string(), z.number()),
+  units: z.record(z.string(), z.number()),
+  effects: z.object({
+    defense: z.number(),
+    loyalty: z.number(),
+    researchSpeed: z.number(),
+    trainSpeed: z.number(),
+    protect: z.number(),
+    harbor: z.boolean(),
+    roads: z.number(),
+  }),
+  loyalty: z.number(),
   frozen: z.boolean(),
   /** Server time the amounts above are valid for. Clients project forward from here. */
   asOf: z.string(),
@@ -92,6 +108,22 @@ export const ownedRegionView = z.object({
   isCapital: z.boolean(),
 });
 export type OwnedRegionView = z.infer<typeof ownedRegionView>;
+
+export const jobView = z.object({
+  id: z.string(),
+  kind: z.enum(["build", "research", "train", "mission", "ice_step", "win_hold", "match_end"]),
+  regionId: z.string().nullable(),
+  refId: z.string().nullable(),
+  level: z.number().nullable(),
+  qty: z.number().nullable(),
+  startsAt: z.string(),
+  endsAt: z.string(),
+});
+export type JobView = z.infer<typeof jobView>;
+
+export const buildBody = z.object({ buildingId: z.string() });
+export const trainBody = z.object({ unitId: z.string(), qty: z.number().int().min(1).max(1000) });
+export const researchBody = z.object({ techId: z.string() });
 
 /** What a player knows about a region they do not own. */
 export const sightedRegionView = z.object({
@@ -129,10 +161,14 @@ export const matchStateView = z.object({
     name: z.string(),
     capitalRegionId: z.string().nullable(),
     protectionUntil: z.string().nullable(),
+    age: z.number(),
+    techs: z.array(z.string()),
   }),
   owned: z.array(ownedRegionView),
   sighted: z.array(sightedRegionView),
   players: z.array(playerPublic),
+  /** Pending build/train jobs in my regions plus my research job, if any. */
+  jobs: z.array(jobView),
 });
 export type MatchStateView = z.infer<typeof matchStateView>;
 
@@ -168,5 +204,14 @@ export const wsServerMessage = z.discriminatedUnion("type", [
 export type WsServerMessage = z.infer<typeof wsServerMessage>;
 
 /** Event kinds published on match and player channels. */
-export const EVENT_KINDS = ["match.started", "match.finished", "region.updated", "player.joined", "time.skipped"] as const;
+export const EVENT_KINDS = [
+  "match.started",
+  "match.finished",
+  "region.updated",
+  "player.joined",
+  "time.skipped",
+  "job.completed",
+  "age.advanced",
+  "message.new",
+] as const;
 export type EventKind = (typeof EVENT_KINDS)[number];

@@ -44,13 +44,34 @@ export const api = {
   matchState: (id: string) => request("GET", `/api/matches/${id}/state`, undefined, matchStateView),
   assign: (id: string, regionId: string, shares: { food: number; wood: number; stone: number }) =>
     request<{ ok: true }>("POST", `/api/matches/${id}/regions/${regionId}/assign`, shares),
+  build: (id: string, regionId: string, buildingId: string) => request<{ ok: true; jobId: string; endsAt: string }>("POST", `/api/matches/${id}/regions/${regionId}/build`, { buildingId }),
+  train: (id: string, regionId: string, unitId: string, qty: number) =>
+    request<{ ok: true; jobId: string; endsAt: string }>("POST", `/api/matches/${id}/regions/${regionId}/train`, { unitId, qty }),
+  research: (id: string, techId: string) => request<{ ok: true; jobId: string; endsAt: string }>("POST", `/api/matches/${id}/research`, { techId }),
+  cancelJob: (id: string, jobId: string) => request<{ ok: true }>("POST", `/api/matches/${id}/jobs/${jobId}/cancel`, {}),
+  messages: (id: string) => request<MessagesResponse>("GET", `/api/matches/${id}/messages`),
+  markMessagesRead: (id: string) => request<{ ok: true }>("POST", `/api/matches/${id}/messages/read`, {}),
   devStart: (id: string) => request<{ ok: true; started: boolean }>("POST", `/api/matches/${id}/dev/start`, {}),
   devTimeSkip: (id: string, seconds: number) => request<{ ok: true; clockOffsetSeconds: number }>("POST", `/api/matches/${id}/dev/time-skip`, { seconds }),
 };
+
+export interface MessageView {
+  id: string;
+  kind: string;
+  subject: string;
+  payload: Record<string, unknown>;
+  readAt: string | null;
+  createdAt: string;
+}
+export interface MessagesResponse {
+  unread: number;
+  messages: MessageView[];
+}
 
 export const keys = {
   me: ["me"] as const,
   matches: ["matches"] as const,
   matchState: (id: string) => ["match", id, "state"] as const,
   startOptions: (id: string) => ["match", id, "start-options"] as const,
+  messages: (id: string) => ["match", id, "messages"] as const,
 };

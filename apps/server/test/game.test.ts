@@ -133,6 +133,54 @@ describe("milestone 1 flow", () => {
     // Bob cannot touch Alice's region.
     expect((await b.call("POST", `/api/matches/${matchId}/regions/${aPick}/assign`, { food: 1, wood: 0, stone: 0 })).statusCode).toBe(403);
 
+    // Milestone 2: queue a building, a training batch and a research project; pay up front.
+    await a.call("POST", `/api/matches/${matchId}/regions/${aPick}/assign`, { food: 0.6, wood: 0.25, stone: 0.15 });
+    const before = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json()).owned[0]!;
+    const build = await a.call("POST", `/api/matches/${matchId}/regions/${aPick}/build`, { buildingId: "huts" });
+    expect(build.statusCode).toBe(200);
+    const train = await a.call("POST", `/api/matches/${matchId}/regions/${aPick}/train`, { unitId: "warrior", qty: 3 });
+    expect(train.statusCode).toBe(200);
+    const research = await a.call("POST", `/api/matches/${matchId}/research`, { techId: "fire_making" });
+    expect(research.statusCode).toBe(200);
+    expect((await a.call("POST", `/api/matches/${matchId}/research`, { techId: "flint_tools" })).statusCode).toBe(409);
+    expect((await a.call("POST", `/api/matches/${matchId}/regions/${aPick}/build`, { buildingId: "farm" })).statusCode).toBe(400);
+
+    state = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json());
+    expect(state.jobs.map((j) => j.kind).sort()).toEqual(["build", "research", "train"]);
+    expect(state.owned[0]!.wood).toBeLessThan(before.wood);
+
+    // Queue is sequential per region: the training batch starts when the huts finish.
+    const buildJob = state.jobs.find((j) => j.kind === "build")!;
+    const trainJob = state.jobs.find((j) => j.kind === "train")!;
+    expect(trainJob.startsAt).toBe(buildJob.endsAt);
+
+    // Skip an hour and let the worker complete everything.
+    expect((await a.call("POST", `/api/matches/${matchId}/dev/time-skip`, { seconds: 3600 })).statusCode).toBe(200);
+    {
+      const redis = createRedis();
+      await runDueJobs(db, new Publisher(redis), logger);
+      await redis.quit().catch(() => {});
+    }
+    state = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json());
+    expect(state.jobs).toHaveLength(0);
+    expect(state.owned[0]!.buildings.huts).toBe(1);
+    expect(state.owned[0]!.units.warrior).toBe(3);
+    expect(state.owned[0]!.popSoldiers).toBeCloseTo(3, 5);
+    expect(state.me.techs).toContain("fire_making");
+    expect(state.owned[0]!.capacity).toBe(balance.economy.baseCapacity + 15);
+    const inbox = (await a.call("GET", `/api/matches/${matchId}/messages`)).json() as { unread: number; messages: { subject: string }[] };
+    expect(inbox.unread).toBe(3);
+    expect(inbox.messages.map((m) => m.subject)).toEqual(expect.arrayContaining(["Huts level 1 finished", "3 Warrior trained", "Fire making researched"]));
+
+    // Cancelling a not-yet-started job refunds in full.
+    const woodBefore = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json()).owned[0]!.wood;
+    const b2 = (await a.call("POST", `/api/matches/${matchId}/regions/${aPick}/build`, { buildingId: "huts" })).json() as { jobId: string };
+    const b3 = (await a.call("POST", `/api/matches/${matchId}/regions/${aPick}/build`, { buildingId: "storehouse" })).json() as { jobId: string };
+    expect((await a.call("POST", `/api/matches/${matchId}/jobs/${b3.jobId}/cancel`, {})).statusCode).toBe(200);
+    const woodAfter = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json()).owned[0]!.wood;
+    expect(woodAfter).toBeGreaterThan(woodBefore - 70); // only huts lvl 2 (60 wood) still paid, give or take production
+    void b2;
+
     // Skip past the end of the match; the worker finishes it.
     const seconds = Math.ceil((balance.match.lengthDays * 86400) / 10) + 60;
     expect((await a.call("POST", `/api/matches/${matchId}/dev/time-skip`, { seconds })).statusCode).toBe(200);
