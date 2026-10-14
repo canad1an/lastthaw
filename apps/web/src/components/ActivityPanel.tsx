@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { buildingById, regionById, techById, unitById, type MatchStateView } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { Card } from "./ui.js";
@@ -26,12 +27,43 @@ export function ActivityPanel({ matchId, state, clockOffsetMs, onSelect }: { mat
         ? `${j.qty} ${unitById.get(j.refId ?? "")?.name ?? j.refId}`
         : (techById.get(j.refId ?? "")?.name ?? j.refId ?? "");
 
+  const [open, setOpen] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("lt_inprogress_open") !== "0";
+    } catch {
+      return true;
+    }
+  });
+  const toggle = () => {
+    setOpen((o) => {
+      try {
+        localStorage.setItem("lt_inprogress_open", o ? "0" : "1");
+      } catch {
+        // ignore
+      }
+      return !o;
+    });
+  };
+  // Collapsed: just the header with the count and the soonest completion.
+  const next = [...research, ...work].sort((a, b) => Date.parse(a.endsAt) - Date.parse(b.endsAt))[0];
+
   return (
     <Card className="space-y-1 border-sky-500/30">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-medium">In progress</h2>
-        <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-300">{total}</span>
-      </div>
+      <button type="button" onClick={toggle} className="flex w-full items-center justify-between text-left" aria-expanded={open}>
+        <h2 className="text-sm font-medium">
+          <span className="mr-1 inline-block w-3 text-slate-500">{open ? "▾" : "▸"}</span>In progress
+        </h2>
+        <span className="flex items-center gap-2 text-xs text-slate-300">
+          {!open && next && (
+            <span className="text-slate-400">
+              next: {label(next)} <Countdown to={next.endsAt} clockOffsetMs={clockOffsetMs} />
+            </span>
+          )}
+          <span className="rounded bg-slate-800 px-1.5 py-0.5">{total}</span>
+        </span>
+      </button>
+      {!open ? null : (
+        <>
       {total === 0 && <p className="text-xs text-slate-400">Nothing is building, training or researching. Pick a region to start something.</p>}
       {research.length > 0 && (
         <Section title="Research">
@@ -71,6 +103,8 @@ export function ActivityPanel({ matchId, state, clockOffsetMs, onSelect }: { mat
             />
           ))}
         </Section>
+      )}
+        </>
       )}
     </Card>
   );
