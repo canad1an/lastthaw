@@ -131,6 +131,8 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
         setPicking(false);
       } else {
         setSelected(id);
+        // A new origin region starts with no target, so an army is never sent to a stale one.
+        setTarget(null);
       }
     },
     [picking],
@@ -238,7 +240,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
         <IncomingWarnings state={state} clockOffsetMs={clockOffsetMs} onSelect={setSelected} />
         <ActivityPanel matchId={matchId} state={state} clockOffsetMs={clockOffsetMs} onSelect={setSelected} />
         {selected ? (
-          <RegionPanel matchId={matchId} state={state} regionId={selected} clockOffsetMs={clockOffsetMs} onClose={() => setSelected(null)} target={target} onPickTarget={setPicking} />
+          <RegionPanel matchId={matchId} state={state} regionId={selected} clockOffsetMs={clockOffsetMs} onClose={() => setSelected(null)} target={target} onPickTarget={setPicking} onClearTarget={() => setTarget(null)} />
         ) : (
           <Card>
             <p className="text-sm text-slate-400">Tap a region to see it. Your regions are in your colour, the flag marks your capital, and dashed outlines are unclaimed land you can settle.</p>

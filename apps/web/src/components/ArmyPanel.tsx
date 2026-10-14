@@ -22,6 +22,7 @@ export function SendArmy({
   owned,
   target,
   onPickTarget,
+  onClearTarget,
   clockOffsetMs,
 }: {
   matchId: string;
@@ -29,6 +30,7 @@ export function SendArmy({
   owned: OwnedRegionView;
   target: string | null;
   onPickTarget: (picking: boolean) => void;
+  onClearTarget: () => void;
   clockOffsetMs: number;
 }) {
   const qc = useQueryClient();
@@ -56,6 +58,8 @@ export function SendArmy({
       setUnits({});
       setPeople(0);
       setCargo({});
+      // The target is cleared so a second army is never sent to the same region by accident.
+      onClearTarget();
       void qc.invalidateQueries({ queryKey: keys.matchState(matchId) });
     },
   });

@@ -22,11 +22,13 @@ interface Props {
   /** Army target picked on the map, and a way to enter picking mode. */
   target: string | null;
   onPickTarget: (picking: boolean) => void;
+  /** Forget the picked target (after a send, so the next army needs a fresh pick). */
+  onClearTarget: () => void;
 }
 
 type Tab = "overview" | "build" | "train" | "units";
 
-export function RegionPanel({ matchId, state, regionId, clockOffsetMs, onClose, target, onPickTarget }: Props) {
+export function RegionPanel({ matchId, state, regionId, clockOffsetMs, onClose, target, onPickTarget, onClearTarget }: Props) {
   const region = regionById(regionId);
   const owned = state.owned.find((o) => o.regionId === regionId) ?? null;
   const sighted = state.sighted.find((s) => s.regionId === regionId) ?? null;
@@ -76,7 +78,7 @@ export function RegionPanel({ matchId, state, regionId, clockOffsetMs, onClose, 
           {tab === "units" && (
             <>
               <ArmyTab matchId={matchId} owned={owned} />
-              <SendArmy matchId={matchId} state={state} owned={owned} target={target} onPickTarget={onPickTarget} clockOffsetMs={clockOffsetMs} />
+              <SendArmy matchId={matchId} state={state} owned={owned} target={target} onPickTarget={onPickTarget} onClearTarget={onClearTarget} clockOffsetMs={clockOffsetMs} />
             </>
           )}
           <QueueList matchId={matchId} state={state} regionId={regionId} clockOffsetMs={clockOffsetMs} />
