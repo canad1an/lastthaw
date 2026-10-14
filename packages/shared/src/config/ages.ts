@@ -114,8 +114,8 @@ export const BUILDINGS: readonly BuildingDef[] = [
   { id: "granary", name: "Granary", age: 1, description: "Dry, sealed pits for grain: doubles food storage per level and hides stock from raiders.", maxLevel: 10, cost: { wood: 100, stone: 120 }, baseSeconds: 150, effect: { foodStorage: 1.0, protect: 120 } },
   // Iron
   { id: "forge", name: "Forge", age: 2, description: "Works iron faster; speeds up training.", maxLevel: 10, cost: { wood: 200, stone: 200, iron: 20 }, baseSeconds: 400, effect: { trainSpeed: 0.06, extract: { iron: 0.8 } }, requires: "iron_working" },
-  { id: "walls", name: "Stone walls", age: 2, description: "Solid walls around the settlement.", maxLevel: 10, cost: { stone: 400, wood: 100 }, baseSeconds: 500, effect: { defense: 0.18 } },
-  { id: "roads", name: "Roads", age: 2, description: "Faster movement and firmer control of distant lands.", maxLevel: 10, cost: { stone: 250, wood: 80 }, baseSeconds: 350, effect: { roads: 0.05, loyalty: 0.08 } },
+  { id: "walls", name: "Stone walls", age: 2, description: "Solid walls around the settlement.", maxLevel: 10, cost: { stone: 400, wood: 100 }, baseSeconds: 500, effect: { defense: 0.18 }, requires: "masonry" },
+  { id: "roads", name: "Roads", age: 2, description: "Faster movement and firmer control of distant lands.", maxLevel: 10, cost: { stone: 250, wood: 80 }, baseSeconds: 350, effect: { roads: 0.05, loyalty: 0.08 }, requires: "masonry" },
   { id: "temple", name: "Temple", age: 2, description: "Binds a conquered people to their new rulers.", maxLevel: 10, cost: { stone: 300, wood: 150, food: 100 }, baseSeconds: 450, effect: { loyalty: 0.12 } },
   { id: "barracks", name: "Barracks", age: 2, description: "Trains soldiers faster.", maxLevel: 10, cost: { wood: 300, stone: 150 }, baseSeconds: 400, effect: { trainSpeed: 0.1 } },
   // Classical
@@ -180,7 +180,7 @@ export const TECHS: readonly TechDef[] = [
   { id: "iron_working", name: "Iron working", age: 1, description: "Smelt iron. Enters the Iron Age.", cost: { wood: 800, stone: 600, copper: 10 }, baseSeconds: 14400, requires: ["mining"], advancesTo: 2 },
   // Iron
   { id: "siegecraft", name: "Siegecraft", age: 2, description: "Engines to break walls.", cost: { wood: 900, iron: 40 }, baseSeconds: 1800 },
-  { id: "masonry", name: "Masonry", age: 2, description: "Cut stone for walls and roads.", cost: { stone: 1000, wood: 400 }, baseSeconds: 1800 },
+  { id: "masonry", name: "Masonry", age: 2, description: "Cut and fitted stone. Unlocks Stone walls and Roads, and leads to Drill.", cost: { stone: 1000, wood: 400 }, baseSeconds: 1800 },
   { id: "drill", name: "Drill", age: 2, description: "Professional soldiers. Enters the Classical Age.", cost: { food: 1500, wood: 1000, iron: 40 }, baseSeconds: 21600, requires: ["masonry", "writing"], advancesTo: 3 },
   // Classical
   { id: "shipbuilding", name: "Shipbuilding", age: 3, description: "Boats that cross open sea.", cost: { wood: 2000, stone: 500 }, baseSeconds: 4800 },
