@@ -91,11 +91,11 @@ export interface TechDef {
 
 export const BUILDINGS: readonly BuildingDef[] = [
   // Stone
-  { id: "huts", name: "Huts", age: 0, description: "Shelter for more families.", maxLevel: 20, cost: { wood: 40, stone: 10 }, baseSeconds: 45, effect: { capacity: 15 } },
+  { id: "huts", name: "Huts", age: 0, description: "Shelter for more families.", maxLevel: 20, cost: { wood: 40, stone: 10 }, baseSeconds: 45, effect: { capacity: 20 } },
   { id: "storehouse", name: "Storehouse", age: 0, description: "Bigger stores, and some stock hidden from raiders.", maxLevel: 20, cost: { wood: 60, stone: 20 }, baseSeconds: 60, effect: { storage: 0.5, protect: 60 } },
-  { id: "hunting_grounds", name: "Hunting grounds", age: 0, description: "Better food from the land.", maxLevel: 15, cost: { wood: 30, food: 20 }, baseSeconds: 40, effect: { yield: { food: 0.12 } } },
-  { id: "lumber_camp", name: "Lumber camp", age: 0, description: "Faster wood gathering.", maxLevel: 15, cost: { wood: 20, stone: 25 }, baseSeconds: 40, effect: { yield: { wood: 0.15 } } },
-  { id: "quarry", name: "Quarry", age: 0, description: "Faster stone gathering.", maxLevel: 15, cost: { wood: 50, food: 30 }, baseSeconds: 50, effect: { yield: { stone: 0.15 } } },
+  { id: "hunting_grounds", name: "Hunting grounds", age: 0, description: "Better food from the land.", maxLevel: 15, cost: { wood: 30, food: 20 }, baseSeconds: 40, effect: { yield: { food: 0.2 } } },
+  { id: "lumber_camp", name: "Lumber camp", age: 0, description: "Faster wood gathering.", maxLevel: 15, cost: { wood: 30, stone: 10 }, baseSeconds: 40, effect: { yield: { wood: 0.25 } } },
+  { id: "quarry", name: "Quarry", age: 0, description: "Faster stone gathering.", maxLevel: 15, cost: { wood: 50, food: 30 }, baseSeconds: 50, effect: { yield: { stone: 0.25 } } },
   // Bronze
   { id: "farm", name: "Farm", age: 1, description: "Cultivated fields feed many more people.", maxLevel: 15, cost: { wood: 120, stone: 40 }, baseSeconds: 150, effect: { yield: { food: 0.2 }, capacity: 10 }, requires: "agriculture" },
   { id: "mine", name: "Mine", age: 1, description: "Extracts copper, tin or iron where the region has it.", maxLevel: 10, cost: { wood: 150, stone: 100 }, baseSeconds: 200, effect: { extract: { copper: 1.5, tin: 1.0, iron: 1.2 } }, requires: "mining" },
@@ -157,7 +157,7 @@ export const UNITS: readonly UnitDef[] = [
 export const TECHS: readonly TechDef[] = [
   // Stone
   { id: "fire_making", name: "Fire making", age: 0, description: "Cooked food and warm nights.", cost: { food: 60, wood: 40 }, baseSeconds: 90 },
-  { id: "flint_tools", name: "Flint tools", age: 0, description: "Sharper tools for every task.", cost: { stone: 60, wood: 40 }, baseSeconds: 120 },
+  { id: "flint_tools", name: "Flint tools", age: 0, description: "Sharper tools for every task.", cost: { stone: 30, wood: 40 }, baseSeconds: 120 },
   { id: "agriculture", name: "Agriculture", age: 0, description: "Planting instead of only gathering.", cost: { food: 150, wood: 80 }, baseSeconds: 240, requires: ["fire_making"] },
   { id: "animal_husbandry", name: "Animal husbandry", age: 0, description: "Tame the herds.", cost: { food: 150, wood: 60 }, baseSeconds: 240, requires: ["fire_making"] },
   { id: "bronze_working", name: "Bronze working", age: 0, description: "Copper and tin make bronze. Enters the Bronze Age.", cost: { food: 300, wood: 250, stone: 200 }, baseSeconds: 900, requires: ["flint_tools", "agriculture"], advancesTo: 1 },

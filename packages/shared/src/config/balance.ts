@@ -25,22 +25,22 @@ export const balance = {
     families: 5,
     /** People per family at match start. */
     peoplePerFamily: 4,
-    food: 120,
-    wood: 60,
-    stone: 20,
+    food: 250,
+    wood: 200,
+    stone: 100,
     /** Default worker split for a fresh capital. Shares sum to 1. */
-    assignment: { food: 0.6, wood: 0.25, stone: 0.15 },
+    assignment: { food: 0.35, wood: 0.4, stone: 0.25 },
   },
   economy: {
     /** Base output per worker per game hour before terrain and resource modifiers. */
-    perWorkerPerHour: { food: 1.0, wood: 0.6, stone: 0.35 },
+    perWorkerPerHour: { food: 10, wood: 16, stone: 10 },
     /** Terrain multipliers on gathering. Missing key means 1.0. */
     terrain: {
-      plains: { food: 1.25, wood: 0.6, stone: 0.8 },
+      plains: { food: 1.25, wood: 0.8, stone: 0.8 },
       forest: { food: 0.9, wood: 1.5, stone: 0.7 },
       hills: { food: 0.85, wood: 0.9, stone: 1.4 },
       mountains: { food: 0.5, wood: 0.7, stone: 1.8 },
-      desert: { food: 0.4, wood: 0.3, stone: 1.0 },
+      desert: { food: 0.4, wood: 0.4, stone: 1.0 },
       tundra: { food: 0.45, wood: 0.5, stone: 0.8 },
       wetland: { food: 1.1, wood: 0.9, stone: 0.4 },
     } as Record<string, { food: number; wood: number; stone: number }>,
@@ -54,17 +54,17 @@ export const balance = {
     coastalFoodBonus: 1.1,
     riverFoodBonus: 1.1,
     /** Food eaten per person per game hour. */
-    foodPerPersonPerHour: 0.08,
+    foodPerPersonPerHour: 0.4,
     /** Population growth per game hour as a fraction of current population, when fed. */
-    growthPerHour: 0.004,
+    growthPerHour: 0.02,
     /** Growth slows to zero as population approaches the region's capacity. */
     baseCapacity: 60,
     /** Population lost per game hour as a fraction of current population while starving. */
     starvationPerHour: 0.01,
     /** Storage cap for each base resource in a region with no storage buildings. */
-    baseStorage: { food: 600, wood: 400, stone: 300 },
+    baseStorage: { food: 1500, wood: 1200, stone: 1000 },
     /** Cap for each metal/horse stock per region. */
-    specialStorage: 500,
+    specialStorage: 1000,
     /** Settle sub-step in game minutes. Smaller is more accurate and slower. */
     settleStepMinutes: 5,
     /** Beyond this many sub-steps a single settle snaps the remainder in one coarse step. */
@@ -75,9 +75,9 @@ export const balance = {
   },
   timers: {
     /** Each building level multiplies build time by this. */
-    levelGrowth: 1.45,
+    levelGrowth: 1.55,
     /** Each building level multiplies cost by this. */
-    costGrowth: 1.5,
+    costGrowth: 1.65,
     /** Longest any single action may take, in game seconds (spec: 8 to 12 hours). */
     maxSeconds: 10 * 3600,
     /** Training N units takes baseSeconds * N^batchExponent. */

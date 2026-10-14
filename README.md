@@ -46,6 +46,9 @@ ice schedule, AI behaviour, score weights, protection days, weekly schedule. Bui
 and techs are in [ages.ts](packages/shared/src/config/ages.ts). Regenerate the map with
 `npm run generate --workspace=@lastthaw/mapgen` (preview in `tools/mapgen/out/preview.html`).
 
+To check early-game pacing after changing numbers, run the solo-player simulator (prints when each
+opening action becomes affordable at 1x): `npx tsx tools/mapgen/src/pace.ts`.
+
 ## Dev tools
 
 Admins (`users.is_admin`) can create matches from the lobby (name, speed, start delay, AI fill) and

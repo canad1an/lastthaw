@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { and, eq, isNull } from "drizzle-orm";
-import { balance, iceLatitudeOnDay, matchStateView, regionById } from "@lastthaw/shared";
+import { balance, buildingById, iceLatitudeOnDay, matchStateView, regionById } from "@lastthaw/shared";
 import { buildApp } from "../src/api/app.js";
 import { createDb, type Db } from "../src/db/client.js";
 import { jobs, matchRegions, matches, transfers, users } from "../src/db/schema.js";
@@ -169,7 +169,7 @@ describe("milestone 1 flow", () => {
     expect(state.owned[0]!.units.warrior).toBe(3);
     expect(state.owned[0]!.popSoldiers).toBeCloseTo(3, 5);
     expect(state.me.techs).toContain("fire_making");
-    expect(state.owned[0]!.capacity).toBe(balance.economy.baseCapacity + 15);
+    expect(state.owned[0]!.capacity).toBe(balance.economy.baseCapacity + (buildingById.get("huts")!.effect.capacity ?? 0));
     const inbox = (await a.call("GET", `/api/matches/${matchId}/messages`)).json() as { unread: number; messages: { subject: string }[] };
     expect(inbox.unread).toBeGreaterThanOrEqual(3); // plus any ice notices from the skipped days
     expect(inbox.messages.map((m) => m.subject)).toEqual(expect.arrayContaining(["Huts level 1 finished", "3 Warrior trained", "Fire making researched"]));
