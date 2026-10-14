@@ -162,6 +162,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
     arrivesAt: a.arrivesAt.toISOString(),
     returnsAt: a.returnsAt?.toISOString() ?? null,
     path: a.path,
+    note: a.note ?? null,
   }));
 
   const hostile = ownedIds.length

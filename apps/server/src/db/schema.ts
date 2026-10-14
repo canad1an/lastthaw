@@ -250,6 +250,8 @@ export const armies = pgTable(
       .notNull()
       .references(() => players.id, { onDelete: "cascade" }),
     mission: missionKind("mission").notNull(),
+    /** Why the army turned back, shown next to it while returning (null when all went to plan). */
+    note: text("note"),
     originRegionId: text("origin_region_id").notNull(),
     targetRegionId: text("target_region_id").notNull(),
     units: jsonb("units").$type<Record<string, number>>().notNull().default({}),

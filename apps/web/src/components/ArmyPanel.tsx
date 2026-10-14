@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { armySpeed, balance, regionById, unitById, formatCountdown, type MatchStateView, type MissionKind, type OwnedRegionView } from "@lastthaw/shared";
+import { armySpeed, balance, regionById, unitById, formatCountdown, type MatchStateView, type MissionKind, type OwnedRegionView, missionLabel } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { Button, Card, ErrorText, fmt } from "./ui.js";
 import { Countdown } from "./Countdown.js";
@@ -164,7 +164,8 @@ export function ArmiesList({ state, clockOffsetMs }: { state: MatchStateView; cl
         {state.armies.map((a) => (
           <li key={a.id} className="flex items-center justify-between gap-2">
             <span>
-              <span className="capitalize">{a.mission}</span> {a.status === "returning" ? "returning to" : "→"} {regionById(a.status === "returning" ? a.originRegionId : a.targetRegionId)?.name}
+              <span>{missionLabel(a.mission)}</span> {a.status === "returning" ? "returning to" : "→"} {regionById(a.status === "returning" ? a.originRegionId : a.targetRegionId)?.name}
+              {a.status === "returning" && a.note ? <span className="text-slate-500"> ({a.note})</span> : null}
               <span className="ml-1 text-xs text-slate-500">({Object.values(a.units).reduce((x, y) => x + y, 0)} units)</span>
             </span>
             <span className="text-slate-400">

@@ -1,4 +1,4 @@
-import { balance, carryCapacity, regionById, unitById, type ArmyView, type IncomingView } from "@lastthaw/shared";
+import { balance, carryCapacity, regionById, unitById, type ArmyView, type IncomingView, missionLabel } from "@lastthaw/shared";
 
 export interface ArmyMarker {
   id: string;
@@ -78,8 +78,9 @@ export function armyMarkers(armies: ArmyView[], incoming: IncomingView[], nowMs:
       y: pos.y,
       hostile: false,
       mission: a.mission,
-      title: a.mission === "relocate" ? `Capital wagon ${returning ? "returning to" : "→"} ${dest}` : `${a.mission[0]!.toUpperCase()}${a.mission.slice(1)} ${returning ? "returning to" : "→"} ${dest}`,
+      title: `${missionLabel(a.mission)} ${returning ? "returning to" : "→"} ${dest}`,
       lines: [
+        returning && a.note ? a.note : "",
         `from ${regionById(a.originRegionId)?.name ?? a.originRegionId}`,
         a.mission === "relocate" ? "the capital's stores and court" : fmtUnits(a.units) + (people > 0 ? ` and ${people} people` : ""),
         cargo ? `carrying ${cargo}${capacity > 0 ? ` (${Math.round(goodsTotal)} of ${Math.round(capacity)})` : ""}` : capacity > 0 && !returning ? "carrying nothing" : "",

@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { buildingById, regionById, techById, unitById, type MatchStateView } from "@lastthaw/shared";
+import { buildingById, regionById, techById, unitById, type MatchStateView, missionLabel } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { Card } from "./ui.js";
 import { Countdown } from "./Countdown.js";
@@ -93,7 +93,7 @@ export function ActivityPanel({ matchId, state, clockOffsetMs, onSelect }: { mat
           {armies.map((a) => (
             <Row
               key={a.id}
-              name={`${a.mission === "relocate" ? "Capital wagon" : `${a.mission[0]!.toUpperCase()}${a.mission.slice(1)}`} ${a.status === "returning" ? "returning to" : "→"} ${regionById(a.status === "returning" ? a.originRegionId : a.targetRegionId)?.name}`}
+              name={`${missionLabel(a.mission)} ${a.status === "returning" ? "returning to" : "→"} ${regionById(a.status === "returning" ? a.originRegionId : a.targetRegionId)?.name}${a.status === "returning" && a.note ? ` (${a.note})` : ""}`}
               note={`${Object.values(a.units).reduce((x, y) => x + y, 0)} units`}
               to={a.status === "returning" ? (a.returnsAt ?? a.arrivesAt) : a.arrivesAt}
               clockOffsetMs={clockOffsetMs}

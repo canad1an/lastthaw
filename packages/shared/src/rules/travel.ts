@@ -84,3 +84,23 @@ export function travelSeconds(route: Route, speedKmPerHour: number, matchSpeed: 
   const hours = route.cost / Math.max(0.1, speedKmPerHour * t.speedScale);
   return scaledDuration(Math.max(t.minSeconds, hours * 3600), matchSpeed);
 }
+
+/** Human name for a mission as a moving group: Settlers, Caravans, Capital wagon, Raid... */
+export function missionLabel(mission: string): string {
+  switch (mission) {
+    case "settle":
+      return "Settlers";
+    case "transport":
+      return "Caravans";
+    case "relocate":
+      return "Capital wagon";
+    case "move":
+      return "Move";
+    case "reinforce":
+      return "Reinforcements";
+    case "scout":
+      return "Scouts";
+    default:
+      return mission.charAt(0).toUpperCase() + mission.slice(1);
+  }
+}

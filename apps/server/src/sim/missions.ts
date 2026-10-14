@@ -69,7 +69,7 @@ async function relocateCapital(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, pub
   const name = regionById(army.targetRegionId)?.name ?? army.targetRegionId;
   if (target.ownerPlayerId !== army.playerId || target.frozenAt) {
     await notify(tx, m.id, army.playerId, "system", `${name} is no longer a place for your capital; the wagon is coming back`, { regionId: army.targetRegionId });
-    return sendHome(tx, m, army, at, army.units, army.cargo);
+    return sendHome(tx, m, army, at, army.units, army.cargo, `${name} is no longer yours`);
   }
   await depositInto(tx, target, {}, army.cargo);
   await setCapital(tx, m.id, army.playerId, army.targetRegionId);
@@ -120,8 +120,9 @@ async function settleLand(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publishe
   const name = regionById(army.targetRegionId)?.name ?? army.targetRegionId;
   const occupied = target.ownerPlayerId || target.popWorkers + target.popSoldiers + target.popOccupiers >= 1 || Object.values(target.units).some((n) => n > 0);
   if (occupied) {
-    await notify(tx, m.id, army.playerId, "system", `${name} was claimed before your settlers arrived; they are coming back`, { regionId: army.targetRegionId });
-    return sendHome(tx, m, army, at, army.units, army.cargo);
+    const by = target.ownerPlayerId ? await playerName(tx, target.ownerPlayerId) : "a neutral tribe";
+    await notify(tx, m.id, army.playerId, "system", `${name} was claimed by ${by} before your settlers arrived; they are coming back`, { regionId: army.targetRegionId });
+    return sendHome(tx, m, army, at, army.units, army.cargo, `${name} was claimed first by ${by}`);
   }
   const settlers = army.units.settler ?? 0;
   await tx
@@ -146,7 +147,7 @@ async function settleLand(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publishe
 }
 
 /** Send the army back where it came from, carrying whatever is in cargo. */
-async function sendHome(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, units: UnitCounts, cargo: Record<string, number>): Promise<void> {
+async function sendHome(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, units: UnitCounts, cargo: Record<string, number>, note: string | null = null): Promise<void> {
   if (sumUnits(units) === 0 && Object.values(cargo).every((v) => !v)) {
     await tx.update(armies).set({ status: "done", units, cargo }).where(eq(armies.id, army.id));
     return;
@@ -154,7 +155,7 @@ async function sendHome(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, units: Uni
   const route = findRoute(army.targetRegionId, army.originRegionId, true) ?? { path: [army.targetRegionId, army.originRegionId], cost: 1000, usesSea: false };
   const seconds = travelSeconds(route, sumUnits(units) ? armySpeed(units) : 5, m.speed);
   const returnsAt = new Date(at.getTime() + seconds * 1000);
-  await tx.update(armies).set({ status: "returning", units, cargo, returnsAt }).where(eq(armies.id, army.id));
+  await tx.update(armies).set({ status: "returning", units, cargo, returnsAt, note }).where(eq(armies.id, army.id));
   await tx.insert(jobs).values({ matchId: m.id, playerId: army.playerId, regionId: army.originRegionId, kind: "mission", refId: army.id, startsAt: at, endsAt: returnsAt });
 }
 
@@ -199,7 +200,7 @@ async function deliverUnits(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publis
   const friendly = target.ownerPlayerId === army.playerId || (target.ownerPlayerId ? await areAllied(tx, m.id, army.playerId, target.ownerPlayerId) : false);
   if (!friendly) {
     await notify(tx, m.id, army.playerId, "system", `${regionById(army.targetRegionId)?.name} is no longer friendly; the army is coming back`, {});
-    return sendHome(tx, m, army, at, army.units, army.cargo);
+    return sendHome(tx, m, army, at, army.units, army.cargo, `${regionById(army.targetRegionId)?.name} is no longer friendly`);
   }
   await depositInto(tx, target, army.units, army.cargo);
   await tx.update(armies).set({ status: "done" }).where(eq(armies.id, army.id));
@@ -220,7 +221,7 @@ async function deliverCargo(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publis
   const friendly = target.ownerPlayerId === army.playerId || (target.ownerPlayerId ? await areAllied(tx, m.id, army.playerId, target.ownerPlayerId) : false);
   if (!friendly) {
     await notify(tx, m.id, army.playerId, "trade", `${regionById(army.targetRegionId)?.name} is no longer friendly; the goods are coming back`, {});
-    return sendHome(tx, m, army, at, army.units, army.cargo);
+    return sendHome(tx, m, army, at, army.units, army.cargo, `${regionById(army.targetRegionId)?.name} is no longer friendly`);
   }
   const { people: _people, ...goods } = army.cargo;
   await depositInto(tx, target, {}, army.cargo);
@@ -271,7 +272,7 @@ async function battle(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher: P
   // Attacking a friend (alliance formed mid-flight) is called off.
   if (defenderId && (defenderId === army.playerId || (await areAllied(tx, m.id, army.playerId, defenderId)))) {
     await notify(tx, m.id, army.playerId, "battle", `Attack on ${region.name} called off: the region is friendly`, {});
-    return sendHome(tx, m, army, at, army.units, army.cargo);
+    return sendHome(tx, m, army, at, army.units, army.cargo, "called off: the region is now friendly");
   }
 
   const effects = effectsOf(target.buildings);
