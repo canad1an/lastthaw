@@ -185,8 +185,8 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
           flags={state.me.capitalRegionId ? [state.me.capitalRegionId] : []}
           dashed={state.frontier}
         />
-        {picking && <div className="pointer-events-none absolute inset-x-0 bottom-2 text-center text-sm text-amber-300">Click a region to target it</div>}
-        <div className="pointer-events-none absolute left-2 top-2 flex flex-wrap gap-2 text-xs">
+        {picking && <div className="pointer-events-none absolute inset-x-0 top-2 text-center text-sm text-amber-300">Click a region to target it</div>}
+        <div className="pointer-events-none absolute bottom-2 left-2 flex flex-wrap gap-2 text-xs">
           <Badge>{state.match.name}</Badge>
           <Badge>{state.match.speed}x</Badge>
           <Badge>{finished ? "finished" : `Day ${Math.min(balance.match.lengthDays, Math.floor(matchDay) + 1)} of ${balance.match.lengthDays} · ends in ${formatCountdown(endsIn)}`}</Badge>
