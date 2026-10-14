@@ -4,7 +4,7 @@ import { balance, buildingById, iceLatitudeOnDay, matchStateView, regionById } f
 import { buildApp } from "../src/api/app.js";
 import { createDb, type Db } from "../src/db/client.js";
 import { jobs, matchRegions, matches, transfers, users } from "../src/db/schema.js";
-import { runMatchTicks } from "../src/sim/tick.js";
+import { runAiDecisions, runMatchTicks } from "../src/sim/tick.js";
 import { Publisher } from "../src/realtime/publish.js";
 import { createRedis } from "../src/redis.js";
 import { runDueJobs } from "../src/worker/jobs.js";
@@ -282,6 +282,7 @@ describe("milestone 1 flow", () => {
     {
       const redis = createRedis();
       await runMatchTicks(db, new Publisher(redis), logger);
+      await runAiDecisions(db, new Publisher(redis), logger);
       await redis.quit().catch(() => {});
     }
     state = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json());

@@ -6,7 +6,8 @@ import * as schema from "./schema.js";
 export type Db = ReturnType<typeof createDb>;
 
 export function createDb(url = config().DATABASE_URL) {
-  const sql = postgres(url, { max: 10, onnotice: () => {} });
+  // prepare:false keeps us compatible with PgBouncer in transaction pooling mode.
+  const sql = postgres(url, { max: Number(process.env.DB_POOL_MAX ?? 10), prepare: false, onnotice: () => {} });
   const db = drizzle(sql, { schema });
   return Object.assign(db, { sql, close: () => sql.end({ timeout: 5 }) });
 }

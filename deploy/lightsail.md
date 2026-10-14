@@ -31,6 +31,12 @@ That pushes `main` to the server and runs `deploy/deploy.sh` there, which pulls,
 images, applies migrations and restarts `api`, `worker`, `web` and `caddy`. Caddy obtains the
 TLS certificate for lastthaw.com automatically.
 
+## Processes
+
+`api` (two replicas, round-robin via Caddy), `worker` (timers, ticks, scheduler), `ai` (AI tribes' decisions on their own
+cadence), `pgbouncer` (transaction pooling in front of Postgres; apps connect through it, migrations go direct), `postgres`,
+`redis`, `web` (static build), `caddy` (TLS + routing). Scale the API with `--scale api=3` or by editing `replicas`.
+
 ## Useful commands on the server
 
 ```bash

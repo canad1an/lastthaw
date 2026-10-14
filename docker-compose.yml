@@ -50,6 +50,23 @@ services:
       - "3000:3000"
     profiles: ["app"]
 
+  ai:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    command: ["node", "dist/worker/ai.js"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://lastthaw:lastthaw@postgres:5432/lastthaw
+      REDIS_URL: redis://redis:6379
+      SMTP_HOST: mailpit
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    profiles: ["app"]
+
   worker:
     build:
       context: .

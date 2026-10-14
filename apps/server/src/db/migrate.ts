@@ -4,7 +4,8 @@ import postgres from "postgres";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const url = process.env.DATABASE_URL;
+// Migrations need a direct connection (not PgBouncer): use DATABASE_URL_DIRECT when set.
+const url = process.env.DATABASE_URL_DIRECT ?? process.env.DATABASE_URL;
 if (!url) throw new Error("DATABASE_URL is required");
 
 // Runs from src/db (tsx) or dist/db (esbuild bundle); drizzle/ sits two levels up in both cases.

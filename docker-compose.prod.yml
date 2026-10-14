@@ -12,14 +12,42 @@ services:
   mailpit:
     profiles: ["never"]
 
+  # Connection pooler: apps use transaction pooling on :6432; migrations go direct to postgres.
+  pgbouncer:
+    image: bitnami/pgbouncer:1
+    restart: unless-stopped
+    environment:
+      POSTGRESQL_HOST: postgres
+      POSTGRESQL_PORT_NUMBER: "5432"
+      POSTGRESQL_USERNAME: lastthaw
+      POSTGRESQL_PASSWORD: lastthaw
+      POSTGRESQL_DATABASE: lastthaw
+      PGBOUNCER_DATABASE: lastthaw
+      PGBOUNCER_POOL_MODE: transaction
+      PGBOUNCER_MAX_CLIENT_CONN: "500"
+      PGBOUNCER_DEFAULT_POOL_SIZE: "40"
+      PGBOUNCER_IGNORE_STARTUP_PARAMETERS: extra_float_digits
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles: ["app"]
+
   api:
     restart: unless-stopped
     ports: !reset []
+    deploy:
+      replicas: 2
     environment:
       NODE_ENV: production
       DEV_TOOLS: "false"
       SMTP_HOST: ${SMTP_HOST}
       PUBLIC_URL: https://lastthaw.com
+      DATABASE_URL: postgres://lastthaw:lastthaw@pgbouncer:6432/lastthaw
+      DATABASE_URL_DIRECT: postgres://lastthaw:lastthaw@postgres:5432/lastthaw
+      DB_POOL_MAX: "20"
+    depends_on:
+      pgbouncer:
+        condition: service_started
 
   worker:
     restart: unless-stopped
@@ -27,6 +55,23 @@ services:
       NODE_ENV: production
       DEV_TOOLS: "false"
       SMTP_HOST: ${SMTP_HOST}
+      DATABASE_URL: postgres://lastthaw:lastthaw@pgbouncer:6432/lastthaw
+      DB_POOL_MAX: "20"
+    depends_on:
+      pgbouncer:
+        condition: service_started
+
+  ai:
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DEV_TOOLS: "false"
+      SMTP_HOST: ${SMTP_HOST}
+      DATABASE_URL: postgres://lastthaw:lastthaw@pgbouncer:6432/lastthaw
+      DB_POOL_MAX: "10"
+    depends_on:
+      pgbouncer:
+        condition: service_started
 
   web:
     build:

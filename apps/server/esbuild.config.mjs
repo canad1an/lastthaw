@@ -7,7 +7,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 // Bundle our own code (including the @lastthaw/shared TypeScript source) and
 // leave every real npm dependency external so native modules keep working.
 await build({
-  entryPoints: ["src/api/index.ts", "src/worker/index.ts", "src/db/migrate.ts"],
+  entryPoints: ["src/api/index.ts", "src/worker/index.ts", "src/worker/ai.ts", "src/db/migrate.ts"],
   outdir: "dist",
   outbase: "src",
   bundle: true,

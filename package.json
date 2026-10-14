@@ -15,6 +15,7 @@
     "dev": "npm run dev --workspace=@lastthaw/server & npm run dev --workspace=@lastthaw/web",
     "dev:api": "npm run dev:api --workspace=@lastthaw/server",
     "dev:worker": "npm run dev:worker --workspace=@lastthaw/server",
+    "dev:ai": "npm run dev:ai --workspace=@lastthaw/server",
     "dev:web": "npm run dev --workspace=@lastthaw/web",
     "db:generate": "npm run db:generate --workspace=@lastthaw/server",
     "db:migrate": "npm run db:migrate --workspace=@lastthaw/server",

@@ -4,7 +4,13 @@ lastthaw.com, www.lastthaw.com {
     encode zstd gzip
 
     handle /api/* {
-        reverse_proxy api:3000
+        reverse_proxy {
+            dynamic a api 3000 {
+                refresh 10s
+            }
+            lb_policy round_robin
+            fail_duration 10s
+        }
     }
 
     handle {

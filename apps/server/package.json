@@ -4,9 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "concurrently -n api,worker -c blue,magenta \"npm:dev:api\" \"npm:dev:worker\"",
+    "dev": "concurrently -n api,worker,ai -c blue,magenta,yellow \"npm:dev:api\" \"npm:dev:worker\" \"npm:dev:ai\"",
     "dev:api": "tsx watch --env-file-if-exists=../../.env src/api/index.ts",
     "dev:worker": "tsx watch --env-file-if-exists=../../.env src/worker/index.ts",
+    "dev:ai": "tsx watch --env-file-if-exists=../../.env src/worker/ai.ts",
     "build": "node esbuild.config.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

@@ -53,22 +53,33 @@ async function tickMatch(db: Db, publisher: Publisher, matchId: string, log: pin
     return m;
   });
   for (const fn of after) await fn().catch(() => {});
-  if (!m) return;
+}
 
-  // AI decisions run outside the tick transaction; each command commits on its own.
-  const now = matchNow(m);
-  const dueAi = await db
-    .select()
-    .from(players)
-    .where(and(eq(players.matchId, m.id), eq(players.isAi, true), isNull(players.eliminatedAt), or(isNull(players.nextAiAt), lte(players.nextAiAt, now))))
-    .limit(25);
-  for (const p of dueAi) {
-    try {
-      await runAiPlayer(db, m, p, now, publisher);
-    } catch (err) {
-      log.warn({ err, playerId: p.id }, "ai decision failed");
+/**
+ * AI decisions, run by the separate `ai` process so they can never delay
+ * job completion or the tick. Each command commits on its own.
+ */
+export async function runAiDecisions(db: Db, publisher: Publisher, log: pino.Logger, limit = 25): Promise<number> {
+  const running = await db.select().from(matches).where(eq(matches.status, "running"));
+  let acted = 0;
+  for (const m of running) {
+    const now = matchNow(m);
+    const dueAi = await db
+      .select()
+      .from(players)
+      .where(and(eq(players.matchId, m.id), eq(players.isAi, true), isNull(players.eliminatedAt), or(isNull(players.nextAiAt), lte(players.nextAiAt, now))))
+      .orderBy(players.nextAiAt)
+      .limit(limit);
+    for (const p of dueAi) {
+      try {
+        await runAiPlayer(db, m, p, now, publisher);
+        acted += 1;
+      } catch (err) {
+        log.warn({ err, playerId: p.id }, "ai decision failed");
+      }
     }
   }
+  return acted;
 }
 
 /** Occupied regions drift toward a loyalty target; disloyal ones may rebel and go neutral. */
