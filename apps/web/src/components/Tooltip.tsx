@@ -1,20 +1,58 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 /**
- * Hover tooltip that also works by tap: the trigger toggles it on click so it
- * is usable on phones. Rendered inline below the trigger so it never clips
- * inside the scrolling side bar.
+ * Hover tooltip that also works by tap. It is rendered at the document level
+ * with fixed positioning, so it is never clipped by the scrolling side panel,
+ * and it flips above the trigger when there is no room below.
  */
 export function Tooltip({ trigger, children, className = "" }: { trigger: ReactNode; children: ReactNode; className?: string }) {
   const [open, setOpen] = useState(false);
+  const anchor = useRef<HTMLDivElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const [style, setStyle] = useState<React.CSSProperties>({});
+
+  useLayoutEffect(() => {
+    if (!open || !anchor.current) return;
+    const place = () => {
+      const a = anchor.current!.getBoundingClientRect();
+      const h = panel.current?.offsetHeight ?? 200;
+      const margin = 8;
+      const width = Math.min(360, window.innerWidth - 2 * margin);
+      const left = Math.min(Math.max(margin, a.left), window.innerWidth - width - margin);
+      const below = a.bottom + 4;
+      const fits = below + h + margin <= window.innerHeight;
+      const top = fits ? below : Math.max(margin, a.top - 4 - h);
+      setStyle({ position: "fixed", left, top, width, maxHeight: window.innerHeight - 2 * margin, overflowY: "auto" });
+    };
+    place();
+    window.addEventListener("resize", place);
+    // Scrolling the side panel moves the anchor; close rather than chase it.
+    const close = () => setOpen(false);
+    window.addEventListener("scroll", close, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", close, true);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+
   return (
-    <div className={`relative ${className}`} onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
+    <div ref={anchor} className={className} onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
       <div onClick={() => setOpen((o) => !o)}>{trigger}</div>
-      {open && (
-        <div className="absolute left-0 right-0 top-full z-20 mt-1 rounded-md border border-slate-700 bg-slate-950 p-3 text-xs text-slate-300 shadow-xl" onClick={(e) => e.stopPropagation()}>
-          {children}
-        </div>
-      )}
+      {open &&
+        createPortal(
+          <div ref={panel} style={style} className="z-50 rounded-md border border-slate-700 bg-slate-950 p-3 text-xs text-slate-300 shadow-xl" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
+            {children}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
