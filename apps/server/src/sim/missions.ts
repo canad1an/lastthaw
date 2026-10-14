@@ -106,11 +106,14 @@ async function sendHome(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, units: Uni
 }
 
 async function comeHome(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher: Publisher, after: After): Promise<void> {
-  let home = await lockRegion(tx, m, army.originRegionId, at);
-  if (home.ownerPlayerId !== army.playerId) {
-    const [p] = await tx.select().from(players).where(eq(players.id, army.playerId)).limit(1);
-    if (p?.capitalRegionId && p.capitalRegionId !== army.originRegionId) home = await lockRegion(tx, m, p.capitalRegionId, at);
-  }
+  // Lock origin (and the capital as a fallback home) in ascending region order, like every other transaction.
+  const [p] = await tx.select({ capital: players.capitalRegionId }).from(players).where(eq(players.id, army.playerId)).limit(1);
+  const fallback = p?.capital && p.capital !== army.originRegionId ? p.capital : null;
+  const ids = fallback ? [army.originRegionId, fallback].sort() : [army.originRegionId];
+  const locked = new Map<string, MatchRegionRow>();
+  for (const id of ids) locked.set(id, await lockRegion(tx, m, id, at));
+  let home = locked.get(army.originRegionId)!;
+  if (home.ownerPlayerId !== army.playerId && fallback) home = locked.get(fallback)!;
   if (home.ownerPlayerId === army.playerId) {
     await depositInto(tx, home, army.units, army.cargo);
     await notify(tx, m.id, army.playerId, "system", `Army returned to ${regionById(home.regionId)?.name}`, { regionId: home.regionId, units: army.units, cargo: army.cargo });
