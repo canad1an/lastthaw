@@ -32,6 +32,23 @@ export function RoutesTab({ matchId, state, owned, clockOffsetMs, allRoutes = fa
   const [share, setShare] = useState(0.3);
   const [count, setCount] = useState(2);
   const [every, setEvery] = useState(2);
+  const [editing, setEditing] = useState<TradeRouteView | null>(null);
+  const startEdit = (r: TradeRouteView) => {
+    setEditing(r);
+    setTo(r.toRegionId);
+    setMode(r.mode);
+    setLoad({ food: 0, wood: 0, stone: 0, ...r.load });
+    setShare(r.share || 0.3);
+    setCount(r.caravans);
+    setEvery(r.everyHours);
+  };
+  const update = useMutation({
+    mutationFn: (body: Parameters<typeof api.updateRoute>[2]) => api.updateRoute(matchId, editing!.id, body),
+    onSuccess: () => {
+      setEditing(null);
+      refresh();
+    },
+  });
 
   const create = useMutation({
     mutationFn: (body: Parameters<typeof api.createRoute>[2]) => api.createRoute(matchId, owned.regionId, body),
@@ -55,7 +72,7 @@ export function RoutesTab({ matchId, state, owned, clockOffsetMs, allRoutes = fa
       {routes.length > 0 && (
         <ul className="divide-y divide-slate-800">
           {routes.map((r) => (
-            <RouteRow key={r.id} r={r} showFrom={allRoutes} clockOffsetMs={clockOffsetMs} onToggle={() => toggle.mutate(r.id)} onDelete={() => remove.mutate(r.id)} onRun={() => run.mutate(r.id)} />
+            <RouteRow key={r.id} r={r} showFrom={allRoutes} editing={editing?.id === r.id} clockOffsetMs={clockOffsetMs} onToggle={() => toggle.mutate(r.id)} onDelete={() => remove.mutate(r.id)} onRun={() => run.mutate(r.id)} onEdit={() => startEdit(r)} />
           ))}
         </ul>
       )}
@@ -63,7 +80,7 @@ export function RoutesTab({ matchId, state, owned, clockOffsetMs, allRoutes = fa
       <ErrorText>{(toggle.error ?? remove.error ?? run.error)?.message}</ErrorText>
 
       <div className="space-y-2 border-t border-slate-800 pt-3">
-        <h3 className="text-sm font-medium">New route from {regionById(owned.regionId)?.name}</h3>
+        <h3 className="text-sm font-medium">{editing ? `Edit route from ${regionById(editing.fromRegionId)?.name}` : `New route from ${regionById(owned.regionId)?.name}`}</h3>
         {destinations.length === 0 ? (
           <p className="text-xs text-slate-400">You need a second region (or an ally) to send to.</p>
         ) : (
@@ -114,16 +131,27 @@ export function RoutesTab({ matchId, state, owned, clockOffsetMs, allRoutes = fa
             </div>
             <p className="text-xs text-slate-500">Up to {count} caravans ({fmt(count * perCaravan)} goods) leave every {every} game hours, unload, and come back. Trips are skipped when nothing is in stock or no caravans are home.</p>
             <div className="flex flex-wrap gap-2">
-              <Button disabled={create.isPending || !to} onClick={() => create.mutate({ toRegionId: to, mode, load: mode === "fixed" ? load : {}, share: mode === "share" ? share : 0, caravans: count, everyHours: every })}>
-                Add route
-              </Button>
+              {editing ? (
+                <>
+                  <Button disabled={update.isPending || !to} onClick={() => update.mutate({ toRegionId: to, mode, load: mode === "fixed" ? load : {}, share: mode === "share" ? share : 0, caravans: count, everyHours: every })}>
+                    Save changes
+                  </Button>
+                  <Button variant="ghost" onClick={() => setEditing(null)}>
+                    Cancel
+                  </Button>
+                </>
+              ) : (
+                <Button disabled={create.isPending || !to} onClick={() => create.mutate({ toRegionId: to, mode, load: mode === "fixed" ? load : {}, share: mode === "share" ? share : 0, caravans: count, everyHours: every })}>
+                  Add route
+                </Button>
+              )}
               {capital && capital !== owned.regionId && (
                 <Button variant="ghost" disabled={create.isPending} onClick={tributePreset} title="30% of production to the capital every 2 game hours with up to 10 caravans">
                   Tribute to capital
                 </Button>
               )}
             </div>
-            <ErrorText>{create.error?.message}</ErrorText>
+            <ErrorText>{(create.error ?? update.error)?.message}</ErrorText>
           </>
         )}
       </div>
@@ -131,7 +159,7 @@ export function RoutesTab({ matchId, state, owned, clockOffsetMs, allRoutes = fa
   );
 }
 
-function RouteRow({ r, showFrom, clockOffsetMs, onToggle, onDelete, onRun }: { r: TradeRouteView; showFrom?: boolean; clockOffsetMs: number; onToggle: () => void; onDelete: () => void; onRun: () => void }) {
+function RouteRow({ r, showFrom, editing, clockOffsetMs, onToggle, onDelete, onRun, onEdit }: { r: TradeRouteView; showFrom?: boolean; editing?: boolean; clockOffsetMs: number; onToggle: () => void; onDelete: () => void; onRun: () => void; onEdit: () => void }) {
   const what =
     r.mode === "share"
       ? `${Math.round(r.share * 100)}% of production`
@@ -140,7 +168,7 @@ function RouteRow({ r, showFrom, clockOffsetMs, onToggle, onDelete, onRun }: { r
           .map(([k, v]) => `${v} ${k}`)
           .join(", ");
   return (
-    <li className="space-y-0.5 py-2">
+    <li className={`space-y-0.5 py-2 ${editing ? "rounded bg-slate-800/50 px-2" : ""}`}>
       <div className="flex items-center justify-between gap-2">
         <span className={r.enabled ? "" : "text-slate-500 line-through"}>
           {showFrom ? `${regionById(r.fromRegionId)?.name} ` : ""}→ {regionById(r.toRegionId)?.name}: {what}
@@ -161,6 +189,9 @@ function RouteRow({ r, showFrom, clockOffsetMs, onToggle, onDelete, onRun }: { r
           {r.lastResult ? ` · last: ${r.lastResult}` : ""}
         </span>
         <span className="flex gap-2">
+          <button className="hover:text-white" onClick={onEdit}>
+            edit
+          </button>
           <button className="hover:text-white" onClick={onRun}>
             send now
           </button>

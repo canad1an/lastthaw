@@ -73,6 +73,41 @@ export async function tradeRouteRoutes(app: FastifyInstance, opts: { db: Db; pub
     return reply.code(201).send({ id: r!.id });
   });
 
+  /** Edit a route's destination, load, caravans or schedule. */
+  app.patch("/api/matches/:id/routes/:routeId", async (req) => {
+    const user = requireUser(req);
+    const { id: matchId, routeId } = req.params as { id: string; routeId: string };
+    const body = createRouteBody.parse(req.body);
+    const { m, p } = await ctx(matchId, user.id);
+    const [r] = await db.select().from(tradeRoutes).where(and(eq(tradeRoutes.id, routeId), eq(tradeRoutes.playerId, p.id))).limit(1);
+    if (!r) throw httpError(404, "route not found");
+    if (!regionById(body.toRegionId)) throw httpError(400, "unknown destination");
+    if (body.toRegionId === r.fromRegionId) throw httpError(400, "a route needs two different regions");
+    const [dest] = await db
+      .select({ owner: matchRegions.ownerPlayerId })
+      .from(matchRegions)
+      .where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, body.toRegionId)))
+      .limit(1);
+    const friendly = dest?.owner === p.id || (dest?.owner ? await areAllied(db, matchId, p.id, dest.owner) : false);
+    if (!friendly) throw httpError(400, "the destination must be yours or an ally's");
+    if (body.mode === "share" && body.share <= 0) throw httpError(400, "share must be above 0%");
+    if (body.mode === "fixed" && !Object.values(body.load).some((v) => v > 0)) throw httpError(400, "choose something to carry");
+    await db
+      .update(tradeRoutes)
+      .set({
+        toRegionId: body.toRegionId,
+        mode: body.mode,
+        load: body.load,
+        share: Math.min(balance.tribute.maxShare, body.share),
+        caravans: body.caravans,
+        everyHours: body.everyHours,
+        nextAt: new Date(Math.min(r.nextAt.getTime(), matchNow(m).getTime() + (body.everyHours * 3600 * 1000) / m.speed)),
+      })
+      .where(eq(tradeRoutes.id, routeId));
+    await publisher.toPlayer(matchId, p.id, "region.updated", { regionId: r.fromRegionId });
+    return { ok: true };
+  });
+
   app.post("/api/matches/:id/routes/:routeId/toggle", async (req) => {
     const user = requireUser(req);
     const { id: matchId, routeId } = req.params as { id: string; routeId: string };

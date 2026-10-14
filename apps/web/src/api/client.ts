@@ -69,6 +69,8 @@ export const api = {
     request<{ ok: true; armyId: string; arrivesAt: string; path: string[] }>("POST", `/api/matches/${id}/regions/${regionId}/send`, body),
   createRoute: (id: string, regionId: string, body: { toRegionId: string; mode: "fixed" | "share"; load: Record<string, number>; share: number; caravans: number; everyHours: number }) =>
     request<{ id: string }>("POST", `/api/matches/${id}/regions/${regionId}/routes`, body),
+  updateRoute: (id: string, routeId: string, body: { toRegionId: string; mode: "fixed" | "share"; load: Record<string, number>; share: number; caravans: number; everyHours: number }) =>
+    request<{ ok: true }>("PATCH", `/api/matches/${id}/routes/${routeId}`, body),
   toggleRoute: (id: string, routeId: string) => request<{ ok: true; enabled: boolean }>("POST", `/api/matches/${id}/routes/${routeId}/toggle`, {}),
   deleteRoute: (id: string, routeId: string) => request<{ ok: true }>("DELETE", `/api/matches/${id}/routes/${routeId}`),
   runRoute: (id: string, routeId: string) => request<{ ok: true; result: string }>("POST", `/api/matches/${id}/routes/${routeId}/run`, {}),
