@@ -116,7 +116,9 @@ function CreateMatch({ admin }: { admin: boolean }) {
   return (
     <Card>
       <h2 className="mb-1 font-medium">Create a match {admin ? "(admin)" : "(dev tool)"}</h2>
-      <p className="mb-3 text-xs text-slate-400">Players join in the lobby until the start time; empty slots are filled with AI tribes up to the number below. Speed 10 means a 3-day match.</p>
+      <p className="mb-3 text-xs text-slate-400">
+        Players join in the lobby until the start time. At start, AI tribes are added until the match has N players in total (set N to the number of humans for no AI, 100 for a full map). Speed 10 means a 3-day match.
+      </p>
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -133,7 +135,7 @@ function CreateMatch({ admin }: { admin: boolean }) {
         <Field label="Starts in (min)">
           <Input type="number" min={0} value={startsIn} onChange={(e) => setStartsIn(Number(e.target.value))} />
         </Field>
-        <Field label="AI tribes up to">
+        <Field label="Fill with AI to N players">
           <Input type="number" min={0} max={100} value={aiFillTo} onChange={(e) => setAiFillTo(Number(e.target.value))} />
         </Field>
         <div className="flex items-end">
