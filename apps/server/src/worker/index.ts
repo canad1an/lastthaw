@@ -65,9 +65,9 @@ await Promise.all([
   every(1000, "jobs", async () => {
     await runDueJobs(db, publisher, log);
   }),
-  every(30_000, "tick", () => runMatchTicks(db, publisher, log)),
+  every(Number(process.env.TICK_MS) || 30_000, "tick", () => runMatchTicks(db, publisher, log)),
   every(60_000, "weekly", () => ensureWeeklyMatch(db, log)),
-  every(30_000, "trade", async () => {
+  every(Number(process.env.TICK_MS) || 30_000, "trade", async () => {
     await runTradeRoutes(db, publisher, log);
   }),
   every(balance.fairplay.scanMinutes * 60_000, "fairplay", async () => {

@@ -34,5 +34,6 @@ while (!stopping) {
   } catch (err) {
     log.error({ err }, "ai pass failed");
   }
-  await new Promise((r) => setTimeout(r, Math.max(1000, 15_000 - (Date.now() - started))));
+  // AI_PASS_MS shortens the pass interval for high-speed test matches.
+  await new Promise((r) => setTimeout(r, Math.max(250, (Number(process.env.AI_PASS_MS) || 15_000) - (Date.now() - started))));
 }

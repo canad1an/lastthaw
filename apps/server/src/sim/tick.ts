@@ -59,7 +59,7 @@ async function tickMatch(db: Db, publisher: Publisher, matchId: string, log: pin
  * AI decisions, run by the separate `ai` process so they can never delay
  * job completion or the tick. Each command commits on its own.
  */
-export async function runAiDecisions(db: Db, publisher: Publisher, log: pino.Logger, limit = 25): Promise<number> {
+export async function runAiDecisions(db: Db, publisher: Publisher, log: pino.Logger, limit = Number(process.env.AI_PASS_LIMIT) || 25): Promise<number> {
   const running = await db.select().from(matches).where(eq(matches.status, "running"));
   let acted = 0;
   for (const m of running) {
