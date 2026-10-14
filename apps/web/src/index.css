@@ -8,3 +8,33 @@ body {
   @apply bg-slate-950 text-slate-100 antialiased;
   min-height: 100dvh;
 }
+
+/* Top banner: deep night sky with a slow aurora drifting across it and a frost line on top. */
+.banner {
+  background: linear-gradient(90deg, #07111f 0%, #0b1a2b 45%, #0f2238 100%);
+}
+.banner-aurora {
+  background:
+    radial-gradient(60% 140% at 20% 120%, rgba(56, 189, 248, 0.28), transparent 60%),
+    radial-gradient(40% 120% at 60% -20%, rgba(45, 212, 191, 0.22), transparent 60%),
+    radial-gradient(35% 120% at 90% 110%, rgba(167, 139, 250, 0.18), transparent 60%);
+  background-size: 200% 100%;
+  animation: aurora 18s ease-in-out infinite alternate;
+  mix-blend-mode: screen;
+}
+.banner-frost {
+  background: linear-gradient(90deg, transparent, rgba(224, 242, 254, 0.7) 30%, rgba(224, 242, 254, 0.9) 50%, rgba(224, 242, 254, 0.7) 70%, transparent);
+}
+@keyframes aurora {
+  from {
+    background-position: 0% 50%;
+  }
+  to {
+    background-position: 100% 50%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .banner-aurora {
+    animation: none;
+  }
+}
