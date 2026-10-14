@@ -8,6 +8,7 @@ import {
   balance,
   buildingById,
   buildingCost,
+  matchDayOf,
   buildingSeconds,
   canAfford,
   computeRates,
@@ -273,7 +274,7 @@ function BuildTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
           const queued = pendingHere.filter((j) => j.kind === "build" && j.refId === b.id).length;
           const level = (owned.buildings[b.id] ?? 0) + queued + 1;
           const maxed = level > b.maxLevel;
-          const cost = buildingCost(b, level);
+          const cost = buildingCost(b, level, matchDayOf(state, clockOffsetMs));
           const blocked = buildingBlockedBy(b, regionById(owned.regionId)!);
           const ok = !maxed && !queueFull && !blocked && canAfford(stock, cost);
           const secs = realSeconds(buildingSeconds(b, level), 0, state.match.speed);
@@ -340,7 +341,7 @@ function TrainTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
       <ul className="divide-y divide-slate-800">
         {list.map((u) => {
           const n = Math.max(qty, u.minBatch ?? 1);
-          const cost = unitCost(u, n);
+          const cost = unitCost(u, n, matchDayOf(state, clockOffsetMs));
           const needs = u.needsResource && !region.resources.includes(u.needsResource);
           const ok = !queueFull && !needs && canAfford(stock, cost) && live.e.popWorkers >= n;
           const secs = realSeconds(trainSeconds(u, n), owned.effects.trainSpeed, state.match.speed);

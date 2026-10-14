@@ -7,19 +7,21 @@ import {
   balance,
   buildingById,
   buildingCost,
+  dayCostMultiplier,
   effectsOf,
   freezeDayForLatitude,
   distanceKm,
   regionById,
   seededRng,
   techById,
+  techCost,
   normalizeAssignment,
   type Cost,
 } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
-import { armies, jobs, matchRegions, playerTechs, players } from "../db/schema.js";
+import { armies, jobs, marketOrders, matchRegions, playerTechs, players } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
-import { projectRegion, settleAndLockRegion, type MatchRegionRow } from "./regions.js";
+import { applyCost, projectRegion, settleAndLockRegion, stockOf, type MatchRegionRow } from "./regions.js";
 import { queueBuild, queueResearch, queueTrain, sendArmy, type CommandContext, type PlayerRow } from "./commands.js";
 import { areAllied } from "./alliances.js";
 import type { MatchRow } from "../worker/jobs.js";
@@ -32,9 +34,9 @@ const RESEARCH_ORDER = ["fire_making", "flint_tools", "agriculture", "animal_hus
 
 /** What each difficulty is allowed to do. Harder tiers never cheat; they just decide better and more often. */
 const TIER = {
-  easy: { cadence: { min: 90, max: 180 }, buildCap: (age: number) => 4 + age, aggression: 0.5, reactsToThreat: false, iceRetreatDays: 0, adaptiveEconomy: false, adaptiveResearch: false, conquersHumans: false, scoresTargets: false, hoards: true },
-  medium: { cadence: { min: 40, max: 90 }, buildCap: (age: number) => 6 + age * 2, aggression: 1, reactsToThreat: true, iceRetreatDays: 2, adaptiveEconomy: false, adaptiveResearch: false, conquersHumans: false, scoresTargets: false, hoards: false },
-  hard: { cadence: { min: 20, max: 45 }, buildCap: (age: number) => 8 + age * 3, aggression: 1.4, reactsToThreat: true, iceRetreatDays: 4, adaptiveEconomy: true, adaptiveResearch: true, conquersHumans: true, scoresTargets: true, hoards: false },
+  easy: { cadence: { min: 90, max: 180 }, buildCap: (age: number) => 6 + age * 2, aggression: 0.5, reactsToThreat: false, iceRetreatDays: 1, adaptiveEconomy: false, adaptiveResearch: false, conquersHumans: false, scoresTargets: false, hoards: true, reach: 1, settles: false },
+  medium: { cadence: { min: 40, max: 90 }, buildCap: (age: number) => 10 + age * 3, aggression: 1, reactsToThreat: true, iceRetreatDays: 2, adaptiveEconomy: false, adaptiveResearch: false, conquersHumans: true, scoresTargets: false, hoards: false, reach: 2, settles: true },
+  hard: { cadence: { min: 20, max: 45 }, buildCap: (age: number) => 14 + age * 4, aggression: 1.4, reactsToThreat: true, iceRetreatDays: 4, adaptiveEconomy: true, adaptiveResearch: true, conquersHumans: true, scoresTargets: true, hoards: false, reach: 3, settles: true },
 } as const;
 
 export function parseProfile(profile: string | null): { difficulty: Difficulty; temperament: Temperament } {
@@ -103,7 +105,12 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
   }
 
   // Ice: regions that freeze soon get evacuated to the safest owned region.
-  if (tier.iceRetreatDays > 0) await retreatFromIce(ctx, owned, matchDay, tier.iceRetreatDays, attempt);
+  const pendingSettle = await db
+    .select({ target: armies.targetRegionId })
+    .from(armies)
+    .where(and(eq(armies.matchId, m.id), eq(armies.playerId, p.id), eq(armies.mission, "settle"), eq(armies.status, "outbound")));
+  const settlingTo = new Set(pendingSettle.map((a) => a.target));
+  if (tier.iceRetreatDays > 0) await retreatFromIce(ctx, owned, matchDay, tier.iceRetreatDays, attempt, settlingTo, queueLen);
 
   for (const row of owned) {
     if (row.frozenAt) continue;
@@ -126,7 +133,7 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
       if (buildingBlockedBy(def, region)) continue;
       const level = row.buildings[id] ?? 0;
       if (level >= Math.min(def.maxLevel, tier.buildCap(p.age))) continue;
-      const cost = buildingCost(def, level + 1);
+      const cost = buildingCost(def, level + 1, matchDay);
       if (!wanted) wanted = cost;
       if (slots <= 0) break;
       if (tier.hoards && !comfortablyAffordable(economy, cost)) continue;
@@ -181,9 +188,28 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
       const def = techById.get(next)!;
       const capital = owned.find((r) => r.regionId === p.capitalRegionId) ?? owned[0]!;
       const { economy } = projectRegion(capital, now, m.speed);
-      if (!tier.hoards || comfortablyAffordable(economy, def.cost)) await attempt(() => queueResearch(ctx, next!));
+      if (!tier.hoards || comfortablyAffordable(economy, techCost(def, matchDay))) await attempt(() => queueResearch(ctx, next!));
     }
   }
+
+  // Expansion: a crowded region trains settlers and claims the nearest free land. One colony at a time.
+  if (tier.settles && settlingTo.size === 0) {
+    const crowded = [...owned].filter((r) => !r.frozenAt && r.popWorkers >= balance.ai.settleAbove).sort((a, b) => b.popWorkers - a.popWorkers);
+    for (const row of crowded) {
+      const settlers = row.units.settler ?? 0;
+      const need = balance.settle.settlersRequired;
+      if (settlers >= need) {
+        const free = await freeFrontier(db, m.id, ownedIds, (id) => (freezeDayForLatitude(Math.abs(regionById(id)!.lat)) ?? 999) - matchDay > 6);
+        const target = free.sort((a, b) => distanceKm(row.regionId, a) - distanceKm(row.regionId, b))[0];
+        if (target && (await attempt(() => sendArmy(ctx, row.regionId, { mission: "settle", targetRegionId: target, units: { settler: need }, people: 0, cargo: {} })))) break;
+      } else if (!pendingJobs.some((j) => j.regionId === row.regionId && j.kind === "train") && queueLen(row.regionId) < balance.queue.slotsPerRegion) {
+        if (await attempt(() => queueTrain(ctx, row.regionId, "settler", need))) break;
+      }
+    }
+  }
+
+  // Ore for sale: a tribe sitting on more ore than it needs lists half of it for wood.
+  await sellOre(ctx, owned, now);
 
   // Aggression: raid or conquer a weak neighbour. Hard tribes get hungrier when they fall behind.
   const standings = await db.select({ owner: matchRegions.ownerPlayerId, n: sql<number>`count(*)::int` }).from(matchRegions).where(and(eq(matchRegions.matchId, m.id), sql`${matchRegions.ownerPlayerId} is not null`)).groupBy(matchRegions.ownerPlayerId);
@@ -203,8 +229,15 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
       const strong = [...owned].sort((a, b) => b.popSoldiers - a.popSoldiers)[0]!;
       const soldiers = Object.values(strong.units).reduce((a, b) => a + b, 0);
       if (soldiers >= 6) {
-        const hops = regionById(strong.regionId)!.neighbors;
-        const candidatesIds = tier.scoresTargets ? [...new Set([...hops, ...hops.flatMap((h) => regionById(h)!.neighbors)])].filter((id) => !ownedIds.includes(id)) : hops;
+        const reach = tier.reach + (matchDay >= 10 ? 1 : 0);
+        let ring = new Set<string>([strong.regionId]);
+        const seen = new Set<string>(ring);
+        for (let i = 0; i < reach; i++) {
+          const next = new Set<string>();
+          for (const id of ring) for (const n of regionById(id)!.neighbors) if (!seen.has(n)) { seen.add(n); next.add(n); }
+          ring = next;
+        }
+        const candidatesIds = [...seen].filter((id) => !ownedIds.includes(id));
         const rows = await db
           .select()
           .from(matchRegions)
@@ -265,10 +298,34 @@ function steerToward(e: { food: number; wood: number; stone: number }, rates: { 
 }
 
 /** Move people, units and goods out of regions about to freeze into the safest owned region. */
-async function retreatFromIce(ctx: CommandContext, owned: MatchRegionRow[], matchDay: number, horizonDays: number, attempt: (fn: () => Promise<unknown>) => Promise<boolean>): Promise<void> {
+async function retreatFromIce(
+  ctx: CommandContext,
+  owned: MatchRegionRow[],
+  matchDay: number,
+  horizonDays: number,
+  attempt: (fn: () => Promise<unknown>) => Promise<boolean>,
+  settlingTo: Set<string>,
+  queueLen: (regionId: string) => number,
+): Promise<void> {
+  const { db, m } = ctx;
   const safety = (id: string) => freezeDayForLatitude(Math.abs(regionById(id)!.lat)) ?? 999;
   const safe = owned.filter((r) => !r.frozenAt && safety(r.regionId) - matchDay > horizonDays + 5).sort((a, b) => safety(b.regionId) - safety(a.regionId));
-  if (!safe.length) return;
+  if (!safe.length) {
+    // Nowhere safe yet: the most threatened region sends (or trains) settlers toward safer free land.
+    if (settlingTo.size > 0) return;
+    const threatened = owned.filter((r) => !r.frozenAt && safety(r.regionId) - matchDay <= horizonDays + 3).sort((a, b) => safety(a.regionId) - safety(b.regionId));
+    const row = threatened[0];
+    if (!row) return;
+    const need = balance.settle.settlersRequired;
+    if ((row.units.settler ?? 0) >= need) {
+      const free = await freeFrontier(db, m.id, owned.map((r) => r.regionId), (id) => safety(id) - matchDay > horizonDays + 8);
+      const target = free.sort((a, b) => safety(b) - safety(a) || distanceKm(row.regionId, a) - distanceKm(row.regionId, b))[0];
+      if (target) await attempt(() => sendArmy(ctx, row.regionId, { mission: "settle", targetRegionId: target, units: { settler: need }, people: 0, cargo: {} }));
+    } else if (queueLen(row.regionId) < balance.queue.slotsPerRegion) {
+      await attempt(() => queueTrain(ctx, row.regionId, "settler", need));
+    }
+    return;
+  }
   for (const row of owned) {
     if (row.frozenAt) continue;
     if (safety(row.regionId) - matchDay > horizonDays) continue;
@@ -279,5 +336,57 @@ async function retreatFromIce(ctx: CommandContext, owned: MatchRegionRow[], matc
     const units = { ...row.units };
     if (people < 1 && Object.values(units).every((n) => n <= 0)) continue;
     await attempt(() => sendArmy(ctx, row.regionId, { mission: Object.values(units).some((n) => n > 0) ? "move" : "transport", targetRegionId: dest.regionId, units, people, cargo }));
+  }
+}
+
+/** Unowned, uninhabited, non-tundra regions next to mine (optionally filtered), for settling. */
+async function freeFrontier(db: Db, matchId: string, ownedIds: string[], ok: (id: string) => boolean = () => true): Promise<string[]> {
+  const ids = [...new Set(ownedIds.flatMap((id) => regionById(id)?.neighbors ?? []))].filter((id) => !ownedIds.includes(id) && !regionById(id)!.terrain.startsWith("tundra") && ok(id));
+  if (ids.length === 0) return [];
+  const rows = await db
+    .select({ regionId: matchRegions.regionId, owner: matchRegions.ownerPlayerId, pop: sql<number>`${matchRegions.popWorkers} + ${matchRegions.popSoldiers} + ${matchRegions.popOccupiers}` })
+    .from(matchRegions)
+    .where(and(eq(matchRegions.matchId, matchId), inArray(matchRegions.regionId, ids)));
+  const taken = new Set(rows.filter((r) => r.owner || r.pop >= 1).map((r) => r.regionId));
+  return ids.filter((id) => !taken.has(id));
+}
+
+/** List surplus ore on the market so other tribes (and humans) can buy their way into the next age. */
+async function sellOre(ctx: CommandContext, owned: MatchRegionRow[], now: Date): Promise<void> {
+  const { db, m, p } = ctx;
+  const open = await db
+    .select({ offer: marketOrders.offerResource })
+    .from(marketOrders)
+    .where(and(eq(marketOrders.matchId, m.id), eq(marketOrders.playerId, p.id), eq(marketOrders.status, "open")));
+  if (open.length >= 3) return;
+  const listed = new Set(open.map((o) => o.offer));
+  for (const row of owned) {
+    if (row.frozenAt) continue;
+    for (const ore of ["copper", "tin", "iron"] as const) {
+      if (listed.has(ore)) continue;
+      const have = (row.special as Record<string, number>)[ore] ?? 0;
+      if (have <= balance.ai.oreListAbove) continue;
+      const amount = Math.floor(have / 2);
+      try {
+        await db.transaction(async (tx) => {
+          const locked = await settleAndLockRegion(tx, m.id, row.regionId, now, m.speed);
+          if ((stockOf(locked)[ore] ?? 0) < amount) return;
+          await applyCost(tx, locked, { [ore]: amount });
+          await tx.insert(marketOrders).values({
+            matchId: m.id,
+            playerId: p.id,
+            regionId: row.regionId,
+            offerResource: ore,
+            offerAmount: amount,
+            askResource: "wood",
+            askAmount: amount * balance.ai.oreAskWoodPerUnit,
+            status: "open",
+          });
+        });
+        listed.add(ore);
+      } catch {
+        // Market full or region changed hands; try again next pass.
+      }
+    }
   }
 }

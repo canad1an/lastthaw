@@ -172,20 +172,20 @@ export const TECHS: readonly TechDef[] = [
   { id: "flint_tools", name: "Flint tools", age: 0, description: "Sharper tools for every task.", cost: { stone: 30, wood: 40 }, baseSeconds: 120 },
   { id: "agriculture", name: "Agriculture", age: 0, description: "Planting instead of only gathering.", cost: { food: 150, wood: 80 }, baseSeconds: 240, requires: ["fire_making"] },
   { id: "animal_husbandry", name: "Animal husbandry", age: 0, description: "Tame the herds.", cost: { food: 150, wood: 60 }, baseSeconds: 240, requires: ["fire_making"] },
-  { id: "bronze_working", name: "Bronze working", age: 0, description: "Copper and tin make bronze. Enters the Bronze Age.", cost: { food: 300, wood: 250, stone: 200 }, baseSeconds: 900, requires: ["flint_tools", "agriculture"], advancesTo: 1 },
+  { id: "bronze_working", name: "Bronze working", age: 0, description: "Copper and tin make bronze. Enters the Bronze Age.", cost: { food: 300, wood: 250, stone: 200 }, baseSeconds: 7200, requires: ["flint_tools", "agriculture"], advancesTo: 1 },
   // Bronze
   { id: "mining", name: "Mining", age: 1, description: "Dig for metals.", cost: { wood: 300, stone: 300 }, baseSeconds: 600 },
   { id: "the_wheel", name: "The wheel", age: 1, description: "Carts and chariots.", cost: { wood: 400, food: 200 }, baseSeconds: 700, requires: ["animal_husbandry"] },
   { id: "writing", name: "Writing", age: 1, description: "Records and learning.", cost: { food: 300, wood: 300 }, baseSeconds: 800 },
-  { id: "iron_working", name: "Iron working", age: 1, description: "Smelt iron. Enters the Iron Age.", cost: { wood: 800, stone: 600, copper: 30 }, baseSeconds: 2400, requires: ["mining"], advancesTo: 2 },
+  { id: "iron_working", name: "Iron working", age: 1, description: "Smelt iron. Enters the Iron Age.", cost: { wood: 800, stone: 600, copper: 10 }, baseSeconds: 14400, requires: ["mining"], advancesTo: 2 },
   // Iron
   { id: "siegecraft", name: "Siegecraft", age: 2, description: "Engines to break walls.", cost: { wood: 900, iron: 40 }, baseSeconds: 1800 },
   { id: "masonry", name: "Masonry", age: 2, description: "Cut stone for walls and roads.", cost: { stone: 1000, wood: 400 }, baseSeconds: 1800 },
-  { id: "drill", name: "Drill", age: 2, description: "Professional soldiers. Enters the Classical Age.", cost: { food: 1500, wood: 1000, iron: 80 }, baseSeconds: 5400, requires: ["masonry", "writing"], advancesTo: 3 },
+  { id: "drill", name: "Drill", age: 2, description: "Professional soldiers. Enters the Classical Age.", cost: { food: 1500, wood: 1000, iron: 40 }, baseSeconds: 21600, requires: ["masonry", "writing"], advancesTo: 3 },
   // Classical
   { id: "shipbuilding", name: "Shipbuilding", age: 3, description: "Boats that cross open sea.", cost: { wood: 2000, stone: 500 }, baseSeconds: 4800 },
   { id: "engineering", name: "Engineering", age: 3, description: "Aqueducts and ballistae.", cost: { stone: 1800, wood: 800, iron: 60 }, baseSeconds: 4800 },
-  { id: "chivalry", name: "Chivalry", age: 3, description: "Knights and castles. Enters the Medieval Age.", cost: { food: 3000, wood: 2000, iron: 200 }, baseSeconds: 10800, requires: ["engineering"], advancesTo: 4 },
+  { id: "chivalry", name: "Chivalry", age: 3, description: "Knights and castles. Enters the Medieval Age.", cost: { food: 3000, wood: 2000, iron: 100 }, baseSeconds: 28800, requires: ["engineering"], advancesTo: 4 },
   // Medieval
   { id: "siege_engines", name: "Siege engines", age: 4, description: "Trebuchets.", cost: { wood: 3000, iron: 200 }, baseSeconds: 9000 },
   { id: "scholasticism", name: "Scholasticism", age: 4, description: "Universities.", cost: { wood: 2500, stone: 2500 }, baseSeconds: 9000 },

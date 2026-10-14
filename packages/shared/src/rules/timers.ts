@@ -13,13 +13,29 @@ export function buildingSeconds(def: BuildingDef, level: number): number {
   return Math.min(t.maxSeconds, def.baseSeconds * Math.pow(t.levelGrowth, Math.max(0, level - 1)));
 }
 
-export function buildingCost(def: BuildingDef, level: number): Cost {
-  const g = Math.pow(balance.timers.costGrowth, Math.max(0, level - 1));
-  return scaleCost(def.cost, g);
+/** Cost multiplier on a given match day (linear between the points in balance.timers.dayCost). */
+export function dayCostMultiplier(day: number): number {
+  const pts = balance.timers.dayCost;
+  if (day <= pts[0]!.day) return pts[0]!.mult;
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1]!;
+    const b = pts[i]!;
+    if (day <= b.day) return a.mult + ((b.mult - a.mult) * (day - a.day)) / (b.day - a.day);
+  }
+  return pts[pts.length - 1]!.mult;
 }
 
-export function unitCost(def: UnitDef, qty: number): Cost {
-  return scaleCost(def.cost, qty);
+export function buildingCost(def: BuildingDef, level: number, day = 0): Cost {
+  const g = Math.pow(balance.timers.costGrowth, Math.max(0, level - 1));
+  return scaleCost(def.cost, g * dayCostMultiplier(day));
+}
+
+export function techCost(def: TechDef, day = 0): Cost {
+  return scaleCost(def.cost, dayCostMultiplier(day));
+}
+
+export function unitCost(def: UnitDef, qty: number, day = 0): Cost {
+  return scaleCost(def.cost, qty * Math.sqrt(dayCostMultiplier(day)));
 }
 
 /** Training a batch takes longer than one unit, but with a volume discount. */
@@ -52,4 +68,10 @@ export function missingFor(stock: Record<string, number>, cost: Cost): string[] 
   return Object.entries(cost)
     .filter(([k, v]) => (stock[k] ?? 0) < v)
     .map(([k]) => k);
+}
+
+/** Match day right now from a match view (ISO startsAt + speed) and the client's clock offset. */
+export function matchDayOf(state: { match: { startsAt: string | null; speed: number; lengthDays?: number } }, clockOffsetMs: number, now = Date.now()): number {
+  if (!state.match.startsAt) return 0;
+  return Math.max(0, ((now + clockOffsetMs - Date.parse(state.match.startsAt)) / 86400_000) * state.match.speed);
 }

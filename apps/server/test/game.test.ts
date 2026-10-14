@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { and, eq, isNull } from "drizzle-orm";
-import { balance, buildingById, iceLatitudeOnDay, matchStateView, regionById } from "@lastthaw/shared";
+import { balance, buildingById,
+  buildingCost, iceLatitudeOnDay, matchStateView, regionById } from "@lastthaw/shared";
 import { buildApp } from "../src/api/app.js";
 import { createDb, type Db } from "../src/db/client.js";
 import { jobs, matchRegions, matches, transfers, users } from "../src/db/schema.js";
@@ -185,8 +186,11 @@ describe("milestone 1 flow", () => {
     const b2 = (await a.call("POST", `/api/matches/${matchId}/regions/${aPick}/build`, { buildingId: "huts" })).json() as { jobId: string };
     const b3 = (await a.call("POST", `/api/matches/${matchId}/regions/${aPick}/build`, { buildingId: "storehouse" })).json() as { jobId: string };
     expect((await a.call("POST", `/api/matches/${matchId}/jobs/${b3.jobId}/cancel`, {})).statusCode).toBe(200);
-    const woodAfter = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json()).owned[0]!.wood;
-    expect(woodAfter).toBeGreaterThan(woodBefore - 70); // only huts lvl 2 (60 wood) still paid, give or take production
+    const after = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json());
+    const woodAfter = after.owned[0]!.wood;
+    const dayNow = ((Date.parse(after.match.now) - Date.parse(after.match.startsAt)) / 86400_000) * after.match.speed;
+    const hutsWood = buildingCost(buildingById.get("huts")!, 2, dayNow).wood ?? 0;
+    expect(woodAfter).toBeGreaterThan(woodBefore - hutsWood - 10); // only huts lvl 2 still paid, give or take production
     void b2;
 
     // Milestone 3/4: Alice conquers an empty neighbouring region with her warriors and five settlers.
@@ -323,11 +327,12 @@ describe("milestone 1 flow", () => {
       expect(body.cargo.food ?? 0).toBeGreaterThan(0);
       let after = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json());
       expect(after.owned.find((o) => o.regionId === homestead)!.popWorkers).toBeLessThan(1);
+      // Nobody is left right now (newcomers trickle back in over time, so check before skipping ahead).
+      expect((await a.call("POST", `/api/matches/${matchId}/regions/${homestead}/evacuate`, { toRegionId: aPick })).statusCode).toBe(409);
       const capitalPeopleBefore = after.owned.find((o) => o.regionId === aPick)!.popWorkers;
       await skipTo(body.arrivesAt);
       after = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json());
       expect(after.owned.find((o) => o.regionId === aPick)!.popWorkers).toBeGreaterThan(capitalPeopleBefore + body.people - 1);
-      expect((await a.call("POST", `/api/matches/${matchId}/regions/${homestead}/evacuate`, { toRegionId: aPick })).statusCode).toBe(409);
     }
 
     // Milestone 4: a match tick scores everyone and lets the AI tribe act.

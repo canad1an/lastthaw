@@ -84,6 +84,8 @@ async function placeNeutralTribes(tx: Tx, matchId: string, capitals: string[], c
   for (const r of pool) {
     const people = ai.neutralPeople.min + Math.floor(rng() * (ai.neutralPeople.max - ai.neutralPeople.min + 1));
     const warriors = ai.neutralWarriors.min + Math.floor(rng() * (ai.neutralWarriors.max - ai.neutralWarriors.min + 1));
+    const ore = (["copper", "tin", "iron"] as const)[Math.floor(rng() * 3)]!;
+    const oreAmount = ai.neutralOre.min + Math.floor(rng() * (ai.neutralOre.max - ai.neutralOre.min + 1));
     await tx
       .insert(matchRegions)
       .values({
@@ -96,6 +98,7 @@ async function placeNeutralTribes(tx: Tx, matchId: string, capitals: string[], c
         food: 150,
         wood: 60,
         stone: 30,
+        special: { [ore]: oreAmount },
         assignment: { food: 0.7, wood: 0.2, stone: 0.1 },
         settledAt: now,
       })

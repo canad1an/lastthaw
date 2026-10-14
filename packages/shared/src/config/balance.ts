@@ -65,6 +65,8 @@ export const balance = {
     baseCapacity: 50,
     /** Population lost per game hour as a fraction of current population while starving. */
     starvationPerHour: 0.01,
+    /** Population lost per game hour in a frozen region: the ice is not survivable. */
+    frozenDeathPerHour: 0.1,
     /** Storage cap for each base resource in a region with no storage buildings. */
     baseStorage: { food: 1500, wood: 1200, stone: 1000 },
     /** Cap for each metal/horse stock per region. */
@@ -90,6 +92,16 @@ export const balance = {
     batchExponent: 0.8,
     /** Fraction refunded when cancelling a job that has already started (1 = full refund, same as unstarted). */
     cancelRefundStarted: 1,
+    /**
+     * Building and research costs grow with the match day so income stays
+     * useful all month: linear between these points (day -> multiplier).
+     * Unit costs use the square root of the same curve.
+     */
+    dayCost: [
+      { day: 0, mult: 1 },
+      { day: 15, mult: 4 },
+      { day: 30, mult: 8 },
+    ],
   },
   travel: {
     /** Unit speed (km per game hour in the tables) is multiplied by this to get map km per hour. */
@@ -200,6 +212,13 @@ export const balance = {
     /** Neutral tribes are not placed within this distance of any capital. */
     neutralMinDistanceKm: 500,
     neutralPeople: { min: 12, max: 40 },
+    /** Ore a neutral tribe holds (one of copper, tin, iron), so raiding them is a way into the next age. */
+    neutralOre: { min: 15, max: 45 },
+    /** AI tribes list ore on the market once they hold more than this, asking this much wood per unit. */
+    oreListAbove: 40,
+    oreAskWoodPerUnit: 12,
+    /** AI tribes start colonizing once a region has this many workers. */
+    settleAbove: 40,
     neutralWarriors: { min: 2, max: 10 },
     /** Neutral tribes train a few warriors per game day so the map never feels empty. */
     neutralGrowthWarriorsPerDay: 1.5,

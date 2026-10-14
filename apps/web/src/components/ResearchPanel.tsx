@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
-import { AGES, availableTechs, balance, canAfford, formatCountdown, realSeconds, techById, techSeconds, type MatchStateView, type TechDef } from "@lastthaw/shared";
+import { AGES, availableTechs, balance, canAfford, formatCountdown, realSeconds, techById, techSeconds, type MatchStateView, type TechDef, techCost, matchDayOf } from "@lastthaw/shared";
 import { Tooltip } from "./Tooltip.js";
 import { techPreview } from "./previews.js";
 import { api, keys } from "../api/client.js";
@@ -49,7 +49,7 @@ export function ResearchPanel({ matchId, state, clockOffsetMs }: { matchId: stri
       {capital ? (
         <TechList state={state} clockOffsetMs={clockOffsetMs} list={list} busy={full || m.isPending} capital={capital} onPick={(id) => m.mutate(id)} />
       ) : (
-        <p className="text-xs text-slate-400">Research is paid from your capital.</p>
+        <p className="text-xs text-slate-400">Research is paid from all your regions: food, wood and stone from the capital first, ore and horses from wherever you have them.</p>
       )}
     </Card>
   );
@@ -93,12 +93,16 @@ function TechList({
   onPick: (id: string) => void;
 }) {
   const live = useLiveEconomy(capital, clockOffsetMs, state.match.speed);
-  const stock = { food: live.e.food, wood: live.e.wood, stone: live.e.stone, ...live.e.special };
+  // Research draws ore and horses from every region, so show the pooled special stock.
+  const pooledSpecial: Record<string, number> = {};
+  for (const o of state.owned) if (!o.frozen) for (const [k, v] of Object.entries(o.special)) pooledSpecial[k] = (pooledSpecial[k] ?? 0) + v;
+  const stock = { food: live.e.food, wood: live.e.wood, stone: live.e.stone, ...live.e.special, ...pooledSpecial };
   if (list.length === 0) return <p className="text-xs text-slate-400">Nothing left to research in this age.</p>;
   return (
     <ul className="divide-y divide-slate-800">
       {list.map((t) => {
-        const ok = !busy && canAfford(stock, t.cost);
+        const cost = techCost(t, matchDayOf(state, clockOffsetMs));
+        const ok = !busy && canAfford(stock, cost);
         const secs = realSeconds(techSeconds(t), capital.effects.researchSpeed, state.match.speed);
         return (
           <li key={t.id} className="flex items-center justify-between gap-2 py-2 text-sm">
@@ -113,7 +117,7 @@ function TechList({
                   </div>
                   <p className="truncate text-xs text-slate-400">{t.description}</p>
                   <p>
-                    <CostLine cost={t.cost} stock={stock} suffix={formatCountdown(secs)} />
+                    <CostLine cost={cost} stock={stock} suffix={formatCountdown(secs)} />
                   </p>
                 </div>
               }

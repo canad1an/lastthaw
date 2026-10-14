@@ -20,6 +20,7 @@ import {
   realSeconds,
   regionById,
   techById,
+  techCost,
   techSeconds,
   trainSeconds,
   travelSeconds,
@@ -30,8 +31,8 @@ import {
 } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { armies, jobs, matchRegions, players } from "../db/schema.js";
-import { matchNow } from "./clock.js";
-import { applyCost, settleAndLockRegion, stockOf, type Tx } from "./regions.js";
+import { matchDayAt, matchNow } from "./clock.js";
+import { applyCost, settleAndLockRegion, stockOf, type MatchRegionRow, type Tx } from "./regions.js";
 import { areAllied } from "./alliances.js";
 import type { MatchRow } from "../worker/jobs.js";
 
@@ -78,7 +79,7 @@ export async function queueBuild(ctx: CommandContext, regionId: string, building
     const queuedLevels = pending.filter((j) => j.kind === "build" && j.refId === buildingId).length;
     const level = (row.buildings[buildingId] ?? 0) + queuedLevels + 1;
     if (level > def.maxLevel) throw httpError(400, `${def.name} is at its maximum level`);
-    const cost = buildingCost(def, level);
+    const cost = buildingCost(def, level, matchDayAt(m, now));
     const stock = stockOf(row);
     if (!canAfford(stock, cost)) throw httpError(409, `not enough ${missingFor(stock, cost).join(", ")}`);
     await applyCost(tx, row, cost);
@@ -111,7 +112,7 @@ export async function queueTrain(ctx: CommandContext, regionId: string, unitId: 
     if (pending.length >= balance.queue.slotsPerRegion) throw httpError(409, "the build queue is full");
     const queuedPeople = pending.filter((j) => j.kind === "train").reduce((a, j) => a + (j.qty ?? 0), 0);
     if (row.popWorkers - queuedPeople < qty) throw httpError(409, "not enough free workers to train that many");
-    const cost: Cost = unitCost(def, qty);
+    const cost: Cost = unitCost(def, qty, matchDayAt(m, now));
     const stock = stockOf(row);
     if (!canAfford(stock, cost)) throw httpError(409, `not enough ${missingFor(stock, cost).join(", ")}`);
     await applyCost(tx, row, cost);
@@ -146,17 +147,45 @@ export async function queueResearch(ctx: CommandContext, techId: string) {
     if (pending.some((j) => j.refId === techId)) throw httpError(409, "already queued");
     const known = new Set([...techs, ...pending.map((j) => j.refId!)]);
     for (const r of def.requires ?? []) if (!known.has(r)) throw httpError(400, `${def.name} needs ${techById.get(r)?.name ?? r}`);
-    const capital = await settleAndLockRegion(tx, m.id, p.capitalRegionId!, now, m.speed);
-    if (capital.ownerPlayerId !== p.id) throw httpError(409, "you have lost your capital");
-    const stock = stockOf(capital);
-    if (!canAfford(stock, def.cost)) throw httpError(409, `not enough ${missingFor(stock, def.cost).join(", ")} in your capital`);
-    await applyCost(tx, capital, def.cost);
+    // Research draws on every region you own: food, wood and stone from the capital first,
+    // ore and horses from wherever they are, so nothing has to be hauled home.
+    const mine = await tx
+      .select({ regionId: matchRegions.regionId })
+      .from(matchRegions)
+      .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.ownerPlayerId, p.id), isNull(matchRegions.frozenAt)))
+      .orderBy(asc(matchRegions.regionId));
+    if (!mine.some((r) => r.regionId === p.capitalRegionId)) throw httpError(409, "you have lost your capital");
+    const rows: MatchRegionRow[] = [];
+    for (const r of mine) rows.push(await settleAndLockRegion(tx, m.id, r.regionId, now, m.speed));
+    const capital = rows.find((r) => r.regionId === p.capitalRegionId)!;
+    const ordered = [capital, ...rows.filter((r) => r !== capital)];
+    const pooled: Record<string, number> = {};
+    for (const r of ordered) for (const [k, v] of Object.entries(stockOf(r))) pooled[k] = (pooled[k] ?? 0) + v;
+    const cost = techCost(def, matchDayAt(m, now));
+    if (!canAfford(pooled, cost)) throw httpError(409, `not enough ${missingFor(pooled, cost).join(", ")} across your regions`);
+    const remaining: Record<string, number> = { ...cost };
+    for (const r of ordered) {
+      const have = stockOf(r);
+      const take: Record<string, number> = {};
+      for (const [k, v] of Object.entries(remaining)) {
+        const t = Math.min(v, have[k] ?? 0);
+        if (t > 0) take[k] = t;
+      }
+      if (Object.keys(take).length) {
+        await applyCost(tx, r, take as Cost);
+        for (const [k, t] of Object.entries(take)) {
+          remaining[k] = (remaining[k] ?? 0) - t;
+          if (remaining[k]! <= 1e-9) delete remaining[k];
+        }
+      }
+      if (Object.keys(remaining).length === 0) break;
+    }
     const effects = effectsOf(capital.buildings);
     const startsAt = pending.length ? pending[pending.length - 1]!.endsAt : now;
     const endsAt = new Date(startsAt.getTime() + realSeconds(techSeconds(def), effects.researchSpeed, m.speed) * 1000);
     const [j] = await tx
       .insert(jobs)
-      .values({ matchId: m.id, playerId: p.id, regionId: null, kind: "research", refId: techId, slot: pending.length, payload: { cost: def.cost }, startsAt, endsAt })
+      .values({ matchId: m.id, playerId: p.id, regionId: null, kind: "research", refId: techId, slot: pending.length, payload: { cost }, startsAt, endsAt })
       .returning();
     return j!;
   });

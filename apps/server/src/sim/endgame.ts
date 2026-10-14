@@ -21,7 +21,7 @@ export async function updateScores(tx: Tx, m: MatchRow): Promise<Array<{ id: str
       pop: sql<number>`coalesce(sum(${matchRegions.popWorkers} + ${matchRegions.popSoldiers} + ${matchRegions.popOccupiers}), 0)::float`,
     })
     .from(matchRegions)
-    .where(and(eq(matchRegions.matchId, m.id), sql`${matchRegions.ownerPlayerId} is not null`))
+    .where(and(eq(matchRegions.matchId, m.id), sql`${matchRegions.ownerPlayerId} is not null`, isNull(matchRegions.frozenAt)))
     .groupBy(matchRegions.ownerPlayerId);
   const byOwner = new Map(rows.map((r) => [r.owner!, r]));
   const ps = await tx.select({ id: players.id, age: players.age }).from(players).where(eq(players.matchId, m.id));

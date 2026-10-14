@@ -102,7 +102,9 @@ export function computeRates(traits: RegionTraits, e: RegionEconomy): Rates {
   const starving = e.food <= 0 && foodNet < 0;
 
   let population: number;
-  if (starving || e.frozen) {
+  if (e.frozen) {
+    population = -pop * eco.frozenDeathPerHour;
+  } else if (starving) {
     population = -pop * eco.starvationPerHour;
   } else {
     const room = Math.max(0, 1 - pop / Math.max(1, e.capacity));

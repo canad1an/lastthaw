@@ -12,6 +12,12 @@ export function matchNow(match: HasClockOffset, realNow: Date = new Date()): Dat
 }
 
 /** Real seconds elapsed between two instants, never negative. */
+/** Match day (0-based, fractional) at `now` on the match clock. */
+export function matchDayAt(m: { startsAt: Date | null; speed: number }, now: Date): number {
+  if (!m.startsAt) return 0;
+  return Math.max(0, ((now.getTime() - m.startsAt.getTime()) / 86400_000) * m.speed);
+}
+
 export function elapsedSeconds(from: Date, to: Date): number {
   return Math.max(0, (to.getTime() - from.getTime()) / 1000);
 }
