@@ -160,7 +160,9 @@ export const balance = {
     overflowToCapital: true,
     overflowShare: 0.25,
     /** Upgrading one hauler into the next kind costs this per unit (on top of needing the tech). */
-    convertCost: { wagon: { wood: 80, food: 30 }, train: { wood: 250, iron: 15 } } as Record<string, Record<string, number>>,
+    convertCost: {} as Record<string, Record<string, number>>,
+    /** Finishing these techs rebuilds the whole fleet (at home or on the road) as the better hauler. */
+    fleetUpgradeTech: { wagon_building: { from: "caravan", to: "wagon" }, railways: { from: "wagon", to: "train" } } as Record<string, { from: string; to: string }>,
     /** Techs that raise how much each hauler carries (added together: +50% and +50% = 2x). */
     caravanCarryTechs: { the_wheel: 0.5, engineering: 0.5, scholasticism: 1.0 } as Record<string, number>,
   },

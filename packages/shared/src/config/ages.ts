@@ -211,7 +211,7 @@ export const TECHS: readonly TechDef[] = [
   { id: "mining", name: "Mining", age: 1, description: "Dig for metals.", cost: { wood: 300, stone: 300 }, baseSeconds: 600 },
   { id: "the_wheel", name: "The wheel", age: 1, description: "Carts and chariots.", cost: { wood: 400, food: 200 }, baseSeconds: 700, requires: ["animal_husbandry"] },
   { id: "road_building", name: "Road building", age: 1, description: "Surveyed, drained and paved ways. Lets a region build Roads to all of its neighbours.", cost: { wood: 600, stone: 400 }, baseSeconds: 900, requires: ["the_wheel"] },
-  { id: "wagon_building", name: "Wagon building", age: 1, description: "Axles, beds and teams: unlocks the Wagon.", cost: { wood: 800, stone: 300 }, baseSeconds: 1200, requires: ["the_wheel"] },
+  { id: "wagon_building", name: "Wagon building", age: 1, description: "Axles, beds and teams. When it completes, every caravan you have becomes a Wagon: more than twice the load, half again the speed.", cost: { wood: 3000, stone: 1500, food: 1000 }, baseSeconds: 7200, requires: ["the_wheel"] },
   { id: "writing", name: "Writing", age: 1, description: "Records and learning.", cost: { food: 300, wood: 300 }, baseSeconds: 800 },
   { id: "irrigation", name: "Irrigation", age: 1, description: "Ditches and channels: fields yield more.", cost: { wood: 1200, stone: 600 }, baseSeconds: 1800, requires: ["agriculture"], effect: { yield: { food: 0.2 } } },
   { id: "pottery", name: "Pottery", age: 1, description: "Sealed jars keep more in store.", cost: { stone: 900, wood: 600 }, baseSeconds: 1500, effect: { storage: 0.25 } },
@@ -240,7 +240,7 @@ export const TECHS: readonly TechDef[] = [
   { id: "blast_furnace", name: "Blast furnace", age: 4, description: "Far more metal from every mine.", cost: { stone: 30000, iron: 300 }, baseSeconds: 14400, effect: { extract: 0.5 } },
   { id: "plate_armour", name: "Plate armour", age: 4, description: "Full harness for the heavy troops.", cost: { iron: 400, wood: 20000 }, baseSeconds: 18000, requires: ["steel"], effect: { defense: 0.25 } },
   { id: "guilds", name: "Guilds", age: 4, description: "Organised crafts: more wood and stone from every camp.", cost: { food: 30000, stone: 20000 }, baseSeconds: 14400, effect: { yield: { wood: 0.25, stone: 0.25 } } },
-  { id: "railways", name: "Railways", age: 4, description: "Iron rails and steam engines: unlocks the Railway (an upgrade of Roads) and the Train.", cost: { stone: 20000, wood: 15000, iron: 500 }, baseSeconds: 14400, requires: ["engineering"] },
+  { id: "railways", name: "Railways", age: 4, description: "Iron rails and steam engines. When it completes, every wagon you have becomes a Train, and Railway can be built on top of Roads.", cost: { stone: 60000, wood: 40000, iron: 2000 }, baseSeconds: 28800, requires: ["engineering", "wagon_building"] },
   { id: "siege_engines", name: "Siege engines", age: 4, description: "Trebuchets.", cost: { wood: 3000, iron: 200 }, baseSeconds: 9000 },
   { id: "scholasticism", name: "Scholasticism", age: 4, description: "Universities: research goes much faster.", cost: { wood: 2500, stone: 2500 }, baseSeconds: 9000, effect: { researchSpeed: 0.3 } },
 ];
