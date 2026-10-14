@@ -149,8 +149,8 @@ async function contextFor(db: Db, m: MatchRow, p: PlayerRow): Promise<CommandCon
 
 /**
  * No caravans at the route's origin: bring idle ones over from the nearest
- * other region of mine. Idle means above what that region's own enabled
- * routes need, so a region's working caravans are never poached.
+ * other region of mine, first come first served: no caravan is reserved for
+ * any route, so whichever route is due first gets the nearest idle ones.
  * Only one relief convoy is on the road to an origin at a time.
  */
 async function fetchCaravans(db: Db, m: MatchRow, p: PlayerRow, route: TradeRouteRow, now: Date): Promise<string> {
@@ -165,15 +165,8 @@ async function fetchCaravans(db: Db, m: MatchRow, p: PlayerRow, route: TradeRout
     .select({ regionId: matchRegions.regionId, units: matchRegions.units, frozenAt: matchRegions.frozenAt })
     .from(matchRegions)
     .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.ownerPlayerId, p.id)));
-  // Caravans a region's own enabled routes need stay home; anything above that is spare.
-  const reserved = new Map<string, number>();
-  for (const r of await db
-    .select({ from: tradeRoutes.fromRegionId, caravans: tradeRoutes.caravans })
-    .from(tradeRoutes)
-    .where(and(eq(tradeRoutes.matchId, m.id), eq(tradeRoutes.playerId, p.id), eq(tradeRoutes.enabled, true)))) {
-    reserved.set(r.from, (reserved.get(r.from) ?? 0) + r.caravans);
-  }
-  const spareOf = (r: { regionId: string; units: Record<string, number> }) => (r.units.caravan ?? 0) - (reserved.get(r.regionId) ?? 0);
+  // First come, first served: any caravan standing idle anywhere is fair game.
+  const spareOf = (r: { units: Record<string, number> }) => r.units.caravan ?? 0;
   const candidates = mine
     .filter((r) => r.regionId !== route.fromRegionId && !r.frozenAt && spareOf(r) > 0)
     .sort((a, b) => distanceKm(a.regionId, route.fromRegionId) - distanceKm(b.regionId, route.fromRegionId));
