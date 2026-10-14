@@ -101,8 +101,10 @@ function TechList({
   return (
     <ul className="divide-y divide-slate-800">
       {list.map((t) => {
-        const cost = techCost(t, matchDayOf(state, clockOffsetMs));
-        const ok = !busy && canAfford(stock, cost);
+        const day = matchDayOf(state, clockOffsetMs);
+        const cost = techCost(t, day);
+        const locked = t.earliestDay !== undefined && day < t.earliestDay;
+        const ok = !busy && !locked && canAfford(stock, cost);
         const secs = realSeconds(techSeconds(t), capital.effects.researchSpeed, state.match.speed);
         return (
           <li key={t.id} className="flex items-center justify-between gap-2 py-2 text-sm">
@@ -117,7 +119,7 @@ function TechList({
                   </div>
                   <p className="truncate text-xs text-slate-400">{t.description}</p>
                   <p>
-                    <CostLine cost={cost} stock={stock} suffix={formatCountdown(secs)} />
+                    <CostLine cost={cost} stock={stock} suffix={locked ? `from day ${t.earliestDay! + 1}` : formatCountdown(secs)} />
                   </p>
                 </div>
               }

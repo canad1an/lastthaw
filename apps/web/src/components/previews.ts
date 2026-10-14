@@ -113,7 +113,7 @@ export function techPreview(def: TechDef): { summary: string; unlocks: string[] 
   const unlocks: string[] = [];
   for (const b of BUILDINGS) if (b.requires === def.id) unlocks.push(`${b.name} (building)`);
   for (const u of UNITS) if (u.requires === def.id && !u.hidden) unlocks.push(`${u.name} (unit)`);
-  if (def.advancesTo !== undefined) unlocks.push(`advance to the ${["Stone", "Bronze", "Iron", "Classical", "Medieval"][def.advancesTo]} Age: all its buildings, units and techs`);
+  if (def.advancesTo !== undefined) unlocks.push(`advance to the ${["Stone", "Bronze", "Iron", "Classical", "Medieval"][def.advancesTo]} Age: all its buildings, units and techs${def.earliestDay !== undefined ? ` (from day ${def.earliestDay + 1})` : ""}`);
   if (def.id === balance.travel.seaTech) unlocks.push("armies may cross sea routes");
   const carry = balance.trade.caravanCarryTechs[def.id];
   if (carry) unlocks.push(`caravans carry ${Math.round(carry * 100)}% more`);

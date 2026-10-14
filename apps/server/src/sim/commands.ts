@@ -124,6 +124,7 @@ export async function queueResearch(ctx: CommandContext, techId: string) {
     if (pending.some((j) => j.refId === techId)) throw httpError(409, "already queued");
     const known = new Set([...techs, ...pending.map((j) => j.refId!)]);
     for (const r of def.requires ?? []) if (!known.has(r)) throw httpError(400, `${def.name} needs ${techById.get(r)?.name ?? r}`);
+    if (def.earliestDay !== undefined && matchDayAt(m, now) < def.earliestDay) throw httpError(409, `${def.name} can be researched from day ${def.earliestDay + 1}`);
     // Research draws on every region you own: food, wood and stone from the capital first,
     // ore and horses from wherever they are, so nothing has to be hauled home.
     const mine = await tx
