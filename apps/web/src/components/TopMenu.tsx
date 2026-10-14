@@ -9,8 +9,9 @@ import { MarketPanel } from "./MarketPanel.js";
 import { ageName } from "./RegionPanel.js";
 import { LeaderboardTable } from "../routes/leaderboard.js";
 import { OVERLAYS, OVERLAY_HINT } from "../map/overlays.js";
+import { EmpirePanel } from "./EmpirePanel.js";
 
-type Menu = "messages" | "alliance" | "chat" | "market" | "players" | "leaderboard" | "view";
+type Menu = "messages" | "alliance" | "chat" | "market" | "players" | "leaderboard" | "view" | "empire";
 
 /**
  * Slim menu bar above the map: Messages (with a 5-second toast for new ones),
@@ -23,6 +24,7 @@ export function TopMenu({
   colorOf,
   overlays,
   onToggleOverlay,
+  onSelectRegion,
 }: {
   matchId: string;
   state: MatchStateView;
@@ -30,6 +32,7 @@ export function TopMenu({
   colorOf: (id: string) => string;
   overlays: Set<string>;
   onToggleOverlay: (id: string) => void;
+  onSelectRegion: (regionId: string) => void;
 }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState<Menu | null>(null);
@@ -71,6 +74,7 @@ export function TopMenu({
         <Tab id="market" label="Market" />
         <Tab id="players" label="Players" badge={state.players.length} />
         <Tab id="leaderboard" label="Leaderboard" />
+        <Tab id="empire" label="Empire" badge={state.owned.length} />
         <Tab id="view" label="View" badge={overlays.size || undefined} />
         <div className="mx-2 h-5 w-px bg-slate-800" />
         {toast ? (
@@ -104,6 +108,15 @@ export function TopMenu({
             <div className="overflow-x-auto">
               <LeaderboardTable matchId={matchId} compact />
             </div>
+          )}
+          {open === "empire" && (
+            <EmpirePanel
+              state={state}
+              onSelect={(id) => {
+                onSelectRegion(id);
+                setOpen(null);
+              }}
+            />
           )}
           {open === "view" && (
             <div className="space-y-1 p-3 text-sm">
