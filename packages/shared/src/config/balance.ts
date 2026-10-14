@@ -124,6 +124,13 @@ export const balance = {
     /** Soldiers lost while a raid is repelled do not take the loot; winners take up to this share of unprotected stock. */
     raidShare: 0.5,
   },
+  settle: {
+    /** Settlers needed to claim an empty region; all of them become its first workers. */
+    settlersRequired: 5,
+    /** Settled regions start loyal: these are your own people. */
+    startingLoyalty: 0.8,
+    seedFood: 120,
+  },
   conquest: {
     /** People an army must carry to occupy a conquered region. */
     occupiersRequired: 5,

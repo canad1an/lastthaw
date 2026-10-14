@@ -6,6 +6,7 @@ import { Button, Card, ErrorText, fmt } from "./ui.js";
 import { Countdown } from "./Countdown.js";
 
 const MISSIONS: Array<{ id: MissionKind; label: string; hint: string }> = [
+  { id: "settle", label: "Settle", hint: "Send 5+ settlers to claim empty land; they become its first workers." },
   { id: "raid", label: "Raid", hint: "Fight, then carry off unprotected stock." },
   { id: "conquer", label: "Conquer", hint: "Fight, then occupy with the people you bring." },
   { id: "scout", label: "Scout", hint: "Look at the region and come back." },
@@ -60,7 +61,9 @@ export function SendArmy({
   });
   const targetRegion = target ? regionById(target) : null;
   const needsPeople = mission === "conquer";
-  const canSend = !!target && target !== owned.regionId && (Object.keys(chosen).length > 0 || mission === "transport") && (!needsPeople || people >= balance.conquest.occupiersRequired);
+  const settlers = chosen.settler ?? 0;
+  const settleOk = mission !== "settle" || (settlers >= balance.settle.settlersRequired && Object.keys(chosen).every((id) => id === "settler"));
+  const canSend = !!target && target !== owned.regionId && (Object.keys(chosen).length > 0 || mission === "transport") && (!needsPeople || people >= balance.conquest.occupiersRequired) && settleOk;
 
   return (
     <div className="space-y-3 text-sm">
@@ -90,6 +93,11 @@ export function SendArmy({
         </p>
       )}
       {route.data?.error && <p className="text-xs text-rose-400">{route.data.error}</p>}
+      {mission === "settle" && (
+        <p className="text-xs text-slate-400">
+          Needs {balance.settle.settlersRequired} settlers and an empty region (unclaimed regions next to yours are outlined on the map).{settlers > 0 && settlers < balance.settle.settlersRequired ? ` You selected ${settlers}.` : ""}
+        </p>
+      )}
 
       {available.length === 0 ? (
         <p className="text-slate-400">No units here. Train some first.</p>

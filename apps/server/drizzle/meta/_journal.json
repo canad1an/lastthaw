@@ -43,6 +43,13 @@
       "when": 1791948949838,
       "tag": "0005_strange_invaders",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791986100585,
+      "tag": "0006_slimy_wendigo",
+      "breakpoints": true
     }
   ]
 }

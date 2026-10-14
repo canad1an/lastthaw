@@ -94,6 +94,7 @@ export async function queueTrain(ctx: CommandContext, regionId: string, unitId: 
   if (def.requires && !techs.has(def.requires)) throw httpError(400, `${def.name} needs ${techById.get(def.requires)?.name ?? def.requires}`);
   const region = regionById(regionId);
   if (def.needsResource && !region?.resources.includes(def.needsResource)) throw httpError(400, `${def.name} can only be trained where there are ${def.needsResource}`);
+  if (def.minBatch && qty < def.minBatch) throw httpError(400, `${def.name}s are trained in groups of at least ${def.minBatch}`);
 
   return db.transaction(async (tx) => {
     const now = matchNow(m);
@@ -175,6 +176,12 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
   if (body.mission === "conquer" && body.people < balance.conquest.occupiersRequired) {
     throw httpError(400, `conquering needs at least ${balance.conquest.occupiersRequired} people to occupy the region`);
   }
+  if (body.mission === "settle") {
+    const settlers = units.settler ?? 0;
+    if (settlers < balance.settle.settlersRequired) throw httpError(400, `settling needs at least ${balance.settle.settlersRequired} settlers`);
+    if (Object.keys(units).some((id) => id !== "settler")) throw httpError(400, "only settlers can settle; send escorts separately");
+  }
+  if (body.mission !== "settle" && (units.settler ?? 0) > 0) throw httpError(400, "settlers only go on settle missions");
   const route = findRoute(regionId, body.targetRegionId, techs.has(balance.travel.seaTech));
   if (!route) throw httpError(400, techs.has(balance.travel.seaTech) ? "no route to that region" : "no land route; research Shipbuilding to cross the sea");
   const speed = unitCount ? armySpeed(units) : 5;
@@ -194,6 +201,12 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
     const friendly = targetOwner === p.id || (targetOwner ? await areAllied(tx, m.id, p.id, targetOwner) : false);
     if ((body.mission === "reinforce" || body.mission === "move" || body.mission === "transport") && !friendly) {
       throw httpError(400, "that region is not yours or an ally's");
+    }
+    if (body.mission === "settle") {
+      if (targetOwner) throw httpError(400, "that region is already claimed");
+      if (target && (target.popWorkers + target.popSoldiers + target.popOccupiers >= 1 || Object.values(target.units).some((n) => n > 0))) {
+        throw httpError(400, "a tribe already lives there; conquer it instead");
+      }
     }
     if (HOSTILE.has(body.mission)) {
       if (friendly) throw httpError(400, "you cannot attack your own or allied regions");

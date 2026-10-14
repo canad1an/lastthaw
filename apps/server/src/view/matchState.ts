@@ -1,6 +1,6 @@
-import { and, asc, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { parseProfile } from "../sim/ai.js";
-import { emptySpecial, type ArmyView, type IncomingView, type JobView, type MatchStateView, type OwnedRegionView, type SightedRegionView } from "@lastthaw/shared";
+import { emptySpecial, regionById, type ArmyView, type IncomingView, type JobView, type MatchStateView, type OwnedRegionView, type SightedRegionView } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { allianceMembers, alliances, armies, jobs, matchRegions, matches, playerTechs, players, regionSightings } from "../db/schema.js";
 import { matchNow } from "../sim/clock.js";
@@ -168,6 +168,17 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
         .where(and(eq(armies.matchId, matchId), eq(armies.status, "outbound"), inArray(armies.targetRegionId, ownedIds), inArray(armies.mission, ["raid", "conquer"])))
         .orderBy(asc(armies.arrivesAt))
     : [];
+  // Frontier: empty, unclaimed regions bordering mine (settle targets). Reveals only that nobody lives there.
+  const frontierIds = [...new Set(ownedIds.flatMap((id) => regionById(id)?.neighbors ?? []))].filter((id) => !ownedIds.includes(id));
+  const frontierRows = frontierIds.length
+    ? await db
+        .select({ regionId: matchRegions.regionId, owner: matchRegions.ownerPlayerId, pop: sql<number>`${matchRegions.popWorkers} + ${matchRegions.popSoldiers} + ${matchRegions.popOccupiers}` })
+        .from(matchRegions)
+        .where(and(eq(matchRegions.matchId, matchId), inArray(matchRegions.regionId, frontierIds)))
+    : [];
+  const occupiedFrontier = new Set(frontierRows.filter((r) => r.owner || r.pop >= 1).map((r) => r.regionId));
+  const frontier = frontierIds.filter((id) => !occupiedFrontier.has(id) && !regionById(id)?.terrain.startsWith("tundra"));
+
   const incoming: IncomingView[] = hostile
     .filter((a) => a.playerId !== me.id)
     .map((a) => ({
@@ -207,6 +218,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
     jobs: jobViews,
     armies: armyViews,
     incoming,
+    frontier,
     allies,
   };
 }

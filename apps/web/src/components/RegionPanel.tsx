@@ -28,7 +28,7 @@ import {
 import { api, keys } from "../api/client.js";
 import { useNow } from "../hooks/useNow.js";
 import { Button, Card, ErrorText, fmt, signed } from "./ui.js";
-import { Countdown, costText } from "./Countdown.js";
+import { Countdown, CostLine } from "./Countdown.js";
 import { SendArmy } from "./ArmyPanel.js";
 import { BeforeAfter, Tooltip } from "./Tooltip.js";
 import { buildingPreview, unitPreview } from "./previews.js";
@@ -281,8 +281,8 @@ function BuildTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
                     </div>
                     <p className="truncate text-xs text-slate-400">{b.description}</p>
                     {!maxed && (
-                      <p className={`text-xs ${canAfford(stock, cost) ? "text-slate-400" : "text-rose-400"}`}>
-                        {costText(cost)} · {formatCountdown(secs)}
+                      <p>
+                        <CostLine cost={cost} stock={stock} suffix={formatCountdown(secs)} />
                       </p>
                     )}
                   </div>
@@ -310,7 +310,7 @@ function TrainTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
   const pendingHere = state.jobs.filter((j) => j.regionId === owned.regionId);
   const queueFull = pendingHere.length >= balance.queue.slotsPerRegion;
   const m = useMutation({
-    mutationFn: (unitId: string) => api.train(matchId, owned.regionId, unitId, qty),
+    mutationFn: ({ unitId, n }: { unitId: string; n: number }) => api.train(matchId, owned.regionId, unitId, n),
     onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matchState(matchId) }),
   });
   const stock = stockOf(live.e);
@@ -326,10 +326,11 @@ function TrainTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
       <ErrorText>{m.error?.message}</ErrorText>
       <ul className="divide-y divide-slate-800">
         {list.map((u) => {
-          const cost = unitCost(u, qty);
+          const n = Math.max(qty, u.minBatch ?? 1);
+          const cost = unitCost(u, n);
           const needs = u.needsResource && !region.resources.includes(u.needsResource);
-          const ok = !queueFull && !needs && canAfford(stock, cost) && live.e.popWorkers >= qty;
-          const secs = realSeconds(trainSeconds(u, qty), owned.effects.trainSpeed, state.match.speed);
+          const ok = !queueFull && !needs && canAfford(stock, cost) && live.e.popWorkers >= n;
+          const secs = realSeconds(trainSeconds(u, n), owned.effects.trainSpeed, state.match.speed);
           return (
             <li key={u.id} className="flex items-center justify-between gap-2 py-2 text-sm">
               <Tooltip
@@ -343,16 +344,15 @@ function TrainTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
                       </span>
                       <span className="text-xs text-slate-600">ⓘ</span>
                     </div>
-                    <p className={`text-xs ${needs ? "text-rose-400" : canAfford(stock, cost) ? "text-slate-400" : "text-rose-400"}`}>
-                      {needs ? `needs ${u.needsResource} here` : `${costText(cost)} · ${formatCountdown(secs)}`}
-                    </p>
+                    {needs ? <p className="text-xs text-rose-400">needs {u.needsResource} here</p> : <p><CostLine cost={cost} stock={stock} suffix={formatCountdown(secs)} /></p>}
+                    {u.minBatch && <p className="text-xs text-slate-500">trained in groups of at least {u.minBatch}</p>}
                   </div>
                 }
               >
                 <UnitTip def={u} qty={qty} workers={live.e.popWorkers} soldiers={live.e.popSoldiers} />
               </Tooltip>
-              <Button variant="ghost" disabled={!ok || m.isPending} onClick={() => m.mutate(u.id)}>
-                Train {qty}
+              <Button variant="ghost" disabled={!ok || m.isPending} onClick={() => m.mutate({ unitId: u.id, n })}>
+                Train {n}
               </Button>
             </li>
           );

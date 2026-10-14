@@ -56,7 +56,40 @@ export async function resolveMission(tx: Tx, m: MatchRow, job: JobRow, publisher
     case "raid":
     case "conquer":
       return battle(tx, m, army, at, publisher, after);
+    case "settle":
+      return settleLand(tx, m, army, at, publisher, after);
   }
+}
+
+/** Settlers claim an empty region and become its first workers. */
+async function settleLand(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher: Publisher, after: After): Promise<void> {
+  const target = await lockRegion(tx, m, army.targetRegionId, at);
+  const name = regionById(army.targetRegionId)?.name ?? army.targetRegionId;
+  const occupied = target.ownerPlayerId || target.popWorkers + target.popSoldiers + target.popOccupiers >= 1 || Object.values(target.units).some((n) => n > 0);
+  if (occupied) {
+    await notify(tx, m.id, army.playerId, "system", `${name} was claimed before your settlers arrived; they are coming back`, { regionId: army.targetRegionId });
+    return sendHome(tx, m, army, at, army.units, army.cargo);
+  }
+  const settlers = army.units.settler ?? 0;
+  await tx
+    .update(matchRegions)
+    .set({
+      ownerPlayerId: army.playerId,
+      popWorkers: settlers + (army.cargo.people ?? 0),
+      popSoldiers: 0,
+      popOccupiers: 0,
+      units: {},
+      loyalty: balance.settle.startingLoyalty,
+      assignment: { ...balance.start.assignment },
+      food: Math.max(target.food, balance.settle.seedFood) + (army.cargo.food ?? 0),
+      wood: target.wood + (army.cargo.wood ?? 0),
+      stone: target.stone + (army.cargo.stone ?? 0),
+    })
+    .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, army.targetRegionId)));
+  await tx.update(armies).set({ status: "done" }).where(eq(armies.id, army.id));
+  await notify(tx, m.id, army.playerId, "system", `Your settlers have founded a new home in ${name}`, { regionId: army.targetRegionId, people: settlers });
+  const pid = army.playerId;
+  after(() => publisher.toPlayer(m.id, pid, "region.conquered", { regionId: army.targetRegionId }));
 }
 
 /** Send the army back where it came from, carrying whatever is in cargo. */

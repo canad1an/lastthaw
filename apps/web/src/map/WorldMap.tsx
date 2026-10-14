@@ -17,6 +17,10 @@ export interface WorldMapProps {
   className?: string;
   /** Ice: current edge latitude, and whether to shade the forecast (day each region freezes). */
   ice?: { latitude: number; forecast: boolean; day: number };
+  /** Region ids to mark with a flag (the player's capital). */
+  flags?: string[];
+  /** Region ids drawn with an "unclaimed" dashed outline. */
+  dashed?: string[];
 }
 
 const TERRAIN_FILL: Record<string, string> = {
@@ -47,7 +51,7 @@ const MAX_K = 14;
  * Rendering ~400 paths is cheap; the expensive part is re-rendering on every
  * state change, so the static layer is memoized and only the paint changes.
  */
-export function WorldMap({ paint, selected, onSelect, focus, className = "", ice }: WorldMapProps) {
+export function WorldMap({ paint, selected, onSelect, focus, className = "", ice, flags = [], dashed = [] }: WorldMapProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [view, setView] = useState<View>({ x: 0, y: 0, k: 1 });
   const drag = useRef<{ id: number; sx: number; sy: number; ox: number; oy: number; moved: boolean } | null>(null);
@@ -159,6 +163,25 @@ export function WorldMap({ paint, selected, onSelect, focus, className = "", ice
       <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>
         <Regions paint={paint} selected={selected} strokeWidth={0.8 / view.k} />
         {ice && <IceLayer ice={ice} />}
+        <g pointerEvents="none">
+          {dashed.map((id) => {
+            const r = allRegions().find((x) => x.id === id);
+            return r ? <path key={id} d={r.path} fill="none" stroke="#fde68a" strokeWidth={1.2 / view.k} strokeDasharray={`${4 / view.k} ${3 / view.k}`} /> : null;
+          })}
+          {flags.map((id) => {
+            const r = allRegions().find((x) => x.id === id);
+            if (!r) return null;
+            const s = 1 / view.k;
+            return (
+              <g key={id} transform={`translate(${r.x} ${r.y}) scale(${s})`}>
+                <line x1={0} y1={0} x2={0} y2={-22} stroke="#0f172a" strokeWidth={3.5} />
+                <line x1={0} y1={0} x2={0} y2={-22} stroke="#f8fafc" strokeWidth={1.5} />
+                <path d="M0 -22 L14 -17 L0 -12 Z" fill="#f59e0b" stroke="#0f172a" strokeWidth={0.8} />
+                <circle cx={0} cy={0} r={2.2} fill="#f8fafc" stroke="#0f172a" strokeWidth={0.8} />
+              </g>
+            );
+          })}
+        </g>
       </g>
     </svg>
   );

@@ -155,15 +155,17 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
   const sightedBy = useMemo(() => new Map(state.sighted.map((s) => [s.regionId, s])), [state.sighted]);
 
   const incomingSet = useMemo(() => new Set(state.incoming.map((i) => i.targetRegionId)), [state.incoming]);
+  const frontierSet = useMemo(() => new Set(state.frontier), [state.frontier]);
   const paint = useCallback(
     (r: MapRegion): RegionPaint => {
       if (r.id === target) return { fill: "#facc15", opacity: 1, stroke: "#fff" };
       if (ownedSet.has(r.id)) return { fill: colorOf(state.me.playerId), opacity: 1, ...(incomingSet.has(r.id) ? { stroke: "#f43f5e" } : {}) };
       const s = sightedBy.get(r.id);
       if (s) return { fill: s.ownerPlayerId ? colorOf(s.ownerPlayerId) : terrainFill(r.terrain), opacity: 0.8 };
+      if (frontierSet.has(r.id)) return { opacity: 0.6 };
       return { opacity: picking ? 0.5 : 0.3 };
     },
-    [ownedSet, sightedBy, colorOf, state.me.playerId, target, incomingSet, picking],
+    [ownedSet, sightedBy, colorOf, state.me.playerId, target, incomingSet, picking, frontierSet],
   );
 
   const totals = state.owned.reduce(
@@ -174,12 +176,21 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
   return (
     <div className="flex h-[calc(100dvh-3rem)] flex-col lg:flex-row">
       <div className="relative h-1/2 w-full lg:h-full lg:flex-1">
-        <WorldMap paint={paint} selected={selected} onSelect={onMapSelect} focus={state.me.capitalRegionId} className={`h-full w-full ${picking ? "cursor-crosshair" : ""}`} ice={ice} />
+        <WorldMap
+          paint={paint}
+          selected={selected}
+          onSelect={onMapSelect}
+          focus={state.me.capitalRegionId}
+          className={`h-full w-full ${picking ? "cursor-crosshair" : ""}`}
+          ice={ice}
+          flags={state.me.capitalRegionId ? [state.me.capitalRegionId] : []}
+          dashed={state.frontier}
+        />
         {picking && <div className="pointer-events-none absolute inset-x-0 bottom-2 text-center text-sm text-amber-300">Click a region to target it</div>}
         <div className="pointer-events-none absolute left-2 top-2 flex flex-wrap gap-2 text-xs">
           <Badge>{state.match.name}</Badge>
           <Badge>{state.match.speed}x</Badge>
-          <Badge>{finished ? "finished" : `day ${Math.floor(matchDay) + 1} · ends in ${formatCountdown(endsIn)}`}</Badge>
+          <Badge>{finished ? "finished" : `Day ${Math.min(balance.match.lengthDays, Math.floor(matchDay) + 1)} of ${balance.match.lengthDays} · ends in ${formatCountdown(endsIn)}`}</Badge>
           <Badge>{state.owned.length} regions · {fmt(totals.pop)} people</Badge>
           <Badge>{ageName(state.me.age)} Age</Badge>
           <Badge>ice beyond {ice.latitude.toFixed(0)}°</Badge>
@@ -211,7 +222,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
           <RegionPanel matchId={matchId} state={state} regionId={selected} clockOffsetMs={clockOffsetMs} onClose={() => setSelected(null)} target={target} onPickTarget={setPicking} />
         ) : (
           <Card>
-            <p className="text-sm text-slate-400">Tap a region to see it. Your regions are highlighted in your colour.</p>
+            <p className="text-sm text-slate-400">Tap a region to see it. Your regions are in your colour, the flag marks your capital, and dashed outlines are unclaimed land you can settle.</p>
           </Card>
         )}
         <Messages matchId={matchId} />

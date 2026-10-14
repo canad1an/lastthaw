@@ -5,7 +5,7 @@ import { Tooltip } from "./Tooltip.js";
 import { techPreview } from "./previews.js";
 import { api, keys } from "../api/client.js";
 import { Button, Card, ErrorText } from "./ui.js";
-import { Countdown, costText } from "./Countdown.js";
+import { Countdown, CostLine } from "./Countdown.js";
 import { useLiveEconomy } from "./RegionPanel.js";
 
 /** Research panel: a queue of up to N techs, one researching at a time, paid from the capital. */
@@ -112,8 +112,8 @@ function TechList({
                     <span className="text-xs text-slate-600">ⓘ</span>
                   </div>
                   <p className="truncate text-xs text-slate-400">{t.description}</p>
-                  <p className={`text-xs ${canAfford(stock, t.cost) ? "text-slate-400" : "text-rose-400"}`}>
-                    {costText(t.cost)} · {formatCountdown(secs)}
+                  <p>
+                    <CostLine cost={t.cost} stock={stock} suffix={formatCountdown(secs)} />
                   </p>
                 </div>
               }

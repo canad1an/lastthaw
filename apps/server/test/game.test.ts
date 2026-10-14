@@ -240,6 +240,26 @@ describe("milestone 1 flow", () => {
       }
     }
 
+    // Settling: five settlers claim an empty frontier region and become its workers.
+    expect((await a.call("POST", `/api/matches/${matchId}/regions/${aPick}/train`, { unitId: "settler", qty: 3 })).statusCode).toBe(400);
+    const settlerJob = await a.call("POST", `/api/matches/${matchId}/regions/${aPick}/train`, { unitId: "settler", qty: 5 });
+    expect(settlerJob.statusCode, JSON.stringify(settlerJob.json())).toBe(200);
+    await skipTo((settlerJob.json() as { endsAt: string }).endsAt);
+    state = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json());
+    expect(state.owned.find((o) => o.regionId === aPick)!.units.settler).toBe(5);
+    expect(state.frontier.length).toBeGreaterThan(0);
+    const homestead = state.frontier[0]!;
+    expect((await a.call("POST", `/api/matches/${matchId}/regions/${aPick}/send`, { mission: "raid", targetRegionId: homestead, units: { settler: 5 }, people: 0, cargo: {} })).statusCode).toBe(400);
+    const settleRes = await a.call("POST", `/api/matches/${matchId}/regions/${aPick}/send`, { mission: "settle", targetRegionId: homestead, units: { settler: 5 }, people: 0, cargo: {} });
+    expect(settleRes.statusCode, JSON.stringify(settleRes.json())).toBe(200);
+    state = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json());
+    await skipTo(state.armies[0]!.arrivesAt);
+    state = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json());
+    const settled = state.owned.find((o) => o.regionId === homestead);
+    expect(settled).toBeTruthy();
+    expect(settled!.popWorkers).toBeGreaterThanOrEqual(4.9);
+    expect(settled!.loyalty).toBeCloseTo(balance.settle.startingLoyalty, 5);
+
     // Milestone 4: a match tick scores everyone and lets the AI tribe act.
     {
       const redis = createRedis();

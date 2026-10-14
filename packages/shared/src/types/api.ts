@@ -130,7 +130,7 @@ export const jobView = z.object({
 });
 export type JobView = z.infer<typeof jobView>;
 
-export const missionKind = z.enum(["raid", "conquer", "reinforce", "move", "transport", "scout"]);
+export const missionKind = z.enum(["raid", "conquer", "reinforce", "move", "transport", "scout", "settle"]);
 export type MissionKind = z.infer<typeof missionKind>;
 
 export const sendArmyBody = z.object({
@@ -232,6 +232,8 @@ export const matchStateView = z.object({
   armies: z.array(armyView),
   /** Hostile armies heading for my regions. */
   incoming: z.array(incomingView),
+  /** Unclaimed, empty regions bordering mine: settle targets. */
+  frontier: z.array(z.string()).default([]),
   /** Player ids of my alliance mates (their regions are always visible). */
   allies: z.array(z.string()),
 });
