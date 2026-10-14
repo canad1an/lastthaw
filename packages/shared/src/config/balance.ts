@@ -137,6 +137,8 @@ export const balance = {
   trade: {
     /** Automated caravan routes allowed per origin region. */
     maxRoutesPerRegion: 5,
+    /** When a route finds no caravans at its origin, idle caravans from the nearest other region come over. */
+    fetchCaravans: true,
   },
   settle: {
     /** Settlers needed to claim an empty region; all of them become its first workers. */
