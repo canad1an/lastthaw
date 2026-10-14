@@ -54,7 +54,7 @@ export const api = {
   reset: (token: string, password: string) => request<{ ok: true }>("POST", "/api/auth/reset", { token, password }),
 
   matches: () => request("GET", "/api/matches", undefined, matchSummary.array()),
-  createMatch: (b: { name: string; speed: number; startsInMinutes: number }) => request<{ id: string }>("POST", "/api/matches", b),
+  createMatch: (b: { name: string; speed: number; startsInMinutes: number; aiFillTo?: number; neutralTribes?: number }) => request<{ id: string }>("POST", "/api/matches", b),
   joinMatch: (id: string) => request<{ playerId: string }>("POST", `/api/matches/${id}/join`, {}),
   startOptions: (id: string) => request<{ options: string[]; current: string | null }>("GET", `/api/matches/${id}/start-options`),
   pickStart: (id: string, regionId: string) => request<{ ok: true }>("POST", `/api/matches/${id}/pick-start`, { regionId }),

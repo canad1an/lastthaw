@@ -5,6 +5,8 @@ export const healthResponse = z.object({
   ok: z.literal(true),
   serverTime: z.string(),
   version: z.string(),
+  /** True when the server allows time-skips and other dev-only actions. */
+  devTools: z.boolean().default(false),
 });
 export type HealthResponse = z.infer<typeof healthResponse>;
 

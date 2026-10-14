@@ -48,9 +48,10 @@ and techs are in [ages.ts](packages/shared/src/config/ages.ts). Regenerate the m
 
 ## Dev tools
 
-With `DEV_TOOLS=true` (local default; refused in production) verified users can create matches
-from the lobby (speed, start delay, how many AI tribes and neutral tribes), start a match early, and
-skip the match clock by +1h / +6h / +1d from the match screen. Time skips move only that match's clock.
+Admins (`users.is_admin`) can create matches from the lobby (name, speed, start delay, AI fill) and
+start a lobby match early from the match screen, in production too. With `DEV_TOOLS=true` (local
+default; refused in production) every verified user can do that, and the match screen also offers
++1h / +6h / +1d time skips that move only that match's clock.
 
 ## Play-testing by milestone
 

@@ -6,9 +6,11 @@ import { useMe } from "../api/auth.js";
 import { api, keys } from "../api/client.js";
 import { Button, Card, ErrorText, Field, Input } from "../components/ui.js";
 import { useNow } from "../hooks/useNow.js";
+import { useServerInfo } from "../hooks/useServerInfo.js";
 
 export function LobbyPage() {
   const me = useMe();
+  const info = useServerInfo();
   const matches = useQuery({ queryKey: keys.matches, queryFn: api.matches, refetchInterval: 15_000 });
 
   return (
@@ -43,7 +45,7 @@ export function LobbyPage() {
         {matches.data?.map((m) => <MatchRow key={m.id} m={m} canJoin={!!me.data?.emailVerified} />)}
       </div>
 
-      {me.data?.emailVerified && <CreateMatch />}
+      {me.data?.emailVerified && (me.data.isAdmin || info.data?.devTools) && <CreateMatch admin={!!me.data.isAdmin} />}
     </main>
   );
 }
@@ -101,25 +103,26 @@ function MatchRow({ m, canJoin }: { m: MatchSummary; canJoin: boolean }) {
   );
 }
 
-function CreateMatch() {
+function CreateMatch({ admin }: { admin: boolean }) {
   const qc = useQueryClient();
   const [name, setName] = useState("Test match");
   const [speed, setSpeed] = useState(10);
   const [startsIn, setStartsIn] = useState(5);
+  const [aiFillTo, setAiFillTo] = useState(24);
   const m = useMutation({
-    mutationFn: () => api.createMatch({ name, speed, startsInMinutes: startsIn }),
+    mutationFn: () => api.createMatch({ name, speed, startsInMinutes: startsIn, aiFillTo }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matches }),
   });
-  if (m.error && (m.error as { status?: number }).status === 403) return null;
   return (
     <Card>
-      <h2 className="mb-3 font-medium">Create a match (dev tool)</h2>
+      <h2 className="mb-1 font-medium">Create a match {admin ? "(admin)" : "(dev tool)"}</h2>
+      <p className="mb-3 text-xs text-slate-400">Players join in the lobby until the start time; empty slots are filled with AI tribes up to the number below. Speed 10 means a 3-day match.</p>
       <form
         onSubmit={(e) => {
           e.preventDefault();
           m.mutate();
         }}
-        className="grid grid-cols-1 gap-3 sm:grid-cols-4"
+        className="grid grid-cols-1 gap-3 sm:grid-cols-5"
       >
         <Field label="Name">
           <Input value={name} onChange={(e) => setName(e.target.value)} />
@@ -129,6 +132,9 @@ function CreateMatch() {
         </Field>
         <Field label="Starts in (min)">
           <Input type="number" min={0} value={startsIn} onChange={(e) => setStartsIn(Number(e.target.value))} />
+        </Field>
+        <Field label="AI tribes up to">
+          <Input type="number" min={0} max={100} value={aiFillTo} onChange={(e) => setAiFillTo(Number(e.target.value))} />
         </Field>
         <div className="flex items-end">
           <Button type="submit" className="w-full" disabled={m.isPending}>

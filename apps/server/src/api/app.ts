@@ -57,6 +57,7 @@ export async function buildApp(deps: AppDeps = {}) {
     ok: true,
     serverTime: new Date().toISOString(),
     version: VERSION,
+    devTools: cfg.DEV_TOOLS,
   }));
 
   await app.register(authRoutes, { db });

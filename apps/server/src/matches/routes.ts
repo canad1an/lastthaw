@@ -86,10 +86,10 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
     return out;
   });
 
-  // Creating matches by hand is a dev tool until the weekly scheduler lands (M7).
+  // Hand-made matches: admins in production, anyone verified when dev tools are on.
   app.post("/api/matches", async (req, reply) => {
     const user = requireVerified(req);
-    if (!devTools) throw httpError(403, "matches are created by the scheduler");
+    if (!devTools && !user.isAdmin) throw httpError(403, "only admins can create matches; the weekly match is created automatically");
     const body = createMatchBody.parse(req.body);
     const startsAt = new Date(Date.now() + body.startsInMinutes * 60_000);
     const endsAt = new Date(startsAt.getTime() + matchLengthSeconds(body.speed) * 1000);
@@ -184,8 +184,8 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
   // -------------------------------------------------------------------------
 
   app.post("/api/matches/:id/dev/start", async (req) => {
-    requireUser(req);
-    if (!devTools) throw httpError(404, "not found");
+    const user = requireUser(req);
+    if (!devTools && !user.isAdmin) throw httpError(404, "not found");
     const matchId = (req.params as { id: string }).id;
     const started = await startMatch(db, publisher, matchId);
     return { ok: true, started };

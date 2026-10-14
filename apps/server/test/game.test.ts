@@ -253,7 +253,13 @@ describe("milestone 1 flow", () => {
     const redis = createRedis();
     await runDueJobs(db, new Publisher(redis), logger);
     await redis.quit().catch(() => {});
-    state = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json());
+    // A locally running dev worker may be racing us for the same jobs (SKIP LOCKED); allow it a moment.
+    for (let i = 0; i < 20; i++) {
+      state = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json());
+      if (state.match.status === "finished") break;
+      await new Promise((r) => setTimeout(r, 250));
+      await runJobs();
+    }
     expect(state.match.status).toBe("finished");
 
     // Milestone 6: every ice step ran, high-latitude regions are frozen, leaderboard and history are filled in.

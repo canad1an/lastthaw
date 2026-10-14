@@ -13,6 +13,8 @@ import { Chat } from "../components/Chat.js";
 import { MarketPanel } from "../components/MarketPanel.js";
 import { Button, Card, ErrorText, fmt } from "../components/ui.js";
 import { useNow } from "../hooks/useNow.js";
+import { useServerInfo } from "../hooks/useServerInfo.js";
+import { useMe } from "../api/auth.js";
 import { WorldMap, terrainFill, type RegionPaint } from "../map/WorldMap.js";
 
 const PLAYER_COLORS = ["#38bdf8", "#f472b6", "#a3e635", "#fb923c", "#c084fc", "#2dd4bf", "#facc15", "#f87171"];
@@ -237,23 +239,29 @@ function Badge({ children, muted }: { children: React.ReactNode; muted?: boolean
   return <span className={`rounded bg-slate-950/80 px-2 py-1 ${muted ? "text-amber-300" : "text-slate-200"}`}>{children}</span>;
 }
 
-/** Only works when the server runs with DEV_TOOLS=true; otherwise the buttons just error. */
+/** "Start now" is for admins and dev servers; time skips only exist when the server runs with DEV_TOOLS=true. */
 function DevTools({ matchId, lobby, onStart }: { matchId: string; lobby?: boolean; onStart?: () => void }) {
   const qc = useQueryClient();
+  const me = useMe();
+  const info = useServerInfo();
   const skip = useMutation({
     mutationFn: (seconds: number) => api.devTimeSkip(matchId, seconds),
     onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matchState(matchId) }),
   });
+  const dev = !!info.data?.devTools;
+  const admin = !!me.data?.isAdmin;
+  if (!dev && !admin) return null;
+  if (!dev && !lobby) return null;
   return (
     <Card className="border-dashed">
-      <h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">Dev tools</h2>
+      <h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">{dev ? "Dev tools" : "Admin"}</h2>
       <div className="flex flex-wrap gap-2">
         {lobby && onStart && (
           <Button variant="ghost" onClick={onStart}>
             Start now
           </Button>
         )}
-        {!lobby && (
+        {!lobby && dev && (
           <>
             <Button variant="ghost" onClick={() => skip.mutate(3600)}>
               +1h
