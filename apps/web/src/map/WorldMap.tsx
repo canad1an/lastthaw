@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
-import { allRegions, freezeDayForLatitude, world, type MapRegion } from "@lastthaw/shared";
+import { allRegions, balance, freezeDayForLatitude, iceLatitudeOnDay, world, type MapRegion } from "@lastthaw/shared";
 
 export type RegionPaint = {
   fill?: string;
@@ -210,6 +210,26 @@ const IceLayer = memo(function IceLayer({ ice }: { ice: { latitude: number; fore
       })}
       <line x1={0} x2={W} y1={yN} y2={yN} stroke="#e0f2fe" strokeDasharray="6 4" strokeWidth={1} />
       <line x1={0} x2={W} y1={yS} y2={yS} stroke="#e0f2fe" strokeDasharray="6 4" strokeWidth={1} />
+      {ice.forecast &&
+        [1, 2, 3, 4, 5].map((k) => {
+          const day = Math.floor(ice.day) + k;
+          if (day > balance.match.lengthDays) return null;
+          const lat = iceLatitudeOnDay(day);
+          const n = ((90 - lat) / 180) * H;
+          const s = ((90 + lat) / 180) * H;
+          const alpha = 0.9 - k * 0.12;
+          return (
+            <g key={k} opacity={alpha}>
+              <line x1={0} x2={W} y1={n} y2={n} stroke="#7dd3fc" strokeDasharray="3 5" strokeWidth={0.8} />
+              <line x1={0} x2={W} y1={s} y2={s} stroke="#7dd3fc" strokeDasharray="3 5" strokeWidth={0.8} />
+              {[n, s].map((y, i) => (
+                <text key={i} x={6} y={y - 2} fill="#bae6fd" fontSize={9} fontFamily="ui-sans-serif, system-ui" paintOrder="stroke" stroke="#0b1a2b" strokeWidth={2.5}>
+                  Day {day} · {lat.toFixed(0)}°
+                </text>
+              ))}
+            </g>
+          );
+        })}
     </g>
   );
 });
