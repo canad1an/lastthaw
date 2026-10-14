@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { balance, effectsOf, emptySpecial, storageCaps, regionById, resolveCombat, carryCapacity, travelSeconds, findRoute, armySpeed, type UnitCounts, HAULER_IDS, haulerCount } from "@lastthaw/shared";
 import { armies, battles, jobs, matchRegions, players, regionSightings, playerTechs } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
@@ -206,9 +206,18 @@ async function deliverUnits(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publis
     await notify(tx, m.id, army.playerId, "system", `${regionById(army.targetRegionId)?.name} is no longer friendly; the army is coming back`, {});
     return sendHome(tx, m, army, at, army.units, army.cargo, `${regionById(army.targetRegionId)?.name} is no longer friendly`);
   }
-  await depositInto(tx, target, army.units, army.cargo);
+  // Settlers arriving in one of my conquered regions settle in as occupiers.
+  const { settler: settlersArriving = 0, ...rest } = army.units;
+  const joinAsOccupiers = settlersArriving > 0 && target.conquered && target.ownerPlayerId === army.playerId;
+  await depositInto(tx, target, joinAsOccupiers ? rest : army.units, army.cargo);
+  if (joinAsOccupiers) {
+    await tx
+      .update(matchRegions)
+      .set({ popOccupiers: sql`${matchRegions.popOccupiers} + ${settlersArriving}` })
+      .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, army.targetRegionId)));
+  }
   await tx.update(armies).set({ status: "done" }).where(eq(armies.id, army.id));
-  await notify(tx, m.id, army.playerId, "system", `Troops arrived in ${regionById(army.targetRegionId)?.name}`, { regionId: army.targetRegionId, units: army.units });
+  await notify(tx, m.id, army.playerId, "system", `${joinAsOccupiers ? `${settlersArriving} settlers joined the occupiers in` : "Troops arrived in"} ${regionById(army.targetRegionId)?.name}`, { regionId: army.targetRegionId, units: army.units });
   if (target.ownerPlayerId && target.ownerPlayerId !== army.playerId) {
     await notify(tx, m.id, target.ownerPlayerId, "alliance", `${await playerName(tx, army.playerId)} reinforced ${regionById(army.targetRegionId)?.name}`, { regionId: army.targetRegionId });
   }

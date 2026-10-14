@@ -282,7 +282,7 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
     if (settlers < balance.settle.settlersRequired) throw httpError(400, `settling needs at least ${balance.settle.settlersRequired} settlers`);
     if (Object.keys(units).some((id) => id !== "settler")) throw httpError(400, "only settlers can settle; send escorts separately");
   }
-  if (body.mission !== "settle" && body.mission !== "conquer" && (units.settler ?? 0) > 0) throw httpError(400, "settlers only go on settle and conquer missions");
+  if (!["settle", "conquer", "move", "reinforce"].includes(body.mission) && (units.settler ?? 0) > 0) throw httpError(400, "settlers only go on settle, conquer, move and reinforce missions");
   const goods = Object.entries(body.cargo).reduce((a, [, v]) => a + v, 0);
   if (goods > 0) {
     const cap = carryCapacity(units, techs) + (HOSTILE.has(body.mission) ? 0 : body.people * balance.travel.carryPerPerson);

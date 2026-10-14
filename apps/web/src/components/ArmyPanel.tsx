@@ -10,7 +10,7 @@ const MISSIONS: Array<{ id: MissionKind; label: string; hint: string }> = [
   { id: "raid", label: "Raid", hint: "Fight, then carry off unprotected stock." },
   { id: "conquer", label: "Conquer", hint: "Fight, then settlers you bring occupy the region (at least five)." },
   { id: "scout", label: "Scout", hint: "Look at the region and come back." },
-  { id: "move", label: "Move", hint: "Station units in your own or an ally's region." },
+  { id: "move", label: "Move", hint: "Move units and people to a region of yours or an ally's. Settlers sent to a conquered region of yours become occupiers." },
   { id: "reinforce", label: "Reinforce", hint: "Same as move, for allies." },
   { id: "transport", label: "Send resources", hint: "Caravans (500 each) carry goods to your own or an ally's region. For regular deliveries use the Routes tab." },
 ];
