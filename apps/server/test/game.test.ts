@@ -240,6 +240,24 @@ describe("milestone 1 flow", () => {
       }
     }
 
+    // Recall: an outbound army can be turned around and comes home with everything it carried.
+    {
+      const warriorsBefore = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json()).owned.find((o) => o.regionId === neighbour)!.units.warrior ?? 0;
+      const out = await a.call("POST", `/api/matches/${matchId}/regions/${neighbour}/send`, { mission: "scout", targetRegionId: aPick, units: { warrior: 1 }, people: 0, cargo: {} });
+      expect(out.statusCode, JSON.stringify(out.json())).toBe(200);
+      const { armyId } = out.json() as { armyId: string };
+      const recalled = await a.call("POST", `/api/matches/${matchId}/armies/${armyId}/recall`, {});
+      expect(recalled.statusCode, JSON.stringify(recalled.json())).toBe(200);
+      expect((await a.call("POST", `/api/matches/${matchId}/armies/${armyId}/recall`, {})).statusCode).toBe(409);
+      state = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json());
+      const army = state.armies.find((x) => x.id === armyId)!;
+      expect(army.status).toBe("returning");
+      await skipTo(army.returnsAt!);
+      state = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json());
+      expect(state.armies.find((x) => x.id === armyId)).toBeUndefined();
+      expect(state.owned.find((o) => o.regionId === neighbour)!.units.warrior).toBe(warriorsBefore);
+    }
+
     // Settling: five settlers claim an empty frontier region and become its workers.
     expect((await a.call("POST", `/api/matches/${matchId}/regions/${aPick}/train`, { unitId: "settler", qty: 3 })).statusCode).toBe(400);
     const settlerJob = await a.call("POST", `/api/matches/${matchId}/regions/${aPick}/train`, { unitId: "settler", qty: 5 });

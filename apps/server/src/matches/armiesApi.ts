@@ -1,8 +1,9 @@
 import type { FastifyInstance } from "fastify";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { balance, findRoute, sendArmyBody, travelSeconds } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
-import { matches, playerTechs, players } from "../db/schema.js";
+import { armies, jobs, matches, playerTechs, players } from "../db/schema.js";
+import { matchNow } from "../sim/clock.js";
 import { requireUser } from "../auth/session.js";
 import type { Publisher } from "../realtime/publish.js";
 import { httpError, sendArmy, type CommandContext } from "../sim/commands.js";
@@ -35,6 +36,31 @@ export async function armyRoutes(app: FastifyInstance, opts: { db: Db; publisher
     if (!route) throw httpError(400, techs.has(balance.travel.seaTech) ? "no route" : "no land route; Shipbuilding allows sea crossings");
     const speed = Number(q.speed ?? 5) || 5;
     return { path: route.path, seconds: travelSeconds(route, speed, m.speed), usesSea: route.usesSea };
+  });
+
+  /** Turn an outbound army around. It walks home over the time it has already spent travelling. */
+  app.post("/api/matches/:id/armies/:armyId/recall", async (req) => {
+    const user = requireUser(req);
+    const { id: matchId, armyId } = req.params as { id: string; armyId: string };
+    const { m, p } = await loadContext(matchId, user.id);
+    const result = await db.transaction(async (tx) => {
+      const [army] = await tx.select().from(armies).where(eq(armies.id, armyId)).for("update");
+      if (!army || army.matchId !== matchId || army.playerId !== p.id) throw httpError(404, "army not found");
+      if (army.status !== "outbound") throw httpError(409, "that army is already on its way back");
+      const now = matchNow(m);
+      const travelled = Math.max(1000, now.getTime() - army.departsAt.getTime());
+      const returnsAt = new Date(now.getTime() + travelled);
+      await tx
+        .update(jobs)
+        .set({ cancelledAt: now })
+        .where(and(eq(jobs.matchId, matchId), eq(jobs.kind, "mission"), eq(jobs.refId, army.id), isNull(jobs.completedAt), isNull(jobs.cancelledAt)));
+      await tx.update(armies).set({ status: "returning", returnsAt }).where(eq(armies.id, army.id));
+      await tx.insert(jobs).values({ matchId, playerId: p.id, regionId: army.originRegionId, kind: "mission", refId: army.id, startsAt: now, endsAt: returnsAt });
+      return { returnsAt, targetOwner: army.targetRegionId };
+    });
+    await publisher.toPlayer(matchId, p.id, "army.sent", { armyId, recalled: true });
+    await publisher.toMatch(matchId, "region.updated", { regionId: result.targetOwner });
+    return { ok: true, returnsAt: result.returnsAt.toISOString() };
   });
 
   app.post("/api/matches/:id/regions/:regionId/send", async (req) => {

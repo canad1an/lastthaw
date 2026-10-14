@@ -154,6 +154,8 @@ export function SendArmy({
 }
 
 export function ArmiesList({ state, clockOffsetMs }: { state: MatchStateView; clockOffsetMs: number }) {
+  const qc = useQueryClient();
+  const recall = useMutation({ mutationFn: (armyId: string) => api.recallArmy(state.match.id, armyId), onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matchState(state.match.id) }) });
   if (state.armies.length === 0) return null;
   return (
     <div className="border-t border-slate-800 pt-2">
@@ -168,6 +170,11 @@ export function ArmiesList({ state, clockOffsetMs }: { state: MatchStateView; cl
             <span className="text-slate-400">
               <Countdown to={a.status === "returning" ? (a.returnsAt ?? a.arrivesAt) : a.arrivesAt} clockOffsetMs={clockOffsetMs} />
             </span>
+            {a.status === "outbound" && (
+              <button className="text-xs text-slate-500 hover:text-amber-300" onClick={() => recall.mutate(a.id)} title="Recall: turn around and come home">
+                Recall
+              </button>
+            )}
           </li>
         ))}
       </ul>

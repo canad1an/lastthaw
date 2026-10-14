@@ -11,6 +11,7 @@ import { Countdown } from "./Countdown.js";
 export function ActivityPanel({ matchId, state, clockOffsetMs, onSelect }: { matchId: string; state: MatchStateView; clockOffsetMs: number; onSelect: (regionId: string) => void }) {
   const qc = useQueryClient();
   const cancel = useMutation({ mutationFn: (jobId: string) => api.cancelJob(matchId, jobId), onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matchState(matchId) }) });
+  const recall = useMutation({ mutationFn: (armyId: string) => api.recallArmy(matchId, armyId), onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matchState(matchId) }) });
   const now = Date.now() + clockOffsetMs;
   const jobs = [...state.jobs].sort((a, b) => Date.parse(a.endsAt) - Date.parse(b.endsAt));
   const research = jobs.filter((j) => j.kind === "research");
@@ -65,6 +66,8 @@ export function ActivityPanel({ matchId, state, clockOffsetMs, onSelect }: { mat
               to={a.status === "returning" ? (a.returnsAt ?? a.arrivesAt) : a.arrivesAt}
               clockOffsetMs={clockOffsetMs}
               onClick={() => onSelect(a.targetRegionId)}
+              onCancel={a.status === "outbound" ? () => recall.mutate(a.id) : undefined}
+              cancelTitle="Recall: turn around and come home"
             />
           ))}
         </Section>
@@ -82,7 +85,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function Row({ name, note, to, clockOffsetMs, waiting, onCancel, onClick }: { name: string; note: string; to: string; clockOffsetMs: number; waiting?: boolean | undefined; onCancel?: (() => void) | undefined; onClick?: (() => void) | undefined }) {
+function Row({ name, note, to, clockOffsetMs, waiting, onCancel, onClick, cancelTitle = "Cancel" }: { name: string; note: string; to: string; clockOffsetMs: number; waiting?: boolean | undefined; onCancel?: (() => void) | undefined; onClick?: (() => void) | undefined; cancelTitle?: string }) {
   return (
     <li className="flex items-center gap-2 text-sm">
       <button className={`min-w-0 flex-1 truncate text-left ${onClick ? "hover:text-white" : "cursor-default"}`} onClick={onClick}>
@@ -93,8 +96,8 @@ function Row({ name, note, to, clockOffsetMs, waiting, onCancel, onClick }: { na
         <Countdown to={to} clockOffsetMs={clockOffsetMs} />
       </span>
       {onCancel && (
-        <button className="text-xs text-slate-600 hover:text-rose-400" onClick={onCancel} title="Cancel">
-          ✕
+        <button className="text-xs text-slate-600 hover:text-rose-400" onClick={onCancel} title={cancelTitle}>
+          {cancelTitle.startsWith("Recall") ? "↩" : "✕"}
         </button>
       )}
     </li>
