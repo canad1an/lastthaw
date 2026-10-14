@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { parseProfile } from "../sim/ai.js";
-import { emptySpecial, regionById, type ArmyView, type IncomingView, type JobView, type MatchStateView, type OwnedRegionView, type SightedRegionView } from "@lastthaw/shared";
+import { emptySpecial, regionById, type ArmyView, type IncomingView, type JobView, type MatchStateView, type OwnedRegionView, type SightedRegionView, techEffectsOf } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { allianceMembers, alliances, armies, jobs, matchRegions, matches, playerTechs, players, regionSightings, tradeRoutes } from "../db/schema.js";
 import { matchNow } from "../sim/clock.js";
@@ -22,13 +22,15 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
   if (!me) return null;
 
   const now = matchNow(m);
+  const techRows = await db.select({ id: playerTechs.techId }).from(playerTechs).where(eq(playerTechs.playerId, me.id));
+  const myTechFx = techEffectsOf(new Set(techRows.map((t) => t.id)));
   const ownedRows = await db
     .select()
     .from(matchRegions)
     .where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.ownerPlayerId, me.id)));
 
   const owned: OwnedRegionView[] = ownedRows.map((row) => {
-    const { economy, rates, effects } = projectRegion(row, now, m.speed);
+    const { economy, rates, effects } = projectRegion(row, now, m.speed, myTechFx);
     return {
       regionId: row.regionId,
       ownerPlayerId: me.id,
@@ -57,6 +59,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
       loyalty: row.loyalty,
       conquered: row.conquered,
       iceFactor: economy.iceFactor,
+      growthMult: economy.growthMult,
       frozen: economy.frozen,
       asOf: now.toISOString(),
       rates: { food: rates.food, wood: rates.wood, stone: rates.stone, population: rates.population, starving: rates.starving },
@@ -115,7 +118,6 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
     }
   }
 
-  const techRows = await db.select({ id: playerTechs.techId }).from(playerTechs).where(eq(playerTechs.playerId, me.id));
   const ownedIds = ownedRows.map((r) => r.regionId);
   const jobRows = await db
     .select()

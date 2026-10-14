@@ -1,11 +1,11 @@
 import { and, asc, eq, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import type pino from "pino";
-import { balance, distanceKm, effectsOf, regionById, seededRng } from "@lastthaw/shared";
+import { balance, distanceKm, effectsOf, regionById, seededRng, applyTechEffects, type TechEffects } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { matchRegions, matches, players } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
 import { matchNow } from "./clock.js";
-import { settleAndLockRegion, type Tx } from "./regions.js";
+import { ownerTechEffects, settleAndLockRegion, type Tx } from "./regions.js";
 import { handleRegionLost } from "./missions.js";
 import { checkEarlyWin, updateScores } from "./endgame.js";
 import { notify, type MatchRow } from "../worker/jobs.js";
@@ -92,6 +92,7 @@ async function loyaltyAndRebellion(tx: Tx, m: MatchRow, now: Date, hours: number
     .where(and(eq(matchRegions.matchId, m.id), isNotNull(matchRegions.ownerPlayerId)))
     .orderBy(asc(matchRegions.regionId))
     .for("update");
+  const techFxByOwner = new Map<string, TechEffects>();
   const capitals = new Map(
     (await tx.select({ id: players.id, capital: players.capitalRegionId }).from(players).where(eq(players.matchId, m.id))).map((p) => [p.id, p.capital]),
   );
@@ -102,7 +103,7 @@ async function loyaltyAndRebellion(tx: Tx, m: MatchRow, now: Date, hours: number
       if (row.loyalty < 1) await tx.update(matchRegions).set({ loyalty: 1 }).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, row.regionId)));
       continue;
     }
-    const effects = effectsOf(row.buildings);
+    const effects = applyTechEffects(effectsOf(row.buildings), techFxByOwner.get(owner) ?? (techFxByOwner.set(owner, await ownerTechEffects(tx, owner)).get(owner)!));
     const km = distanceKm(capital, row.regionId);
     const pop = row.popWorkers + row.popSoldiers + row.popOccupiers;
     const occupierNeed = row.conquered ? (pop / 100) * c.occupiersPerHundred : 0;

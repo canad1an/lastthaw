@@ -34,6 +34,7 @@ export function buildingPreview(def: BuildingDef, level: number, buildings: Reco
     yieldMult: f.yield,
     extract: f.extract,
     iceFactor: economy.iceFactor,
+    growthMult: economy.growthMult,
   });
   const rb = computeRates(traits, withEffects(before));
   const ra = computeRates(traits, withEffects(after));
@@ -117,6 +118,23 @@ export function techPreview(def: TechDef): { summary: string; unlocks: string[] 
   if (def.id === balance.travel.seaTech) unlocks.push("armies may cross sea routes");
   const carry = balance.trade.caravanCarryTechs[def.id];
   if (carry) unlocks.push(`caravans carry ${Math.round(carry * 100)}% more`);
+  const fx = def.effect;
+  if (fx) {
+    const p = (v: number) => `${v >= 0 ? "+" : ""}${Math.round(v * 100)}%`;
+    if (fx.yield?.food) unlocks.push(`food ${p(fx.yield.food)} in every region`);
+    if (fx.yield?.wood) unlocks.push(`wood ${p(fx.yield.wood)} in every region`);
+    if (fx.yield?.stone) unlocks.push(`stone ${p(fx.yield.stone)} in every region`);
+    if (fx.capacity) unlocks.push(`+${fx.capacity} people capacity in every region`);
+    if (fx.storage) unlocks.push(`storage ${p(fx.storage)}`);
+    if (fx.growth) unlocks.push(`population growth ${p(fx.growth)}`);
+    if (fx.extract) unlocks.push(`ore and horse extraction ${p(fx.extract)}`);
+    if (fx.attack) unlocks.push(`attack ${p(fx.attack)}`);
+    if (fx.defense) unlocks.push(`defence ${p(fx.defense)}`);
+    if (fx.trainSpeed) unlocks.push(`training ${p(fx.trainSpeed)} faster`);
+    if (fx.researchSpeed) unlocks.push(`research ${p(fx.researchSpeed)} faster`);
+    if (fx.travel) unlocks.push(`armies and caravans ${p(fx.travel)} faster`);
+    if (fx.loyalty) unlocks.push(`loyalty ${p(fx.loyalty)} in every region`);
+  }
   const metals = Object.keys(def.cost).filter((k) => k === "copper" || k === "tin" || k === "iron" || k === "horses");
   const note = metals.length ? ` Costs ${metals.join(" and ")}: these come from a Mine or Stables on a region that has them, from raids, or from the market.` : "";
   return { summary: def.description + note, unlocks };

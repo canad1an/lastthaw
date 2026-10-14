@@ -2,7 +2,7 @@ import { and, eq, inArray, isNull } from "drizzle-orm";
 import { balance, effectsOf, emptySpecial, storageCaps, regionById, resolveCombat, carryCapacity, travelSeconds, findRoute, armySpeed, type UnitCounts } from "@lastthaw/shared";
 import { armies, battles, jobs, matchRegions, players, regionSightings, playerTechs } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
-import { settleAndLockRegion, type MatchRegionRow, type Tx, setCapital, roadSetFor } from "./regions.js";
+import { settleAndLockRegion, type MatchRegionRow, type Tx, setCapital, roadSetFor, ownerTechEffects } from "./regions.js";
 import { notify, type JobRow, type MatchRow } from "../worker/jobs.js";
 import { areAllied, alliesOf } from "./alliances.js";
 
@@ -279,11 +279,13 @@ async function battle(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher: P
   const effects = effectsOf(target.buildings);
   const militia = Math.floor(((target.popWorkers + target.popOccupiers) / 10) * balance.combat.militiaPerTenPeople);
   const defenderUnits: UnitCounts = militia > 0 ? addUnits(target.units, { militia }) : { ...target.units };
-  const bonus = effects.defense + (balance.combat.terrainDefense[region.terrain] ?? 0);
+  const attackerTech = await ownerTechEffects(tx, army.playerId);
+  const defenderTech = await ownerTechEffects(tx, target.ownerPlayerId);
+  const bonus = effects.defense + defenderTech.defense + (balance.combat.terrainDefense[region.terrain] ?? 0);
   const seed = `${m.seed}:${army.id}:${at.getTime()}`;
   // Settlers travelling with a conquest wait behind the lines; they occupy if the battle is won.
   const { settler: settlersAlong = 0, ...fighting } = army.units;
-  const result = resolveCombat({ units: fighting, bonus: 0 }, { units: defenderUnits, bonus }, seed);
+  const result = resolveCombat({ units: fighting, bonus: attackerTech.attack }, { units: defenderUnits, bonus }, seed);
 
   // Apply defender losses (militia losses cost population).
   const { militia: militiaLost = 0, ...unitLosses } = result.defenderLosses;

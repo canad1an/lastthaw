@@ -1,22 +1,7 @@
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
-import {
-  balance,
-  computeRates,
-  effectsOf,
-  emptySpecial,
-  regionById,
-  settle,
-  startingEconomy,
-  storageCaps,
-  SPECIAL_RESOURCES,
-  type Cost,
-  type Rates,
-  type RegionEconomy,
-  type RegionEffects,
-  type RegionTraits,
-} from "@lastthaw/shared";
+import { balance, computeRates, effectsOf, emptySpecial, regionById, settle, startingEconomy, storageCaps, SPECIAL_RESOURCES, type Cost, type Rates, type RegionEconomy, type RegionEffects, type RegionTraits, applyTechEffects, techEffectsOf, NO_TECH_EFFECTS, type TechEffects } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
-import { matchRegions, players } from "../db/schema.js";
+import { matchRegions, players, playerTechs } from "../db/schema.js";
 import { elapsedSeconds } from "./clock.js";
 
 export type MatchRegionRow = typeof matchRegions.$inferSelect;
@@ -28,7 +13,7 @@ export function traitsOf(regionId: string): RegionTraits {
   return { terrain: r.terrain, resources: r.resources, coastal: r.coastal, river: r.river };
 }
 
-export function economyOf(row: MatchRegionRow, effects: RegionEffects = effectsOf(row.buildings)): RegionEconomy {
+export function economyOf(row: MatchRegionRow, effects: RegionEffects = effectsOf(row.buildings), growthMult = 1): RegionEconomy {
   const special = { ...emptySpecial(), ...(row.special as Partial<Record<(typeof SPECIAL_RESOURCES)[number], number>>) };
   return {
     popWorkers: row.popWorkers,
@@ -44,15 +29,23 @@ export function economyOf(row: MatchRegionRow, effects: RegionEffects = effectsO
     yieldMult: effects.yield,
     extract: effects.extract,
     iceFactor: row.frozenAt ? 0 : row.iceFactor,
+    growthMult,
     frozen: row.frozenAt !== null,
   };
 }
 
+/** The owner's tech effects, looked up by player. Regions with no owner have none. */
+export async function ownerTechEffects(db: Db | Tx, playerId: string | null): Promise<TechEffects> {
+  if (!playerId) return NO_TECH_EFFECTS;
+  const rows = await db.select({ id: playerTechs.techId }).from(playerTechs).where(eq(playerTechs.playerId, playerId));
+  return techEffectsOf(new Set(rows.map((r) => r.id)));
+}
+
 /** Pure projection of a row to `asOf`. Does not touch the database. */
-export function projectRegion(row: MatchRegionRow, asOf: Date, speed: number): { economy: RegionEconomy; rates: Rates; effects: RegionEffects } {
+export function projectRegion(row: MatchRegionRow, asOf: Date, speed: number, tech: TechEffects = NO_TECH_EFFECTS): { economy: RegionEconomy; rates: Rates; effects: RegionEffects } {
   const traits = traitsOf(row.regionId);
-  const effects = effectsOf(row.buildings);
-  const economy = settle(traits, economyOf(row, effects), elapsedSeconds(row.settledAt, asOf), speed);
+  const effects = applyTechEffects(effectsOf(row.buildings), tech);
+  const economy = settle(traits, economyOf(row, effects, 1 + tech.growth), elapsedSeconds(row.settledAt, asOf), speed);
   return { economy, rates: computeRates(traits, economy), effects };
 }
 
@@ -81,7 +74,7 @@ export async function settleAndLockRegion(tx: Tx, matchId: string, regionId: str
   const row = rows[0];
   if (!row) throw Object.assign(new Error("region not found"), { statusCode: 404 });
   if (asOf.getTime() <= row.settledAt.getTime()) return row;
-  const { economy } = projectRegion(row, asOf, speed);
+  const { economy } = projectRegion(row, asOf, speed, await ownerTechEffects(tx, row.ownerPlayerId));
   const [updated] = await tx
     .update(matchRegions)
     .set({ ...economyColumns(economy), settledAt: asOf })

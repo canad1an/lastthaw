@@ -37,6 +37,8 @@ export interface RegionEconomy {
   extract: Partial<Record<SpecialResource, number>>;
   /** Production multiplier from the advancing ice (1 = untouched, 0.25 at the centre, then frozen). */
   iceFactor: number;
+  /** Population growth multiplier from the owner's techs (1 = none). */
+  growthMult: number;
   frozen: boolean;
 }
 
@@ -108,7 +110,7 @@ export function computeRates(traits: RegionTraits, e: RegionEconomy): Rates {
     population = -pop * eco.starvationPerHour;
   } else {
     const room = Math.max(0, 1 - pop / Math.max(1, e.capacity));
-    population = (pop * eco.growthPerHour + eco.arrivalsPerHour) * room;
+    population = (pop * eco.growthPerHour + eco.arrivalsPerHour) * room * e.growthMult;
   }
 
   return { food: foodNet, wood: gross.wood, stone: gross.stone, population, special, gross, starving };
@@ -187,6 +189,7 @@ export function startingEconomy(): RegionEconomy {
     yieldMult: { food: 1, wood: 1, stone: 1 },
     extract: {},
     iceFactor: 1,
+    growthMult: 1,
     frozen: false,
   };
 }

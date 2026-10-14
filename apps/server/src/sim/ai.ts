@@ -1,23 +1,5 @@
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
-import {
-  availableBuildings,
-  availableTechs,
-  buildingBlockedBy,
-  availableUnits,
-  balance,
-  buildingById,
-  buildingCost,
-  dayCostMultiplier,
-  effectsOf,
-  freezeDayForLatitude,
-  distanceKm,
-  regionById,
-  seededRng,
-  techById,
-  techCost,
-  normalizeAssignment,
-  type Cost,
-} from "@lastthaw/shared";
+import { availableBuildings, availableTechs, buildingBlockedBy, availableUnits, balance, buildingById, buildingCost, dayCostMultiplier, effectsOf, freezeDayForLatitude, distanceKm, regionById, seededRng, techById, techCost, normalizeAssignment, type Cost, techEffectsOf } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { armies, jobs, marketOrders, matchRegions, playerTechs, players } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
@@ -31,7 +13,13 @@ export type Difficulty = "easy" | "medium" | "hard";
 export type Temperament = "peaceful" | "balanced" | "raider";
 
 const BUILD_ORDER = ["huts", "hunting_grounds", "lumber_camp", "storehouse", "quarry", "farm", "palisade", "granary", "mine", "stables", "walls", "barracks", "roads", "temple", "forge", "market", "aqueduct", "fort", "library", "harbor", "windmill", "castle", "guild_hall", "university", "cathedral"];
-const RESEARCH_ORDER = ["fire_making", "flint_tools", "agriculture", "animal_husbandry", "bronze_working", "mining", "writing", "the_wheel", "road_building", "iron_working", "masonry", "siegecraft", "drill", "engineering", "shipbuilding", "chivalry", "siege_engines", "scholasticism"];
+const RESEARCH_ORDER = [
+  "fire_making", "flint_tools", "agriculture", "fishing_nets", "stone_axes", "animal_husbandry", "weaving", "bronze_working",
+  "mining", "irrigation", "writing", "the_wheel", "pottery", "herbal_medicine", "road_building", "bronze_weapons", "iron_working",
+  "masonry", "crop_rotation", "iron_tools", "mathematics", "iron_weapons", "siegecraft", "drill",
+  "engineering", "heavy_plough", "philosophy", "logistics", "civil_service", "steel", "shipbuilding", "chivalry",
+  "three_field_system", "guilds", "blast_furnace", "plate_armour", "siege_engines", "scholasticism",
+];
 
 /** What each difficulty is allowed to do. Harder tiers never cheat; they just decide better and more often. */
 const TIER = {
@@ -71,6 +59,7 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
   const rng = seededRng(`${m.seed}:${p.id}:${now.getTime()}`);
   const techRows = await db.select({ id: playerTechs.techId }).from(playerTechs).where(eq(playerTechs.playerId, p.id));
   const techs = new Set(techRows.map((t) => t.id));
+  const techFx = techEffectsOf(techs);
   const ctx: CommandContext = { db, m, p, techs };
   const attempt = async (fn: () => Promise<unknown>): Promise<boolean> => {
     try {
@@ -116,7 +105,7 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
   for (const row of owned) {
     if (row.frozenAt) continue;
     const region = regionById(row.regionId)!;
-    const { economy, rates } = projectRegion(row, now, m.speed);
+    const { economy, rates } = projectRegion(row, now, m.speed, techFx);
     const pop = economy.popWorkers + economy.popSoldiers + economy.popOccupiers;
     const underThreat = threatened.has(row.regionId);
 
@@ -196,7 +185,7 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
     if (next) {
       const def = techById.get(next)!;
       const capital = owned.find((r) => r.regionId === p.capitalRegionId) ?? owned[0]!;
-      const { economy } = projectRegion(capital, now, m.speed);
+      const { economy } = projectRegion(capital, now, m.speed, techFx);
       if (!tier.hoards || comfortablyAffordable(economy, techCost(def, matchDay))) await attempt(() => queueResearch(ctx, next!));
     }
   }

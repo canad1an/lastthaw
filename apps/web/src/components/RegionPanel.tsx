@@ -124,6 +124,7 @@ export function useLiveEconomy(owned: OwnedRegionView, clockOffsetMs: number, sp
       yieldMult: owned.yieldMult,
       extract: owned.extract as Partial<Record<SpecialResource, number>>,
       iceFactor: owned.iceFactor,
+      growthMult: owned.growthMult,
       frozen: owned.frozen,
     };
     const elapsed = Math.max(0, (now + clockOffsetMs - Date.parse(owned.asOf)) / 1000);

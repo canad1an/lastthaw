@@ -5,7 +5,7 @@
  * pays costs up front and returns what it created. Errors carry statusCode.
  */
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
-import { armySpeed, balance, buildingBlockedBy, carryCapacity, buildingById, buildingCost, buildingSeconds, canAfford, effectsOf, findRoute, missingFor, realSeconds, regionById, techById, techCost, techSeconds, trainSeconds, travelSeconds, unitById, unitCost, type Cost, type MissionKind, caravanCarry } from "@lastthaw/shared";
+import { armySpeed, balance, buildingBlockedBy, carryCapacity, buildingById, buildingCost, buildingSeconds, canAfford, effectsOf, findRoute, missingFor, realSeconds, regionById, techById, techCost, techSeconds, trainSeconds, travelSeconds, unitById, unitCost, type Cost, type MissionKind, caravanCarry, techEffectsOf } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { armies, jobs, matchRegions, players } from "../db/schema.js";
 import { matchDayAt, matchNow } from "./clock.js";
@@ -113,7 +113,7 @@ export async function queueTrain(ctx: CommandContext, regionId: string, unitId: 
     await applyCost(tx, row, cost);
     const effects = effectsOf(row.buildings);
     const startsAt = pending.length ? pending[pending.length - 1]!.endsAt : now;
-    const endsAt = new Date(startsAt.getTime() + realSeconds(trainSeconds(def, qty), effects.trainSpeed, m.speed) * 1000);
+    const endsAt = new Date(startsAt.getTime() + realSeconds(trainSeconds(def, qty), effects.trainSpeed + techEffectsOf(techs).trainSpeed, m.speed) * 1000);
     const [j] = await tx
       .insert(jobs)
       .values({ matchId: m.id, playerId: p.id, regionId, kind: "train", refId: unitId, qty, slot: pending.length, payload: { cost }, startsAt, endsAt })
@@ -178,7 +178,7 @@ export async function queueResearch(ctx: CommandContext, techId: string) {
     }
     const effects = effectsOf(capital.buildings);
     const startsAt = pending.length ? pending[pending.length - 1]!.endsAt : now;
-    const endsAt = new Date(startsAt.getTime() + realSeconds(techSeconds(def), effects.researchSpeed, m.speed) * 1000);
+    const endsAt = new Date(startsAt.getTime() + realSeconds(techSeconds(def), effects.researchSpeed + techEffectsOf(techs).researchSpeed, m.speed) * 1000);
     const [j] = await tx
       .insert(jobs)
       .values({ matchId: m.id, playerId: p.id, regionId: null, kind: "research", refId: techId, slot: pending.length, payload: { cost }, startsAt, endsAt })
@@ -235,7 +235,7 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
     if (origin.ownerPlayerId !== p.id) throw httpError(403, "not your region");
     // Roads are already in the route cost: legs between road regions are shorter.
     const walking = unitById.get("settler")?.speed ?? 4;
-    const seconds = travelSeconds(route, unitCount ? armySpeed(units) : walking, m.speed);
+    const seconds = travelSeconds(route, (unitCount ? armySpeed(units) : walking) * (1 + techEffectsOf(techs).travel), m.speed);
 
     const [target] = await tx
       .select()

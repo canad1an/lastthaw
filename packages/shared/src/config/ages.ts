@@ -85,6 +85,25 @@ export interface UnitDef {
   civilian?: boolean;
 }
 
+/** What a tech does for every region the player owns, on top of unlocking things. Fractions add up across techs. */
+export interface TechEffect {
+  yield?: Partial<Record<"food" | "wood" | "stone", number>>;
+  capacity?: number;
+  /** Extra storage as a fraction of the cap (0.25 = +25%). */
+  storage?: number;
+  /** Population growth multiplier bonus (0.2 = +20%). */
+  growth?: number;
+  /** Ore and horse extraction bonus (0.5 = +50%). */
+  extract?: number;
+  attack?: number;
+  defense?: number;
+  trainSpeed?: number;
+  researchSpeed?: number;
+  /** Army and caravan travel speed bonus. */
+  travel?: number;
+  loyalty?: number;
+}
+
 export interface TechDef {
   id: string;
   name: string;
@@ -93,6 +112,7 @@ export interface TechDef {
   cost: Cost;
   baseSeconds: number;
   requires?: string[];
+  effect?: TechEffect;
   /** Completing this tech moves the player to this age. Announced to everyone. */
   advancesTo?: AgeIndex;
   /** Cannot be started before this match day (0-based): the hard pacing floor for age advances. */
@@ -176,24 +196,44 @@ export const TECHS: readonly TechDef[] = [
   { id: "flint_tools", name: "Flint tools", age: 0, description: "Sharper tools for every task.", cost: { stone: 30, wood: 40 }, baseSeconds: 120 },
   { id: "agriculture", name: "Agriculture", age: 0, description: "Planting instead of only gathering.", cost: { food: 150, wood: 80 }, baseSeconds: 240, requires: ["fire_making"] },
   { id: "animal_husbandry", name: "Animal husbandry", age: 0, description: "Tame the herds.", cost: { food: 150, wood: 60 }, baseSeconds: 240, requires: ["fire_making"] },
+  { id: "weaving", name: "Weaving", age: 0, description: "Cloth and shelter for more families.", cost: { food: 120, wood: 80 }, baseSeconds: 300, effect: { capacity: 10 } },
+  { id: "fishing_nets", name: "Fishing nets", age: 0, description: "Nets and traps: more food from rivers and shores.", cost: { wood: 150, food: 60 }, baseSeconds: 300, requires: ["fire_making"], effect: { yield: { food: 0.15 } } },
+  { id: "stone_axes", name: "Stone axes", age: 0, description: "Better tools for felling and quarrying.", cost: { wood: 120, stone: 80 }, baseSeconds: 360, requires: ["flint_tools"], effect: { yield: { wood: 0.15, stone: 0.1 } } },
   { id: "bronze_working", name: "Bronze working", age: 0, description: "Copper and tin make bronze. Enters the Bronze Age.", cost: { food: 300, wood: 250, stone: 200 }, baseSeconds: 7200, requires: ["flint_tools", "agriculture"], advancesTo: 1 },
   // Bronze
   { id: "mining", name: "Mining", age: 1, description: "Dig for metals.", cost: { wood: 300, stone: 300 }, baseSeconds: 600 },
   { id: "the_wheel", name: "The wheel", age: 1, description: "Carts and chariots.", cost: { wood: 400, food: 200 }, baseSeconds: 700, requires: ["animal_husbandry"] },
   { id: "road_building", name: "Road building", age: 1, description: "Surveyed, drained and paved ways. Lets a region build Roads to all of its neighbours.", cost: { wood: 600, stone: 400 }, baseSeconds: 900, requires: ["the_wheel"] },
   { id: "writing", name: "Writing", age: 1, description: "Records and learning.", cost: { food: 300, wood: 300 }, baseSeconds: 800 },
+  { id: "irrigation", name: "Irrigation", age: 1, description: "Ditches and channels: fields yield more.", cost: { wood: 1200, stone: 600 }, baseSeconds: 1800, requires: ["agriculture"], effect: { yield: { food: 0.2 } } },
+  { id: "pottery", name: "Pottery", age: 1, description: "Sealed jars keep more in store.", cost: { stone: 900, wood: 600 }, baseSeconds: 1500, effect: { storage: 0.25 } },
+  { id: "bronze_weapons", name: "Bronze weapons", age: 1, description: "Cast blades and spearheads for every soldier.", cost: { wood: 800, stone: 400, copper: 10 }, baseSeconds: 1800, effect: { attack: 0.1, defense: 0.05 } },
+  { id: "herbal_medicine", name: "Herbal medicine", age: 1, description: "Fewer die young: people grow faster.", cost: { food: 1500, wood: 500 }, baseSeconds: 1500, effect: { growth: 0.2 } },
   { id: "iron_working", name: "Iron working", age: 1, description: "Smelt iron. Enters the Iron Age.", cost: { wood: 5000, stone: 3000, copper: 40 }, baseSeconds: 14400, requires: ["mining"], advancesTo: 2, earliestDay: 4 },
   // Iron
   { id: "siegecraft", name: "Siegecraft", age: 2, description: "Engines to break walls.", cost: { wood: 900, iron: 40 }, baseSeconds: 1800 },
   { id: "masonry", name: "Masonry", age: 2, description: "Cut and fitted stone. Unlocks Stone walls and leads to Drill.", cost: { stone: 1000, wood: 400 }, baseSeconds: 1800 },
+  { id: "crop_rotation", name: "Crop rotation", age: 2, description: "Rested fields feed more.", cost: { food: 6000, wood: 3000 }, baseSeconds: 3600, requires: ["irrigation"], effect: { yield: { food: 0.25 } } },
+  { id: "iron_tools", name: "Iron tools", age: 2, description: "Iron axes and picks for the camps and quarries.", cost: { wood: 4000, stone: 3000, iron: 30 }, baseSeconds: 3600, effect: { yield: { wood: 0.2, stone: 0.2 } } },
+  { id: "iron_weapons", name: "Iron weapons", age: 2, description: "Harder edges for every soldier.", cost: { wood: 3000, iron: 60 }, baseSeconds: 4200, requires: ["bronze_weapons"], effect: { attack: 0.15, defense: 0.1 } },
+  { id: "mathematics", name: "Mathematics", age: 2, description: "Numbers and records: research goes faster.", cost: { food: 4000, stone: 2500 }, baseSeconds: 3600, requires: ["writing"], effect: { researchSpeed: 0.15 } },
   { id: "drill", name: "Drill", age: 2, description: "Professional soldiers. Enters the Classical Age.", cost: { food: 40000, wood: 25000, iron: 500 }, baseSeconds: 21600, requires: ["masonry", "writing"], advancesTo: 3, earliestDay: 11 },
   // Classical
   { id: "shipbuilding", name: "Shipbuilding", age: 3, description: "Boats that cross open sea.", cost: { wood: 2000, stone: 500 }, baseSeconds: 4800 },
   { id: "engineering", name: "Engineering", age: 3, description: "Aqueducts and ballistae.", cost: { stone: 1800, wood: 800, iron: 60 }, baseSeconds: 4800 },
+  { id: "philosophy", name: "Philosophy", age: 3, description: "Schools of thought: research goes faster still.", cost: { food: 15000, wood: 8000 }, baseSeconds: 7200, requires: ["mathematics"], effect: { researchSpeed: 0.2 } },
+  { id: "steel", name: "Steel", age: 3, description: "Forged steel for blades and mail.", cost: { wood: 10000, iron: 150 }, baseSeconds: 9000, requires: ["iron_weapons"], effect: { attack: 0.2, defense: 0.15 } },
+  { id: "logistics", name: "Logistics", age: 3, description: "Supply trains and relays: armies and caravans move faster.", cost: { food: 12000, wood: 10000 }, baseSeconds: 7200, requires: ["road_building"], effect: { travel: 0.2 } },
+  { id: "civil_service", name: "Civil service", age: 3, description: "Governors and clerks keep distant lands loyal.", cost: { food: 10000, stone: 8000 }, baseSeconds: 7200, requires: ["writing"], effect: { loyalty: 0.1 } },
+  { id: "heavy_plough", name: "Heavy plough", age: 3, description: "Turns heavy soils that hoes never could.", cost: { wood: 15000, iron: 80 }, baseSeconds: 9000, requires: ["crop_rotation"], effect: { yield: { food: 0.3 } } },
   { id: "chivalry", name: "Chivalry", age: 3, description: "Knights and castles. Enters the Medieval Age.", cost: { food: 150000, wood: 80000, iron: 1500 }, baseSeconds: 28800, requires: ["engineering"], advancesTo: 4, earliestDay: 19 },
   // Medieval
+  { id: "three_field_system", name: "Three-field system", age: 4, description: "A third of the land rests while two thirds feed.", cost: { food: 40000, wood: 25000 }, baseSeconds: 14400, requires: ["heavy_plough"], effect: { yield: { food: 0.3 } } },
+  { id: "blast_furnace", name: "Blast furnace", age: 4, description: "Far more metal from every mine.", cost: { stone: 30000, iron: 300 }, baseSeconds: 14400, effect: { extract: 0.5 } },
+  { id: "plate_armour", name: "Plate armour", age: 4, description: "Full harness for the heavy troops.", cost: { iron: 400, wood: 20000 }, baseSeconds: 18000, requires: ["steel"], effect: { defense: 0.25 } },
+  { id: "guilds", name: "Guilds", age: 4, description: "Organised crafts: more wood and stone from every camp.", cost: { food: 30000, stone: 20000 }, baseSeconds: 14400, effect: { yield: { wood: 0.25, stone: 0.25 } } },
   { id: "siege_engines", name: "Siege engines", age: 4, description: "Trebuchets.", cost: { wood: 3000, iron: 200 }, baseSeconds: 9000 },
-  { id: "scholasticism", name: "Scholasticism", age: 4, description: "Universities.", cost: { wood: 2500, stone: 2500 }, baseSeconds: 9000 },
+  { id: "scholasticism", name: "Scholasticism", age: 4, description: "Universities: research goes much faster.", cost: { wood: 2500, stone: 2500 }, baseSeconds: 9000, effect: { researchSpeed: 0.3 } },
 ];
 
 export const buildingById = new Map(BUILDINGS.map((b) => [b.id, b]));

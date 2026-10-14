@@ -81,3 +81,60 @@ export function availableUnits(age: number, techs: ReadonlySet<string>): UnitDef
 export function availableTechs(age: number, techs: ReadonlySet<string>): TechDef[] {
   return TECHS.filter((t) => t.age <= age && !techs.has(t.id) && (t.requires ?? []).every((r) => techs.has(r)));
 }
+
+/** Combined effect of a player's techs on every region they own. */
+export interface TechEffects {
+  yield: { food: number; wood: number; stone: number };
+  capacity: number;
+  storage: number;
+  growth: number;
+  extract: number;
+  attack: number;
+  defense: number;
+  trainSpeed: number;
+  researchSpeed: number;
+  travel: number;
+  loyalty: number;
+}
+
+export const NO_TECH_EFFECTS: TechEffects = { yield: { food: 0, wood: 0, stone: 0 }, capacity: 0, storage: 0, growth: 0, extract: 0, attack: 0, defense: 0, trainSpeed: 0, researchSpeed: 0, travel: 0, loyalty: 0 };
+
+export function techEffectsOf(techs: ReadonlySet<string> | readonly string[]): TechEffects {
+  const has = techs instanceof Set ? (id: string) => techs.has(id) : (id: string) => (techs as readonly string[]).includes(id);
+  const t: TechEffects = { ...NO_TECH_EFFECTS, yield: { food: 0, wood: 0, stone: 0 } };
+  for (const def of TECHS) {
+    if (!def.effect || !has(def.id)) continue;
+    const e = def.effect;
+    t.yield.food += e.yield?.food ?? 0;
+    t.yield.wood += e.yield?.wood ?? 0;
+    t.yield.stone += e.yield?.stone ?? 0;
+    t.capacity += e.capacity ?? 0;
+    t.storage += e.storage ?? 0;
+    t.growth += e.growth ?? 0;
+    t.extract += e.extract ?? 0;
+    t.attack += e.attack ?? 0;
+    t.defense += e.defense ?? 0;
+    t.trainSpeed += e.trainSpeed ?? 0;
+    t.researchSpeed += e.researchSpeed ?? 0;
+    t.travel += e.travel ?? 0;
+    t.loyalty += e.loyalty ?? 0;
+  }
+  return t;
+}
+
+/** Region effects from buildings, with the owner's tech effects folded in. */
+export function applyTechEffects(e: RegionEffects, t: TechEffects): RegionEffects {
+  const extract: Partial<Record<SpecialResource, number>> = {};
+  for (const [k, v] of Object.entries(e.extract)) extract[k as SpecialResource] = (v ?? 0) * (1 + t.extract);
+  return {
+    ...e,
+    capacity: e.capacity + t.capacity,
+    storage: e.storage + t.storage,
+    yield: { food: e.yield.food * (1 + t.yield.food), wood: e.yield.wood * (1 + t.yield.wood), stone: e.yield.stone * (1 + t.yield.stone) },
+    extract,
+    defense: e.defense + t.defense,
+    loyalty: e.loyalty + t.loyalty,
+    researchSpeed: e.researchSpeed + t.researchSpeed,
+    trainSpeed: e.trainSpeed + t.trainSpeed,
+  };
+}
