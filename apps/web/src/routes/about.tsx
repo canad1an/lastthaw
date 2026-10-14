@@ -17,15 +17,15 @@ export function AboutPage() {
           and only one of them wins.
         </p>
         <p>
-          There is no pause button. Build queues, research, armies and the ice all keep moving while you are away, the way they do in OGame or Travian. You
-          check in, set your workers, queue the next hour of work, send a raid, and come back to the reports.
+          There is no pause button. Build queues, research, armies and the ice all keep moving while you are away. You check in, set your workers, queue the
+          next hour of work, send a raid, and come back to the reports.
         </p>
       </section>
 
       <section className="grid gap-4 sm:grid-cols-2">
         <Card>
-          <h2 className="font-medium text-white">Inspirations</h2>
-          <p className="mt-1 text-sm text-slate-400">OGame for timers and auto-resolved battles, Travian for rounds with a winner, Supremacy 1914 for a real-world map with AI filling the gaps.</p>
+          <h2 className="font-medium text-white">Real time, your pace</h2>
+          <p className="mt-1 text-sm text-slate-400">Everything runs on timers. A few minutes a day keeps an empire going; checking in more often lets you react to raids and the ice.</p>
         </Card>
         <Card>
           <h2 className="font-medium text-white">Matches</h2>
