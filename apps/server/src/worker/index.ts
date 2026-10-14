@@ -6,11 +6,13 @@ import { createRedis } from "../redis.js";
 import { Publisher } from "../realtime/publish.js";
 import { startMatch } from "../matches/start.js";
 import { runDueJobs } from "./jobs.js";
+import { runMatchTicks } from "../sim/tick.js";
 
 /**
  * Simulation worker. One process serves every concurrent match.
  *  - scheduler (5s): starts lobby matches whose start time has passed
  *  - due-job loop (1s): completes timed actions in ends_at order
+ *  - match tick (30s poll): loyalty, rebellions, scores, win check, AI
  */
 const db = createDb();
 const redis = createRedis();
@@ -59,4 +61,5 @@ await Promise.all([
   every(1000, "jobs", async () => {
     await runDueJobs(db, publisher, log);
   }),
+  every(30_000, "tick", () => runMatchTicks(db, publisher, log)),
 ]);

@@ -95,7 +95,14 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
     const endsAt = new Date(startsAt.getTime() + matchLengthSeconds(body.speed) * 1000);
     const [m] = await db
       .insert(matches)
-      .values({ name: body.name, speed: body.speed, seed: randomBytes(8).toString("hex"), startsAt, endsAt, settings: { createdBy: user.id } })
+      .values({
+        name: body.name,
+        speed: body.speed,
+        seed: randomBytes(8).toString("hex"),
+        startsAt,
+        endsAt,
+        settings: { createdBy: user.id, ...(body.aiFillTo !== undefined ? { aiFillTo: body.aiFillTo } : {}), ...(body.neutralTribes !== undefined ? { neutralTribes: body.neutralTribes } : {}) },
+      })
       .returning();
     return reply.code(201).send({ id: m!.id });
   });

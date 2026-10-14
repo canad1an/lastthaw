@@ -1,9 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { balance, matchStateView, regionById } from "@lastthaw/shared";
 import { buildApp } from "../src/api/app.js";
 import { createDb, type Db } from "../src/db/client.js";
-import { matches, users } from "../src/db/schema.js";
+import { jobs, matches, users } from "../src/db/schema.js";
+import { runMatchTicks } from "../src/sim/tick.js";
 import { Publisher } from "../src/realtime/publish.js";
 import { createRedis } from "../src/redis.js";
 import { runDueJobs } from "../src/worker/jobs.js";
@@ -71,7 +72,7 @@ describe("milestone 1 flow", () => {
     for (const u of [alice, bob]) await db.update(users).set({ emailVerifiedAt: new Date() }).where(eq(users.email, u.email));
 
     // Create a 10x match starting far in the future, then start it by hand.
-    const created = await a.call("POST", "/api/matches", { name: "test", speed: 10, startsInMinutes: 60 });
+    const created = await a.call("POST", "/api/matches", { name: "test", speed: 10, startsInMinutes: 60, aiFillTo: 3, neutralTribes: 0 });
     expect(created.statusCode).toBe(201);
     const matchId = created.json().id as string;
     createdMatches.push(matchId);
@@ -104,7 +105,8 @@ describe("milestone 1 flow", () => {
     expect(capital.regionId).toBe(aPick);
     expect(capital.isCapital).toBe(true);
     expect(Math.round(capital.popWorkers)).toBe(balance.start.families * balance.start.peoplePerFamily);
-    expect(state.players).toHaveLength(2);
+    expect(state.players).toHaveLength(3); // Alice, Bob and one AI tribe
+    expect(state.players.filter((p) => p.isAi)).toHaveLength(1);
     expect(state.players.every((p) => p.regions === 1)).toBe(true);
 
     // Bob never sees Alice's economy.
@@ -231,6 +233,19 @@ describe("milestone 1 flow", () => {
         expect(state.armies).toHaveLength(0);
       }
     }
+
+    // Milestone 4: a match tick scores everyone and lets the AI tribe act.
+    {
+      const redis = createRedis();
+      await runMatchTicks(db, new Publisher(redis), logger);
+      await redis.quit().catch(() => {});
+    }
+    state = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json());
+    expect(state.players.find((p) => p.id === state.me.playerId)!.score).toBeGreaterThan(0);
+    const aiPlayer = state.players.find((p) => p.isAi)!;
+    const aiJobs = await db.select().from(jobs).where(and(eq(jobs.playerId, aiPlayer.id), isNull(jobs.cancelledAt)));
+    expect(aiJobs.length).toBeGreaterThan(0); // it queued something
+    expect(state.owned.find((o) => o.regionId === neighbour)!.loyalty).toBeLessThan(1);
 
     // Skip past the end of the match; the worker finishes it.
     const seconds = Math.ceil((balance.match.lengthDays * 86400) / 10) + 60;

@@ -57,6 +57,10 @@ export const createMatchBody = z.object({
   name: z.string().trim().min(2).max(40),
   speed: z.number().int().min(1).max(100),
   startsInMinutes: z.number().int().min(0).max(60 * 24 * 14),
+  /** AI tribes are added until this many players exist. Default from balance. */
+  aiFillTo: z.number().int().min(0).max(100).optional(),
+  /** Neutral tribes scattered on the map. Default from balance. */
+  neutralTribes: z.number().int().min(0).max(300).optional(),
 });
 
 export const pickStartBody = z.object({ regionId: z.string() });

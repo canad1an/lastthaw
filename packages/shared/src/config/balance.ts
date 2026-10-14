@@ -139,14 +139,53 @@ export const balance = {
     /** Occupiers needed per 100 people in a region to keep it quiet. */
     occupiersPerHundred: 10,
   },
+  ice: {
+    /** Absolute latitude of the ice edge by match day; interpolated between points. */
+    schedule: [
+      { day: 0, latitude: 72 },
+      { day: 7, latitude: 62 },
+      { day: 14, latitude: 52 },
+      { day: 21, latitude: 42 },
+      { day: 28, latitude: 32 },
+      { day: 30, latitude: 28 },
+    ],
+  },
   tick: {
     /** Match tick cadence in real minutes (loyalty, AI, score, win check). */
     minutes: 5,
   },
+  ai: {
+    /** AI tribes are added at match start until this many players exist (spec: up to 100). */
+    fillTo: 24,
+    /** Neutral tribes scattered on the map at match start. */
+    neutralTribes: 60,
+    /** Neutral tribes are not placed within this distance of any capital. */
+    neutralMinDistanceKm: 500,
+    neutralPeople: { min: 12, max: 40 },
+    neutralWarriors: { min: 2, max: 10 },
+    /** Neutral tribes train a few warriors per game day so the map never feels empty. */
+    neutralGrowthWarriorsPerDay: 1.5,
+    /** Game minutes between an AI player's decisions, jittered per player. */
+    decisionMinutes: { min: 40, max: 90 },
+    /** Share of population an AI keeps as soldiers, by profile. */
+    soldierShare: { peaceful: 0.12, balanced: 0.2, raider: 0.3 } as Record<string, number>,
+    /** Chance per decision to launch a raid, by profile. */
+    raidChance: { peaceful: 0.05, balanced: 0.15, raider: 0.35 } as Record<string, number>,
+    /** Chance per decision to try a conquest of a neutral neighbour. */
+    conquerChance: { peaceful: 0.1, balanced: 0.2, raider: 0.25 } as Record<string, number>,
+    /** AI never attacks players whose army total exceeds this multiple of its own. */
+    maxTargetStrengthRatio: 0.8,
+    names: [
+      "Ashfolk", "Brightwater", "Coldspring", "Dunmere", "Elkridge", "Fenwick", "Greyhollow", "Hartland", "Ironvale", "Juniper",
+      "Kestrel", "Longmoor", "Marrowgate", "Nightfell", "Oakenshaw", "Pinecrest", "Quillmark", "Ravensholt", "Stonebrook", "Thornfield",
+      "Umberlake", "Vellmoor", "Wildmarch", "Yarrowdale", "Zephyr", "Alderwood", "Blackfen", "Copperhill", "Driftmoor", "Emberfall",
+    ],
+  },
   win: {
     regionShareForEarlyWin: 0.6,
     holdHours: 48,
-    scoreWeights: { territory: 1, population: 1, age: 1 },
+    /** Score = regions * territory + population * population + age * age (per player). */
+    scoreWeights: { territory: 25, population: 1, age: 150 },
   },
 } as const;
 

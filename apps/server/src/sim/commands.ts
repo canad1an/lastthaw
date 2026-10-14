@@ -1,0 +1,240 @@
+/**
+ * Player commands as plain functions. The HTTP routes and the AI both call
+ * these, so humans and AI tribes play by exactly the same rules.
+ * Every function validates, settles the regions it touches under a lock,
+ * pays costs up front and returns what it created. Errors carry statusCode.
+ */
+import { and, asc, eq, isNull } from "drizzle-orm";
+import {
+  armySpeed,
+  balance,
+  buildingById,
+  buildingCost,
+  buildingSeconds,
+  canAfford,
+  effectsOf,
+  findRoute,
+  missingFor,
+  realSeconds,
+  regionById,
+  techById,
+  techSeconds,
+  trainSeconds,
+  travelSeconds,
+  unitById,
+  unitCost,
+  type Cost,
+  type MissionKind,
+} from "@lastthaw/shared";
+import type { Db } from "../db/client.js";
+import { armies, jobs, matchRegions, players } from "../db/schema.js";
+import { matchNow } from "./clock.js";
+import { applyCost, settleAndLockRegion, stockOf, type Tx } from "./regions.js";
+import { areAllied } from "./alliances.js";
+import type { MatchRow } from "../worker/jobs.js";
+
+export type PlayerRow = typeof players.$inferSelect;
+
+export interface CommandContext {
+  db: Db;
+  m: MatchRow;
+  p: PlayerRow;
+  techs: ReadonlySet<string>;
+}
+
+export function httpError(status: number, message: string): Error {
+  return Object.assign(new Error(message), { statusCode: status });
+}
+
+/** Pending (not completed, not cancelled) jobs for a region, in queue order. */
+export async function pendingRegionJobs(tx: Tx | Db, matchId: string, regionId: string) {
+  return tx
+    .select()
+    .from(jobs)
+    .where(and(eq(jobs.matchId, matchId), eq(jobs.regionId, regionId), isNull(jobs.completedAt), isNull(jobs.cancelledAt)))
+    .orderBy(asc(jobs.startsAt), asc(jobs.id));
+}
+
+export async function queueBuild(ctx: CommandContext, regionId: string, buildingId: string) {
+  const { db, m, p, techs } = ctx;
+  const def = buildingById.get(buildingId);
+  if (!def) throw httpError(400, "unknown building");
+  if (def.age > p.age) throw httpError(400, `${def.name} needs the ${["Stone", "Bronze", "Iron", "Classical", "Medieval"][def.age]} Age`);
+  if (def.requires && !techs.has(def.requires)) throw httpError(400, `${def.name} needs ${techById.get(def.requires)?.name ?? def.requires}`);
+
+  return db.transaction(async (tx) => {
+    const now = matchNow(m);
+    const row = await settleAndLockRegion(tx, m.id, regionId, now, m.speed);
+    if (row.ownerPlayerId !== p.id) throw httpError(403, "not your region");
+    if (row.frozenAt) throw httpError(409, "this region is frozen");
+    const pending = await pendingRegionJobs(tx, m.id, regionId);
+    if (pending.length >= balance.queue.slotsPerRegion) throw httpError(409, "the build queue is full");
+    const queuedLevels = pending.filter((j) => j.kind === "build" && j.refId === buildingId).length;
+    const level = (row.buildings[buildingId] ?? 0) + queuedLevels + 1;
+    if (level > def.maxLevel) throw httpError(400, `${def.name} is at its maximum level`);
+    const cost = buildingCost(def, level);
+    const stock = stockOf(row);
+    if (!canAfford(stock, cost)) throw httpError(409, `not enough ${missingFor(stock, cost).join(", ")}`);
+    await applyCost(tx, row, cost);
+    const startsAt = pending.length ? pending[pending.length - 1]!.endsAt : now;
+    const endsAt = new Date(startsAt.getTime() + realSeconds(buildingSeconds(def, level), 0, m.speed) * 1000);
+    const [j] = await tx
+      .insert(jobs)
+      .values({ matchId: m.id, playerId: p.id, regionId, kind: "build", refId: buildingId, level, slot: pending.length, payload: { cost }, startsAt, endsAt })
+      .returning();
+    return j!;
+  });
+}
+
+export async function queueTrain(ctx: CommandContext, regionId: string, unitId: string, qty: number) {
+  const { db, m, p, techs } = ctx;
+  const def = unitById.get(unitId);
+  if (!def || def.hidden) throw httpError(400, "unknown unit");
+  if (def.age > p.age) throw httpError(400, `${def.name} needs a later age`);
+  if (def.requires && !techs.has(def.requires)) throw httpError(400, `${def.name} needs ${techById.get(def.requires)?.name ?? def.requires}`);
+  const region = regionById(regionId);
+  if (def.needsResource && !region?.resources.includes(def.needsResource)) throw httpError(400, `${def.name} can only be trained where there are ${def.needsResource}`);
+
+  return db.transaction(async (tx) => {
+    const now = matchNow(m);
+    const row = await settleAndLockRegion(tx, m.id, regionId, now, m.speed);
+    if (row.ownerPlayerId !== p.id) throw httpError(403, "not your region");
+    if (row.frozenAt) throw httpError(409, "this region is frozen");
+    const pending = await pendingRegionJobs(tx, m.id, regionId);
+    if (pending.length >= balance.queue.slotsPerRegion) throw httpError(409, "the build queue is full");
+    const queuedPeople = pending.filter((j) => j.kind === "train").reduce((a, j) => a + (j.qty ?? 0), 0);
+    if (row.popWorkers - queuedPeople < qty) throw httpError(409, "not enough free workers to train that many");
+    const cost: Cost = unitCost(def, qty);
+    const stock = stockOf(row);
+    if (!canAfford(stock, cost)) throw httpError(409, `not enough ${missingFor(stock, cost).join(", ")}`);
+    await applyCost(tx, row, cost);
+    const effects = effectsOf(row.buildings);
+    const startsAt = pending.length ? pending[pending.length - 1]!.endsAt : now;
+    const endsAt = new Date(startsAt.getTime() + realSeconds(trainSeconds(def, qty), effects.trainSpeed, m.speed) * 1000);
+    const [j] = await tx
+      .insert(jobs)
+      .values({ matchId: m.id, playerId: p.id, regionId, kind: "train", refId: unitId, qty, slot: pending.length, payload: { cost }, startsAt, endsAt })
+      .returning();
+    return j!;
+  });
+}
+
+export async function queueResearch(ctx: CommandContext, techId: string) {
+  const { db, m, p, techs } = ctx;
+  const def = techById.get(techId);
+  if (!def) throw httpError(400, "unknown tech");
+  if (techs.has(techId)) throw httpError(409, "already researched");
+  if (def.age > p.age) throw httpError(400, `${def.name} needs a later age`);
+  for (const r of def.requires ?? []) if (!techs.has(r)) throw httpError(400, `${def.name} needs ${techById.get(r)?.name ?? r}`);
+  if (!p.capitalRegionId) throw httpError(409, "no capital");
+
+  return db.transaction(async (tx) => {
+    const now = matchNow(m);
+    const [current] = await tx
+      .select({ id: jobs.id })
+      .from(jobs)
+      .where(and(eq(jobs.playerId, p.id), eq(jobs.kind, "research"), isNull(jobs.completedAt), isNull(jobs.cancelledAt)))
+      .limit(1);
+    if (current) throw httpError(409, "research is already in progress");
+    const capital = await settleAndLockRegion(tx, m.id, p.capitalRegionId!, now, m.speed);
+    if (capital.ownerPlayerId !== p.id) throw httpError(409, "you have lost your capital");
+    const stock = stockOf(capital);
+    if (!canAfford(stock, def.cost)) throw httpError(409, `not enough ${missingFor(stock, def.cost).join(", ")} in your capital`);
+    await applyCost(tx, capital, def.cost);
+    const effects = effectsOf(capital.buildings);
+    const endsAt = new Date(now.getTime() + realSeconds(techSeconds(def), effects.researchSpeed, m.speed) * 1000);
+    const [j] = await tx
+      .insert(jobs)
+      .values({ matchId: m.id, playerId: p.id, regionId: null, kind: "research", refId: techId, payload: { cost: def.cost }, startsAt: now, endsAt })
+      .returning();
+    return j!;
+  });
+}
+
+export interface SendArmyInput {
+  mission: MissionKind;
+  targetRegionId: string;
+  units: Record<string, number>;
+  people: number;
+  cargo: Record<string, number>;
+}
+
+const HOSTILE: ReadonlySet<MissionKind> = new Set(["raid", "conquer"]);
+
+export async function sendArmy(ctx: CommandContext, regionId: string, body: SendArmyInput) {
+  const { db, m, p, techs } = ctx;
+  if (!regionById(body.targetRegionId)) throw httpError(400, "unknown target");
+  if (body.targetRegionId === regionId) throw httpError(400, "the army is already there");
+  const units = Object.fromEntries(Object.entries(body.units).filter(([, n]) => n > 0));
+  const unitCount = Object.values(units).reduce((a, b) => a + b, 0);
+  if (unitCount === 0 && body.mission !== "transport") throw httpError(400, "send at least one unit");
+  if (body.mission === "conquer" && body.people < balance.conquest.occupiersRequired) {
+    throw httpError(400, `conquering needs at least ${balance.conquest.occupiersRequired} people to occupy the region`);
+  }
+  const route = findRoute(regionId, body.targetRegionId, techs.has(balance.travel.seaTech));
+  if (!route) throw httpError(400, techs.has(balance.travel.seaTech) ? "no route to that region" : "no land route; research Shipbuilding to cross the sea");
+  const speed = unitCount ? armySpeed(units) : 5;
+  const seconds = travelSeconds(route, speed, m.speed);
+  const now = matchNow(m);
+
+  return db.transaction(async (tx) => {
+    const origin = await settleAndLockRegion(tx, m.id, regionId, now, m.speed);
+    if (origin.ownerPlayerId !== p.id) throw httpError(403, "not your region");
+
+    const [target] = await tx
+      .select()
+      .from(matchRegions)
+      .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, body.targetRegionId)))
+      .limit(1);
+    const targetOwner = target?.ownerPlayerId ?? null;
+    const friendly = targetOwner === p.id || (targetOwner ? await areAllied(tx, m.id, p.id, targetOwner) : false);
+    if ((body.mission === "reinforce" || body.mission === "move" || body.mission === "transport") && !friendly) {
+      throw httpError(400, "that region is not yours or an ally's");
+    }
+    if (HOSTILE.has(body.mission)) {
+      if (friendly) throw httpError(400, "you cannot attack your own or allied regions");
+      if (targetOwner) {
+        const [owner] = await tx.select().from(players).where(eq(players.id, targetOwner)).limit(1);
+        if (owner?.protectionUntil && owner.protectionUntil.getTime() > now.getTime()) throw httpError(400, `${owner.name} is under beginner protection`);
+        if (p.protectionUntil && p.protectionUntil.getTime() > now.getTime()) {
+          await tx.update(players).set({ protectionUntil: now }).where(eq(players.id, p.id));
+        }
+      }
+    }
+
+    for (const [id, n] of Object.entries(units)) if ((origin.units[id] ?? 0) < n) throw httpError(409, `not enough ${id} here`);
+    if (origin.popWorkers < body.people) throw httpError(409, "not enough free people here");
+    const stock = stockOf(origin);
+    for (const [k, v] of Object.entries(body.cargo)) {
+      if (!(k in stock)) throw httpError(400, `unknown cargo ${k}`);
+      if ((stock[k] ?? 0) < v) throw httpError(409, `not enough ${k} here`);
+    }
+    const newUnits = { ...origin.units };
+    for (const [id, n] of Object.entries(units)) newUnits[id] = (newUnits[id] ?? 0) - n;
+    await tx
+      .update(matchRegions)
+      .set({ units: newUnits, popSoldiers: origin.popSoldiers - unitCount, popWorkers: origin.popWorkers - body.people })
+      .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, regionId)));
+    if (Object.keys(body.cargo).length) await applyCost(tx, { ...origin, popSoldiers: origin.popSoldiers - unitCount }, body.cargo);
+
+    const arrivesAt = new Date(now.getTime() + seconds * 1000);
+    const [a] = await tx
+      .insert(armies)
+      .values({
+        matchId: m.id,
+        playerId: p.id,
+        mission: body.mission,
+        originRegionId: regionId,
+        targetRegionId: body.targetRegionId,
+        units,
+        cargo: { ...body.cargo, people: body.people },
+        path: route.path,
+        status: "outbound",
+        departsAt: now,
+        arrivesAt,
+      })
+      .returning();
+    await tx.insert(jobs).values({ matchId: m.id, playerId: p.id, regionId: body.targetRegionId, kind: "mission", refId: a!.id, startsAt: now, endsAt: arrivesAt });
+    return { army: a!, targetOwner, route };
+  });
+}

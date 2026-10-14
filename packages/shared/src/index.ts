@@ -5,6 +5,7 @@ export * from "./rules/buildings.js";
 export * from "./rules/rng.js";
 export * from "./rules/combat.js";
 export * from "./rules/travel.js";
+export * from "./rules/ice.js";
 export * from "./types/api.js";
 export * from "./rules/time.js";
 export * from "./rules/settle.js";

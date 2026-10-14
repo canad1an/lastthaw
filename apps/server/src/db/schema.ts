@@ -47,6 +47,26 @@ export const sessions = pgTable(
   (t) => [index("sessions_user_idx").on(t.userId)],
 );
 
+/** Match history per account: the spec's "keep a history of each player's past matches and finishes". */
+export const userMatchResults = pgTable(
+  "user_match_results",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    matchId: uuid("match_id").notNull(),
+    playerId: uuid("player_id").notNull(),
+    finalRank: integer("final_rank").notNull(),
+    score: integer("score").notNull(),
+    regionsHeld: integer("regions_held").notNull(),
+    ageReached: integer("age_reached").notNull(),
+    eliminatedAt: timestamp("eliminated_at", { withTimezone: true }),
+    won: boolean("won").notNull().default(false),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.matchId] })],
+);
+
 export const emailTokenKind = pgEnum("email_token_kind", ["verify", "reset"]);
 
 export const emailTokens = pgTable(
@@ -82,6 +102,8 @@ export const matches = pgTable(
     clockOffsetSeconds: integer("clock_offset_seconds").notNull().default(0),
     workerLease: text("worker_lease"),
     workerLeaseUntil: timestamp("worker_lease_until", { withTimezone: true }),
+    /** Match-clock time of the last periodic tick (loyalty, AI, score, win check). */
+    lastTickAt: timestamp("last_tick_at", { withTimezone: true }),
     seed: text("seed").notNull(),
     lobbyOpensAt: timestamp("lobby_opens_at", { withTimezone: true }).notNull().defaultNow(),
     startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
