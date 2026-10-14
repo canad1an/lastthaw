@@ -30,6 +30,9 @@ import { useNow } from "../hooks/useNow.js";
 import { Button, Card, ErrorText, fmt, signed } from "./ui.js";
 import { Countdown, costText } from "./Countdown.js";
 import { SendArmy } from "./ArmyPanel.js";
+import { BeforeAfter, Tooltip } from "./Tooltip.js";
+import { buildingPreview, unitPreview } from "./previews.js";
+import type { BuildingDef, UnitDef } from "@lastthaw/shared";
 
 interface Props {
   matchId: string;
@@ -254,21 +257,29 @@ function BuildTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
           const secs = realSeconds(buildingSeconds(b, level), 0, state.match.speed);
           return (
             <li key={b.id} className="flex items-center justify-between gap-2 py-2 text-sm">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium">{b.name}</span>
-                  <span className="text-xs text-slate-500">
-                    lvl {owned.buildings[b.id] ?? 0}
-                    {queued ? ` (+${queued})` : ""}
-                  </span>
-                </div>
-                <p className="truncate text-xs text-slate-400">{b.description}</p>
-                {!maxed && (
-                  <p className={`text-xs ${canAfford(stock, cost) ? "text-slate-400" : "text-rose-400"}`}>
-                    {costText(cost)} · {formatCountdown(secs)}
-                  </p>
-                )}
-              </div>
+              <Tooltip
+                className="min-w-0 flex-1 cursor-help"
+                trigger={
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{b.name}</span>
+                      <span className="text-xs text-slate-500">
+                        lvl {owned.buildings[b.id] ?? 0}
+                        {queued ? ` (+${queued})` : ""}
+                      </span>
+                      <span className="text-xs text-slate-600">ⓘ</span>
+                    </div>
+                    <p className="truncate text-xs text-slate-400">{b.description}</p>
+                    {!maxed && (
+                      <p className={`text-xs ${canAfford(stock, cost) ? "text-slate-400" : "text-rose-400"}`}>
+                        {costText(cost)} · {formatCountdown(secs)}
+                      </p>
+                    )}
+                  </div>
+                }
+              >
+                <BuildingTip def={b} level={Math.min(level, b.maxLevel)} owned={owned} economy={live.e} speed={state.match.speed} maxed={maxed} />
+              </Tooltip>
               <Button variant="ghost" disabled={!ok || m.isPending} onClick={() => m.mutate(b.id)}>
                 {maxed ? "Max" : `Lvl ${level}`}
               </Button>
@@ -311,17 +322,25 @@ function TrainTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
           const secs = realSeconds(trainSeconds(u, qty), owned.effects.trainSpeed, state.match.speed);
           return (
             <li key={u.id} className="flex items-center justify-between gap-2 py-2 text-sm">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium">{u.name}</span>
-                  <span className="text-xs text-slate-500">
-                    atk {u.attack} · def {u.defense} · spd {u.speed}
-                  </span>
-                </div>
-                <p className={`text-xs ${needs ? "text-rose-400" : canAfford(stock, cost) ? "text-slate-400" : "text-rose-400"}`}>
-                  {needs ? `needs ${u.needsResource} here` : `${costText(cost)} · ${formatCountdown(secs)}`}
-                </p>
-              </div>
+              <Tooltip
+                className="min-w-0 flex-1 cursor-help"
+                trigger={
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{u.name}</span>
+                      <span className="text-xs text-slate-500">
+                        atk {u.attack} · def {u.defense} · spd {u.speed}
+                      </span>
+                      <span className="text-xs text-slate-600">ⓘ</span>
+                    </div>
+                    <p className={`text-xs ${needs ? "text-rose-400" : canAfford(stock, cost) ? "text-slate-400" : "text-rose-400"}`}>
+                      {needs ? `needs ${u.needsResource} here` : `${costText(cost)} · ${formatCountdown(secs)}`}
+                    </p>
+                  </div>
+                }
+              >
+                <UnitTip def={u} qty={qty} workers={live.e.popWorkers} soldiers={live.e.popSoldiers} />
+              </Tooltip>
               <Button variant="ghost" disabled={!ok || m.isPending} onClick={() => m.mutate(u.id)}>
                 Train {qty}
               </Button>
@@ -379,6 +398,38 @@ function QueueList({ matchId, state, regionId, clockOffsetMs }: { matchId: strin
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+function BuildingTip({ def, level, owned, economy, speed, maxed }: { def: BuildingDef; level: number; owned: OwnedRegionView; economy: RegionEconomy; speed: number; maxed: boolean }) {
+  const { summary, rows } = buildingPreview(def, level, owned.buildings, economy, owned.regionId, speed);
+  const current = owned.buildings[def.id] ?? 0;
+  return (
+    <div>
+      <p className="text-slate-200">{summary}</p>
+      {maxed ? <p className="mt-2 text-slate-400">Already at the maximum level.</p> : <BeforeAfter rows={rows} beforeLabel={`lvl ${current}`} afterLabel={`lvl ${level}`} />}
+      <p className="mt-2 text-slate-500">Rates are per real hour at {speed}x. Tap to pin this panel.</p>
+    </div>
+  );
+}
+
+function UnitTip({ def, qty, workers, soldiers }: { def: UnitDef; qty: number; workers: number; soldiers: number }) {
+  const { summary, rows } = unitPreview(def);
+  const n = Math.min(qty, Math.floor(workers));
+  return (
+    <div>
+      <p className="text-slate-200">{summary}</p>
+      <BeforeAfter rows={rows.map((r) => ({ ...r, before: "" }))} beforeLabel="" afterLabel="per unit" />
+      <BeforeAfter
+        rows={[
+          { label: "Workers", before: fmt(workers), after: fmt(workers - n), tone: "down" },
+          { label: "Soldiers", before: fmt(soldiers), after: fmt(soldiers + n), tone: "up" },
+          { label: "Army attack here", before: "", after: `+${n * def.attack}` },
+        ]}
+        beforeLabel="now"
+        afterLabel={`train ${n}`}
+      />
     </div>
   );
 }

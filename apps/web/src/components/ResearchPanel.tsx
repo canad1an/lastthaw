@@ -1,6 +1,8 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
-import { AGES, availableTechs, balance, canAfford, formatCountdown, realSeconds, techById, techSeconds, type MatchStateView } from "@lastthaw/shared";
+import { AGES, availableTechs, balance, canAfford, formatCountdown, realSeconds, techById, techSeconds, type MatchStateView, type TechDef } from "@lastthaw/shared";
+import { Tooltip } from "./Tooltip.js";
+import { techPreview } from "./previews.js";
 import { api, keys } from "../api/client.js";
 import { Button, Card, ErrorText } from "./ui.js";
 import { Countdown, costText } from "./Countdown.js";
@@ -53,6 +55,28 @@ export function ResearchPanel({ matchId, state, clockOffsetMs }: { matchId: stri
   );
 }
 
+function TechTip({ def }: { def: TechDef }) {
+  const { summary, unlocks } = techPreview(def);
+  return (
+    <div>
+      <p className="text-slate-200">{summary}</p>
+      {unlocks.length ? (
+        <>
+          <p className="mt-2 text-[10px] uppercase tracking-wide text-slate-500">Unlocks</p>
+          <ul className="list-disc pl-4 text-slate-300">
+            {unlocks.map((u) => (
+              <li key={u}>{u}</li>
+            ))}
+          </ul>
+        </>
+      ) : (
+        <p className="mt-2 text-slate-400">A stepping stone: other techs need it.</p>
+      )}
+      {def.requires?.length ? <p className="mt-2 text-slate-500">Needs {def.requires.map((r) => techById.get(r)?.name ?? r).join(", ")}.</p> : null}
+    </div>
+  );
+}
+
 function TechList({
   state,
   clockOffsetMs,
@@ -78,16 +102,24 @@ function TechList({
         const secs = realSeconds(techSeconds(t), capital.effects.researchSpeed, state.match.speed);
         return (
           <li key={t.id} className="flex items-center justify-between gap-2 py-2 text-sm">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="font-medium">{t.name}</span>
-                {t.advancesTo !== undefined && <span className="rounded bg-amber-500/20 px-1 text-xs text-amber-300">→ {AGES[t.advancesTo]} Age</span>}
-              </div>
-              <p className="truncate text-xs text-slate-400">{t.description}</p>
-              <p className={`text-xs ${canAfford(stock, t.cost) ? "text-slate-400" : "text-rose-400"}`}>
-                {costText(t.cost)} · {formatCountdown(secs)}
-              </p>
-            </div>
+            <Tooltip
+              className="min-w-0 flex-1 cursor-help"
+              trigger={
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">{t.name}</span>
+                    {t.advancesTo !== undefined && <span className="rounded bg-amber-500/20 px-1 text-xs text-amber-300">→ {AGES[t.advancesTo]} Age</span>}
+                    <span className="text-xs text-slate-600">ⓘ</span>
+                  </div>
+                  <p className="truncate text-xs text-slate-400">{t.description}</p>
+                  <p className={`text-xs ${canAfford(stock, t.cost) ? "text-slate-400" : "text-rose-400"}`}>
+                    {costText(t.cost)} · {formatCountdown(secs)}
+                  </p>
+                </div>
+              }
+            >
+              <TechTip def={t} />
+            </Tooltip>
             <Button variant="ghost" disabled={!ok} onClick={() => onPick(t.id)}>
               Research
             </Button>

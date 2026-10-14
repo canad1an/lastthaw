@@ -8,6 +8,7 @@ import { RegionPanel, ageName } from "../components/RegionPanel.js";
 import { ResearchPanel } from "../components/ResearchPanel.js";
 import { Messages } from "../components/Messages.js";
 import { IncomingWarnings } from "../components/ArmyPanel.js";
+import { ActivityPanel } from "../components/ActivityPanel.js";
 import { AlliancePanel } from "../components/AlliancePanel.js";
 import { Chat } from "../components/Chat.js";
 import { MarketPanel } from "../components/MarketPanel.js";
@@ -205,6 +206,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
         )}
         {eliminated && <Card className="border-slate-600 text-sm text-slate-300">You have no regions left. You can keep watching the match and chat; join the next match from the lobby.</Card>}
         <IncomingWarnings state={state} clockOffsetMs={clockOffsetMs} onSelect={setSelected} />
+        <ActivityPanel matchId={matchId} state={state} clockOffsetMs={clockOffsetMs} onSelect={setSelected} />
         {selected ? (
           <RegionPanel matchId={matchId} state={state} regionId={selected} clockOffsetMs={clockOffsetMs} onClose={() => setSelected(null)} target={target} onPickTarget={setPicking} />
         ) : (
