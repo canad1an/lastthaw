@@ -31,6 +31,7 @@ import { useNow } from "../hooks/useNow.js";
 import { Button, Card, ErrorText, fmt, signed } from "./ui.js";
 import { Countdown, CostLine } from "./Countdown.js";
 import { SendArmy } from "./ArmyPanel.js";
+import { ColonizePanel } from "./ColonizePanel.js";
 import { BeforeAfter, Tooltip } from "./Tooltip.js";
 import { buildingPreview, unitPreview } from "./previews.js";
 import type { BuildingDef, UnitDef } from "@lastthaw/shared";
@@ -99,6 +100,8 @@ export function RegionPanel({ matchId, state, regionId, clockOffsetMs, onClose, 
           )}
           <QueueList matchId={matchId} state={state} regionId={regionId} clockOffsetMs={clockOffsetMs} />
         </>
+      ) : state.frontier.includes(regionId) ? (
+        <ColonizePanel matchId={matchId} state={state} regionId={regionId} />
       ) : sighted ? (
         <SightedDetails s={sighted} />
       ) : (
