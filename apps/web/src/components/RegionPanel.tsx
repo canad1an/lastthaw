@@ -200,7 +200,17 @@ function AssignmentEditor({ matchId, owned, workers }: { matchId: string; owned:
   });
   const norm = normalizeAssignment(shares);
   const dirty = ["food", "wood", "stone"].some((k) => Math.abs((norm as Record<string, number>)[k]! - (owned.assignment as Record<string, number>)[k]!) > 0.005);
-  const set = (key: "food" | "wood" | "stone", v: number) => setShares((s) => ({ ...s, [key]: v }));
+  /** Move one slider; the other two give up or take the difference in proportion to their current shares. */
+  const set = (key: "food" | "wood" | "stone", v: number) =>
+    setShares((s) => {
+      const value = Math.min(1, Math.max(0, v));
+      const others = (["food", "wood", "stone"] as const).filter((k) => k !== key);
+      const rest = others.reduce((a, k) => a + s[k], 0);
+      const remaining = 1 - value;
+      const next = { ...s, [key]: value };
+      for (const k of others) next[k] = rest > 0 ? (s[k] / rest) * remaining : remaining / others.length;
+      return next;
+    });
 
   return (
     <div className="space-y-2 border-t border-slate-800 pt-3">
