@@ -289,9 +289,21 @@ function BuildTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
     onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matchState(matchId) }),
   });
   // Buildings draw on the capital's treasury too, so affordability counts both.
-  const capital = !owned.isCapital ? state.owned.find((o) => o.isCapital && !o.frozen) : null;
-  const stock = stockOf(live.e);
-  if (capital) for (const [k, v] of Object.entries({ food: capital.food, wood: capital.wood, stone: capital.stone, ...capital.special })) stock[k] = (stock[k] ?? 0) + v;
+  // Buildings draw on every region: this one first, then the capital, then the rest.
+  const here = stockOf(live.e);
+  const stock: Record<string, number> = { ...here };
+  const elsewhere: Record<string, number> = {};
+  for (const o of state.owned) {
+    if (o.regionId === owned.regionId || o.frozen) continue;
+    for (const [k, v] of Object.entries({ food: o.food, wood: o.wood, stone: o.stone, ...o.special })) {
+      stock[k] = (stock[k] ?? 0) + v;
+      elsewhere[k] = (elsewhere[k] ?? 0) + v;
+    }
+  }
+  const fromElsewhere = (cost: Record<string, number | undefined>) =>
+    Object.entries(cost)
+      .filter(([k, v]) => (v ?? 0) > (here[k] ?? 0) && (stock[k] ?? 0) >= (v ?? 0))
+      .map(([k, v]) => `${fmt((v ?? 0) - (here[k] ?? 0))} ${k}`);
   const list = availableBuildings(state.me.age, techs);
   return (
     <div className="space-y-2">
@@ -325,6 +337,7 @@ function BuildTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
                     {!maxed && (
                       <p>
                         <CostLine cost={cost} stock={stock} suffix={formatCountdown(secs)} />
+                        {fromElsewhere(cost).length > 0 && <span className="ml-1 text-xs text-sky-300">({fromElsewhere(cost).join(", ")} from {owned.isCapital ? "other regions" : "the capital or other regions"})</span>}
                       </p>
                     )}
                   </div>
