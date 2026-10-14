@@ -84,8 +84,8 @@ export const balance = {
     maxSeconds: 10 * 3600,
     /** Training N units takes baseSeconds * N^batchExponent. */
     batchExponent: 0.8,
-    /** Full refund when cancelling a job that has not started; this fraction once it has. */
-    cancelRefundStarted: 0.5,
+    /** Fraction refunded when cancelling a job that has already started (1 = full refund, same as unstarted). */
+    cancelRefundStarted: 1,
   },
   travel: {
     /** Unit speed (km per game hour in the tables) is multiplied by this to get map km per hour. */
