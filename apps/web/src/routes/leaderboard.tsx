@@ -64,7 +64,7 @@ export function LeaderboardPage() {
                 <td className="px-3 py-1.5">
                   {p.allianceTag && <span className="mr-1 rounded bg-slate-800 px-1 text-xs text-slate-300">[{p.allianceTag}]</span>}
                   {p.name}
-                  {p.isAi && <span className="ml-1 text-xs text-slate-500">AI</span>}
+                  {p.isAi && <span className="ml-1 text-xs text-slate-500">AI {(p as { aiLevel?: string | null }).aiLevel ?? ""}</span>}
                   {p.eliminated && <span className="ml-1 text-xs">eliminated</span>}
                 </td>
                 <td className="px-3 py-1.5 text-slate-400">{p.ageName}</td>

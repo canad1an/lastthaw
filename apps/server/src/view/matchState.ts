@@ -1,4 +1,5 @@
 import { and, asc, eq, inArray, isNull, or } from "drizzle-orm";
+import { parseProfile } from "../sim/ai.js";
 import { emptySpecial, type ArmyView, type IncomingView, type JobView, type MatchStateView, type OwnedRegionView, type SightedRegionView } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { allianceMembers, alliances, armies, jobs, matchRegions, matches, playerTechs, players, regionSightings } from "../db/schema.js";
@@ -202,7 +203,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
     },
     owned,
     sighted,
-    players: all.map((p) => ({ id: p.id, name: p.name, isAi: p.isAi, age: p.age, score: p.score, regions: counts.get(p.id) ?? 0 })),
+    players: all.map((p) => ({ id: p.id, name: p.name, isAi: p.isAi, aiLevel: p.isAi ? parseProfile(p.aiProfile).difficulty : null, age: p.age, score: p.score, regions: counts.get(p.id) ?? 0 })),
     jobs: jobViews,
     armies: armyViews,
     incoming,

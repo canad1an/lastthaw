@@ -109,8 +109,9 @@ function CreateMatch({ admin }: { admin: boolean }) {
   const [speed, setSpeed] = useState(10);
   const [startsIn, setStartsIn] = useState(5);
   const [aiFillTo, setAiFillTo] = useState(24);
+  const [aiDifficulty, setAiDifficulty] = useState<"mixed" | "easy" | "medium" | "hard">("mixed");
   const m = useMutation({
-    mutationFn: () => api.createMatch({ name, speed, startsInMinutes: startsIn, aiFillTo }),
+    mutationFn: () => api.createMatch({ name, speed, startsInMinutes: startsIn, aiFillTo, aiDifficulty }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matches }),
   });
   return (
@@ -124,7 +125,7 @@ function CreateMatch({ admin }: { admin: boolean }) {
           e.preventDefault();
           m.mutate();
         }}
-        className="grid grid-cols-1 gap-3 sm:grid-cols-5"
+        className="grid grid-cols-1 gap-3 sm:grid-cols-3"
       >
         <Field label="Name">
           <Input value={name} onChange={(e) => setName(e.target.value)} />
@@ -135,8 +136,16 @@ function CreateMatch({ admin }: { admin: boolean }) {
         <Field label="Starts in (min)">
           <Input type="number" min={0} value={startsIn} onChange={(e) => setStartsIn(Number(e.target.value))} />
         </Field>
-        <Field label="Fill with AI to N players">
+        <Field label="AI tribes up to">
           <Input type="number" min={0} max={100} value={aiFillTo} onChange={(e) => setAiFillTo(Number(e.target.value))} />
+        </Field>
+        <Field label="AI difficulty">
+          <select value={aiDifficulty} onChange={(e) => setAiDifficulty(e.target.value as typeof aiDifficulty)} className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100">
+            <option value="mixed">Mixed</option>
+            <option value="easy">Easy</option>
+            <option value="medium">Medium</option>
+            <option value="hard">Hard</option>
+          </select>
         </Field>
         <div className="flex items-end">
           <Button type="submit" className="w-full" disabled={m.isPending}>

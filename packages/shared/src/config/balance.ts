@@ -72,6 +72,8 @@ export const balance = {
   },
   queue: {
     slotsPerRegion: 3,
+    /** Techs a player may have queued at once (one researches at a time). */
+    researchSlots: 3,
   },
   timers: {
     /** Each building level multiplies build time by this. */
@@ -176,8 +178,8 @@ export const balance = {
     neutralWarriors: { min: 2, max: 10 },
     /** Neutral tribes train a few warriors per game day so the map never feels empty. */
     neutralGrowthWarriorsPerDay: 1.5,
-    /** Game minutes between an AI player's decisions, jittered per player. */
-    decisionMinutes: { min: 40, max: 90 },
+    /** Share of AI tribes at each difficulty when a match is created as "mixed". */
+    difficultyMix: { easy: 0.4, medium: 0.4, hard: 0.2 },
     /** Share of population an AI keeps as soldiers, by profile. */
     soldierShare: { peaceful: 0.12, balanced: 0.2, raider: 0.3 } as Record<string, number>,
     /** Chance per decision to launch a raid, by profile. */

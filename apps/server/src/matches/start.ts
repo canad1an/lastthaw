@@ -29,7 +29,7 @@ export async function startMatch(db: Db, publisher: Publisher, matchId: string):
     const endsAt = new Date(now.getTime() + matchLengthSeconds(m.speed) * 1000);
     const protectionUntil = new Date(now.getTime() + (balance.match.protectionDays * 86400 * 1000) / m.speed);
     const rng = seededRng(`${m.seed}:start`);
-    const settings = (m.settings ?? {}) as { aiFillTo?: number; neutralTribes?: number };
+    const settings = (m.settings ?? {}) as { aiFillTo?: number; neutralTribes?: number; aiDifficulty?: string };
 
     // Fill empty slots with AI tribes.
     const humans = await tx.select().from(players).where(eq(players.matchId, matchId));
@@ -38,7 +38,7 @@ export async function startMatch(db: Db, publisher: Publisher, matchId: string):
     for (let i = humans.length; i < fillTo; i++) {
       const base = names[i % names.length]!;
       const name = i < names.length ? base : `${base} ${Math.floor(i / names.length) + 1}`;
-      await tx.insert(players).values({ matchId, isAi: true, aiProfile: randomProfile(rng), name });
+      await tx.insert(players).values({ matchId, isAi: true, aiProfile: randomProfile(rng, settings.aiDifficulty), name });
     }
 
     const ps = await tx.select().from(players).where(eq(players.matchId, matchId));

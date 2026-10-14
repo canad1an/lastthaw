@@ -226,7 +226,10 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
                 <li key={p.id} className="flex items-center gap-2 text-slate-300">
                   <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: colorOf(p.id) }} />
                   <span className={p.id === state.me.playerId ? "text-white" : ""}>{p.name}</span>
-                  <span className="text-xs text-slate-500">{ageName(p.age)}</span>
+                  <span className="text-xs text-slate-500">
+                    {ageName(p.age)}
+                    {p.aiLevel ? ` · AI ${p.aiLevel}` : ""}
+                  </span>
                   <span className="ml-auto text-slate-500">{p.regions} regions</span>
                 </li>
               ))}

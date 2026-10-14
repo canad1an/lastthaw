@@ -125,27 +125,31 @@ export async function queueResearch(ctx: CommandContext, techId: string) {
   if (!def) throw httpError(400, "unknown tech");
   if (techs.has(techId)) throw httpError(409, "already researched");
   if (def.age > p.age) throw httpError(400, `${def.name} needs a later age`);
-  for (const r of def.requires ?? []) if (!techs.has(r)) throw httpError(400, `${def.name} needs ${techById.get(r)?.name ?? r}`);
   if (!p.capitalRegionId) throw httpError(409, "no capital");
 
   return db.transaction(async (tx) => {
     const now = matchNow(m);
-    const [current] = await tx
-      .select({ id: jobs.id })
+    // Research queues: the next tech starts when the current one finishes.
+    const pending = await tx
+      .select()
       .from(jobs)
       .where(and(eq(jobs.playerId, p.id), eq(jobs.kind, "research"), isNull(jobs.completedAt), isNull(jobs.cancelledAt)))
-      .limit(1);
-    if (current) throw httpError(409, "research is already in progress");
+      .orderBy(asc(jobs.endsAt));
+    if (pending.length >= balance.queue.researchSlots) throw httpError(409, "the research queue is full");
+    if (pending.some((j) => j.refId === techId)) throw httpError(409, "already queued");
+    const known = new Set([...techs, ...pending.map((j) => j.refId!)]);
+    for (const r of def.requires ?? []) if (!known.has(r)) throw httpError(400, `${def.name} needs ${techById.get(r)?.name ?? r}`);
     const capital = await settleAndLockRegion(tx, m.id, p.capitalRegionId!, now, m.speed);
     if (capital.ownerPlayerId !== p.id) throw httpError(409, "you have lost your capital");
     const stock = stockOf(capital);
     if (!canAfford(stock, def.cost)) throw httpError(409, `not enough ${missingFor(stock, def.cost).join(", ")} in your capital`);
     await applyCost(tx, capital, def.cost);
     const effects = effectsOf(capital.buildings);
-    const endsAt = new Date(now.getTime() + realSeconds(techSeconds(def), effects.researchSpeed, m.speed) * 1000);
+    const startsAt = pending.length ? pending[pending.length - 1]!.endsAt : now;
+    const endsAt = new Date(startsAt.getTime() + realSeconds(techSeconds(def), effects.researchSpeed, m.speed) * 1000);
     const [j] = await tx
       .insert(jobs)
-      .values({ matchId: m.id, playerId: p.id, regionId: null, kind: "research", refId: techId, payload: { cost: def.cost }, startsAt: now, endsAt })
+      .values({ matchId: m.id, playerId: p.id, regionId: null, kind: "research", refId: techId, slot: pending.length, payload: { cost: def.cost }, startsAt, endsAt })
       .returning();
     return j!;
   });

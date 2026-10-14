@@ -1,19 +1,22 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
-import { AGES, availableTechs, canAfford, formatCountdown, realSeconds, techById, techSeconds, type MatchStateView } from "@lastthaw/shared";
+import { AGES, availableTechs, balance, canAfford, formatCountdown, realSeconds, techById, techSeconds, type MatchStateView } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { Button, Card, ErrorText } from "./ui.js";
 import { Countdown, costText } from "./Countdown.js";
 import { useLiveEconomy } from "./RegionPanel.js";
 
+/** Research panel: a queue of up to N techs, one researching at a time, paid from the capital. */
 export function ResearchPanel({ matchId, state, clockOffsetMs }: { matchId: string; state: MatchStateView; clockOffsetMs: number }) {
   const qc = useQueryClient();
-  const techs = useMemo(() => new Set(state.me.techs), [state.me.techs]);
-  const current = state.jobs.find((j) => j.kind === "research") ?? null;
+  const queued = useMemo(() => state.jobs.filter((j) => j.kind === "research").sort((a, b) => Date.parse(a.endsAt) - Date.parse(b.endsAt)), [state.jobs]);
+  // Prerequisites count as met when the tech is already in the queue.
+  const known = useMemo(() => new Set([...state.me.techs, ...queued.map((j) => j.refId ?? "")]), [state.me.techs, queued]);
   const capital = state.owned.find((o) => o.isCapital) ?? state.owned[0] ?? null;
   const m = useMutation({ mutationFn: (techId: string) => api.research(matchId, techId), onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matchState(matchId) }) });
   const cancel = useMutation({ mutationFn: (jobId: string) => api.cancelJob(matchId, jobId), onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matchState(matchId) }) });
-  const list = availableTechs(state.me.age, techs);
+  const list = availableTechs(state.me.age, known);
+  const full = queued.length >= balance.queue.researchSlots;
 
   return (
     <Card className="space-y-2">
@@ -21,20 +24,28 @@ export function ResearchPanel({ matchId, state, clockOffsetMs }: { matchId: stri
         <h2 className="text-sm font-medium">Research</h2>
         <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-300">{AGES[state.me.age as 0 | 1 | 2 | 3 | 4]} Age</span>
       </div>
-      {current && (
-        <div className="flex items-center justify-between rounded bg-slate-800/60 px-2 py-1 text-sm">
-          <span>{techById.get(current.refId ?? "")?.name ?? current.refId}</span>
-          <span className="text-slate-400">
-            <Countdown to={current.endsAt} clockOffsetMs={clockOffsetMs} />
-          </span>
-          <button className="text-xs text-slate-500 hover:text-rose-400" onClick={() => cancel.mutate(current.id)}>
-            ✕
-          </button>
-        </div>
+      {queued.length > 0 && (
+        <ul className="space-y-1">
+          {queued.map((j, i) => (
+            <li key={j.id} className="flex items-center justify-between rounded bg-slate-800/60 px-2 py-1 text-sm">
+              <span>
+                {techById.get(j.refId ?? "")?.name ?? j.refId}
+                {i > 0 && <span className="ml-1 text-xs text-slate-500">queued</span>}
+              </span>
+              <span className="text-slate-400">
+                <Countdown to={j.endsAt} clockOffsetMs={clockOffsetMs} />
+              </span>
+              <button className="text-xs text-slate-500 hover:text-rose-400" onClick={() => cancel.mutate(j.id)} title="Cancel">
+                ✕
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
+      {full && <p className="text-xs text-amber-300">Research queue full ({balance.queue.researchSlots}).</p>}
       <ErrorText>{m.error?.message}</ErrorText>
       {capital ? (
-        <TechList matchId={matchId} state={state} clockOffsetMs={clockOffsetMs} list={list} busy={!!current || m.isPending} capital={capital} onPick={(id) => m.mutate(id)} />
+        <TechList state={state} clockOffsetMs={clockOffsetMs} list={list} busy={full || m.isPending} capital={capital} onPick={(id) => m.mutate(id)} />
       ) : (
         <p className="text-xs text-slate-400">Research is paid from your capital.</p>
       )}
@@ -50,7 +61,6 @@ function TechList({
   capital,
   onPick,
 }: {
-  matchId: string;
   state: MatchStateView;
   clockOffsetMs: number;
   list: ReturnType<typeof availableTechs>;

@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { parseProfile } from "../sim/ai.js";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { AGES, allRegions, balance, iceLatitudeOnDay } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
@@ -42,6 +43,7 @@ export async function leaderboardRoutes(app: FastifyInstance, opts: { db: Db }) 
         id: p.id,
         name: p.name,
         isAi: p.isAi,
+        aiLevel: p.isAi ? parseProfile(p.aiProfile).difficulty : null,
         allianceTag: tagBy.get(p.id) ?? null,
         age: p.age,
         ageName: AGES[p.age as 0 | 1 | 2 | 3 | 4],

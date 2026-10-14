@@ -64,6 +64,8 @@ export const createMatchBody = z.object({
   aiFillTo: z.number().int().min(0).max(100).optional(),
   /** Neutral tribes scattered on the map. Default from balance. */
   neutralTribes: z.number().int().min(0).max(300).optional(),
+  /** AI difficulty: a single tier or a mix. */
+  aiDifficulty: z.enum(["mixed", "easy", "medium", "hard"]).optional(),
 });
 
 export const pickStartBody = z.object({ regionId: z.string() });
@@ -192,6 +194,8 @@ export const playerPublic = z.object({
   id: z.string(),
   name: z.string(),
   isAi: z.boolean(),
+  /** "easy" | "medium" | "hard" for AI tribes, null for humans. */
+  aiLevel: z.string().nullable().default(null),
   age: z.number(),
   score: z.number(),
   regions: z.number(),

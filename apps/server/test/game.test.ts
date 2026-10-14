@@ -144,7 +144,13 @@ describe("milestone 1 flow", () => {
     expect(train.statusCode).toBe(200);
     const research = await a.call("POST", `/api/matches/${matchId}/research`, { techId: "fire_making" });
     expect(research.statusCode).toBe(200);
-    expect((await a.call("POST", `/api/matches/${matchId}/research`, { techId: "flint_tools" })).statusCode).toBe(409);
+    // A second tech queues behind the first; a third whose prerequisite is only queued is allowed too.
+    expect((await a.call("POST", `/api/matches/${matchId}/research`, { techId: "flint_tools" })).statusCode).toBe(200);
+    expect((await a.call("POST", `/api/matches/${matchId}/research`, { techId: "fire_making" })).statusCode).toBe(409);
+    const queuedResearch = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json()).jobs.filter((j) => j.kind === "research");
+    expect(queuedResearch).toHaveLength(2);
+    expect(queuedResearch[1]!.startsAt).toBe(queuedResearch[0]!.endsAt);
+    expect((await a.call("POST", `/api/matches/${matchId}/jobs/${queuedResearch[1]!.id}/cancel`, {})).statusCode).toBe(200);
     expect((await a.call("POST", `/api/matches/${matchId}/regions/${aPick}/build`, { buildingId: "farm" })).statusCode).toBe(400);
 
     state = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json());

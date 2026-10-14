@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { balance, buildBody, researchBody, trainBody, type Cost } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { jobs, matches, playerTechs, players } from "../db/schema.js";
@@ -77,8 +77,15 @@ export async function jobRoutes(app: FastifyInstance, opts: { db: Db; publisher:
         if (row.ownerPlayerId === p.id) await applyCost(tx, row, cost, -factor);
       }
       await tx.update(jobs).set({ cancelledAt: now }).where(eq(jobs.id, jobId));
-      if (job.regionId) {
-        const later = (await pendingRegionJobs(tx, matchId, job.regionId)).filter((j) => j.startsAt.getTime() >= job.endsAt.getTime());
+      {
+        // Pull later jobs in the same queue (region, or the player's research queue) forward.
+        const queue = job.regionId
+          ? await pendingRegionJobs(tx, matchId, job.regionId)
+          : await tx
+              .select()
+              .from(jobs)
+              .where(and(eq(jobs.playerId, p.id), eq(jobs.kind, "research"), isNull(jobs.completedAt), isNull(jobs.cancelledAt)));
+        const later = queue.filter((j) => j.id !== job.id && j.startsAt.getTime() >= job.endsAt.getTime());
         const shift = job.endsAt.getTime() - Math.max(job.startsAt.getTime(), now.getTime());
         for (const l of later) {
           await tx

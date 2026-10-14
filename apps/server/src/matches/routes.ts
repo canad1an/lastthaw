@@ -101,7 +101,12 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
         seed: randomBytes(8).toString("hex"),
         startsAt,
         endsAt,
-        settings: { createdBy: user.id, ...(body.aiFillTo !== undefined ? { aiFillTo: body.aiFillTo } : {}), ...(body.neutralTribes !== undefined ? { neutralTribes: body.neutralTribes } : {}) },
+        settings: {
+          createdBy: user.id,
+          ...(body.aiFillTo !== undefined ? { aiFillTo: body.aiFillTo } : {}),
+          ...(body.neutralTribes !== undefined ? { neutralTribes: body.neutralTribes } : {}),
+          ...(body.aiDifficulty ? { aiDifficulty: body.aiDifficulty } : {}),
+        },
       })
       .returning();
     return reply.code(201).send({ id: m!.id });
