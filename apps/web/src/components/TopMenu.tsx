@@ -10,8 +10,9 @@ import { ageName } from "./RegionPanel.js";
 import { LeaderboardTable } from "../routes/leaderboard.js";
 import { OVERLAYS, OVERLAY_HINT } from "../map/overlays.js";
 import { EmpirePanel } from "./EmpirePanel.js";
+import { LogisticsPanel } from "./LogisticsPanel.js";
 
-type Menu = "messages" | "alliance" | "chat" | "market" | "players" | "leaderboard" | "view" | "empire";
+type Menu = "messages" | "alliance" | "chat" | "market" | "players" | "leaderboard" | "view" | "empire" | "logistics";
 
 /**
  * Slim menu bar above the map: Messages (with a 5-second toast for new ones),
@@ -42,6 +43,9 @@ export function TopMenu({
   const newest = q.data?.messages[0] ?? null;
   const invites = state.me.allianceId ? 0 : (state as { invites?: unknown[] }).invites?.length ?? 0;
 
+  // Routes waiting on haulers plus builds waiting on materials: the number that needs attention.
+  const logisticsBadge =
+    state.routes.filter((r) => r.enabled && (r.lastResult ?? "").startsWith("no haulers at home")).length + state.jobs.filter((j) => j.kind === "build" && j.waitingFor).length || undefined;
   const toggle = (m: Menu) => {
     setOpen((o) => (o === m ? null : m));
     clearToast();
@@ -75,6 +79,7 @@ export function TopMenu({
         <Tab id="players" label="Players" badge={state.players.length} />
         <Tab id="leaderboard" label="Leaderboard" />
         <Tab id="empire" label="Empire" badge={state.owned.length} />
+        <Tab id="logistics" label="Logistics" badge={logisticsBadge} tone={logisticsBadge ? "alert" : undefined} />
         <Tab id="view" label="View" badge={overlays.size || undefined} />
         <div className="mx-2 h-5 w-px bg-slate-800" />
         {toast ? (
@@ -108,6 +113,15 @@ export function TopMenu({
             <div className="overflow-x-auto">
               <LeaderboardTable matchId={matchId} compact />
             </div>
+          )}
+          {open === "logistics" && (
+            <LogisticsPanel
+              state={state}
+              onSelect={(id) => {
+                onSelectRegion(id);
+                setOpen(null);
+              }}
+            />
           )}
           {open === "empire" && (
             <EmpirePanel

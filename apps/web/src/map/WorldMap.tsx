@@ -24,8 +24,8 @@ export interface WorldMapProps {
   dashed?: string[];
   /** Armies to draw as moving markers. */
   armies?: ArmyMarker[];
-  /** Road links to draw between adjacent road regions: [a, b, colour]. */
-  roads?: Array<[string, string, string]>;
+  /** Road or rail links to draw between adjacent regions: [a, b, colour, kind]. */
+  roads?: Array<[string, string, string, "road" | "rail"]>;
   /** Overlay badges (View menu): small glyph markers at region centres. */
   badges?: Array<{ regionId: string; colour: string; glyph: string; label: string }>;
 }
@@ -221,15 +221,22 @@ export function WorldMap({ paint, selected, onSelect, focus, className = "", ice
               </g>
             );
           })}
-          {roads.map(([a, b, colour]) => {
+          {roads.map(([a, b, colour, kind]) => {
             const ra = regionById(a);
             const rb = regionById(b);
             if (!ra || !rb) return null;
-            const w = (unitsPerPx / view.k) * 1.6;
+            const w = (unitsPerPx / view.k) * (kind === "rail" ? 2.2 : 1.6);
             return (
-              <g key={`${a}-${b}`}>
+              <g key={`${kind}-${a}-${b}`}>
                 <line x1={ra.x} y1={ra.y} x2={rb.x} y2={rb.y} stroke="#0f172a" strokeWidth={w * 1.9} strokeLinecap="round" opacity={0.7} />
-                <line x1={ra.x} y1={ra.y} x2={rb.x} y2={rb.y} stroke={colour} strokeWidth={w} strokeLinecap="round" strokeDasharray={`${w * 3} ${w * 1.5}`} />
+                {kind === "rail" ? (
+                  <>
+                    <line x1={ra.x} y1={ra.y} x2={rb.x} y2={rb.y} stroke={colour} strokeWidth={w} strokeLinecap="round" />
+                    <line x1={ra.x} y1={ra.y} x2={rb.x} y2={rb.y} stroke="#0f172a" strokeWidth={w * 0.5} strokeDasharray={`${w * 0.8} ${w * 1.6}`} />
+                  </>
+                ) : (
+                  <line x1={ra.x} y1={ra.y} x2={rb.x} y2={rb.y} stroke={colour} strokeWidth={w} strokeLinecap="round" strokeDasharray={`${w * 3} ${w * 1.5}`} />
+                )}
               </g>
             );
           })}

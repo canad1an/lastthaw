@@ -125,6 +125,8 @@ export const balance = {
     /** A leg is this much shorter when both ends have Roads (yours or an ally's), and this much when only one end does. */
     roadBothFactor: 0.6,
     roadOneFactor: 0.8,
+    /** A leg between two Railway regions (yours or an ally's) is this much shorter. */
+    railBothFactor: 0.3,
     /** Sea legs are fast once boats exist. */
     seaFactor: 0.7,
     /** Tech that allows armies to use sea routes. */
@@ -157,7 +159,9 @@ export const balance = {
     /** A region whose stock hits its cap sends this share of the cap to the capital by caravan, automatically. */
     overflowToCapital: true,
     overflowShare: 0.25,
-    /** Techs that raise how much each caravan carries (added together: +50% and +50% = 2x). */
+    /** Upgrading one hauler into the next kind costs this per unit (on top of needing the tech). */
+    convertCost: { wagon: { wood: 80, food: 30 }, train: { wood: 250, iron: 15 } } as Record<string, Record<string, number>>,
+    /** Techs that raise how much each hauler carries (added together: +50% and +50% = 2x). */
     caravanCarryTechs: { the_wheel: 0.5, engineering: 0.5, scholasticism: 1.0 } as Record<string, number>,
   },
   capital: {

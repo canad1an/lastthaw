@@ -9,7 +9,7 @@ import { armySpeed, balance, buildingBlockedBy, carryCapacity, buildingById, bui
 import type { Db } from "../db/client.js";
 import { armies, jobs, matchRegions, players, tradeRoutes } from "../db/schema.js";
 import { matchDayAt, matchNow } from "./clock.js";
-import { applyCost, settleAndLockRegion, stockOf, type MatchRegionRow, type Tx, roadSetFor } from "./regions.js";
+import { applyCost, settleAndLockRegion, stockOf, type MatchRegionRow, type Tx, waySetsFor } from "./regions.js";
 import { alliesOf, areAllied } from "./alliances.js";
 import type { MatchRow } from "../worker/jobs.js";
 
@@ -71,6 +71,7 @@ export async function queueBuild(ctx: CommandContext, regionId: string, building
     const queuedLevels = pending.filter((j) => j.kind === "build" && j.refId === buildingId).length;
     const level = (row.buildings[buildingId] ?? 0) + queuedLevels + 1;
     if (level > def.maxLevel) throw httpError(400, `${def.name} is at its maximum level`);
+    if (def.requiresBuilding && (row.buildings[def.requiresBuilding] ?? 0) < 1) throw httpError(400, `${def.name} needs ${buildingById.get(def.requiresBuilding)?.name ?? def.requiresBuilding} here first`);
     const cost = buildingCost(def, level, matchDayAt(m, now), regionById(regionId)?.neighbors.length ?? 1);
     const pooled: Record<string, number> = {};
     for (const r of payers) for (const [k, v] of Object.entries(stockOf(r))) pooled[k] = (pooled[k] ?? 0) + v;
@@ -287,8 +288,8 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
     const cap = carryCapacity(units, techs) + (HOSTILE.has(body.mission) ? 0 : body.people * balance.travel.carryPerPerson);
     if (goods > cap) throw httpError(400, `not enough carrying capacity: these units and people carry ${cap}, you are sending ${Math.round(goods)}. Caravans carry ${caravanCarry(techs)} each.`);
   }
-  const roads = await roadSetFor(db, m.id, p.id, await alliesOf(db, m.id, p.id));
-  const route = findRoute(regionId, body.targetRegionId, techs.has(balance.travel.seaTech), roads);
+  const { roads, rails } = await waySetsFor(db, m.id, p.id, await alliesOf(db, m.id, p.id));
+  const route = findRoute(regionId, body.targetRegionId, techs.has(balance.travel.seaTech), roads, rails);
   if (!route) throw httpError(400, techs.has(balance.travel.seaTech) ? "no route to that region" : "no land route; research Shipbuilding to cross the sea");
   const now = matchNow(m);
 
@@ -390,4 +391,33 @@ export async function startWaitingBuilds(tx: Tx, m: MatchRow, regionId: string, 
     started += 1;
   }
   return started;
+}
+
+/** Upgrade haulers in place: caravans to wagons, caravans or wagons to trains. Costs per unit, needs the unit's tech. */
+export async function convertUnits(ctx: CommandContext, regionId: string, from: string, to: string, qty: number) {
+  const { db, m, p, techs } = ctx;
+  const src = unitById.get(from);
+  const dst = unitById.get(to);
+  if (!src?.hauler || !dst?.hauler) throw httpError(400, "only haulers can be upgraded");
+  if (dst.carry <= src.carry) throw httpError(400, `${dst.name} is not an upgrade of ${src.name}`);
+  if (dst.age > p.age) throw httpError(400, `${dst.name} needs a later age`);
+  if (dst.requires && !techs.has(dst.requires)) throw httpError(400, `${dst.name} needs ${techById.get(dst.requires)?.name ?? dst.requires}`);
+  const per = balance.trade.convertCost[to];
+  if (!per) throw httpError(400, "that upgrade is not available");
+  return db.transaction(async (tx) => {
+    const now = matchNow(m);
+    const row = await settleAndLockRegion(tx, m.id, regionId, now, m.speed);
+    if (row.ownerPlayerId !== p.id) throw httpError(403, "not your region");
+    const have = row.units[from] ?? 0;
+    const n = Math.min(qty, have);
+    if (n < 1) throw httpError(409, `no ${src.name}s here to upgrade`);
+    const cost: Record<string, number> = {};
+    for (const [k, v] of Object.entries(per)) cost[k] = v * n;
+    const stock = stockOf(row);
+    if (!canAfford(stock, cost as Cost)) throw httpError(409, `not enough ${missingFor(stock, cost as Cost).join(", ")} here`);
+    const paid = await applyCost(tx, row, cost as Cost);
+    const units = { ...paid.units, [from]: have - n, [to]: (paid.units[to] ?? 0) + n };
+    await tx.update(matchRegions).set({ units }).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, regionId)));
+    return { converted: n, cost };
+  });
 }

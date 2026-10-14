@@ -1,5 +1,5 @@
 import { balance } from "../config/balance.js";
-import { unitById } from "../config/ages.js";
+import { UNITS, unitById } from "../config/ages.js";
 import { seededRng } from "./rng.js";
 
 export type UnitCounts = Record<string, number>;
@@ -98,19 +98,38 @@ export function resolveCombat(attacker: CombatSide, defender: CombatSide, seed: 
 }
 
 /** Total loot an army can carry home. */
-/** How much one caravan carries, after the owner's techs. */
-export function caravanCarry(techs?: ReadonlySet<string> | readonly string[]): number {
-  const base = unitById.get("caravan")?.carry ?? 500;
+/** Hauler unit ids, best (largest carry) first. */
+export const HAULER_IDS: readonly string[] = UNITS.filter((u) => u.hauler).sort((a, b) => b.carry - a.carry).map((u) => u.id);
+
+/** How much one hauler of this kind carries, after the owner's techs. */
+export function haulerCarry(id: string, techs?: ReadonlySet<string> | readonly string[]): number {
+  const base = unitById.get(id)?.carry ?? 0;
   if (!techs) return base;
-  const has = techs instanceof Set ? (id: string) => techs.has(id) : (id: string) => (techs as readonly string[]).includes(id);
+  const has = techs instanceof Set ? (t: string) => techs.has(t) : (t: string) => (techs as readonly string[]).includes(t);
   let bonus = 0;
   for (const [tech, b] of Object.entries(balance.trade.caravanCarryTechs)) if (has(tech)) bonus += b;
   return Math.round(base * (1 + bonus));
 }
 
+/** How much one caravan carries, after the owner's techs. */
+export function caravanCarry(techs?: ReadonlySet<string> | readonly string[]): number {
+  return haulerCarry("caravan", techs);
+}
+
+/** The best hauler kind stationed in `units`, or null. */
+export function bestHauler(units: UnitCounts): string | null {
+  for (const id of HAULER_IDS) if ((units[id] ?? 0) > 0) return id;
+  return null;
+}
+
+/** Total haulers of every kind in `units`. */
+export function haulerCount(units: UnitCounts): number {
+  return HAULER_IDS.reduce((a, id) => a + (units[id] ?? 0), 0);
+}
+
 export function carryCapacity(units: UnitCounts, techs?: ReadonlySet<string> | readonly string[]): number {
   let c = 0;
-  for (const [id, n] of Object.entries(units)) c += n * (id === "caravan" ? caravanCarry(techs) : (unitById.get(id)?.carry ?? 0));
+  for (const [id, n] of Object.entries(units)) c += n * (unitById.get(id)?.hauler ? haulerCarry(id, techs) : (unitById.get(id)?.carry ?? 0));
   return c;
 }
 

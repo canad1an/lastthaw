@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { balance, regionById, unitById, type MatchStateView, type OwnedRegionView, type TradeRouteView, caravanCarry } from "@lastthaw/shared";
+import { balance, regionById, unitById, type MatchStateView, type OwnedRegionView, type TradeRouteView, caravanCarry, HAULER_IDS, bestHauler, haulerCarry } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { Button, ErrorText, fmt } from "./ui.js";
 import { Countdown } from "./Countdown.js";
@@ -15,8 +15,9 @@ export function RoutesTab({ matchId, state, owned, clockOffsetMs, allRoutes = fa
   const qc = useQueryClient();
   const refresh = () => void qc.invalidateQueries({ queryKey: keys.matchState(matchId) });
   const routes = allRoutes ? state.routes : state.routes.filter((r) => r.fromRegionId === owned.regionId);
-  const caravans = owned.units.caravan ?? 0;
-  const perCaravan = caravanCarry(state.me.techs);
+  const haulersHome = HAULER_IDS.map((id) => ({ id, name: unitById.get(id)?.name ?? id, n: owned.units[id] ?? 0 })).filter((h) => h.n > 0);
+  const caravans = haulersHome.reduce((a, h) => a + h.n, 0);
+  const perCaravan = haulerCarry(bestHauler(owned.units) ?? "caravan", state.me.techs);
   const capital = state.me.capitalRegionId;
 
   // Destinations: my other regions and allies' regions we can see.
@@ -69,7 +70,7 @@ export function RoutesTab({ matchId, state, owned, clockOffsetMs, allRoutes = fa
   return (
     <div className="space-y-3 text-sm">
       <p className="text-xs text-slate-400">
-        {caravans} caravan{caravans === 1 ? "" : "s"} at home · each carries {perCaravan}. Train more under Train. Roads here and at the destination speed them up.
+        {caravans === 0 ? "No haulers" : haulersHome.map((h) => `${h.n} ${h.name}${h.n === 1 ? "" : "s"}`).join(", ")} at home · the best carries {perCaravan}. Train more under Train; upgrade them under Units. Roads and railways speed them up.
       </p>
 
       {routes.length > 0 && (

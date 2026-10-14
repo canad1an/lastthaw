@@ -165,12 +165,20 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
   // Road links: between adjacent regions that both have Roads, among mine and what I can see.
   const roadLinks = useMemo(() => {
     const colour = new Map<string, string>();
-    for (const o of state.owned) if ((o.buildings.roads ?? 0) >= 1 && !o.frozen) colour.set(o.regionId, colorOf(state.me.playerId));
+    const rail = new Set<string>();
+    for (const o of state.owned) {
+      if (o.frozen) continue;
+      if ((o.buildings.roads ?? 0) >= 1) colour.set(o.regionId, colorOf(state.me.playerId));
+      if ((o.buildings.railway ?? 0) >= 1) rail.add(o.regionId);
+    }
     for (const s of state.sighted) if (s.roads && !colour.has(s.regionId)) colour.set(s.regionId, "#cbd5e1");
-    const out: Array<[string, string, string]> = [];
+    const out: Array<[string, string, string, "road" | "rail"]> = [];
     for (const [id, c] of colour) {
       for (const n of regionById(id)?.neighbors ?? []) {
-        if (id < n && colour.has(n)) out.push([id, n, c === colour.get(n) ? c : "#cbd5e1"]);
+        if (id < n && colour.has(n)) {
+          const both = rail.has(id) && rail.has(n);
+          out.push([id, n, both ? "#f8fafc" : c === colour.get(n) ? c : "#cbd5e1", both ? "rail" : "road"]);
+        }
       }
     }
     return out;

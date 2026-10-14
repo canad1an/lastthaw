@@ -1,8 +1,8 @@
 import { and, eq, inArray, isNull } from "drizzle-orm";
-import { balance, effectsOf, emptySpecial, storageCaps, regionById, resolveCombat, carryCapacity, travelSeconds, findRoute, armySpeed, type UnitCounts } from "@lastthaw/shared";
+import { balance, effectsOf, emptySpecial, storageCaps, regionById, resolveCombat, carryCapacity, travelSeconds, findRoute, armySpeed, type UnitCounts, HAULER_IDS, haulerCount } from "@lastthaw/shared";
 import { armies, battles, jobs, matchRegions, players, regionSightings, playerTechs } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
-import { settleAndLockRegion, type MatchRegionRow, type Tx, setCapital, roadSetFor, ownerTechEffects } from "./regions.js";
+import { settleAndLockRegion, type MatchRegionRow, type Tx, setCapital, ownerTechEffects, waySetsFor } from "./regions.js";
 import { notify, type JobRow, type MatchRow } from "../worker/jobs.js";
 import { areAllied, alliesOf } from "./alliances.js";
 import { startWaitingBuilds } from "./commands.js";
@@ -86,7 +86,7 @@ async function gatherCaravans(tx: Tx, m: MatchRow, playerId: string, targetRegio
   if (!p) return 0;
   const techRows = await tx.select({ id: playerTechs.techId }).from(playerTechs).where(eq(playerTechs.playerId, playerId));
   const techs = new Set(techRows.map((t) => t.id));
-  const roads = await roadSetFor(tx, m.id, playerId, await alliesOf(tx, m.id, playerId));
+  const { roads, rails } = await waySetsFor(tx, m.id, playerId, await alliesOf(tx, m.id, playerId));
   const rows = await tx
     .select({ regionId: matchRegions.regionId, units: matchRegions.units, frozenAt: matchRegions.frozenAt })
     .from(matchRegions)
@@ -94,20 +94,22 @@ async function gatherCaravans(tx: Tx, m: MatchRow, playerId: string, targetRegio
     .orderBy(matchRegions.regionId);
   let sent = 0;
   for (const r of rows) {
-    const n = r.units.caravan ?? 0;
-    if (r.regionId === targetRegionId || r.frozenAt || n <= 0) continue;
-    const route = findRoute(r.regionId, targetRegionId, techs.has(balance.travel.seaTech), roads);
+    if (r.regionId === targetRegionId || r.frozenAt || haulerCount(r.units) <= 0) continue;
+    const route = findRoute(r.regionId, targetRegionId, techs.has(balance.travel.seaTech), roads, rails);
     if (!route) continue;
     const row = await settleAndLockRegion(tx, m.id, r.regionId, at, m.speed);
-    const have = row.units.caravan ?? 0;
+    const going: UnitCounts = {};
+    for (const id of HAULER_IDS) if ((row.units[id] ?? 0) > 0) going[id] = row.units[id]!;
+    const have = sumUnits(going);
     if (have <= 0) continue;
-    const seconds = travelSeconds(route, armySpeed({ caravan: have }), m.speed);
-    const units = { ...row.units, caravan: 0 };
+    const seconds = travelSeconds(route, armySpeed(going), m.speed);
+    const units = { ...row.units };
+    for (const id of Object.keys(going)) units[id] = 0;
     await tx.update(matchRegions).set({ units, popSoldiers: Math.max(0, row.popSoldiers - have) }).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, r.regionId)));
     const arrivesAt = new Date(at.getTime() + seconds * 1000);
     const [a] = await tx
       .insert(armies)
-      .values({ matchId: m.id, playerId, mission: "move", originRegionId: r.regionId, targetRegionId, units: { caravan: have }, cargo: {}, path: route.path, status: "outbound", departsAt: at, arrivesAt })
+      .values({ matchId: m.id, playerId, mission: "move", originRegionId: r.regionId, targetRegionId, units: going, cargo: {}, path: route.path, status: "outbound", departsAt: at, arrivesAt })
       .returning();
     await tx.insert(jobs).values({ matchId: m.id, playerId, regionId: targetRegionId, kind: "mission", refId: a!.id, startsAt: at, endsAt: arrivesAt });
     sent += have;

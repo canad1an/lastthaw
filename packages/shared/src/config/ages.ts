@@ -44,6 +44,8 @@ export interface BuildingEffect {
 export interface BuildingDef {
   /** Cost is per adjacent region: one build connects the region to all of its neighbours. */
   perNeighbor?: boolean;
+  /** Needs this building in the region first (Railway needs Roads). */
+  requiresBuilding?: string;
   id: string;
   name: string;
   age: AgeIndex;
@@ -81,6 +83,8 @@ export interface UnitDef {
   hidden?: boolean;
   /** Smallest batch that can be trained (settlers travel in groups). */
   minBatch?: number;
+  /** Carries goods on trade routes, overflow and transports (caravan, wagon, train). */
+  hauler?: boolean;
   /** Civilians never fight: no raids, conquests or scouting. */
   civilian?: boolean;
 }
@@ -140,6 +144,7 @@ export const BUILDINGS: readonly BuildingDef[] = [
   { id: "forge", name: "Forge", age: 2, description: "Works iron faster; speeds up training.", maxLevel: 10, cost: { wood: 200, stone: 200, iron: 20 }, baseSeconds: 400, effect: { trainSpeed: 0.06, extract: { iron: 0.8 } }, requires: "iron_working" },
   { id: "walls", name: "Stone walls", age: 2, description: "Solid walls around the settlement.", maxLevel: 10, cost: { stone: 400, wood: 100 }, baseSeconds: 500, effect: { defense: 0.18 }, requires: "masonry" },
   { id: "roads", name: "Roads", age: 1, description: "Paved roads to every neighbouring region. Built once; legs between two road regions are much faster, and the region is easier to hold.", maxLevel: 1, cost: { stone: 80, wood: 40 }, perNeighbor: true, baseSeconds: 600, effect: { loyalty: 0.1 }, requires: "road_building" },
+  { id: "railway", name: "Railway", age: 4, description: "Rails to every neighbouring region that also has them. Built once on top of Roads; legs between two railway regions are far faster.", maxLevel: 1, cost: { stone: 400, iron: 20 }, perNeighbor: true, baseSeconds: 1800, effect: { loyalty: 0.05 }, requires: "railways", requiresBuilding: "roads" },
   { id: "temple", name: "Temple", age: 2, description: "Binds a conquered people to their new rulers. Built once: raises loyalty and keeps turning workers into occupiers until the region has enough, however much it grows.", maxLevel: 1, cost: { stone: 1500, wood: 800, food: 500 }, baseSeconds: 2400, effect: { loyalty: 0.2 } },
   { id: "barracks", name: "Barracks", age: 2, description: "Trains soldiers faster.", maxLevel: 10, cost: { wood: 300, stone: 150 }, baseSeconds: 400, effect: { trainSpeed: 0.1 } },
   // Classical
@@ -167,8 +172,9 @@ export const UNITS: readonly UnitDef[] = [
   { id: "slinger", name: "Slinger", age: 0, description: "Cheap ranged harassment.", attack: 4, defense: 1, speed: 5, carry: 10, cost: { food: 15, stone: 10 }, baseSeconds: 30 },
   { id: "tracker", name: "Tracker", age: 0, description: "Fast and light; ideal for scouting.", attack: 1, defense: 2, speed: 9, carry: 10, cost: { food: 25 }, baseSeconds: 25 },
   { id: "settler", name: "Settler", age: 0, description: "Families with tools and seed grain. A group of five can settle unclaimed land and become its first workers.", attack: 0, defense: 1, speed: 4, carry: 0, cost: { food: 60, wood: 60, stone: 25 }, baseSeconds: 600, minBatch: 5, civilian: true },
-  { id: "caravan", name: "Caravan", age: 0, description: "Pack animals and drivers. Each carries 500 of any goods to your regions or an ally's, then walks back. Roads make them faster.", attack: 0, defense: 1, speed: 8, carry: 500, cost: { food: 40, wood: 60 }, baseSeconds: 300, civilian: true },
+  { id: "caravan", name: "Caravan", age: 0, description: "Pack animals and drivers. Carries goods to your regions or an ally's, then walks back. Roads make it faster; Wagons and Trains carry more.", attack: 0, defense: 1, speed: 8, carry: 500, cost: { food: 40, wood: 60 }, baseSeconds: 300, civilian: true, hauler: true },
   // Bronze
+  { id: "wagon", name: "Wagon", age: 1, description: "A proper cart and team: carries more than twice a caravan and moves faster.", attack: 0, defense: 1, speed: 12, carry: 1200, cost: { food: 60, wood: 150 }, baseSeconds: 420, requires: "wagon_building", civilian: true, hauler: true },
   { id: "spearman", name: "Spearman", age: 1, description: "Bronze-tipped spears hold the line.", attack: 5, defense: 7, speed: 5, carry: 20, cost: { food: 30, wood: 15, copper: 2, tin: 1 }, baseSeconds: 60, requires: "bronze_working" },
   { id: "archer", name: "Archer", age: 1, description: "Composite bows strike before the melee.", attack: 7, defense: 3, speed: 5, carry: 15, cost: { food: 30, wood: 30 }, baseSeconds: 60, requires: "bronze_working" },
   { id: "chariot", name: "Chariot", age: 1, description: "Fast and hard-hitting on open ground.", attack: 10, defense: 4, speed: 12, carry: 40, cost: { food: 60, wood: 50, copper: 3, horses: 1 }, baseSeconds: 120, requires: "the_wheel", needsResource: "horses" },
@@ -181,6 +187,7 @@ export const UNITS: readonly UnitDef[] = [
   { id: "cataphract", name: "Cataphract", age: 3, description: "Armoured horse and rider.", attack: 20, defense: 12, speed: 12, carry: 50, cost: { food: 150, iron: 10, horses: 1 }, baseSeconds: 360, requires: "drill", needsResource: "horses" },
   { id: "ballista", name: "Ballista", age: 3, description: "Precise siege engine.", attack: 28, defense: 4, speed: 3, carry: 0, cost: { wood: 350, iron: 15 }, baseSeconds: 480, requires: "engineering" },
   // Medieval
+  { id: "train", name: "Train", age: 4, description: "Iron rails and steam: carries eight caravans' worth and moves four times as fast. Needs Railways.", attack: 0, defense: 1, speed: 30, carry: 4000, cost: { wood: 400, iron: 30 }, baseSeconds: 900, requires: "railways", civilian: true, hauler: true },
   { id: "knight", name: "Knight", age: 4, description: "The finest heavy cavalry.", attack: 32, defense: 22, speed: 12, carry: 70, cost: { food: 250, iron: 20, horses: 1 }, baseSeconds: 600, requires: "chivalry", needsResource: "horses" },
   { id: "longbowman", name: "Longbowman", age: 4, description: "Deadly at range.", attack: 24, defense: 10, speed: 6, carry: 30, cost: { food: 120, wood: 80 }, baseSeconds: 420, requires: "chivalry" },
   { id: "trebuchet", name: "Trebuchet", age: 4, description: "Nothing stands against it for long.", attack: 45, defense: 5, speed: 2, carry: 0, cost: { wood: 700, iron: 30 }, baseSeconds: 900, requires: "siege_engines" },
@@ -204,6 +211,7 @@ export const TECHS: readonly TechDef[] = [
   { id: "mining", name: "Mining", age: 1, description: "Dig for metals.", cost: { wood: 300, stone: 300 }, baseSeconds: 600 },
   { id: "the_wheel", name: "The wheel", age: 1, description: "Carts and chariots.", cost: { wood: 400, food: 200 }, baseSeconds: 700, requires: ["animal_husbandry"] },
   { id: "road_building", name: "Road building", age: 1, description: "Surveyed, drained and paved ways. Lets a region build Roads to all of its neighbours.", cost: { wood: 600, stone: 400 }, baseSeconds: 900, requires: ["the_wheel"] },
+  { id: "wagon_building", name: "Wagon building", age: 1, description: "Axles, beds and teams: unlocks the Wagon.", cost: { wood: 800, stone: 300 }, baseSeconds: 1200, requires: ["the_wheel"] },
   { id: "writing", name: "Writing", age: 1, description: "Records and learning.", cost: { food: 300, wood: 300 }, baseSeconds: 800 },
   { id: "irrigation", name: "Irrigation", age: 1, description: "Ditches and channels: fields yield more.", cost: { wood: 1200, stone: 600 }, baseSeconds: 1800, requires: ["agriculture"], effect: { yield: { food: 0.2 } } },
   { id: "pottery", name: "Pottery", age: 1, description: "Sealed jars keep more in store.", cost: { stone: 900, wood: 600 }, baseSeconds: 1500, effect: { storage: 0.25 } },
@@ -232,6 +240,7 @@ export const TECHS: readonly TechDef[] = [
   { id: "blast_furnace", name: "Blast furnace", age: 4, description: "Far more metal from every mine.", cost: { stone: 30000, iron: 300 }, baseSeconds: 14400, effect: { extract: 0.5 } },
   { id: "plate_armour", name: "Plate armour", age: 4, description: "Full harness for the heavy troops.", cost: { iron: 400, wood: 20000 }, baseSeconds: 18000, requires: ["steel"], effect: { defense: 0.25 } },
   { id: "guilds", name: "Guilds", age: 4, description: "Organised crafts: more wood and stone from every camp.", cost: { food: 30000, stone: 20000 }, baseSeconds: 14400, effect: { yield: { wood: 0.25, stone: 0.25 } } },
+  { id: "railways", name: "Railways", age: 4, description: "Iron rails and steam engines: unlocks the Railway (an upgrade of Roads) and the Train.", cost: { stone: 20000, wood: 15000, iron: 500 }, baseSeconds: 14400, requires: ["engineering"] },
   { id: "siege_engines", name: "Siege engines", age: 4, description: "Trebuchets.", cost: { wood: 3000, iron: 200 }, baseSeconds: 9000 },
   { id: "scholasticism", name: "Scholasticism", age: 4, description: "Universities: research goes much faster.", cost: { wood: 2500, stone: 2500 }, baseSeconds: 9000, effect: { researchSpeed: 0.3 } },
 ];

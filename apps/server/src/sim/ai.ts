@@ -1,5 +1,5 @@
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
-import { availableBuildings, availableTechs, buildingBlockedBy, availableUnits, balance, buildingById, buildingCost, dayCostMultiplier, effectsOf, freezeDayForLatitude, distanceKm, regionById, seededRng, techById, techCost, normalizeAssignment, type Cost, techEffectsOf } from "@lastthaw/shared";
+import { availableBuildings, availableTechs, buildingBlockedBy, availableUnits, balance, buildingById, buildingCost, dayCostMultiplier, effectsOf, freezeDayForLatitude, distanceKm, regionById, seededRng, techById, techCost, normalizeAssignment, type Cost, techEffectsOf, haulerCount, unitById } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { armies, jobs, marketOrders, matchRegions, playerTechs, players } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
@@ -12,13 +12,13 @@ import type { MatchRow } from "../worker/jobs.js";
 export type Difficulty = "easy" | "medium" | "hard";
 export type Temperament = "peaceful" | "balanced" | "raider";
 
-const BUILD_ORDER = ["huts", "hunting_grounds", "lumber_camp", "storehouse", "quarry", "farm", "palisade", "granary", "mine", "stables", "walls", "barracks", "roads", "temple", "forge", "market", "aqueduct", "fort", "library", "harbor", "windmill", "castle", "guild_hall", "university", "cathedral"];
+const BUILD_ORDER = ["huts", "hunting_grounds", "lumber_camp", "storehouse", "quarry", "farm", "palisade", "granary", "mine", "stables", "walls", "barracks", "roads", "railway", "temple", "forge", "market", "aqueduct", "fort", "library", "harbor", "windmill", "castle", "guild_hall", "university", "cathedral"];
 const RESEARCH_ORDER = [
   "fire_making", "flint_tools", "agriculture", "fishing_nets", "stone_axes", "animal_husbandry", "weaving", "bronze_working",
-  "mining", "irrigation", "writing", "the_wheel", "pottery", "herbal_medicine", "road_building", "bronze_weapons", "iron_working",
+  "mining", "irrigation", "writing", "the_wheel", "wagon_building", "pottery", "herbal_medicine", "road_building", "bronze_weapons", "iron_working",
   "masonry", "crop_rotation", "iron_tools", "mathematics", "iron_weapons", "siegecraft", "drill",
   "engineering", "heavy_plough", "philosophy", "logistics", "civil_service", "steel", "shipbuilding", "chivalry",
-  "three_field_system", "guilds", "blast_furnace", "plate_armour", "siege_engines", "scholasticism",
+  "three_field_system", "railways", "guilds", "blast_furnace", "plate_armour", "siege_engines", "scholasticism",
 ];
 
 /** What each difficulty is allowed to do. Harder tiers never cheat; they just decide better and more often. */
@@ -120,7 +120,7 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
     for (const id of order) {
       const def = avail.get(id);
       if (!def) continue;
-      if (buildingBlockedBy(def, region)) continue;
+      if (buildingBlockedBy(def, region, row.buildings)) continue;
       const level = row.buildings[id] ?? 0;
       if (level >= Math.min(def.maxLevel, tier.buildCap(p.age))) continue;
       const cost = buildingCost(def, level + 1, matchDay, region.neighbors.length);
@@ -146,9 +146,11 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
     // Caravans: once a store nears its cap, keep a couple of caravans here so overflow and trade routes can run.
     const nearCap = (["food", "wood", "stone"] as const).some((k) => economy[k] >= economy.storage[k] * 0.85);
     const wantCaravans = balance.ai.caravansPerRegion + (difficulty === "hard" ? 1 : 0);
-    const caravansQueued = pendingJobs.some((j) => j.regionId === row.regionId && j.kind === "train" && j.refId === "caravan");
-    if (nearCap && (row.units.caravan ?? 0) < wantCaravans && !caravansQueued && queueLen(row.regionId) < balance.queue.slotsPerRegion && economy.popWorkers > 12) {
-      await attempt(() => queueTrain(ctx, row.regionId, "caravan", wantCaravans - (row.units.caravan ?? 0)));
+    const haulerKinds = availableUnits(p.age, techs).filter((u) => u.hauler).sort((a, b) => b.carry - a.carry);
+    const bestKind = haulerKinds[0]?.id ?? "caravan";
+    const caravansQueued = pendingJobs.some((j) => j.regionId === row.regionId && j.kind === "train" && unitById.get(j.refId ?? "")?.hauler);
+    if (nearCap && haulerCount(row.units) < wantCaravans && !caravansQueued && queueLen(row.regionId) < balance.queue.slotsPerRegion && economy.popWorkers > 12) {
+      await attempt(() => queueTrain(ctx, row.regionId, bestKind, wantCaravans - haulerCount(row.units)));
     }
 
     // Soldiers: keep a share under arms; double it while threatened.
@@ -267,7 +269,7 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
         const target = candidates[0];
         if (target) {
           const send: Record<string, number> = {};
-          for (const [id, n] of Object.entries(strong.units)) if (id !== "settler" && id !== "caravan") send[id] = Math.floor(n * (difficulty === "hard" ? 0.8 : 0.7));
+          for (const [id, n] of Object.entries(strong.units)) if (!unitById.get(id)?.civilian) send[id] = Math.floor(n * (difficulty === "hard" ? 0.8 : 0.7));
           const need = balance.conquest.occupiersRequired;
           if (wantConquer) {
             if ((strong.units.settler ?? 0) >= need) {

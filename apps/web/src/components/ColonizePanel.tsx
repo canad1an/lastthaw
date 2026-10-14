@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { balance, distanceKm, formatCountdown, regionById, unitById, type MatchStateView, caravanCarry } from "@lastthaw/shared";
+import { balance, distanceKm, formatCountdown, regionById, unitById, type MatchStateView, caravanCarry, haulerCount, bestHauler, haulerCarry } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { Button, ErrorText } from "./ui.js";
 
@@ -43,7 +43,7 @@ function SettlingPanel({ matchId, state, regionId, armyOrigin, arrivesAt }: { ma
   const target = regionById(regionId)!;
   const existing = state.routes.filter((r) => r.toRegionId === regionId && r.target);
   const sources = useMemo(
-    () => state.owned.filter((o) => (o.units.caravan ?? 0) >= 1).sort((a, b) => (a.regionId === armyOrigin ? -1 : b.regionId === armyOrigin ? 1 : distanceKm(a.regionId, regionId) - distanceKm(b.regionId, regionId))),
+    () => state.owned.filter((o) => haulerCount(o.units) >= 1).sort((a, b) => (a.regionId === armyOrigin ? -1 : b.regionId === armyOrigin ? 1 : distanceKm(a.regionId, regionId) - distanceKm(b.regionId, regionId))),
     [state.owned, armyOrigin, regionId],
   );
   const [sourceId, setSourceId] = useState<string>(sources[0]?.regionId ?? "");
@@ -51,8 +51,8 @@ function SettlingPanel({ matchId, state, regionId, armyOrigin, arrivesAt }: { ma
     if (!sourceId || !sources.some((s) => s.regionId === sourceId)) setSourceId(sources[0]?.regionId ?? "");
   }, [sources, sourceId]);
   const source = sources.find((s) => s.regionId === sourceId);
-  const caravansHome = source?.units.caravan ?? 0;
-  const perCaravan = caravanCarry(state.me.techs);
+  const caravansHome = source ? haulerCount(source.units) : 0;
+  const perCaravan = haulerCarry(source ? (bestHauler(source.units) ?? "caravan") : "caravan", state.me.techs);
   const [prefs] = useState(loadStockPrefs);
   const [stock, setStock] = useState<Record<string, number>>(prefs.stock);
   const [caravans, setCaravans] = useState(prefs.caravans);
@@ -151,8 +151,8 @@ function ColonizeForm({ matchId, state, regionId }: { matchId: string; state: Ma
     queryFn: () => fetch(`/api/matches/${matchId}/route?from=${sourceId}&to=${regionId}&speed=${speed}`, { credentials: "include" }).then((r) => r.json() as Promise<{ seconds?: number; error?: string }>),
     enabled: !!sourceId,
   });
-  const caravansHome = source?.units.caravan ?? 0;
-  const perCaravan = caravanCarry(state.me.techs);
+  const caravansHome = source ? haulerCount(source.units) : 0;
+  const perCaravan = haulerCarry(source ? (bestHauler(source.units) ?? "caravan") : "caravan", state.me.techs);
   const [prefs] = useState(loadStockPrefs);
   const [stockUp, setStockUp] = useState(prefs.stockUp);
   const [stock, setStock] = useState<Record<string, number>>(prefs.stock);

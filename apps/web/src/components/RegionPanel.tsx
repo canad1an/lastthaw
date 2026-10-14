@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { AGES, availableBuildings, availableUnits, buildingBlockedBy, balance, buildingById, buildingCost, matchDayOf, buildingSeconds, canAfford, computeRates, normalizeAssignment, realSeconds, regionById, settle, totalPopulation, trainSeconds, unitById, unitCost, formatCountdown, type MatchStateView, type OwnedRegionView, type RegionEconomy, type SightedRegionView, type SpecialResource, loyaltyBand, loyaltyOutlook } from "@lastthaw/shared";
+import { AGES, availableBuildings, availableUnits, buildingBlockedBy, balance, buildingById, buildingCost, matchDayOf, buildingSeconds, canAfford, computeRates, normalizeAssignment, realSeconds, regionById, settle, totalPopulation, trainSeconds, unitById, unitCost, formatCountdown, type MatchStateView, type OwnedRegionView, type RegionEconomy, type SightedRegionView, type SpecialResource, loyaltyBand, loyaltyOutlook, HAULER_IDS, haulerCarry } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { useNow } from "../hooks/useNow.js";
 import { Button, Card, ErrorText, fmt, signed } from "./ui.js";
@@ -77,7 +77,7 @@ export function RegionPanel({ matchId, state, regionId, clockOffsetMs, onClose, 
           {tab === "train" && <TrainTab matchId={matchId} state={state} owned={owned} clockOffsetMs={clockOffsetMs} />}
           {tab === "units" && (
             <>
-              <ArmyTab matchId={matchId} owned={owned} />
+              <ArmyTab matchId={matchId} owned={owned} state={state} />
               <SendArmy matchId={matchId} state={state} owned={owned} target={target} onPickTarget={onPickTarget} onClearTarget={onClearTarget} clockOffsetMs={clockOffsetMs} />
             </>
           )}
@@ -315,7 +315,7 @@ function BuildTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
           const level = (owned.buildings[b.id] ?? 0) + queued + 1;
           const maxed = level > b.maxLevel;
           const cost = buildingCost(b, level, matchDayOf(state, clockOffsetMs), regionById(owned.regionId)?.neighbors.length ?? 1);
-          const blocked = buildingBlockedBy(b, regionById(owned.regionId)!);
+          const blocked = buildingBlockedBy(b, regionById(owned.regionId)!, owned.buildings);
           const ok = !maxed && !queueFull && !blocked && canAfford(stock, cost);
           const secs = realSeconds(buildingSeconds(b, level), 0, state.match.speed);
           return (
@@ -423,9 +423,13 @@ function TrainTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
   );
 }
 
-function ArmyTab({ matchId, owned }: { matchId: string; owned: OwnedRegionView }) {
+function ArmyTab({ matchId, owned, state }: { matchId: string; owned: OwnedRegionView; state: MatchStateView }) {
   const qc = useQueryClient();
   const entries = Object.entries(owned.units).filter(([, n]) => n > 0);
+  const convert = useMutation({
+    mutationFn: (body: { from: string; to: string; qty: number }) => api.convert(matchId, owned.regionId, body),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matchState(matchId) }),
+  });
   const [disbanding, setDisbanding] = useState<Record<string, number>>({});
   const disband = useMutation({
     mutationFn: () => api.disband(matchId, owned.regionId, disbanding),
@@ -461,6 +465,8 @@ function ArmyTab({ matchId, owned }: { matchId: string; owned: OwnedRegionView }
         </ul>
       )}
       <p className="text-xs text-slate-500">Defence bonus from buildings: +{Math.round(owned.effects.defense * 100)}%</p>
+      <HaulerUpgrades owned={owned} techs={state.me.techs} age={state.me.age} onConvert={(body) => convert.mutate(body)} pending={convert.isPending} />
+      <ErrorText>{convert.error?.message}</ErrorText>
       {entries.length > 0 && (
         <div className="flex items-center justify-between gap-2 border-t border-slate-800 pt-2">
           <span className="text-xs text-slate-400">
@@ -472,6 +478,39 @@ function ArmyTab({ matchId, owned }: { matchId: string; owned: OwnedRegionView }
         </div>
       )}
       <ErrorText>{disband.error?.message}</ErrorText>
+    </div>
+  );
+}
+
+/** Upgrade buttons for haulers stationed here, when the tech for the better kind is known. */
+function HaulerUpgrades({ owned, techs, age, onConvert, pending }: { owned: OwnedRegionView; techs: readonly string[]; age: number; onConvert: (body: { from: string; to: string; qty: number }) => void; pending: boolean }) {
+  const options: Array<{ from: string; to: string; have: number; cost: Record<string, number> }> = [];
+  for (const to of HAULER_IDS) {
+    const dst = unitById.get(to);
+    if (!dst || dst.age > age || (dst.requires && !techs.includes(dst.requires))) continue;
+    const per = balance.trade.convertCost[to];
+    if (!per) continue;
+    for (const from of HAULER_IDS) {
+      const src = unitById.get(from);
+      if (!src || src.carry >= dst.carry) continue;
+      const have = owned.units[from] ?? 0;
+      if (have > 0) options.push({ from, to, have, cost: Object.fromEntries(Object.entries(per).map(([k, v]) => [k, v * have])) });
+    }
+  }
+  if (options.length === 0) return null;
+  return (
+    <div className="space-y-1 border-t border-slate-800 pt-2">
+      {options.map((o) => (
+        <div key={`${o.from}-${o.to}`} className="flex items-center justify-between gap-2 text-xs">
+          <span className="text-slate-300">
+            Upgrade {o.have} {unitById.get(o.from)?.name}{o.have === 1 ? "" : "s"} → {unitById.get(o.to)?.name}{o.have === 1 ? "" : "s"}{" "}
+            <span className="text-slate-500">({Object.entries(o.cost).map(([k, v]) => `${fmt(v)} ${k}`).join(", ")}; carries {fmt(haulerCarry(o.to, techs))} each)</span>
+          </span>
+          <Button variant="ghost" disabled={pending} onClick={() => onConvert({ from: o.from, to: o.to, qty: o.have })}>
+            Upgrade
+          </Button>
+        </div>
+      ))}
     </div>
   );
 }

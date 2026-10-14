@@ -80,6 +80,8 @@ export const api = {
     request<{ ok: true; armyId: string; arrivesAt: string; routeId: string | null }>("POST", `/api/matches/${id}/regions/${regionId}/colonize`, body),
   setCapital: (id: string, regionId: string) =>
     request<{ ok: true; armyId: string; arrivesAt: string; cargo: Record<string, number>; path: string[] }>("POST", `/api/matches/${id}/capital`, { regionId }),
+  convert: (id: string, regionId: string, body: { from: string; to: string; qty: number }) =>
+    request<{ ok: true; converted: number; cost: Record<string, number> }>("POST", `/api/matches/${id}/regions/${regionId}/convert`, body),
   disband: (id: string, regionId: string, units: Record<string, number>) =>
     request<{ ok: true; disbanded: number }>("POST", `/api/matches/${id}/regions/${regionId}/disband`, { units }),
   recallArmy: (id: string, armyId: string) => request<{ ok: true; returnsAt: string }>("POST", `/api/matches/${id}/armies/${armyId}/recall`, {}),
