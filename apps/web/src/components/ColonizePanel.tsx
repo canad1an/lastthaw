@@ -35,8 +35,21 @@ export function ColonizePanel({ matchId, state, regionId }: { matchId: string; s
     queryFn: () => fetch(`/api/matches/${matchId}/route?from=${sourceId}&to=${regionId}&speed=${speed}`, { credentials: "include" }).then((r) => r.json() as Promise<{ seconds?: number; error?: string }>),
     enabled: !!sourceId,
   });
+  const caravansHome = source?.units.caravan ?? 0;
+  const perCaravan = unitById.get("caravan")?.carry ?? 500;
+  const [stockUp, setStockUp] = useState(false);
+  const [stock, setStock] = useState<Record<string, number>>({ food: 300, wood: 300, stone: 100 });
+  const [caravans, setCaravans] = useState(2);
+  useEffect(() => setCaravans((c) => Math.max(1, Math.min(c, Math.max(1, caravansHome)))), [caravansHome]);
+  const stockTotal = Object.values(stock).reduce((a, b) => a + b, 0);
+  const trips = Math.ceil(stockTotal / (perCaravan * Math.max(1, Math.min(caravans, caravansHome))));
   const send = useMutation({
-    mutationFn: () => api.sendArmy(matchId, sourceId!, { mission: "settle", targetRegionId: regionId, units: { settler: count }, people: 0, cargo: {} }),
+    mutationFn: () =>
+      api.colonize(matchId, sourceId!, {
+        targetRegionId: regionId,
+        settlers: count,
+        ...(stockUp && stockTotal > 0 ? { stock, caravans } : {}),
+      }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matchState(matchId) }),
   });
 
@@ -76,10 +89,47 @@ export function ColonizePanel({ matchId, state, regionId }: { matchId: string; s
             {route.data?.seconds !== undefined ? ` Travel: ${formatCountdown(route.data.seconds)}.` : ""}
             {route.data?.error ? ` ${route.data.error}.` : ""}
           </p>
+          <div className="space-y-2 rounded border border-slate-800 bg-slate-900/50 p-2">
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={stockUp} disabled={caravansHome < 1} onChange={(e) => setStockUp(e.target.checked)} className="accent-amber-400" />
+              <span className={caravansHome < 1 ? "text-slate-500" : ""}>Stock the colony by caravan once founded</span>
+            </label>
+            {caravansHome < 1 ? (
+              <p className="text-xs text-slate-500">Needs at least one caravan in {source ? regionById(source.regionId)?.name : "the source region"}. Train caravans under the Train tab.</p>
+            ) : (
+              stockUp && (
+                <>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(["food", "wood", "stone"] as const).map((res) => (
+                      <label key={res} className="flex flex-col gap-0.5 text-xs text-slate-400">
+                        {res}
+                        <input
+                          type="number"
+                          min={0}
+                          step={50}
+                          value={stock[res] ?? 0}
+                          onChange={(e) => setStock((s) => ({ ...s, [res]: Math.max(0, Number(e.target.value) || 0) }))}
+                          className="rounded border border-slate-700 bg-slate-900 px-2 py-1 text-right text-sm text-white"
+                        />
+                      </label>
+                    ))}
+                  </div>
+                  <label className="grid grid-cols-[5rem_1fr_3rem] items-center gap-2">
+                    <span className="text-xs text-slate-400">Caravans</span>
+                    <input type="range" min={1} max={Math.max(1, caravansHome)} value={caravans} onChange={(e) => setCaravans(Number(e.target.value))} className="accent-amber-400" />
+                    <span className="text-right tabular-nums">{caravans}</span>
+                  </label>
+                  <p className="text-xs text-slate-400">
+                    {stockTotal} goods in about {trips} trip{trips === 1 ? "" : "s"} ({perCaravan} per caravan, one trip per game hour while caravans are home). The route removes itself when the totals arrive.
+                  </p>
+                </>
+              )
+            )}
+          </div>
           <Button disabled={send.isPending || !!route.data?.error || !sourceId} onClick={() => send.mutate()}>
             Colonize {target.name}
           </Button>
-          {send.isSuccess && <p className="text-xs text-emerald-400">Settlers are on their way. Watch them under In progress.</p>}
+          {send.isSuccess && <p className="text-xs text-emerald-400">Settlers are on their way. Watch them under In progress{stockUp && stockTotal > 0 ? "; the stock-up route is under Trade Routes" : ""}.</p>}
           <ErrorText>{send.error?.message}</ErrorText>
         </>
       )}

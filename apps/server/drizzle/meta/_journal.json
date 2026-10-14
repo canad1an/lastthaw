@@ -71,6 +71,13 @@
       "when": 1791996669313,
       "tag": "0009_hot_mac_gargan",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1791997929498,
+      "tag": "0010_cultured_crusher_hogan",
+      "breakpoints": true
     }
   ]
 }

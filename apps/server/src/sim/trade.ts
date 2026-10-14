@@ -2,7 +2,7 @@ import { and, eq, lte, sql } from "drizzle-orm";
 import type pino from "pino";
 import { carryCapacity, unitById } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
-import { matchRegions, matches, playerTechs, players, tradeRoutes } from "../db/schema.js";
+import { armies, matchRegions, matches, playerTechs, players, tradeRoutes } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
 import { matchNow } from "./clock.js";
 import { projectRegion, stockOf } from "./regions.js";
@@ -62,6 +62,36 @@ export async function dispatchRoute(db: Db, m: MatchRow, p: PlayerRow, route: Tr
     .limit(1);
   if (!origin || origin.ownerPlayerId !== p.id) return "origin region is no longer yours";
   if (origin.frozenAt) return "origin region is frozen";
+  // Stock-up routes: what is still owed, and only once the colony is actually ours.
+  let owed: Record<string, number> | null = null;
+  if (route.target) {
+    const [dest] = await db
+      .select({ owner: matchRegions.ownerPlayerId })
+      .from(matchRegions)
+      .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, route.toRegionId)))
+      .limit(1);
+    if (dest?.owner !== p.id) {
+      const pendingSettle = await db
+        .select({ id: armies.id })
+        .from(armies)
+        .where(and(eq(armies.matchId, m.id), eq(armies.playerId, p.id), eq(armies.targetRegionId, route.toRegionId), eq(armies.mission, "settle"), eq(armies.status, "outbound")))
+        .limit(1);
+      if (pendingSettle.length === 0) {
+        await db.delete(tradeRoutes).where(eq(tradeRoutes.id, route.id));
+        return "colony was not founded; stock-up cancelled";
+      }
+      return "waiting for the settlers to found the colony";
+    }
+    owed = {};
+    for (const [k, v] of Object.entries(route.target)) {
+      const left = Math.floor(v - (route.delivered[k] ?? 0));
+      if (left >= 1) owed[k] = left;
+    }
+    if (Object.keys(owed).length === 0) {
+      await db.delete(tradeRoutes).where(eq(tradeRoutes.id, route.id));
+      return "stock-up complete";
+    }
+  }
   const home = origin.units.caravan ?? 0;
   if (home <= 0) return "no caravans at home (they may be on the road)";
   const perCaravan = unitById.get("caravan")?.carry ?? 500;
@@ -79,7 +109,7 @@ export async function dispatchRoute(db: Db, m: MatchRow, p: PlayerRow, route: Tr
     }
   } else {
     for (const res of GOODS) {
-      const want = route.load[res] ?? 0;
+      const want = owed ? (owed[res] ?? 0) : (route.load[res] ?? 0);
       const amt = Math.min(want, stock[res] ?? 0);
       if (amt >= 1) cargo[res] = Math.floor(amt);
     }
@@ -100,5 +130,15 @@ export async function dispatchRoute(db: Db, m: MatchRow, p: PlayerRow, route: Tr
   const desc = Object.entries(cargo)
     .map(([k, v]) => `${v} ${k}`)
     .join(", ");
+  if (owed) {
+    const delivered = { ...route.delivered };
+    for (const [k, v] of Object.entries(cargo)) delivered[k] = (delivered[k] ?? 0) + v;
+    const done = Object.entries(route.target!).every(([k, v]) => (delivered[k] ?? 0) >= v - 0.5);
+    if (done) {
+      await db.delete(tradeRoutes).where(eq(tradeRoutes.id, route.id));
+      return `sent ${caravans} caravan${caravans === 1 ? "" : "s"} with ${desc}; stock-up complete`;
+    }
+    await db.update(tradeRoutes).set({ delivered }).where(eq(tradeRoutes.id, route.id));
+  }
   return `sent ${caravans} caravan${caravans === 1 ? "" : "s"} with ${desc}`;
 }

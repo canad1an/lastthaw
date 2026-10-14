@@ -76,6 +76,8 @@ export const api = {
   runRoute: (id: string, routeId: string) => request<{ ok: true; result: string }>("POST", `/api/matches/${id}/routes/${routeId}/run`, {}),
   evacuate: (id: string, regionId: string, toRegionId: string) =>
     request<{ ok: true; armyId: string; arrivesAt: string; people: number; units: Record<string, number>; cargo: Record<string, number>; leftBehind: number }>("POST", `/api/matches/${id}/regions/${regionId}/evacuate`, { toRegionId }),
+  colonize: (id: string, regionId: string, body: { targetRegionId: string; settlers: number; stock?: Record<string, number>; caravans?: number }) =>
+    request<{ ok: true; armyId: string; arrivesAt: string; routeId: string | null }>("POST", `/api/matches/${id}/regions/${regionId}/colonize`, body),
   disband: (id: string, regionId: string, units: Record<string, number>) =>
     request<{ ok: true; disbanded: number }>("POST", `/api/matches/${id}/regions/${regionId}/disband`, { units }),
   recallArmy: (id: string, armyId: string) => request<{ ok: true; returnsAt: string }>("POST", `/api/matches/${id}/armies/${armyId}/recall`, {}),

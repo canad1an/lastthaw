@@ -160,8 +160,12 @@ export function RoutesTab({ matchId, state, owned, clockOffsetMs, allRoutes = fa
 }
 
 function RouteRow({ r, showFrom, editing, clockOffsetMs, onToggle, onDelete, onRun, onEdit }: { r: TradeRouteView; showFrom?: boolean; editing?: boolean; clockOffsetMs: number; onToggle: () => void; onDelete: () => void; onRun: () => void; onEdit: () => void }) {
-  const what =
-    r.mode === "share"
+  const what = r.target
+    ? "stock-up " +
+      Object.entries(r.target)
+        .map(([k, v]) => `${Math.round(r.delivered[k] ?? 0)}/${v} ${k}`)
+        .join(", ")
+    : r.mode === "share"
       ? `${Math.round(r.share * 100)}% of production`
       : Object.entries(r.load)
           .filter(([, v]) => v > 0)

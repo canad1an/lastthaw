@@ -306,6 +306,9 @@ export const tradeRoutes = pgTable(
     nextAt: timestamp("next_at", { withTimezone: true }).notNull(),
     lastRunAt: timestamp("last_run_at", { withTimezone: true }),
     lastResult: text("last_result"),
+    /** Stock-up routes: total goods to deliver, after which the route removes itself. */
+    target: jsonb("target").$type<Record<string, number>>(),
+    delivered: jsonb("delivered").$type<Record<string, number>>().notNull().default({}),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("trade_routes_due_idx").on(t.nextAt), index("trade_routes_from_idx").on(t.matchId, t.fromRegionId)],

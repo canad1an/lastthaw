@@ -204,8 +204,20 @@ export const tradeRouteView = z.object({
   nextAt: z.string(),
   lastResult: z.string().nullable(),
   lastRunAt: z.string().nullable(),
+  /** Stock-up routes deliver `target` in total, then remove themselves. */
+  target: z.record(z.string(), z.number()).nullable().default(null),
+  delivered: z.record(z.string(), z.number()).default({}),
 });
 export type TradeRouteView = z.infer<typeof tradeRouteView>;
+
+/** Colonize an empty region, optionally stocking it from the source by caravan once founded. */
+export const colonizeBody = z.object({
+  targetRegionId: z.string(),
+  settlers: z.number().int().min(1),
+  /** Total food/wood/stone to deliver after the colony is founded (0 or omitted = none). */
+  stock: z.record(z.enum(["food", "wood", "stone"]), z.number().min(0)).optional(),
+  caravans: z.number().int().min(1).max(50).default(2),
+});
 
 export const buildBody = z.object({ buildingId: z.string() });
 export const trainBody = z.object({ unitId: z.string(), qty: z.number().int().min(1).max(1000) });

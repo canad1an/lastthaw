@@ -236,6 +236,8 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
       nextAt: r.nextAt.toISOString(),
       lastResult: r.lastResult,
       lastRunAt: r.lastRunAt?.toISOString() ?? null,
+      target: r.target ?? null,
+      delivered: r.delivered,
     })),
     allies,
   };

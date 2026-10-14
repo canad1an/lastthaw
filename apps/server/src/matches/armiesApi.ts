@@ -1,8 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import { and, eq, isNull } from "drizzle-orm";
-import { balance, findRoute, sendArmyBody, travelSeconds } from "@lastthaw/shared";
+import { balance, colonizeBody, findRoute, sendArmyBody, travelSeconds } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
-import { armies, jobs, matches, playerTechs, players } from "../db/schema.js";
+import { armies, jobs, matchRegions, matches, playerTechs, players, tradeRoutes } from "../db/schema.js";
 import { matchNow } from "../sim/clock.js";
 import { requireUser } from "../auth/session.js";
 import type { Publisher } from "../realtime/publish.js";
@@ -49,6 +49,52 @@ export async function armyRoutes(app: FastifyInstance, opts: { db: Db; publisher
     const r = await evacuateRegion(ctx, regionId, toRegionId);
     await publisher.toPlayer(matchId, ctx.p.id, "army.sent", { armyId: r.army.id, evacuated: regionId });
     return { ok: true, armyId: r.army.id, arrivesAt: r.army.arrivesAt.toISOString(), people: r.people, units: r.units, cargo: r.cargo, leftBehind: r.leftBehind };
+  });
+
+  /**
+   * Colonize an empty region with settlers from this region. With `stock`, a
+   * temporary caravan route is created that delivers those totals once the
+   * colony is founded, then removes itself. Needs caravans at the source.
+   */
+  app.post("/api/matches/:id/regions/:regionId/colonize", async (req) => {
+    const user = requireUser(req);
+    const { id: matchId, regionId } = req.params as { id: string; regionId: string };
+    const body = colonizeBody.parse(req.body);
+    const ctx = await loadContext(matchId, user.id);
+    const stock = Object.fromEntries(Object.entries(body.stock ?? {}).filter(([, v]) => v >= 1).map(([k, v]) => [k, Math.floor(v)]));
+    const wantsStock = Object.keys(stock).length > 0;
+    if (wantsStock) {
+      const [origin] = await db
+        .select({ units: matchRegions.units })
+        .from(matchRegions)
+        .where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, regionId)))
+        .limit(1);
+      if (((origin?.units as Record<string, number>)?.caravan ?? 0) < 1) throw httpError(400, "stocking the colony needs at least one caravan in this region");
+    }
+    const r = await sendArmy(ctx, regionId, { mission: "settle", targetRegionId: body.targetRegionId, units: { settler: body.settlers }, people: 0, cargo: {} });
+    let routeId: string | null = null;
+    if (wantsStock) {
+      const [route] = await db
+        .insert(tradeRoutes)
+        .values({
+          matchId,
+          playerId: ctx.p.id,
+          fromRegionId: regionId,
+          toRegionId: body.targetRegionId,
+          mode: "fixed",
+          load: stock,
+          share: 0,
+          caravans: body.caravans,
+          everyHours: 1,
+          target: stock,
+          delivered: {},
+          nextAt: r.army.arrivesAt,
+        })
+        .returning({ id: tradeRoutes.id });
+      routeId = route!.id;
+    }
+    await publisher.toPlayer(matchId, ctx.p.id, "army.sent", { armyId: r.army.id });
+    return { ok: true, armyId: r.army.id, arrivesAt: r.army.arrivesAt.toISOString(), routeId };
   });
 
   /** Disband stationed units: they rejoin the region's workers. */
