@@ -138,7 +138,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
     endsAt: j.endsAt.toISOString(),
   }));
 
-  const all = await db.select().from(players).where(eq(players.matchId, matchId));
+  const all = await db.select().from(players).where(eq(players.matchId, matchId)).orderBy(asc(players.createdAt), asc(players.id));
   const counts = await countOwnedRegions(db, matchId);
   const nameOf = new Map(all.map((p) => [p.id, p.name]));
 

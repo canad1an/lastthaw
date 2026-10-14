@@ -146,6 +146,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
   const finished = state.match.status === "finished";
   const eliminated = state.owned.length === 0 && !finished;
 
+  // Colours follow join order (the server returns players in that order) and never change during a match.
   const colorOf = useMemo(() => {
     const m = new Map<string, string>();
     state.players.forEach((p, i) => m.set(p.id, PLAYER_COLORS[i % PLAYER_COLORS.length]!));
