@@ -38,7 +38,7 @@ export async function runMatchTicks(db: Db, publisher: Publisher, log: pino.Logg
 async function tickMatch(db: Db, publisher: Publisher, matchId: string, log: pino.Logger): Promise<void> {
   const after: Array<() => Promise<void>> = [];
   const m = await db.transaction(async (tx) => {
-    const [m] = await tx.select().from(matches).where(eq(matches.id, matchId)).for("update", { skipLocked: true });
+    const [m] = await tx.select().from(matches).where(eq(matches.id, matchId)).for("no key update", { skipLocked: true });
     if (!m || m.status !== "running") return null;
     const now = matchNow(m);
     const last = m.lastTickAt ?? m.startsAt;

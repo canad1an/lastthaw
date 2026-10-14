@@ -37,7 +37,8 @@ export async function runDueJobs(db: Db, publisher: Publisher, log: pino.Logger)
       await db.transaction(async (tx) => {
         const [job] = await tx.select().from(jobs).where(eq(jobs.id, id)).for("update", { skipLocked: true });
         if (!job || job.completedAt || job.cancelledAt) return;
-        const [m] = await tx.select().from(matches).where(eq(matches.id, job.matchId)).for("update");
+        // NO KEY UPDATE: serialises with other match updates but not with the key-share locks that inserting jobs, armies or orders take through their foreign keys (FOR UPDATE deadlocked with those).
+        const [m] = await tx.select().from(matches).where(eq(matches.id, job.matchId)).for("no key update");
         if (!m) return;
         await complete(tx, m, job, (fn) => after.push(fn));
         await tx.update(jobs).set({ completedAt: job.endsAt }).where(eq(jobs.id, id));
