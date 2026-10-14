@@ -147,6 +147,11 @@ function OwnedDetails({ matchId, state, owned, clockOffsetMs, speed }: { matchId
       {!owned.isCapital && !owned.frozen && <MakeCapital matchId={matchId} state={state} regionId={owned.regionId} clockOffsetMs={clockOffsetMs} />}
       <dl className="grid grid-cols-[auto_1fr_auto] gap-x-3 gap-y-1 text-sm">
         <Row label="People" value={`${fmt(pop)} / ${fmt(live.e.capacity)}`} rate={perHour(live.rates.population)} />
+        <dt className="text-slate-500">of which</dt>
+        <dd className="col-span-2 text-xs text-slate-400">
+          {fmt(live.e.popWorkers)} workers{live.e.popSoldiers > 0 ? `, ${fmt(live.e.popSoldiers)} in units` : ""}{live.e.popOccupiers > 0 ? `, ${fmt(live.e.popOccupiers)} occupiers` : ""}. Counts only who is here now, not units on the road.
+          {pop > live.e.capacity && <span className="text-amber-300"> Over capacity: growth has stopped until it drops below {fmt(live.e.capacity)}.</span>}
+        </dd>
         {!owned.isCapital && <LoyaltyRow owned={owned} state={state} />}
         <Row label="Food" value={`${fmt(live.e.food)} / ${fmt(live.e.storage.food)}`} rate={perHour(live.rates.food)} warn={live.rates.starving} />
         <Row label="Wood" value={`${fmt(live.e.wood)} / ${fmt(live.e.storage.wood)}`} rate={perHour(live.rates.wood)} />
