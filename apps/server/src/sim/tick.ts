@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import type pino from "pino";
 import { balance, distanceKm, effectsOf, regionById, seededRng } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
@@ -85,10 +85,13 @@ export async function runAiDecisions(db: Db, publisher: Publisher, log: pino.Log
 /** Occupied regions drift toward a loyalty target; disloyal ones may rebel and go neutral. */
 async function loyaltyAndRebellion(tx: Tx, m: MatchRow, now: Date, hours: number, rng: () => number, after: (fn: () => Promise<void>) => void, publisher: Publisher): Promise<void> {
   const c = balance.conquest;
+  // Lock in ascending region order, the same order every other transaction uses, so the tick never deadlocks with a job or an AI command.
   const owned = await tx
     .select()
     .from(matchRegions)
-    .where(and(eq(matchRegions.matchId, m.id), isNotNull(matchRegions.ownerPlayerId)));
+    .where(and(eq(matchRegions.matchId, m.id), isNotNull(matchRegions.ownerPlayerId)))
+    .orderBy(asc(matchRegions.regionId))
+    .for("update");
   const capitals = new Map(
     (await tx.select({ id: players.id, capital: players.capitalRegionId }).from(players).where(eq(players.matchId, m.id))).map((p) => [p.id, p.capital]),
   );
