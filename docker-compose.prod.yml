@@ -14,19 +14,24 @@ services:
 
   # Connection pooler: apps use transaction pooling on :6432; migrations go direct to postgres.
   pgbouncer:
-    image: bitnami/pgbouncer:1
+    image: edoburu/pgbouncer:v1.24.1-p1
     restart: unless-stopped
     environment:
-      POSTGRESQL_HOST: postgres
-      POSTGRESQL_PORT_NUMBER: "5432"
-      POSTGRESQL_USERNAME: lastthaw
-      POSTGRESQL_PASSWORD: lastthaw
-      POSTGRESQL_DATABASE: lastthaw
-      PGBOUNCER_DATABASE: lastthaw
-      PGBOUNCER_POOL_MODE: transaction
-      PGBOUNCER_MAX_CLIENT_CONN: "500"
-      PGBOUNCER_DEFAULT_POOL_SIZE: "40"
-      PGBOUNCER_IGNORE_STARTUP_PARAMETERS: extra_float_digits
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: lastthaw
+      DB_PASSWORD: lastthaw
+      DB_NAME: lastthaw
+      AUTH_TYPE: scram-sha-256
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: "500"
+      DEFAULT_POOL_SIZE: "40"
+      IGNORE_STARTUP_PARAMETERS: extra_float_digits
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U lastthaw || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     depends_on:
       postgres:
         condition: service_healthy
