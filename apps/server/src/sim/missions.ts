@@ -2,7 +2,7 @@ import { and, eq, inArray, isNull } from "drizzle-orm";
 import { balance, effectsOf, emptySpecial, storageCaps, regionById, resolveCombat, carryCapacity, travelSeconds, findRoute, armySpeed, type UnitCounts } from "@lastthaw/shared";
 import { armies, battles, jobs, matchRegions, players, regionSightings } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
-import { settleAndLockRegion, type MatchRegionRow, type Tx } from "./regions.js";
+import { settleAndLockRegion, type MatchRegionRow, type Tx, setCapital } from "./regions.js";
 import { notify, type JobRow, type MatchRow } from "../worker/jobs.js";
 import { areAllied } from "./alliances.js";
 
@@ -129,7 +129,7 @@ async function comeHome(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher:
 async function depositInto(tx: Tx, row: MatchRegionRow, units: UnitCounts, cargo: Record<string, number>): Promise<void> {
   const special = { ...emptySpecial(), ...(row.special as Record<string, number>) };
   const effects = effectsOf(row.buildings);
-  const cap = storageCaps(effects);
+  const cap = storageCaps(effects, row.isCapital);
   const set: Partial<MatchRegionRow> = {
     units: addUnits(row.units, units),
     popSoldiers: row.popSoldiers + sumUnits(units),
@@ -274,6 +274,7 @@ async function battle(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher: P
       conquered = true;
       Object.assign(set, {
         ownerPlayerId: army.playerId,
+        isCapital: false,
         units: survivors,
         popSoldiers: sumUnits(survivors),
         popOccupiers: people,
@@ -342,7 +343,7 @@ export async function handleRegionLost(tx: Tx, m: MatchRow, playerId: string, re
   }
   if (p.capitalRegionId === regionId) {
     const next = [...remaining].sort((a, b) => b.pop - a.pop)[0]!;
-    await tx.update(players).set({ capitalRegionId: next.regionId }).where(eq(players.id, playerId));
+    await setCapital(tx, m.id, playerId, next.regionId);
     await notify(tx, m.id, playerId, "system", `Your capital has moved to ${regionById(next.regionId)?.name}`, { regionId: next.regionId });
   }
 }

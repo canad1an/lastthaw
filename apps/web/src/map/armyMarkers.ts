@@ -53,7 +53,7 @@ const fmtUnits = (u: Record<string, number>) =>
     .join(", ") || "no units";
 
 /** Where every army is right now, for drawing on the map. */
-export function armyMarkers(armies: ArmyView[], incoming: IncomingView[], nowMs: number, formatCountdown: (s: number) => string): ArmyMarker[] {
+export function armyMarkers(armies: ArmyView[], incoming: IncomingView[], nowMs: number, formatCountdown: (s: number) => string, techs?: readonly string[]): ArmyMarker[] {
   const out: ArmyMarker[] = [];
   for (const a of armies) {
     const ids = a.path.length >= 2 ? a.path : [a.originRegionId, a.targetRegionId];
@@ -69,7 +69,7 @@ export function armyMarkers(armies: ArmyView[], incoming: IncomingView[], nowMs:
     const people = Math.round(a.cargo.people ?? 0);
     const goods = Object.entries(a.cargo).filter(([k, n]) => k !== "people" && n > 0);
     const goodsTotal = goods.reduce((x, [, n]) => x + n, 0);
-    const capacity = carryCapacity(a.units) + people * balance.travel.carryPerPerson;
+    const capacity = carryCapacity(a.units, techs) + people * balance.travel.carryPerPerson;
     const cargo = goods.map(([k, n]) => `${Math.round(n)} ${k.replace("_", " ")}`).join(", ");
     const routeIds = returning ? [...ids].reverse() : ids;
     out.push({

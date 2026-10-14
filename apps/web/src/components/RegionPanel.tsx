@@ -166,6 +166,7 @@ function OwnedDetails({ matchId, owned, clockOffsetMs, speed }: { matchId: strin
     <div className="space-y-3">
       {owned.isCapital && <span className="inline-block rounded bg-sky-500/20 px-1.5 py-0.5 text-xs text-sky-300">Capital</span>}
       {owned.frozen && <span className="ml-2 inline-block rounded bg-cyan-200/20 px-1.5 py-0.5 text-xs text-cyan-200">Frozen</span>}
+      {!owned.isCapital && !owned.frozen && <MakeCapital matchId={matchId} regionId={owned.regionId} />}
       <dl className="grid grid-cols-[auto_1fr_auto] gap-x-3 gap-y-1 text-sm">
         <Row label="People" value={`${fmt(pop)} / ${fmt(live.e.capacity)}`} rate={perHour(live.rates.population)} />
         <Row label="Food" value={`${fmt(live.e.food)} / ${fmt(live.e.storage.food)}`} rate={perHour(live.rates.food)} warn={live.rates.starving} />
@@ -435,6 +436,39 @@ function ArmyTab({ matchId, owned }: { matchId: string; owned: OwnedRegionView }
   );
 }
 
+/** Move the capital here. Everything that keys off the capital follows: research, overflow caravans, loyalty distance, the bigger storage. */
+function MakeCapital({ matchId, regionId }: { matchId: string; regionId: string }) {
+  const qc = useQueryClient();
+  const [confirm, setConfirm] = useState(false);
+  const m = useMutation({
+    mutationFn: () => api.setCapital(matchId, regionId),
+    onSuccess: () => {
+      setConfirm(false);
+      void qc.invalidateQueries({ queryKey: keys.matchState(matchId) });
+    },
+  });
+  return (
+    <span className="ml-2 inline-flex items-center gap-2 align-middle">
+      {confirm ? (
+        <>
+          <span className="text-xs text-slate-400">Research, overflow caravans and loyalty distance will key off this region, and it gets {balance.economy.capitalStorageMult}x storage.</span>
+          <Button variant="primary" disabled={m.isPending} onClick={() => m.mutate()}>
+            Confirm
+          </Button>
+          <Button variant="ghost" onClick={() => setConfirm(false)}>
+            Cancel
+          </Button>
+        </>
+      ) : (
+        <button className="text-xs text-sky-400 hover:text-sky-200" onClick={() => setConfirm(true)}>
+          make capital
+        </button>
+      )}
+      <ErrorText>{m.error?.message}</ErrorText>
+    </span>
+  );
+}
+
 function QueueList({ matchId, state, regionId, clockOffsetMs }: { matchId: string; state: MatchStateView; regionId: string; clockOffsetMs: number }) {
   const qc = useQueryClient();
   const jobsHere = state.jobs.filter((j) => j.regionId === regionId);
@@ -465,7 +499,7 @@ function QueueList({ matchId, state, regionId, clockOffsetMs }: { matchId: strin
 }
 
 function BuildingTip({ def, level, owned, economy, speed, maxed }: { def: BuildingDef; level: number; owned: OwnedRegionView; economy: RegionEconomy; speed: number; maxed: boolean }) {
-  const { summary, rows } = buildingPreview(def, level, owned.buildings, economy, owned.regionId, speed);
+  const { summary, rows } = buildingPreview(def, level, owned.buildings, economy, owned.regionId, speed, owned.isCapital);
   const current = owned.buildings[def.id] ?? 0;
   return (
     <div>

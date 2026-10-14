@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { balance, regionById, unitById, type MatchStateView, type OwnedRegionView, type TradeRouteView } from "@lastthaw/shared";
+import { balance, regionById, unitById, type MatchStateView, type OwnedRegionView, type TradeRouteView, caravanCarry } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { Button, ErrorText, fmt } from "./ui.js";
 import { Countdown } from "./Countdown.js";
@@ -16,7 +16,7 @@ export function RoutesTab({ matchId, state, owned, clockOffsetMs, allRoutes = fa
   const refresh = () => void qc.invalidateQueries({ queryKey: keys.matchState(matchId) });
   const routes = allRoutes ? state.routes : state.routes.filter((r) => r.fromRegionId === owned.regionId);
   const caravans = owned.units.caravan ?? 0;
-  const perCaravan = unitById.get("caravan")?.carry ?? 500;
+  const perCaravan = caravanCarry(state.me.techs);
   const capital = state.me.capitalRegionId;
 
   // Destinations: my other regions and allies' regions we can see.

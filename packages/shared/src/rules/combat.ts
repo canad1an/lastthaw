@@ -98,9 +98,19 @@ export function resolveCombat(attacker: CombatSide, defender: CombatSide, seed: 
 }
 
 /** Total loot an army can carry home. */
-export function carryCapacity(units: UnitCounts): number {
+/** How much one caravan carries, after the owner's techs. */
+export function caravanCarry(techs?: ReadonlySet<string> | readonly string[]): number {
+  const base = unitById.get("caravan")?.carry ?? 500;
+  if (!techs) return base;
+  const has = techs instanceof Set ? (id: string) => techs.has(id) : (id: string) => (techs as readonly string[]).includes(id);
+  let bonus = 0;
+  for (const [tech, b] of Object.entries(balance.trade.caravanCarryTechs)) if (has(tech)) bonus += b;
+  return Math.round(base * (1 + bonus));
+}
+
+export function carryCapacity(units: UnitCounts, techs?: ReadonlySet<string> | readonly string[]): number {
   let c = 0;
-  for (const [id, n] of Object.entries(units)) c += n * (unitById.get(id)?.carry ?? 0);
+  for (const [id, n] of Object.entries(units)) c += n * (id === "caravan" ? caravanCarry(techs) : (unitById.get(id)?.carry ?? 0));
   return c;
 }
 

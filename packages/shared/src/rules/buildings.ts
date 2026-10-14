@@ -55,9 +55,10 @@ export function effectsOf(buildings: Record<string, number>): RegionEffects {
 }
 
 /** Storage caps for the three base resources given a region's building effects. */
-export function storageCaps(effects: Pick<RegionEffects, "storage" | "foodStorage">): { food: number; wood: number; stone: number } {
+export function storageCaps(effects: Pick<RegionEffects, "storage" | "foodStorage">, capital = false): { food: number; wood: number; stone: number } {
   const base = balance.economy.baseStorage;
-  return { food: base.food * (effects.storage + effects.foodStorage), wood: base.wood * effects.storage, stone: base.stone * effects.storage };
+  const k = capital ? balance.economy.capitalStorageMult : 1;
+  return { food: base.food * (effects.storage + effects.foodStorage) * k, wood: base.wood * effects.storage * k, stone: base.stone * effects.storage * k };
 }
 
 /** Why a building cannot go in this region, or null if it can. Local-resource and coast rules only. */

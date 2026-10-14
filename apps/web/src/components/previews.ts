@@ -22,7 +22,7 @@ const pct = (v: number) => `${Math.round(v * 100)}%`;
  * buildings and live economy are given. Everything is computed with the same
  * rules the server uses, so the numbers are exact.
  */
-export function buildingPreview(def: BuildingDef, level: number, buildings: Record<string, number>, economy: RegionEconomy, regionId: string, speed: number): { summary: string; rows: Delta[] } {
+export function buildingPreview(def: BuildingDef, level: number, buildings: Record<string, number>, economy: RegionEconomy, regionId: string, speed: number, capital = false): { summary: string; rows: Delta[] } {
   const region = regionById(regionId)!;
   const traits = { terrain: region.terrain, resources: region.resources, coastal: region.coastal, river: region.river };
   const before = effectsOf(buildings);
@@ -30,7 +30,7 @@ export function buildingPreview(def: BuildingDef, level: number, buildings: Reco
   const withEffects = (f: typeof before): RegionEconomy => ({
     ...economy,
     capacity: balance.economy.baseCapacity + f.capacity,
-    storage: storageCaps(f),
+    storage: storageCaps(f, capital),
     yieldMult: f.yield,
     extract: f.extract,
     iceFactor: economy.iceFactor,
@@ -46,8 +46,8 @@ export function buildingPreview(def: BuildingDef, level: number, buildings: Reco
   if (e.yield?.wood) rows.push({ label: "Wood", before: perHour(rb.wood), after: perHour(ra.wood), tone: "up" });
   if (e.yield?.stone) rows.push({ label: "Stone", before: perHour(rb.stone), after: perHour(ra.stone), tone: "up" });
   if (e.storage || e.foodStorage) {
-    const cb = storageCaps(before);
-    const ca = storageCaps(after);
+    const cb = storageCaps(before, capital);
+    const ca = storageCaps(after, capital);
     rows.push({ label: "Food storage", before: fmt(cb.food), after: fmt(ca.food), tone: "up" });
     if (e.storage) {
       rows.push({ label: "Wood storage", before: fmt(cb.wood), after: fmt(ca.wood), tone: "up" });
@@ -115,6 +115,8 @@ export function techPreview(def: TechDef): { summary: string; unlocks: string[] 
   for (const u of UNITS) if (u.requires === def.id && !u.hidden) unlocks.push(`${u.name} (unit)`);
   if (def.advancesTo !== undefined) unlocks.push(`advance to the ${["Stone", "Bronze", "Iron", "Classical", "Medieval"][def.advancesTo]} Age: all its buildings, units and techs`);
   if (def.id === balance.travel.seaTech) unlocks.push("armies may cross sea routes");
+  const carry = balance.trade.caravanCarryTechs[def.id];
+  if (carry) unlocks.push(`caravans carry ${Math.round(carry * 100)}% more`);
   const metals = Object.keys(def.cost).filter((k) => k === "copper" || k === "tin" || k === "iron" || k === "horses");
   const note = metals.length ? ` Costs ${metals.join(" and ")}: these come from a Mine or Stables on a region that has them, from raids, or from the market.` : "";
   return { summary: def.description + note, unlocks };

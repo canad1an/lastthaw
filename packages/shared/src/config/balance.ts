@@ -69,6 +69,8 @@ export const balance = {
     frozenDeathPerHour: 0.1,
     /** Storage cap for each base resource in a region with no storage buildings. */
     baseStorage: { food: 1500, wood: 1200, stone: 1000 },
+    /** The capital's storage caps are multiplied by this: it is where surplus from every region ends up. */
+    capitalStorageMult: 3,
     /** Cap for each metal/horse stock per region. */
     specialStorage: 1000,
     /** Settle sub-step in game minutes. Smaller is more accurate and slower. */
@@ -77,9 +79,9 @@ export const balance = {
     settleMaxSteps: 20_000,
   },
   queue: {
-    slotsPerRegion: 3,
+    slotsPerRegion: 10,
     /** Techs a player may have queued at once (one researches at a time). */
-    researchSlots: 3,
+    researchSlots: 10,
   },
   timers: {
     /** Each building level multiplies build time by this. */
@@ -147,10 +149,13 @@ export const balance = {
     maxShare: 0.5,
   },
   trade: {
-    /** Automated caravan routes allowed per origin region. */
-    maxRoutesPerRegion: 5,
     /** When a route finds no caravans at its origin, idle caravans from the nearest other region come over. */
     fetchCaravans: true,
+    /** A region whose stock hits its cap sends this share of the cap to the capital by caravan, automatically. */
+    overflowToCapital: true,
+    overflowShare: 0.25,
+    /** Techs that raise how much each caravan carries (added together: +50% and +50% = 2x). */
+    caravanCarryTechs: { the_wheel: 0.5, engineering: 0.5, scholasticism: 1.0 } as Record<string, number>,
   },
   settle: {
     /** Settlers needed to claim an empty region; all of them become its first workers. */

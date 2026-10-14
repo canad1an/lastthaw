@@ -27,7 +27,7 @@ export async function evacuateRegion(ctx: CommandContext, regionId: string, toRe
   const units = Object.fromEntries(Object.entries(snapshot.units).filter(([, n]) => n > 0));
   const people = Math.floor(snapshot.popWorkers);
   if (people < 1 && Object.keys(units).length === 0) throw httpError(409, "nobody is left to evacuate");
-  const capacity = carryCapacity(units) + people * balance.travel.carryPerPerson;
+  const capacity = carryCapacity(units, ctx.techs) + people * balance.travel.carryPerPerson;
   // Fill the wagons: food first (they must eat on arrival), then wood, stone, metals.
   const special = { ...emptySpecial(), ...(snapshot.special as Record<string, number>) };
   const stock: Array<[string, number]> = [

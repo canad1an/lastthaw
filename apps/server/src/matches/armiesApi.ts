@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { and, eq, isNull } from "drizzle-orm";
-import { balance, colonizeBody, findRoute, sendArmyBody, travelSeconds } from "@lastthaw/shared";
+import { balance, colonizeBody, findRoute, sendArmyBody, travelSeconds, setCapitalBody } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { armies, jobs, matchRegions, matches, playerTechs, players, tradeRoutes } from "../db/schema.js";
 import { matchNow } from "../sim/clock.js";
@@ -8,6 +8,7 @@ import { requireUser } from "../auth/session.js";
 import type { Publisher } from "../realtime/publish.js";
 import { httpError, sendArmy, type CommandContext } from "../sim/commands.js";
 import { disbandUnits, evacuateRegion } from "../sim/evacuate.js";
+import { setCapital } from "../sim/regions.js";
 import { z } from "zod";
 
 export async function armyRoutes(app: FastifyInstance, opts: { db: Db; publisher: Publisher }) {
@@ -95,6 +96,27 @@ export async function armyRoutes(app: FastifyInstance, opts: { db: Db; publisher
     }
     await publisher.toPlayer(matchId, ctx.p.id, "army.sent", { armyId: r.army.id });
     return { ok: true, armyId: r.army.id, arrivesAt: r.army.arrivesAt.toISOString(), routeId };
+  });
+
+  /** Move the capital to another region you own. Research is paid from here, overflow caravans deliver here, loyalty is measured from here. */
+  app.post("/api/matches/:id/capital", async (req) => {
+    const user = requireUser(req);
+    const matchId = (req.params as { id: string }).id;
+    const { regionId } = setCapitalBody.parse(req.body);
+    const ctx = await loadContext(matchId, user.id);
+    await db.transaction(async (tx) => {
+      const [row] = await tx
+        .select({ owner: matchRegions.ownerPlayerId, frozenAt: matchRegions.frozenAt })
+        .from(matchRegions)
+        .where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, regionId)))
+        .for("update");
+      if (row?.owner !== ctx.p.id) throw httpError(403, "not your region");
+      if (row.frozenAt) throw httpError(409, "a frozen region cannot be the capital");
+      if (ctx.p.capitalRegionId === regionId) throw httpError(409, "this is already your capital");
+      await setCapital(tx, matchId, ctx.p.id, regionId);
+    });
+    await publisher.toPlayer(matchId, ctx.p.id, "region.updated", { regionId });
+    return { ok: true, capitalRegionId: regionId };
   });
 
   /** Disband stationed units: they rejoin the region's workers. */

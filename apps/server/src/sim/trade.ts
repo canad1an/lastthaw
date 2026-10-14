@@ -1,6 +1,6 @@
 import { and, eq, lte, sql } from "drizzle-orm";
 import type pino from "pino";
-import { balance, carryCapacity, distanceKm, regionById, unitById } from "@lastthaw/shared";
+import { balance, caravanCarry, carryCapacity, distanceKm, regionById } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { armies, matchRegions, matches, playerTechs, players, tradeRoutes } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
@@ -95,8 +95,9 @@ export async function dispatchRoute(db: Db, m: MatchRow, p: PlayerRow, route: Tr
     }
   }
   const home = origin.units.caravan ?? 0;
-  if (home <= 0) return fetchCaravans(db, m, p, route, now);
-  const perCaravan = unitById.get("caravan")?.carry ?? 500;
+  if (home <= 0) return fetchCaravans(db, m, p, route.fromRegionId, route.caravans, now);
+  const ctx = await contextFor(db, m, p);
+  const perCaravan = caravanCarry(ctx.techs);
   const n = Math.min(route.caravans, home);
   const capacity = n * perCaravan;
 
@@ -124,9 +125,8 @@ export async function dispatchRoute(db: Db, m: MatchRow, p: PlayerRow, route: Tr
     total = Object.values(cargo).reduce((a, b) => a + b, 0);
   }
   const caravans = Math.max(1, Math.min(n, Math.ceil(total / perCaravan)));
-  if (carryCapacity({ caravan: caravans }) < total) return "caravans cannot carry that much";
+  if (carryCapacity({ caravan: caravans }, ctx.techs) < total) return "caravans cannot carry that much";
 
-  const ctx = await contextFor(db, m, p);
   await sendArmy(ctx, route.fromRegionId, { mission: "transport", targetRegionId: route.toRegionId, units: { caravan: caravans }, people: 0, cargo });
   const desc = Object.entries(cargo)
     .map(([k, v]) => `${v} ${k}`)
@@ -155,12 +155,12 @@ async function contextFor(db: Db, m: MatchRow, p: PlayerRow): Promise<CommandCon
  * any route, so whichever route is due first gets the nearest idle ones.
  * Only one relief convoy is on the road to an origin at a time.
  */
-async function fetchCaravans(db: Db, m: MatchRow, p: PlayerRow, route: TradeRouteRow, now: Date): Promise<string> {
+async function fetchCaravans(db: Db, m: MatchRow, p: PlayerRow, fromRegionId: string, wanted: number, now: Date): Promise<string> {
   if (!balance.trade.fetchCaravans) return "no caravans at home (they may be on the road)";
   const coming = await db
     .select({ id: armies.id, units: armies.units, origin: armies.originRegionId })
     .from(armies)
-    .where(and(eq(armies.matchId, m.id), eq(armies.playerId, p.id), eq(armies.mission, "move"), eq(armies.status, "outbound"), eq(armies.targetRegionId, route.fromRegionId)));
+    .where(and(eq(armies.matchId, m.id), eq(armies.playerId, p.id), eq(armies.mission, "move"), eq(armies.status, "outbound"), eq(armies.targetRegionId, fromRegionId)));
   const relief = coming.find((a) => (a.units.caravan ?? 0) > 0);
   if (relief) return `no caravans at home; ${relief.units.caravan} coming from ${regionNameOf(relief.origin)}`;
   const mine = await db
@@ -170,17 +170,84 @@ async function fetchCaravans(db: Db, m: MatchRow, p: PlayerRow, route: TradeRout
   // First come, first served: any caravan standing idle anywhere is fair game.
   const spareOf = (r: { units: Record<string, number> }) => r.units.caravan ?? 0;
   const candidates = mine
-    .filter((r) => r.regionId !== route.fromRegionId && !r.frozenAt && spareOf(r) > 0)
-    .sort((a, b) => distanceKm(a.regionId, route.fromRegionId) - distanceKm(b.regionId, route.fromRegionId));
+    .filter((r) => r.regionId !== fromRegionId && !r.frozenAt && spareOf(r) > 0)
+    .sort((a, b) => distanceKm(a.regionId, fromRegionId) - distanceKm(b.regionId, fromRegionId));
   const source = candidates[0];
   if (!source) return "no caravans at home, and none idle elsewhere";
-  const n = Math.min(route.caravans, spareOf(source));
+  const n = Math.min(wanted, spareOf(source));
   const ctx = await contextFor(db, m, p);
-  const r = await sendArmy(ctx, source.regionId, { mission: "move", targetRegionId: route.fromRegionId, units: { caravan: n }, people: 0, cargo: {} });
+  const r = await sendArmy(ctx, source.regionId, { mission: "move", targetRegionId: fromRegionId, units: { caravan: n }, people: 0, cargo: {} });
   const hours = ((r.army.arrivesAt.getTime() - now.getTime()) / 3_600_000) * m.speed;
   return `no caravans at home; ${n} coming from ${regionNameOf(source.regionId)}, about ${hours < 1 ? `${Math.max(1, Math.round(hours * 60))} min` : `${hours.toFixed(1)} h`}`;
 }
 
 function regionNameOf(id: string): string {
   return regionById(id)?.name ?? id;
+}
+
+/**
+ * Overflow to the capital: a region whose food, wood or stone has reached its
+ * storage cap sends a quarter of that cap to the owner's capital by caravan.
+ * One overflow convoy per region at a time; idle caravans are fetched from
+ * elsewhere when the region has none.
+ */
+export async function runOverflow(db: Db, publisher: Publisher, log: pino.Logger): Promise<number> {
+  if (!balance.trade.overflowToCapital) return 0;
+  const running = await db.select().from(matches).where(eq(matches.status, "running"));
+  let sent = 0;
+  for (const m of running) {
+    const now = matchNow(m);
+    const ps = await db.select().from(players).where(and(eq(players.matchId, m.id), sql`${players.capitalRegionId} is not null`, sql`${players.eliminatedAt} is null`));
+    const rows = await db
+      .select()
+      .from(matchRegions)
+      .where(and(eq(matchRegions.matchId, m.id), sql`${matchRegions.ownerPlayerId} is not null`, eq(matchRegions.isCapital, false), sql`${matchRegions.frozenAt} is null`));
+    const outbound = await db
+      .select({ origin: armies.originRegionId })
+      .from(armies)
+      .where(and(eq(armies.matchId, m.id), eq(armies.mission, "transport"), eq(armies.status, "outbound")));
+    const busy = new Set(outbound.map((a) => a.origin));
+    for (const p of ps) {
+      const capital = p.capitalRegionId!;
+      const capRow = rows.find((r) => r.regionId === capital);
+      // The capital row is excluded above (isCapital), so look it up directly to make sure it is still theirs and thawed.
+      const [cap] = capRow ? [capRow] : await db.select().from(matchRegions).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, capital))).limit(1);
+      if (!cap || cap.ownerPlayerId !== p.id || cap.frozenAt) continue;
+      let ctx: CommandContext | null = null;
+      for (const row of rows) {
+        if (row.ownerPlayerId !== p.id || busy.has(row.regionId)) continue;
+        const { economy } = projectRegion(row, now, m.speed);
+        const cargo: Record<string, number> = {};
+        for (const res of ["food", "wood", "stone"] as const) {
+          if (economy[res] >= economy.storage[res] * 0.98) cargo[res] = Math.floor(economy.storage[res] * balance.trade.overflowShare);
+        }
+        const total = Object.values(cargo).reduce((a, b) => a + b, 0);
+        if (total < 1) continue;
+        ctx ??= await contextFor(db, m, p);
+        const per = caravanCarry(ctx.techs);
+        const need = Math.ceil(total / per);
+        const home = row.units.caravan ?? 0;
+        try {
+          if (home <= 0) {
+            const r = await fetchCaravans(db, m, p, row.regionId, need, now);
+            if (r.startsWith("no caravans at home;")) busy.add(row.regionId);
+            continue;
+          }
+          const n = Math.min(home, need);
+          if (n < need) {
+            const f = (n * per) / total;
+            for (const k of Object.keys(cargo)) cargo[k] = Math.floor(cargo[k]! * f);
+          }
+          await sendArmy(ctx, row.regionId, { mission: "transport", targetRegionId: capital, units: { caravan: n }, people: 0, cargo });
+          busy.add(row.regionId);
+          sent += 1;
+          await publisher.toPlayer(m.id, p.id, "army.sent", { overflowFrom: row.regionId });
+        } catch (err) {
+          const refusal = typeof (err as { statusCode?: number }).statusCode === "number" && (err as { statusCode: number }).statusCode < 500;
+          if (!refusal) log.warn({ err, regionId: row.regionId }, "overflow dispatch failed");
+        }
+      }
+    }
+  }
+  return sent;
 }

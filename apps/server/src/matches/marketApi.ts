@@ -15,7 +15,7 @@ type OrderRow = typeof marketOrders.$inferSelect;
 
 /** Storage cap for one resource in a region. */
 function capFor(row: MatchRegionRow, res: TradeResource): number {
-  if (res === "food" || res === "wood" || res === "stone") return storageCaps(effectsOf(row.buildings))[res];
+  if (res === "food" || res === "wood" || res === "stone") return storageCaps(effectsOf(row.buildings), row.isCapital)[res];
   return balance.economy.specialStorage;
 }
 

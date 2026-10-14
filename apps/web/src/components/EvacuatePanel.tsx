@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { balance, carryCapacity, distanceKm, freezeDayForLatitude, iceDaysFor, regionById, type MatchStateView, type OwnedRegionView } from "@lastthaw/shared";
+import { balance, carryCapacity, distanceKm, freezeDayForLatitude, iceDaysFor, regionById, type MatchStateView, type OwnedRegionView, caravanCarry } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { Button, ErrorText, fmt } from "./ui.js";
 
@@ -31,7 +31,7 @@ export function EvacuatePanel({ matchId, state, owned, matchDay }: { matchId: st
   const people = Math.floor(owned.popWorkers + owned.popOccupiers);
   const units = Object.fromEntries(Object.entries(owned.units).filter(([, n]) => n > 0));
   const unitCount = Object.values(units).reduce((a, b) => a + b, 0);
-  const capacity = carryCapacity(units) + people * balance.travel.carryPerPerson;
+  const capacity = carryCapacity(units, state.me.techs) + people * balance.travel.carryPerPerson;
   const stock = owned.food + owned.wood + owned.stone + Object.values(owned.special).reduce((a, b) => a + b, 0);
 
   const m = useMutation({
@@ -80,7 +80,7 @@ export function EvacuatePanel({ matchId, state, owned, matchDay }: { matchId: st
                 </select>
               </label>
               <p className="text-xs text-slate-400">
-                Everyone leaves: {fmt(people)} people and {unitCount} units, carrying up to {fmt(capacity)} of the {fmt(stock)} in store (food first). Caravans carry 500 each, people {balance.travel.carryPerPerson} each; train caravans first if you want to save more. The region stays yours but empty.
+                Everyone leaves: {fmt(people)} people and {unitCount} units, carrying up to {fmt(capacity)} of the {fmt(stock)} in store (food first). Caravans carry {caravanCarry(state.me.techs)} each, people {balance.travel.carryPerPerson} each; train caravans first if you want to save more. The region stays yours but empty.
               </p>
               <Button variant="danger" disabled={m.isPending || !dest} onClick={() => m.mutate()}>
                 Evacuate to {dest?.name}

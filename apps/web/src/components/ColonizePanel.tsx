@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { balance, distanceKm, formatCountdown, regionById, unitById, type MatchStateView } from "@lastthaw/shared";
+import { balance, distanceKm, formatCountdown, regionById, unitById, type MatchStateView, caravanCarry } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { Button, ErrorText } from "./ui.js";
 
@@ -52,7 +52,7 @@ function SettlingPanel({ matchId, state, regionId, armyOrigin, arrivesAt }: { ma
   }, [sources, sourceId]);
   const source = sources.find((s) => s.regionId === sourceId);
   const caravansHome = source?.units.caravan ?? 0;
-  const perCaravan = unitById.get("caravan")?.carry ?? 500;
+  const perCaravan = caravanCarry(state.me.techs);
   const [prefs] = useState(loadStockPrefs);
   const [stock, setStock] = useState<Record<string, number>>(prefs.stock);
   const [caravans, setCaravans] = useState(prefs.caravans);
@@ -152,7 +152,7 @@ function ColonizeForm({ matchId, state, regionId }: { matchId: string; state: Ma
     enabled: !!sourceId,
   });
   const caravansHome = source?.units.caravan ?? 0;
-  const perCaravan = unitById.get("caravan")?.carry ?? 500;
+  const perCaravan = caravanCarry(state.me.techs);
   const [prefs] = useState(loadStockPrefs);
   const [stockUp, setStockUp] = useState(prefs.stockUp);
   const [stock, setStock] = useState<Record<string, number>>(prefs.stock);

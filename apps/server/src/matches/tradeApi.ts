@@ -58,11 +58,6 @@ export async function tradeRouteRoutes(app: FastifyInstance, opts: { db: Db; pub
       friendly = settling.length > 0;
     }
     if (!friendly) throw httpError(400, "the destination must be yours, an ally's, or a region your settlers are heading to");
-    const [count] = await db
-      .select({ n: sql<number>`count(*)::int` })
-      .from(tradeRoutes)
-      .where(and(eq(tradeRoutes.matchId, matchId), eq(tradeRoutes.fromRegionId, regionId)));
-    if ((count?.n ?? 0) >= balance.trade.maxRoutesPerRegion) throw httpError(409, `at most ${balance.trade.maxRoutesPerRegion} routes per region`);
     if (!target && body.mode === "share" && body.share <= 0) throw httpError(400, "share must be above 0%");
     if (!target && body.mode === "fixed" && !Object.values(body.load).some((v) => v > 0)) throw httpError(400, "choose something to carry");
     const [r] = await db

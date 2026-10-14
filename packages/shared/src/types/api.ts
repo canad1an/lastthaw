@@ -69,6 +69,7 @@ export const createMatchBody = z.object({
 });
 
 export const pickStartBody = z.object({ regionId: z.string() });
+export const setCapitalBody = z.object({ regionId: z.string() });
 export const assignBody = z.object({
   food: z.number().min(0).max(1),
   wood: z.number().min(0).max(1),

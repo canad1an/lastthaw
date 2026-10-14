@@ -78,6 +78,7 @@ export const api = {
     request<{ ok: true; armyId: string; arrivesAt: string; people: number; units: Record<string, number>; cargo: Record<string, number>; leftBehind: number }>("POST", `/api/matches/${id}/regions/${regionId}/evacuate`, { toRegionId }),
   colonize: (id: string, regionId: string, body: { targetRegionId: string; settlers: number; stock?: Record<string, number>; caravans?: number }) =>
     request<{ ok: true; armyId: string; arrivesAt: string; routeId: string | null }>("POST", `/api/matches/${id}/regions/${regionId}/colonize`, body),
+  setCapital: (id: string, regionId: string) => request<{ ok: true; capitalRegionId: string }>("POST", `/api/matches/${id}/capital`, { regionId }),
   disband: (id: string, regionId: string, units: Record<string, number>) =>
     request<{ ok: true; disbanded: number }>("POST", `/api/matches/${id}/regions/${regionId}/disband`, { units }),
   recallArmy: (id: string, armyId: string) => request<{ ok: true; returnsAt: string }>("POST", `/api/matches/${id}/armies/${armyId}/recall`, {}),

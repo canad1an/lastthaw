@@ -193,6 +193,8 @@ export const matchRegions = pgTable(
     frozenAt: timestamp("frozen_at", { withTimezone: true }),
     /** Production multiplier from the ice taper (1 = untouched). Updated by the daily ice step. */
     iceFactor: doublePrecision("ice_factor").notNull().default(1),
+    /** True for the owner's capital: bigger storage, destination of overflow caravans. Kept in step with players.capitalRegionId. */
+    isCapital: boolean("is_capital").notNull().default(false),
     /** Match-clock time the amounts above were last settled to. */
     settledAt: timestamp("settled_at", { withTimezone: true }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

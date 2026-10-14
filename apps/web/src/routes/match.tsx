@@ -142,7 +142,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
   const [forecast, setForecast] = useState(false);
   const matchDay = Math.min(balance.match.lengthDays, Math.max(0, ((now + clockOffsetMs - Date.parse(state.match.startsAt)) / 86400_000) * state.match.speed));
   const ice = useMemo(() => ({ latitude: iceLatitudeOnDay(matchDay), forecast, day: matchDay }), [matchDay, forecast]);
-  const markers = useMemo(() => armyMarkers(state.armies, state.incoming, now + clockOffsetMs, formatCountdown), [state.armies, state.incoming, now, clockOffsetMs]);
+  const markers = useMemo(() => armyMarkers(state.armies, state.incoming, now + clockOffsetMs, formatCountdown, state.me.techs), [state.armies, state.incoming, now, clockOffsetMs]);
   const finished = state.match.status === "finished";
   const eliminated = state.owned.length === 0 && !finished;
 

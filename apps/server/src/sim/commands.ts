@@ -5,30 +5,7 @@
  * pays costs up front and returns what it created. Errors carry statusCode.
  */
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
-import {
-  armySpeed,
-  balance,
-  buildingBlockedBy,
-  carryCapacity,
-  buildingById,
-  buildingCost,
-  buildingSeconds,
-  canAfford,
-  effectsOf,
-  findRoute,
-  missingFor,
-  realSeconds,
-  regionById,
-  techById,
-  techCost,
-  techSeconds,
-  trainSeconds,
-  travelSeconds,
-  unitById,
-  unitCost,
-  type Cost,
-  type MissionKind,
-} from "@lastthaw/shared";
+import { armySpeed, balance, buildingBlockedBy, carryCapacity, buildingById, buildingCost, buildingSeconds, canAfford, effectsOf, findRoute, missingFor, realSeconds, regionById, techById, techCost, techSeconds, trainSeconds, travelSeconds, unitById, unitCost, type Cost, type MissionKind, caravanCarry } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { armies, jobs, matchRegions, players } from "../db/schema.js";
 import { matchDayAt, matchNow } from "./clock.js";
@@ -223,8 +200,8 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
   if (body.mission !== "settle" && (units.settler ?? 0) > 0) throw httpError(400, "settlers only go on settle missions");
   const goods = Object.entries(body.cargo).reduce((a, [, v]) => a + v, 0);
   if (goods > 0) {
-    const cap = carryCapacity(units) + (HOSTILE.has(body.mission) ? 0 : body.people * balance.travel.carryPerPerson);
-    if (goods > cap) throw httpError(400, `not enough carrying capacity: these units and people carry ${cap}, you are sending ${Math.round(goods)}. Caravans carry 500 each.`);
+    const cap = carryCapacity(units, techs) + (HOSTILE.has(body.mission) ? 0 : body.people * balance.travel.carryPerPerson);
+    if (goods > cap) throw httpError(400, `not enough carrying capacity: these units and people carry ${cap}, you are sending ${Math.round(goods)}. Caravans carry ${caravanCarry(techs)} each.`);
   }
   const route = findRoute(regionId, body.targetRegionId, techs.has(balance.travel.seaTech));
   if (!route) throw httpError(400, techs.has(balance.travel.seaTech) ? "no route to that region" : "no land route; research Shipbuilding to cross the sea");

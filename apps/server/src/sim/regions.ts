@@ -16,7 +16,7 @@ import {
   type RegionTraits,
 } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
-import { matchRegions } from "../db/schema.js";
+import { matchRegions, players } from "../db/schema.js";
 import { elapsedSeconds } from "./clock.js";
 
 export type MatchRegionRow = typeof matchRegions.$inferSelect;
@@ -39,7 +39,7 @@ export function economyOf(row: MatchRegionRow, effects: RegionEffects = effectsO
     stone: row.stone,
     special,
     assignment: row.assignment,
-    storage: storageCaps(effects),
+    storage: storageCaps(effects, row.isCapital),
     capacity: balance.economy.baseCapacity + effects.capacity,
     yieldMult: effects.yield,
     extract: effects.extract,
@@ -130,11 +130,19 @@ export async function foundCapital(tx: Tx, matchId: string, playerId: string, re
       ...economyColumns(e),
       assignment: e.assignment,
       settledAt: at,
+      isCapital: true,
     })
     .onConflictDoUpdate({
       target: [matchRegions.matchId, matchRegions.regionId],
-      set: { ownerPlayerId: playerId, settledAt: at },
+      set: { ownerPlayerId: playerId, settledAt: at, isCapital: true },
     });
+}
+
+/** Point a player's capital at `regionId` (which they must own) and keep the region flags in step. */
+export async function setCapital(tx: Tx, matchId: string, playerId: string, regionId: string): Promise<void> {
+  await tx.update(matchRegions).set({ isCapital: false }).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.ownerPlayerId, playerId), eq(matchRegions.isCapital, true)));
+  await tx.update(matchRegions).set({ isCapital: true }).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, regionId)));
+  await tx.update(players).set({ capitalRegionId: regionId }).where(eq(players.id, playerId));
 }
 
 export async function countOwnedRegions(db: Db | Tx, matchId: string): Promise<Map<string, number>> {
