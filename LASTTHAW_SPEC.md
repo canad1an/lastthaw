@@ -13,9 +13,9 @@ This is the design brief for a new browser-based multiplayer strategy game. Plea
 
 ## The pitch
 
-An OGame-style browser strategy game set on Earth. Every player starts as five families of hunter-gatherers and grows into an empire over a 30-day match. An ice age creeps in from the poles during the month, shrinking the livable land and forcing players into conflict. Matches have a winner and a hard end date.
+A real-time browser strategy game set on Earth. Every player starts as five families of hunter-gatherers and grows into an empire over a 30-day match. An ice age creeps in from the poles during the month, shrinking the livable land and forcing players into conflict. Matches have a winner and a hard end date.
 
-Inspirations: OGame (build timers, auto-resolved combat, fleet travel time), Travian (rounds with a win condition), Supremacy 1914 (real-world map, AI fills empty slots).
+Design pillars: build timers and auto-resolved combat with real travel times, fixed-length rounds with a win condition, a real-world map with AI filling empty slots.
 
 ## Match structure
 
@@ -57,7 +57,7 @@ Five ages for version 1: Stone, Bronze, Iron, Classical, Medieval.
 
 ## Movement and combat
 
-- Players send armies to a region. Travel time depends on distance, terrain and unit speed, like OGame fleet flight times.
+- Players send armies to a region. Travel time depends on distance, terrain and unit speed.
 - Combat resolves automatically when an army arrives. The player doesn't control the battle.
 - Every battle produces a battle report for both sides.
 - Mission types for version 1: attack/raid, conquer, reinforce an ally, move troops, send resources, scout.
