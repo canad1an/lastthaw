@@ -22,6 +22,13 @@
       "when": 1791947475906,
       "tag": "0002_common_sleeper",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791948060868,
+      "tag": "0003_sudden_groot",
+      "breakpoints": true
     }
   ]
 }

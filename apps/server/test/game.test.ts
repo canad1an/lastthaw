@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { balance, matchStateView } from "@lastthaw/shared";
+import { balance, matchStateView, regionById } from "@lastthaw/shared";
 import { buildApp } from "../src/api/app.js";
 import { createDb, type Db } from "../src/db/client.js";
 import { matches, users } from "../src/db/schema.js";
@@ -180,6 +180,57 @@ describe("milestone 1 flow", () => {
     const woodAfter = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json()).owned[0]!.wood;
     expect(woodAfter).toBeGreaterThan(woodBefore - 70); // only huts lvl 2 (60 wood) still paid, give or take production
     void b2;
+
+    // Milestone 3/4: Alice conquers an empty neighbouring region with her warriors and five settlers.
+    const runJobs = async () => {
+      const redis = createRedis();
+      await runDueJobs(db, new Publisher(redis), logger);
+      await redis.quit().catch(() => {});
+    };
+    const skipTo = async (iso: string) => {
+      const cur = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json()).match.now;
+      const secs = Math.ceil((Date.parse(iso) - Date.parse(cur)) / 1000) + 5;
+      if (secs > 0) expect((await a.call("POST", `/api/matches/${matchId}/dev/time-skip`, { seconds: secs })).statusCode).toBe(200);
+      await runJobs();
+    };
+    const neighbour = regionById(aPick)!.neighbors[0]!;
+    const conquerRes = await a.call("POST", `/api/matches/${matchId}/regions/${aPick}/send`, { mission: "conquer", targetRegionId: neighbour, units: { warrior: 3 }, people: 5, cargo: {} });
+    expect(conquerRes.statusCode, JSON.stringify(conquerRes.json())).toBe(200);
+    state = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json());
+    expect(state.armies).toHaveLength(1);
+    expect(state.owned[0]!.units.warrior ?? 0).toBe(0);
+    await skipTo(state.armies[0]!.arrivesAt);
+    state = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json());
+    expect(state.owned.map((o) => o.regionId).sort()).toEqual([aPick, neighbour].sort());
+    const taken = state.owned.find((o) => o.regionId === neighbour)!;
+    expect(taken.popOccupiers).toBeCloseTo(5, 0);
+    expect(taken.units.warrior).toBe(3);
+    expect(state.armies).toHaveLength(0);
+    const aliceInbox = (await a.call("GET", `/api/matches/${matchId}/messages`)).json() as { messages: { kind: string; payload: { report?: { attackerWon: boolean; conquered: boolean } } }[] };
+    const battleMsg = aliceInbox.messages.find((x) => x.kind === "battle");
+    expect(battleMsg?.payload.report).toMatchObject({ attackerWon: true, conquered: true });
+
+    // Raid Bob if he is reachable by land from the new region; the warning must show on his side.
+    const bobCapital = bState.owned[0]!.regionId;
+    const routeRes = await a.call("GET", `/api/matches/${matchId}/route?from=${neighbour}&to=${bobCapital}&speed=5`);
+    if (routeRes.statusCode === 200) {
+      const sendRes = await a.call("POST", `/api/matches/${matchId}/regions/${neighbour}/send`, { mission: "raid", targetRegionId: bobCapital, units: { warrior: 3 }, people: 0, cargo: {} });
+      expect(sendRes.statusCode, JSON.stringify(sendRes.json())).toBe(200);
+      const bobView = matchStateView.parse((await b.call("GET", `/api/matches/${matchId}/state`)).json());
+      expect(bobView.incoming).toHaveLength(1);
+      expect(bobView.incoming[0]!.fromPlayerName).toBe(alice.displayName);
+      state = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json());
+      await skipTo(state.armies[0]!.arrivesAt);
+      const bobInbox = (await b.call("GET", `/api/matches/${matchId}/messages`)).json() as { messages: { kind: string }[] };
+      expect(bobInbox.messages.some((x) => x.kind === "battle")).toBe(true);
+      state = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json());
+      if (state.armies[0]) {
+        expect(state.armies[0].status).toBe("returning");
+        await skipTo(state.armies[0].returnsAt!);
+        state = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json());
+        expect(state.armies).toHaveLength(0);
+      }
+    }
 
     // Skip past the end of the match; the worker finishes it.
     const seconds = Math.ceil((balance.match.lengthDays * 86400) / 10) + 60;

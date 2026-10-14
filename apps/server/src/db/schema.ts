@@ -187,6 +187,52 @@ export const jobs = pgTable(
   ],
 );
 
+export const missionKind = pgEnum("mission_kind", ["raid", "conquer", "reinforce", "move", "transport", "scout"]);
+export const armyStatus = pgEnum("army_status", ["outbound", "returning", "done"]);
+
+export const armies = pgTable(
+  "armies",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    matchId: uuid("match_id")
+      .notNull()
+      .references(() => matches.id, { onDelete: "cascade" }),
+    playerId: uuid("player_id")
+      .notNull()
+      .references(() => players.id, { onDelete: "cascade" }),
+    mission: missionKind("mission").notNull(),
+    originRegionId: text("origin_region_id").notNull(),
+    targetRegionId: text("target_region_id").notNull(),
+    units: jsonb("units").$type<Record<string, number>>().notNull().default({}),
+    /** Carried resources and people: { food, wood, stone, copper, tin, iron, horses, people }. */
+    cargo: jsonb("cargo").$type<Record<string, number>>().notNull().default({}),
+    path: jsonb("path").$type<string[]>().notNull().default([]),
+    status: armyStatus("status").notNull().default("outbound"),
+    departsAt: timestamp("departs_at", { withTimezone: true }).notNull(),
+    arrivesAt: timestamp("arrives_at", { withTimezone: true }).notNull(),
+    returnsAt: timestamp("returns_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("armies_match_status_idx").on(t.matchId, t.status), index("armies_target_idx").on(t.matchId, t.targetRegionId)],
+);
+
+export const battles = pgTable(
+  "battles",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    matchId: uuid("match_id")
+      .notNull()
+      .references(() => matches.id, { onDelete: "cascade" }),
+    regionId: text("region_id").notNull(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }).notNull(),
+    seed: text("seed").notNull(),
+    attackerPlayerId: uuid("attacker_player_id"),
+    defenderPlayerId: uuid("defender_player_id"),
+    report: jsonb("report").notNull(),
+  },
+  (t) => [index("battles_match_idx").on(t.matchId, t.resolvedAt)],
+);
+
 export const playerTechs = pgTable(
   "player_techs",
   {
@@ -200,6 +246,121 @@ export const playerTechs = pgTable(
     completedAt: timestamp("completed_at", { withTimezone: true }).notNull(),
   },
   (t) => [primaryKey({ columns: [t.playerId, t.techId] })],
+);
+
+// ---------------------------------------------------------------------------
+// Social: alliances, chat, market
+// ---------------------------------------------------------------------------
+
+export const alliances = pgTable(
+  "alliances",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    matchId: uuid("match_id")
+      .notNull()
+      .references(() => matches.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    tag: text("tag").notNull(),
+    leaderPlayerId: uuid("leader_player_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("alliances_match_tag_idx").on(t.matchId, t.tag)],
+);
+
+export const allianceMembers = pgTable(
+  "alliance_members",
+  {
+    matchId: uuid("match_id")
+      .notNull()
+      .references(() => matches.id, { onDelete: "cascade" }),
+    allianceId: uuid("alliance_id")
+      .notNull()
+      .references(() => alliances.id, { onDelete: "cascade" }),
+    playerId: uuid("player_id")
+      .notNull()
+      .references(() => players.id, { onDelete: "cascade" }),
+    role: text("role").notNull().default("member"),
+    joinedAt: timestamp("joined_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.playerId] }), index("alliance_members_alliance_idx").on(t.allianceId)],
+);
+
+export const allianceInvites = pgTable(
+  "alliance_invites",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    matchId: uuid("match_id")
+      .notNull()
+      .references(() => matches.id, { onDelete: "cascade" }),
+    allianceId: uuid("alliance_id")
+      .notNull()
+      .references(() => alliances.id, { onDelete: "cascade" }),
+    playerId: uuid("player_id")
+      .notNull()
+      .references(() => players.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("alliance_invites_unique_idx").on(t.allianceId, t.playerId)],
+);
+
+export const chatMessages = pgTable(
+  "chat_messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    matchId: uuid("match_id")
+      .notNull()
+      .references(() => matches.id, { onDelete: "cascade" }),
+    /** "global" or "alliance:<id>". */
+    channel: text("channel").notNull(),
+    playerId: uuid("player_id")
+      .notNull()
+      .references(() => players.id, { onDelete: "cascade" }),
+    playerName: text("player_name").notNull(),
+    body: text("body").notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("chat_channel_idx").on(t.matchId, t.channel, t.sentAt)],
+);
+
+export const marketOrders = pgTable(
+  "market_orders",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    matchId: uuid("match_id")
+      .notNull()
+      .references(() => matches.id, { onDelete: "cascade" }),
+    playerId: uuid("player_id")
+      .notNull()
+      .references(() => players.id, { onDelete: "cascade" }),
+    regionId: text("region_id").notNull(),
+    /** What the seller gives and what they want in return. */
+    offerResource: text("offer_resource").notNull(),
+    offerAmount: doublePrecision("offer_amount").notNull(),
+    askResource: text("ask_resource").notNull(),
+    askAmount: doublePrecision("ask_amount").notNull(),
+    status: text("status").notNull().default("open"),
+    filledByPlayerId: uuid("filled_by_player_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    filledAt: timestamp("filled_at", { withTimezone: true }),
+  },
+  (t) => [index("market_orders_match_idx").on(t.matchId, t.status)],
+);
+
+export const transfers = pgTable(
+  "transfers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    matchId: uuid("match_id")
+      .notNull()
+      .references(() => matches.id, { onDelete: "cascade" }),
+    fromPlayerId: uuid("from_player_id"),
+    toPlayerId: uuid("to_player_id"),
+    resource: text("resource").notNull(),
+    amount: doublePrecision("amount").notNull(),
+    via: text("via").notNull(),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("transfers_match_idx").on(t.matchId, t.at)],
 );
 
 // ---------------------------------------------------------------------------

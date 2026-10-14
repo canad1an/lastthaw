@@ -85,6 +85,64 @@ export const balance = {
     /** Full refund when cancelling a job that has not started; this fraction once it has. */
     cancelRefundStarted: 0.5,
   },
+  travel: {
+    /** Unit speed (km per game hour in the tables) is multiplied by this to get map km per hour. */
+    speedScale: 12,
+    /** Minimum trip in game seconds, so adjacent regions still take a moment. */
+    minSeconds: 600,
+    /** Terrain of the region being entered multiplies the leg's distance. */
+    terrain: {
+      plains: 1.0,
+      forest: 1.15,
+      hills: 1.25,
+      mountains: 1.7,
+      desert: 1.3,
+      tundra: 1.4,
+      wetland: 1.35,
+    } as Record<string, number>,
+    /** Entering a coastal or river region is faster. */
+    waterwayFactor: 0.85,
+    /** Sea legs are fast once boats exist. */
+    seaFactor: 0.7,
+    /** Tech that allows armies to use sea routes. */
+    seaTech: "shipbuilding",
+  },
+  combat: {
+    maxRounds: 6,
+    /** Hit points per point of (attack + defense). */
+    hpPerStat: 2,
+    /** Damage dealt per point of strength per round. */
+    damagePerStrength: 1.0,
+    /** +-variance applied to each side's strength per round (0.3 = +-15 %). */
+    variance: 0.3,
+    /** Defensive bonus for terrain of the defended region. */
+    terrainDefense: { hills: 0.15, mountains: 0.35, forest: 0.1, wetland: 0.1 } as Record<string, number>,
+    /** Unarmed population defends a little: this many warrior-equivalents per 10 people. */
+    militiaPerTenPeople: 0.5,
+    /** Soldiers lost while a raid is repelled do not take the loot; winners take up to this share of unprotected stock. */
+    raidShare: 0.5,
+  },
+  conquest: {
+    /** People an army must carry to occupy a conquered region. */
+    occupiersRequired: 5,
+    /** Supplies the occupiers bring with them so they do not starve on day one. */
+    seedFood: 80,
+    /** Loyalty of a freshly conquered region (0..1). Rebellion risk below `rebelBelow`. */
+    startingLoyalty: 0.4,
+    rebelBelow: 0.3,
+    /** Loyalty drifts toward this target per game hour by `loyaltyRate`. */
+    loyaltyRate: 0.01,
+    /** Target loyalty falls with distance from the capital: 1 - km / distanceScaleKm, floored at 0. */
+    distanceScaleKm: 6000,
+    /** Chance per tick (balance.tick.minutes) that a disloyal region rebels. */
+    rebelChancePerTick: 0.08,
+    /** Occupiers needed per 100 people in a region to keep it quiet. */
+    occupiersPerHundred: 10,
+  },
+  tick: {
+    /** Match tick cadence in real minutes (loyalty, AI, score, win check). */
+    minutes: 5,
+  },
   win: {
     regionShareForEarlyWin: 0.6,
     holdHours: 48,

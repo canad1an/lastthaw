@@ -7,6 +7,7 @@ import { useMatchRealtime } from "../api/realtime.js";
 import { RegionPanel, ageName } from "../components/RegionPanel.js";
 import { ResearchPanel } from "../components/ResearchPanel.js";
 import { Messages } from "../components/Messages.js";
+import { IncomingWarnings } from "../components/ArmyPanel.js";
 import { Button, Card, ErrorText, fmt } from "../components/ui.js";
 import { useNow } from "../hooks/useNow.js";
 import { WorldMap, terrainFill, type RegionPaint } from "../map/WorldMap.js";
@@ -115,6 +116,19 @@ function LobbyView({ matchId, state }: { matchId: string; state: MatchStateView 
 function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchStateView; rtStatus: string }) {
   const now = useNow(1000);
   const [selected, setSelected] = useState<string | null>(state.me.capitalRegionId);
+  const [picking, setPicking] = useState(false);
+  const [target, setTarget] = useState<string | null>(null);
+  const onMapSelect = useCallback(
+    (id: string | null) => {
+      if (picking && id) {
+        setTarget(id);
+        setPicking(false);
+      } else {
+        setSelected(id);
+      }
+    },
+    [picking],
+  );
   const clockOffsetMs = Date.parse(state.match.now) - Date.now();
   const endsIn = (Date.parse(state.match.endsAt) - (now + clockOffsetMs)) / 1000;
 
@@ -126,14 +140,16 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
   const ownedSet = useMemo(() => new Set(state.owned.map((o) => o.regionId)), [state.owned]);
   const sightedBy = useMemo(() => new Map(state.sighted.map((s) => [s.regionId, s])), [state.sighted]);
 
+  const incomingSet = useMemo(() => new Set(state.incoming.map((i) => i.targetRegionId)), [state.incoming]);
   const paint = useCallback(
     (r: MapRegion): RegionPaint => {
-      if (ownedSet.has(r.id)) return { fill: colorOf(state.me.playerId), opacity: 1 };
+      if (r.id === target) return { fill: "#facc15", opacity: 1, stroke: "#fff" };
+      if (ownedSet.has(r.id)) return { fill: colorOf(state.me.playerId), opacity: 1, ...(incomingSet.has(r.id) ? { stroke: "#f43f5e" } : {}) };
       const s = sightedBy.get(r.id);
       if (s) return { fill: s.ownerPlayerId ? colorOf(s.ownerPlayerId) : terrainFill(r.terrain), opacity: 0.8 };
-      return { opacity: 0.3 };
+      return { opacity: picking ? 0.5 : 0.3 };
     },
-    [ownedSet, sightedBy, colorOf, state.me.playerId],
+    [ownedSet, sightedBy, colorOf, state.me.playerId, target, incomingSet, picking],
   );
 
   const totals = state.owned.reduce(
@@ -144,7 +160,8 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
   return (
     <div className="flex h-[calc(100dvh-3rem)] flex-col lg:flex-row">
       <div className="relative h-1/2 w-full lg:h-full lg:flex-1">
-        <WorldMap paint={paint} selected={selected} onSelect={setSelected} focus={state.me.capitalRegionId} className="h-full w-full" />
+        <WorldMap paint={paint} selected={selected} onSelect={onMapSelect} focus={state.me.capitalRegionId} className={`h-full w-full ${picking ? "cursor-crosshair" : ""}`} />
+        {picking && <div className="pointer-events-none absolute inset-x-0 bottom-2 text-center text-sm text-amber-300">Click a region to target it</div>}
         <div className="pointer-events-none absolute left-2 top-2 flex flex-wrap gap-2 text-xs">
           <Badge>{state.match.name}</Badge>
           <Badge>{state.match.speed}x</Badge>
@@ -155,8 +172,9 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
         </div>
       </div>
       <aside className="w-full space-y-3 overflow-y-auto border-t border-slate-800 p-4 lg:w-96 lg:border-l lg:border-t-0">
+        <IncomingWarnings state={state} clockOffsetMs={clockOffsetMs} onSelect={setSelected} />
         {selected ? (
-          <RegionPanel matchId={matchId} state={state} regionId={selected} clockOffsetMs={clockOffsetMs} onClose={() => setSelected(null)} />
+          <RegionPanel matchId={matchId} state={state} regionId={selected} clockOffsetMs={clockOffsetMs} onClose={() => setSelected(null)} target={target} onPickTarget={setPicking} />
         ) : (
           <Card>
             <p className="text-sm text-slate-400">Tap a region to see it. Your regions are highlighted in your colour.</p>

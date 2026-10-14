@@ -55,7 +55,7 @@ export function availableBuildings(age: number, techs: ReadonlySet<string>): Bui
 }
 
 export function availableUnits(age: number, techs: ReadonlySet<string>): UnitDef[] {
-  return UNITS.filter((u) => u.age <= age && (!u.requires || techs.has(u.requires)));
+  return UNITS.filter((u) => !u.hidden && u.age <= age && (!u.requires || techs.has(u.requires)));
 }
 
 /** Techs a player may research next: right age, prerequisites done, not already done. */

@@ -48,6 +48,8 @@ export const api = {
   train: (id: string, regionId: string, unitId: string, qty: number) =>
     request<{ ok: true; jobId: string; endsAt: string }>("POST", `/api/matches/${id}/regions/${regionId}/train`, { unitId, qty }),
   research: (id: string, techId: string) => request<{ ok: true; jobId: string; endsAt: string }>("POST", `/api/matches/${id}/research`, { techId }),
+  sendArmy: (id: string, regionId: string, body: { mission: string; targetRegionId: string; units: Record<string, number>; people: number; cargo: Record<string, number> }) =>
+    request<{ ok: true; armyId: string; arrivesAt: string; path: string[] }>("POST", `/api/matches/${id}/regions/${regionId}/send`, body),
   cancelJob: (id: string, jobId: string) => request<{ ok: true }>("POST", `/api/matches/${id}/jobs/${jobId}/cancel`, {}),
   messages: (id: string) => request<MessagesResponse>("GET", `/api/matches/${id}/messages`),
   markMessagesRead: (id: string) => request<{ ok: true }>("POST", `/api/matches/${id}/messages/read`, {}),

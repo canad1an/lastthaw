@@ -29,6 +29,7 @@ import { api, keys } from "../api/client.js";
 import { useNow } from "../hooks/useNow.js";
 import { Button, Card, ErrorText, fmt, signed } from "./ui.js";
 import { Countdown, costText } from "./Countdown.js";
+import { SendArmy } from "./ArmyPanel.js";
 
 interface Props {
   matchId: string;
@@ -37,11 +38,14 @@ interface Props {
   /** Offset to add to local time to get match time, in ms. */
   clockOffsetMs: number;
   onClose: () => void;
+  /** Army target picked on the map, and a way to enter picking mode. */
+  target: string | null;
+  onPickTarget: (picking: boolean) => void;
 }
 
 type Tab = "overview" | "build" | "train" | "army";
 
-export function RegionPanel({ matchId, state, regionId, clockOffsetMs, onClose }: Props) {
+export function RegionPanel({ matchId, state, regionId, clockOffsetMs, onClose, target, onPickTarget }: Props) {
   const region = regionById(regionId);
   const owned = state.owned.find((o) => o.regionId === regionId) ?? null;
   const sighted = state.sighted.find((s) => s.regionId === regionId) ?? null;
@@ -83,7 +87,12 @@ export function RegionPanel({ matchId, state, regionId, clockOffsetMs, onClose }
           {tab === "overview" && <OwnedDetails matchId={matchId} owned={owned} clockOffsetMs={clockOffsetMs} speed={state.match.speed} />}
           {tab === "build" && <BuildTab matchId={matchId} state={state} owned={owned} clockOffsetMs={clockOffsetMs} />}
           {tab === "train" && <TrainTab matchId={matchId} state={state} owned={owned} clockOffsetMs={clockOffsetMs} />}
-          {tab === "army" && <ArmyTab owned={owned} />}
+          {tab === "army" && (
+            <>
+              <ArmyTab owned={owned} />
+              <SendArmy matchId={matchId} state={state} owned={owned} target={target} onPickTarget={onPickTarget} clockOffsetMs={clockOffsetMs} />
+            </>
+          )}
           <QueueList matchId={matchId} state={state} regionId={regionId} clockOffsetMs={clockOffsetMs} />
         </>
       ) : sighted ? (

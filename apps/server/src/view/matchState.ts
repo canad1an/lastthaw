@@ -1,7 +1,7 @@
 import { and, asc, eq, inArray, isNull, or } from "drizzle-orm";
-import { emptySpecial, type JobView, type MatchStateView, type OwnedRegionView, type SightedRegionView } from "@lastthaw/shared";
+import { emptySpecial, type ArmyView, type IncomingView, type JobView, type MatchStateView, type OwnedRegionView, type SightedRegionView } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
-import { jobs, matchRegions, matches, playerTechs, players, regionSightings } from "../db/schema.js";
+import { armies, jobs, matchRegions, matches, playerTechs, players, regionSightings } from "../db/schema.js";
 import { matchNow } from "../sim/clock.js";
 import { countOwnedRegions, projectRegion } from "../sim/regions.js";
 
@@ -104,6 +104,45 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
 
   const all = await db.select().from(players).where(eq(players.matchId, matchId));
   const counts = await countOwnedRegions(db, matchId);
+  const nameOf = new Map(all.map((p) => [p.id, p.name]));
+
+  const myArmies = await db
+    .select()
+    .from(armies)
+    .where(and(eq(armies.matchId, matchId), eq(armies.playerId, me.id), inArray(armies.status, ["outbound", "returning"])))
+    .orderBy(asc(armies.arrivesAt));
+  const armyViews: ArmyView[] = myArmies.map((a) => ({
+    id: a.id,
+    playerId: a.playerId,
+    mission: a.mission,
+    originRegionId: a.originRegionId,
+    targetRegionId: a.targetRegionId,
+    units: a.units,
+    cargo: a.cargo,
+    status: a.status,
+    departsAt: a.departsAt.toISOString(),
+    arrivesAt: a.arrivesAt.toISOString(),
+    returnsAt: a.returnsAt?.toISOString() ?? null,
+  }));
+
+  const hostile = ownedIds.length
+    ? await db
+        .select()
+        .from(armies)
+        .where(and(eq(armies.matchId, matchId), eq(armies.status, "outbound"), inArray(armies.targetRegionId, ownedIds), inArray(armies.mission, ["raid", "conquer"])))
+        .orderBy(asc(armies.arrivesAt))
+    : [];
+  const incoming: IncomingView[] = hostile
+    .filter((a) => a.playerId !== me.id)
+    .map((a) => ({
+      id: a.id,
+      mission: a.mission,
+      targetRegionId: a.targetRegionId,
+      fromPlayerId: a.playerId,
+      fromPlayerName: nameOf.get(a.playerId) ?? "Unknown",
+      arrivesAt: a.arrivesAt.toISOString(),
+      size: Object.values(a.units).reduce((x, y) => x + y, 0),
+    }));
 
   return {
     match: {
@@ -128,5 +167,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
     sighted,
     players: all.map((p) => ({ id: p.id, name: p.name, isAi: p.isAi, age: p.age, score: p.score, regions: counts.get(p.id) ?? 0 })),
     jobs: jobViews,
+    armies: armyViews,
+    incoming,
   };
 }

@@ -121,6 +121,52 @@ export const jobView = z.object({
 });
 export type JobView = z.infer<typeof jobView>;
 
+export const missionKind = z.enum(["raid", "conquer", "reinforce", "move", "transport", "scout"]);
+export type MissionKind = z.infer<typeof missionKind>;
+
+export const sendArmyBody = z.object({
+  mission: missionKind,
+  targetRegionId: z.string(),
+  units: z.record(z.string(), z.number().int().min(0)),
+  /** People to carry as occupiers (conquer) or settlers (move/reinforce). */
+  people: z.number().int().min(0).default(0),
+  cargo: z.record(z.string(), z.number().min(0)).default({}),
+});
+
+export const armyView = z.object({
+  id: z.string(),
+  playerId: z.string(),
+  mission: missionKind,
+  originRegionId: z.string(),
+  targetRegionId: z.string(),
+  units: z.record(z.string(), z.number()),
+  cargo: z.record(z.string(), z.number()),
+  status: z.enum(["outbound", "returning", "done"]),
+  departsAt: z.string(),
+  arrivesAt: z.string(),
+  returnsAt: z.string().nullable(),
+});
+export type ArmyView = z.infer<typeof armyView>;
+
+/** What a defender is told about an army heading their way. */
+export const incomingView = z.object({
+  id: z.string(),
+  mission: missionKind,
+  targetRegionId: z.string(),
+  fromPlayerId: z.string(),
+  fromPlayerName: z.string(),
+  arrivesAt: z.string(),
+  /** Rough size only; the exact composition stays hidden. */
+  size: z.number(),
+});
+export type IncomingView = z.infer<typeof incomingView>;
+
+export const routePreview = z.object({
+  path: z.array(z.string()),
+  seconds: z.number(),
+  usesSea: z.boolean(),
+});
+
 export const buildBody = z.object({ buildingId: z.string() });
 export const trainBody = z.object({ unitId: z.string(), qty: z.number().int().min(1).max(1000) });
 export const researchBody = z.object({ techId: z.string() });
@@ -169,6 +215,10 @@ export const matchStateView = z.object({
   players: z.array(playerPublic),
   /** Pending build/train jobs in my regions plus my research job, if any. */
   jobs: z.array(jobView),
+  /** My armies in flight. */
+  armies: z.array(armyView),
+  /** Hostile armies heading for my regions. */
+  incoming: z.array(incomingView),
 });
 export type MatchStateView = z.infer<typeof matchStateView>;
 
@@ -213,5 +263,9 @@ export const EVENT_KINDS = [
   "job.completed",
   "age.advanced",
   "message.new",
+  "army.sent",
+  "army.incoming",
+  "army.arrived",
+  "region.conquered",
 ] as const;
 export type EventKind = (typeof EVENT_KINDS)[number];

@@ -69,6 +69,8 @@ export interface UnitDef {
   requires?: string;
   /** Region must have this resource to train here (e.g. horses). */
   needsResource?: SpecialResource;
+  /** Not trainable; exists only for combat maths (militia). */
+  hidden?: boolean;
 }
 
 export interface TechDef {
@@ -125,6 +127,7 @@ export const BUILDINGS: readonly BuildingDef[] = [
 // ---------------------------------------------------------------------------
 
 export const UNITS: readonly UnitDef[] = [
+  { id: "militia", name: "Militia", age: 0, description: "Villagers with tools, defending their homes.", attack: 1, defense: 2, speed: 0, carry: 0, cost: {}, baseSeconds: 0, hidden: true },
   // Stone
   { id: "warrior", name: "Warrior", age: 0, description: "Club and courage.", attack: 3, defense: 3, speed: 5, carry: 15, cost: { food: 20, wood: 10 }, baseSeconds: 30 },
   { id: "slinger", name: "Slinger", age: 0, description: "Cheap ranged harassment.", attack: 4, defense: 1, speed: 5, carry: 10, cost: { food: 15, stone: 10 }, baseSeconds: 30 },
