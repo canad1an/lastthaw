@@ -201,7 +201,7 @@ function LoyaltyRow({ owned, state }: { owned: OwnedRegionView; state: MatchStat
               <p className="text-slate-300">
                 Occupiers: {Math.round(owned.popOccupiers)} of {Math.ceil(o.occupiersNeeded)} needed ({o.occupierFactor >= 1 ? "no penalty" : `target cut by ${Math.round((1 - o.occupierFactor) * 50)}%`})
                 {templeLevel > 0
-                  ? `; the Temple converts ${templeLevel * balance.conquest.templeConvertsPerLevelPerHour} workers an hour into occupiers`
+                  ? `; the Temple converts ${balance.conquest.templeConvertsPerHour} workers an hour into occupiers`
                   : "; a Temple would convert workers into occupiers over time"}
               </p>
             ) : (

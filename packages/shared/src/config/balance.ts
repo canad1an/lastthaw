@@ -188,8 +188,8 @@ export const balance = {
     rebelChancePerTick: 0.08,
     /** Occupiers needed per 100 people in a conquered region to keep it quiet. */
     occupiersPerHundred: 10,
-    /** A Temple turns this many of the region's workers into occupiers per game hour per level, until the need is met. */
-    templeConvertsPerLevelPerHour: 0.5,
+    /** A Temple turns this many of the region's workers into occupiers per game hour, until the need is met. */
+    templeConvertsPerHour: 2,
   },
   schedule: {
     /** The worker keeps one upcoming weekly lobby open when enabled. */

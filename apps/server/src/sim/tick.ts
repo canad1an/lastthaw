@@ -110,7 +110,7 @@ async function loyaltyAndRebellion(tx: Tx, m: MatchRow, now: Date, hours: number
     const templeLevel = row.buildings.temple ?? 0;
     let occupiers = row.popOccupiers;
     if (row.conquered && templeLevel > 0 && occupiers < occupierNeed) {
-      const convert = Math.min(occupierNeed - occupiers, templeLevel * c.templeConvertsPerLevelPerHour * hours, Math.max(0, row.popWorkers - 1));
+      const convert = Math.min(occupierNeed - occupiers, c.templeConvertsPerHour * hours, Math.max(0, row.popWorkers - 1));
       if (convert > 0) {
         const settled = await settleAndLockRegion(tx, m.id, row.regionId, now, m.speed);
         const take = Math.min(convert, Math.max(0, settled.popWorkers - 1));
