@@ -4,6 +4,7 @@ import {
   AGES,
   availableBuildings,
   availableUnits,
+  buildingBlockedBy,
   balance,
   buildingById,
   buildingCost,
@@ -263,16 +264,18 @@ function BuildTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
           const level = (owned.buildings[b.id] ?? 0) + queued + 1;
           const maxed = level > b.maxLevel;
           const cost = buildingCost(b, level);
-          const ok = !maxed && !queueFull && canAfford(stock, cost);
+          const blocked = buildingBlockedBy(b, regionById(owned.regionId)!);
+          const ok = !maxed && !queueFull && !blocked && canAfford(stock, cost);
           const secs = realSeconds(buildingSeconds(b, level), 0, state.match.speed);
           return (
-            <li key={b.id} className="flex items-center justify-between gap-2 py-2 text-sm">
+            <li key={b.id} className={`flex items-center justify-between gap-2 py-2 text-sm ${blocked ? "opacity-60" : ""}`}>
               <Tooltip
                 className="min-w-0 flex-1 cursor-help"
                 trigger={
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-medium">{b.name}</span>
+                      {blocked && <span className="rounded bg-rose-500/20 px-1 text-xs text-rose-300">not here</span>}
                       <span className="text-xs text-slate-500">
                         lvl {owned.buildings[b.id] ?? 0}
                         {queued ? ` (+${queued})` : ""}
@@ -288,10 +291,10 @@ function BuildTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
                   </div>
                 }
               >
-                <BuildingTip def={b} level={Math.min(level, b.maxLevel)} owned={owned} economy={live.e} speed={state.match.speed} maxed={maxed} />
+                {blocked ? <p className="text-rose-300">{blocked}</p> : <BuildingTip def={b} level={Math.min(level, b.maxLevel)} owned={owned} economy={live.e} speed={state.match.speed} maxed={maxed} />}
               </Tooltip>
               <Button variant="ghost" disabled={!ok || m.isPending} onClick={() => m.mutate(b.id)}>
-                {maxed ? "Max" : `Lvl ${level}`}
+                {maxed ? "Max" : blocked ? "—" : `Lvl ${level}`}
               </Button>
             </li>
           );
@@ -349,7 +352,13 @@ function TrainTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
                   </div>
                 }
               >
-                <UnitTip def={u} qty={qty} workers={live.e.popWorkers} soldiers={live.e.popSoldiers} />
+                {needs ? (
+                  <p className="text-rose-300">
+                    {u.name} needs {u.needsResource} in the region. {region.name} has {region.resources.map((r) => r.replace("_", " ")).join(", ")}.
+                  </p>
+                ) : (
+                  <UnitTip def={u} qty={qty} workers={live.e.popWorkers} soldiers={live.e.popSoldiers} />
+                )}
               </Tooltip>
               <Button variant="ghost" disabled={!ok || m.isPending} onClick={() => m.mutate({ unitId: u.id, n })}>
                 Train {n}

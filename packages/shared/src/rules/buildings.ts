@@ -60,6 +60,16 @@ export function storageCaps(effects: Pick<RegionEffects, "storage" | "foodStorag
   return { food: base.food * (effects.storage + effects.foodStorage), wood: base.wood * effects.storage, stone: base.stone * effects.storage };
 }
 
+/** Why a building cannot go in this region, or null if it can. Local-resource and coast rules only. */
+export function buildingBlockedBy(def: BuildingDef, region: { resources: readonly string[]; coastal: boolean; name: string }): string | null {
+  if (def.needsResource && !def.needsResource.some((r) => region.resources.includes(r))) {
+    const have = region.resources.map((r) => r.replace("_", " ")).join(", ") || "nothing special";
+    return `${def.name} needs ${def.needsResource.join(", ")} in the region. ${region.name} has ${have}.`;
+  }
+  if (def.needsCoast && !region.coastal) return `${def.name} needs a coast. ${region.name} is inland.`;
+  return null;
+}
+
 /** Buildings a player of `age` with `techs` may build or upgrade. */
 export function availableBuildings(age: number, techs: ReadonlySet<string>): BuildingDef[] {
   return BUILDINGS.filter((b) => b.age <= age && (!b.requires || techs.has(b.requires)));

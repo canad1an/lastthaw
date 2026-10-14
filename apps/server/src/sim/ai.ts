@@ -2,6 +2,7 @@ import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   availableBuildings,
   availableTechs,
+  buildingBlockedBy,
   availableUnits,
   balance,
   buildingById,
@@ -122,8 +123,7 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
     for (const id of order) {
       const def = avail.get(id);
       if (!def) continue;
-      if (def.effect.extract && !Object.keys(def.effect.extract).some((r) => (region.resources as readonly string[]).includes(r))) continue;
-      if (id === "harbor" && !region.coastal) continue;
+      if (buildingBlockedBy(def, region)) continue;
       const level = row.buildings[id] ?? 0;
       if (level >= Math.min(def.maxLevel, tier.buildCap(p.age))) continue;
       const cost = buildingCost(def, level + 1);

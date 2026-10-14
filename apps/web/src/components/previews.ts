@@ -114,5 +114,7 @@ export function techPreview(def: TechDef): { summary: string; unlocks: string[] 
   for (const u of UNITS) if (u.requires === def.id && !u.hidden) unlocks.push(`${u.name} (unit)`);
   if (def.advancesTo !== undefined) unlocks.push(`advance to the ${["Stone", "Bronze", "Iron", "Classical", "Medieval"][def.advancesTo]} Age: all its buildings, units and techs`);
   if (def.id === balance.travel.seaTech) unlocks.push("armies may cross sea routes");
-  return { summary: def.description, unlocks };
+  const metals = Object.keys(def.cost).filter((k) => k === "copper" || k === "tin" || k === "iron" || k === "horses");
+  const note = metals.length ? ` Costs ${metals.join(" and ")}: these come from a Mine or Stables on a region that has them, from raids, or from the market.` : "";
+  return { summary: def.description + note, unlocks };
 }

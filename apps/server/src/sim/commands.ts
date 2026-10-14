@@ -8,6 +8,7 @@ import { and, asc, eq, isNull } from "drizzle-orm";
 import {
   armySpeed,
   balance,
+  buildingBlockedBy,
   buildingById,
   buildingCost,
   buildingSeconds,
@@ -61,6 +62,10 @@ export async function queueBuild(ctx: CommandContext, regionId: string, building
   if (!def) throw httpError(400, "unknown building");
   if (def.age > p.age) throw httpError(400, `${def.name} needs the ${["Stone", "Bronze", "Iron", "Classical", "Medieval"][def.age]} Age`);
   if (def.requires && !techs.has(def.requires)) throw httpError(400, `${def.name} needs ${techById.get(def.requires)?.name ?? def.requires}`);
+  const region = regionById(regionId);
+  if (!region) throw httpError(400, "unknown region");
+  const blocked = buildingBlockedBy(def, region);
+  if (blocked) throw httpError(400, blocked);
 
   return db.transaction(async (tx) => {
     const now = matchNow(m);

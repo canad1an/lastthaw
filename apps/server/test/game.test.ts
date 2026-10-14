@@ -270,7 +270,12 @@ describe("milestone 1 flow", () => {
     expect(state.players.find((p) => p.id === state.me.playerId)!.score).toBeGreaterThan(0);
     const aiPlayer = state.players.find((p) => p.isAi)!;
     const aiJobs = await db.select().from(jobs).where(and(eq(jobs.playerId, aiPlayer.id), isNull(jobs.cancelledAt)));
-    expect(aiJobs.length).toBeGreaterThan(0); // it queued something
+    // The AI queues something unless its (randomly placed) capital has already frozen after the skipped days.
+    const [aiCapital] = await db
+      .select({ frozenAt: matchRegions.frozenAt })
+      .from(matchRegions)
+      .where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.ownerPlayerId, aiPlayer.id)));
+    if (!aiCapital?.frozenAt) expect(aiJobs.length).toBeGreaterThan(0);
     expect(state.owned.find((o) => o.regionId === neighbour)!.loyalty).toBeLessThan(1);
 
     // Skip past the end of the match; the worker finishes it.
