@@ -99,13 +99,13 @@ export interface TechDef {
 
 export const BUILDINGS: readonly BuildingDef[] = [
   // Stone
-  { id: "huts", name: "Huts", age: 0, description: "Shelter for more families.", maxLevel: 20, cost: { wood: 40, stone: 10 }, baseSeconds: 45, effect: { capacity: 20 } },
+  { id: "huts", name: "Huts", age: 0, description: "Shelter for more families.", maxLevel: 20, cost: { wood: 40, stone: 10 }, baseSeconds: 45, effect: { capacity: 10 } },
   { id: "storehouse", name: "Storehouse", age: 0, description: "Bigger stores, and some stock hidden from raiders.", maxLevel: 20, cost: { wood: 60, stone: 20 }, baseSeconds: 60, effect: { storage: 0.5, protect: 60 } },
   { id: "hunting_grounds", name: "Hunting grounds", age: 0, description: "Better food from the land.", maxLevel: 15, cost: { wood: 30, food: 20 }, baseSeconds: 40, effect: { yield: { food: 0.2 } } },
   { id: "lumber_camp", name: "Lumber camp", age: 0, description: "Faster wood gathering.", maxLevel: 15, cost: { wood: 30, stone: 10 }, baseSeconds: 40, effect: { yield: { wood: 0.25 } } },
   { id: "quarry", name: "Quarry", age: 0, description: "Faster stone gathering.", maxLevel: 15, cost: { wood: 50, food: 30 }, baseSeconds: 50, effect: { yield: { stone: 0.25 } } },
   // Bronze
-  { id: "farm", name: "Farm", age: 1, description: "Cultivated fields feed many more people.", maxLevel: 15, cost: { wood: 120, stone: 40 }, baseSeconds: 150, effect: { yield: { food: 0.2 }, capacity: 10 }, requires: "agriculture" },
+  { id: "farm", name: "Farm", age: 1, description: "Cultivated fields feed many more people.", maxLevel: 15, cost: { wood: 120, stone: 40 }, baseSeconds: 150, effect: { yield: { food: 0.2 }, capacity: 15 }, requires: "agriculture" },
   { id: "mine", name: "Mine", age: 1, description: "Extracts copper, tin or iron where the region has it.", maxLevel: 10, cost: { wood: 150, stone: 100 }, baseSeconds: 200, effect: { extract: { copper: 1.5, tin: 1.0, iron: 1.2 } }, requires: "mining", needsResource: ["copper", "tin", "iron"] },
   { id: "palisade", name: "Palisade", age: 1, description: "A wooden wall that helps defenders.", maxLevel: 10, cost: { wood: 200, stone: 30 }, baseSeconds: 180, effect: { defense: 0.1 } },
   { id: "stables", name: "Stables", age: 1, description: "Breeds horses where wild herds roam.", maxLevel: 10, cost: { wood: 120, food: 150 }, baseSeconds: 160, effect: { extract: { horses: 0.6 } }, requires: "animal_husbandry", needsResource: ["horses"] },

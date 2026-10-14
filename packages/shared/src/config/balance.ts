@@ -56,9 +56,9 @@ export const balance = {
     /** Food eaten per person per game hour. */
     foodPerPersonPerHour: 0.4,
     /** Population growth per game hour as a fraction of current population, when fed. */
-    growthPerHour: 0.02,
+    growthPerHour: 0.035,
     /** Growth slows to zero as population approaches the region's capacity. */
-    baseCapacity: 60,
+    baseCapacity: 50,
     /** Population lost per game hour as a fraction of current population while starving. */
     starvationPerHour: 0.01,
     /** Storage cap for each base resource in a region with no storage buildings. */
