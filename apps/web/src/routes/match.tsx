@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
 import { useCallback, useMemo, useState } from "react";
-import { balance, formatCountdown, iceLatitudeOnDay, regionById, type MapRegion, type MatchStateView } from "@lastthaw/shared";
+import { balance, formatCountdown, iceLatitudeOnDay, regionById, type MapRegion, type MatchStateView, loyaltyBand } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { useMatchRealtime } from "../api/realtime.js";
 import { RegionPanel, ageName } from "../components/RegionPanel.js";
@@ -156,6 +156,9 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
     return (id: string) => m.get(id) ?? "#999";
   }, [state.players]);
   const ownedSet = useMemo(() => new Set(state.owned.map((o) => o.regionId)), [state.owned]);
+  const ownedById = useMemo(() => new Map(state.owned.map((o) => [o.regionId, o])), [state.owned]);
+  const { enabled: overlays, toggle: toggleOverlay } = useOverlays();
+  const badges = useMemo(() => overlayBadges(state, overlays, matchDay), [state, overlays, matchDay]);
   const sightedBy = useMemo(() => new Map(state.sighted.map((s) => [s.regionId, s])), [state.sighted]);
 
   const incomingSet = useMemo(() => new Set(state.incoming.map((i) => i.targetRegionId)), [state.incoming]);
@@ -173,18 +176,25 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
     return out;
   }, [state.owned, state.sighted, state.me.playerId, colorOf]);
   const frontierSet = useMemo(() => new Set(state.frontier), [state.frontier]);
-  const { enabled: overlays, toggle: toggleOverlay } = useOverlays();
-  const badges = useMemo(() => overlayBadges(state, overlays, matchDay), [state, overlays, matchDay]);
   const paint = useCallback(
     (r: MapRegion): RegionPaint => {
       if (r.id === target) return { fill: "#facc15", opacity: 1, stroke: "#fff" };
-      if (ownedSet.has(r.id)) return { fill: colorOf(state.me.playerId), opacity: 1, ...(incomingSet.has(r.id) ? { stroke: "#f43f5e" } : {}) };
+      if (ownedSet.has(r.id)) {
+        if (overlays.has("loyalty")) {
+          const o = ownedById.get(r.id);
+          if (o && !o.isCapital) {
+            const band = loyaltyBand(o.loyalty);
+            return { fill: band === "secure" ? "#22c55e" : band === "uneasy" ? "#f59e0b" : "#ef4444", opacity: 1, ...(incomingSet.has(r.id) ? { stroke: "#f43f5e" } : {}) };
+          }
+        }
+        return { fill: colorOf(state.me.playerId), opacity: 1, ...(incomingSet.has(r.id) ? { stroke: "#f43f5e" } : {}) };
+      }
       const s = sightedBy.get(r.id);
       if (s) return { fill: s.ownerPlayerId ? colorOf(s.ownerPlayerId) : terrainFill(r.terrain), opacity: 0.8 };
       if (frontierSet.has(r.id)) return { opacity: 0.6 };
       return { opacity: picking ? 0.5 : 0.3 };
     },
-    [ownedSet, sightedBy, colorOf, state.me.playerId, target, incomingSet, picking, frontierSet],
+    [ownedSet, ownedById, overlays, sightedBy, colorOf, state.me.playerId, target, incomingSet, picking, frontierSet],
   );
 
   const totals = state.owned.reduce(

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { AGES, availableBuildings, availableUnits, buildingBlockedBy, balance, buildingById, buildingCost, matchDayOf, buildingSeconds, canAfford, computeRates, normalizeAssignment, realSeconds, regionById, settle, totalPopulation, trainSeconds, unitById, unitCost, formatCountdown, type MatchStateView, type OwnedRegionView, type RegionEconomy, type SightedRegionView, type SpecialResource } from "@lastthaw/shared";
+import { AGES, availableBuildings, availableUnits, buildingBlockedBy, balance, buildingById, buildingCost, matchDayOf, buildingSeconds, canAfford, computeRates, normalizeAssignment, realSeconds, regionById, settle, totalPopulation, trainSeconds, unitById, unitCost, formatCountdown, type MatchStateView, type OwnedRegionView, type RegionEconomy, type SightedRegionView, type SpecialResource, loyaltyBand, loyaltyOutlook } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { useNow } from "../hooks/useNow.js";
 import { Button, Card, ErrorText, fmt, signed } from "./ui.js";
@@ -145,6 +145,7 @@ function OwnedDetails({ matchId, state, owned, clockOffsetMs, speed }: { matchId
       {!owned.isCapital && !owned.frozen && <MakeCapital matchId={matchId} state={state} regionId={owned.regionId} clockOffsetMs={clockOffsetMs} />}
       <dl className="grid grid-cols-[auto_1fr_auto] gap-x-3 gap-y-1 text-sm">
         <Row label="People" value={`${fmt(pop)} / ${fmt(live.e.capacity)}`} rate={perHour(live.rates.population)} />
+        {!owned.isCapital && <LoyaltyRow owned={owned} state={state} />}
         <Row label="Food" value={`${fmt(live.e.food)} / ${fmt(live.e.storage.food)}`} rate={perHour(live.rates.food)} warn={live.rates.starving} />
         <Row label="Wood" value={`${fmt(live.e.wood)} / ${fmt(live.e.storage.wood)}`} rate={perHour(live.rates.wood)} />
         <Row label="Stone" value={`${fmt(live.e.stone)} / ${fmt(live.e.storage.stone)}`} rate={perHour(live.rates.stone)} />
@@ -166,6 +167,44 @@ function OwnedDetails({ matchId, state, owned, clockOffsetMs, speed }: { matchId
         </p>
       )}
     </div>
+  );
+}
+
+/** Loyalty now, where it is heading, and why; hover for the breakdown. */
+function LoyaltyRow({ owned, state }: { owned: OwnedRegionView; state: MatchStateView }) {
+  const pop = owned.popWorkers + owned.popSoldiers + owned.popOccupiers;
+  const o = loyaltyOutlook(owned.regionId, state.me.capitalRegionId, owned.effects.loyalty, pop, owned.popOccupiers, owned.loyalty);
+  const band = loyaltyBand(owned.loyalty);
+  const tone = band === "rebellious" ? "text-rose-400" : band === "uneasy" ? "text-amber-300" : "text-emerald-400";
+  const arrow = o.target > owned.loyalty + 0.01 ? "↑" : o.target < owned.loyalty - 0.01 ? "↓" : "→";
+  return (
+    <>
+      <dt className="text-slate-400">Loyalty</dt>
+      <dd className={`tabular-nums ${tone}`}>
+        <Tooltip
+          className="cursor-help"
+          trigger={
+            <span>
+              {Math.round(owned.loyalty * 100)}% {arrow} {Math.round(o.target * 100)}%
+            </span>
+          }
+        >
+          <div className="space-y-1 text-xs">
+            <p className="font-medium text-slate-100">
+              {band === "rebellious" ? "At risk: may rebel any tick" : band === "uneasy" ? "Uneasy" : "Secure"} · heading to {Math.round(o.target * 100)}%
+              {o.hoursToSettle > 1 ? ` in about ${Math.round(o.hoursToSettle)} game hours` : ""}
+            </p>
+            <p className="text-slate-300">Distance from capital: {Math.round(o.km)} km, −{Math.round(o.distancePenalty * 100)}%</p>
+            <p className="text-slate-300">Roads, temples, forts: +{Math.round(o.buildingBonus * 100)}%</p>
+            <p className="text-slate-300">
+              Occupiers: {Math.round(owned.popOccupiers)} of {Math.ceil(o.occupiersNeeded)} needed ({o.occupierFactor >= 1 ? "no penalty" : `target halved by ${Math.round((1 - o.occupierFactor) * 50)}%`})
+            </p>
+            <p className="text-slate-500">Below {Math.round(o.rebelBelow * 100)}% the region can rebel: it goes neutral and your occupiers are lost.</p>
+          </div>
+        </Tooltip>
+      </dd>
+      <dd className="text-right text-xs text-slate-500">{band === "secure" ? "secure" : band === "uneasy" ? "uneasy" : "rebellious"}</dd>
+    </>
   );
 }
 

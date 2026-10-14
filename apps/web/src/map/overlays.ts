@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { balance, iceDaysFor, regionById, unitById, type MatchStateView } from "@lastthaw/shared";
+import { balance, iceDaysFor, loyaltyOutlook, regionById, unitById, type MatchStateView } from "@lastthaw/shared";
 
 /** Map overlays the player can switch on from the View menu. Each marks regions with a small badge. */
 export interface OverlayDef {
@@ -17,6 +17,7 @@ export const OVERLAYS: OverlayDef[] = [
   { id: "queue", label: "Empty build queue", description: "Regions with nothing building or training.", colour: "#a78bfa", glyph: "·" },
   { id: "ice", label: "Ice within 3 days", description: "Regions the ice reaches within three days. Evacuate or accept the loss.", colour: "#e0f2fe", glyph: "❄" },
   { id: "noroads", label: "No roads", description: "Regions that could build Roads but have not.", colour: "#94a3b8", glyph: "⌁" },
+  { id: "loyalty", label: "Loyalty", description: "Tints your regions by loyalty: green secure, amber uneasy, red at risk of rebellion. Badge on regions heading down.", colour: "#f43f5e", glyph: "!" },
 ];
 
 export interface OverlayBadge {
@@ -81,6 +82,10 @@ export function overlayBadges(state: MatchStateView, enabled: Set<string>, match
       if (touch !== null && touch - matchDay <= 3) push("ice", r.regionId, `${name}: ice in ${Math.max(0, touch - matchDay).toFixed(1)} days`);
     }
     if (enabled.has("noroads") && state.me.techs.includes("road_building") && (r.buildings.roads ?? 0) < 1) push("noroads", r.regionId, `${name}: no roads`);
+    if (enabled.has("loyalty") && !r.isCapital) {
+      const o = loyaltyOutlook(r.regionId, state.me.capitalRegionId, r.effects.loyalty, r.popWorkers + r.popSoldiers + r.popOccupiers, r.popOccupiers, r.loyalty);
+      if (o.target < r.loyalty - 0.02 || r.loyalty < o.rebelBelow) push("loyalty", r.regionId, `${name}: loyalty ${Math.round(r.loyalty * 100)}% heading to ${Math.round(o.target * 100)}%${r.loyalty < o.rebelBelow ? ", may rebel" : ""}`);
+    }
   }
   return out;
 }
