@@ -4,7 +4,7 @@ import { balance, buildingById,
   buildingCost, iceLatitudeOnDay, matchStateView, regionById } from "@lastthaw/shared";
 import { buildApp } from "../src/api/app.js";
 import { createDb, type Db } from "../src/db/client.js";
-import { jobs, matchRegions, matches, transfers, users } from "../src/db/schema.js";
+import { battles, jobs, matchRegions, matches, transfers, users } from "../src/db/schema.js";
 import { runAiDecisions, runMatchTicks } from "../src/sim/tick.js";
 import { Publisher } from "../src/realtime/publish.js";
 import { createRedis } from "../src/redis.js";
@@ -205,7 +205,10 @@ describe("milestone 1 flow", () => {
       if (secs > 0) expect((await a.call("POST", `/api/matches/${matchId}/dev/time-skip`, { seconds: secs })).statusCode).toBe(200);
       await runJobs();
     };
-    const neighbour = regionById(aPick)!.neighbors[0]!;
+    // Pick a neighbour nobody lives in, so the three warriors always win.
+    const occupiedRows = await db.select({ regionId: matchRegions.regionId, pop: matchRegions.popWorkers, soldiers: matchRegions.popSoldiers }).from(matchRegions).where(eq(matchRegions.matchId, matchId));
+    const occupied = new Set(occupiedRows.filter((r) => r.pop + r.soldiers >= 1).map((r) => r.regionId));
+    const neighbour = regionById(aPick)!.neighbors.find((n) => !occupied.has(n)) ?? regionById(aPick)!.neighbors[0]!;
     // Conquest needs settlers along as occupiers, not people.
     expect((await a.call("POST", `/api/matches/${matchId}/regions/${aPick}/send`, { mission: "conquer", targetRegionId: neighbour, units: { warrior: 3 }, people: 5, cargo: {} })).statusCode).toBe(400);
     const occupierJob = await a.call("POST", `/api/matches/${matchId}/regions/${aPick}/train`, { unitId: "settler", qty: 5 });
@@ -218,7 +221,8 @@ describe("milestone 1 flow", () => {
     expect(state.owned[0]!.units.warrior ?? 0).toBe(0);
     await skipTo(state.armies[0]!.arrivesAt);
     state = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json());
-    expect(state.owned.map((o) => o.regionId).sort()).toEqual([aPick, neighbour].sort());
+    const fights = await db.select().from(battles).where(eq(battles.matchId, matchId));
+    expect(state.owned.map((o) => o.regionId).sort(), JSON.stringify({ armies: state.armies, battles: fights.map((b) => b.report), inbox: (await a.call("GET", `/api/matches/${matchId}/messages`)).json() })).toEqual([aPick, neighbour].sort());
     const taken = state.owned.find((o) => o.regionId === neighbour)!;
     expect(taken.popOccupiers).toBeCloseTo(5, 0);
     expect(taken.units.warrior).toBe(3);

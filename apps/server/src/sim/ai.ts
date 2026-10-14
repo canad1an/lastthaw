@@ -127,7 +127,7 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
       if (!wanted) wanted = cost;
       if (slots <= 0) break;
       if (tier.hoards && !comfortablyAffordable(economy, cost)) continue;
-      if (await attempt(() => queueBuild(ctx, row.regionId, id))) slots -= 1;
+      if (await attempt(() => queueBuild(ctx, row.regionId, id, { allowWait: false }))) slots -= 1;
       else if (rng() < 0.5) break;
     }
 

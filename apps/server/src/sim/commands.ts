@@ -35,7 +35,8 @@ export async function pendingRegionJobs(tx: Tx | Db, matchId: string, regionId: 
     .orderBy(asc(jobs.startsAt), asc(jobs.id));
 }
 
-export async function queueBuild(ctx: CommandContext, regionId: string, buildingId: string) {
+export async function queueBuild(ctx: CommandContext, regionId: string, buildingId: string, opts: { allowWait?: boolean } = {}) {
+  const allowWait = opts.allowWait ?? true;
   const { db, m, p, techs } = ctx;
   const def = buildingById.get(buildingId);
   if (!def) throw httpError(400, "unknown building");
@@ -74,6 +75,7 @@ export async function queueBuild(ctx: CommandContext, regionId: string, building
     const pooled: Record<string, number> = {};
     for (const r of payers) for (const [k, v] of Object.entries(stockOf(r))) pooled[k] = (pooled[k] ?? 0) + v;
     if (!canAfford(pooled, cost)) throw httpError(409, `not enough ${missingFor(pooled, cost).join(", ")} across your regions`);
+    if (!allowWait && !canAfford(stockOf(row), cost)) throw httpError(409, `not enough ${missingFor(stockOf(row), cost).join(", ")} here`);
     // Pay what this region has now. Anything short is owed, and must arrive by caravan before the build starts.
     const here = stockOf(row);
     const paid: Record<string, number> = {};
