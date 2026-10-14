@@ -31,7 +31,12 @@ export function LogisticsPanel({ state, onSelect }: { state: MatchStateView; onS
 
   const verdict =
     stalled.length > 0 || fullNoHaulers.length > 0
-      ? { tone: "text-amber-300", text: `Short of haulers: ${stalled.length} route${stalled.length === 1 ? "" : "s"} waiting and ${fullNoHaulers.length} full region${fullNoHaulers.length === 1 ? "" : "s"} with none at home. Train more, or upgrade to bigger ones.` }
+      ? {
+          tone: "text-amber-300",
+          text: `Short of haulers: ${stalled.length} route${stalled.length === 1 ? "" : "s"} waiting and ${fullNoHaulers.length} full region${fullNoHaulers.length === 1 ? "" : "s"} with none at home. Train more under a region's Train tab${
+            !state.me.techs.includes("wagon_building") ? ", or research Wagon building: it turns every caravan into a wagon that carries 1,200" : !state.me.techs.includes("railways") ? ", or research Railways in the Medieval Age: it turns every wagon into a train" : ""
+          }.`,
+        }
       : totalHome > 0 && totalRoad === 0 && state.routes.length === 0
         ? { tone: "text-slate-300", text: "Your haulers are all at home with nothing to do. Set up trade routes or let overflow use them." }
         : { tone: "text-emerald-400", text: "Hauling is keeping up: nothing is waiting on a caravan." };
