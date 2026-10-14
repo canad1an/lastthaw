@@ -54,6 +54,17 @@ const MAX_K = 14;
 export function WorldMap({ paint, selected, onSelect, focus, className = "", ice, flags = [], dashed = [] }: WorldMapProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [view, setView] = useState<View>({ x: 0, y: 0, k: 1 });
+  // Map units per screen pixel at zoom 1, so overlays can be sized in real pixels.
+  const [unitsPerPx, setUnitsPerPx] = useState(2.5);
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const measure = () => setUnitsPerPx(world.width / Math.max(1, svg.getBoundingClientRect().width));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(svg);
+    return () => ro.disconnect();
+  }, []);
   const drag = useRef<{ id: number; sx: number; sy: number; ox: number; oy: number; moved: boolean } | null>(null);
   const pinch = useRef<Map<number, { x: number; y: number }>>(new Map());
   const W = world.width;
@@ -162,16 +173,17 @@ export function WorldMap({ paint, selected, onSelect, focus, className = "", ice
     >
       <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>
         <Regions paint={paint} selected={selected} strokeWidth={0.8 / view.k} />
-        {ice && <IceLayer ice={ice} k={view.k} />}
+        {ice && <IceLayer ice={ice} k={view.k / unitsPerPx} />}
         <g pointerEvents="none">
           {dashed.map((id) => {
             const r = allRegions().find((x) => x.id === id);
-            return r ? <path key={id} d={r.path} fill="none" stroke="#fde68a" strokeWidth={1.2 / view.k} strokeDasharray={`${4 / view.k} ${3 / view.k}`} /> : null;
+            const u = unitsPerPx / view.k;
+            return r ? <path key={id} d={r.path} fill="none" stroke="#fde68a" strokeWidth={1.2 * u} strokeDasharray={`${4 * u} ${3 * u}`} /> : null;
           })}
           {flags.map((id) => {
             const r = allRegions().find((x) => x.id === id);
             if (!r) return null;
-            const s = 1 / view.k;
+            const s = unitsPerPx / view.k;
             return (
               <g key={id} transform={`translate(${r.x} ${r.y}) scale(${s})`}>
                 <line x1={0} y1={0} x2={0} y2={-22} stroke="#0f172a" strokeWidth={3.5} />
