@@ -6,12 +6,9 @@ import { api, keys } from "../api/client.js";
 import { useMatchRealtime } from "../api/realtime.js";
 import { RegionPanel, ageName } from "../components/RegionPanel.js";
 import { ResearchPanel } from "../components/ResearchPanel.js";
-import { Messages } from "../components/Messages.js";
+import { TopMenu } from "../components/TopMenu.js";
 import { IncomingWarnings } from "../components/ArmyPanel.js";
 import { ActivityPanel } from "../components/ActivityPanel.js";
-import { AlliancePanel } from "../components/AlliancePanel.js";
-import { Chat } from "../components/Chat.js";
-import { MarketPanel } from "../components/MarketPanel.js";
 import { Button, Card, ErrorText, fmt } from "../components/ui.js";
 import { useNow } from "../hooks/useNow.js";
 import { useServerInfo } from "../hooks/useServerInfo.js";
@@ -174,7 +171,9 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
   );
 
   return (
-    <div className="flex h-[calc(100dvh-3rem)] flex-col lg:flex-row">
+    <div className="flex h-[calc(100dvh-3rem)] flex-col">
+      <TopMenu matchId={matchId} state={state} selectedRegionId={selected} colorOf={colorOf} />
+      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
       <div className="relative h-1/2 w-full lg:h-full lg:flex-1">
         <WorldMap
           paint={paint}
@@ -225,31 +224,10 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
             <p className="text-sm text-slate-400">Tap a region to see it. Your regions are in your colour, the flag marks your capital, and dashed outlines are unclaimed land you can settle.</p>
           </Card>
         )}
-        <Messages matchId={matchId} />
         <ResearchPanel matchId={matchId} state={state} clockOffsetMs={clockOffsetMs} />
-        <AlliancePanel matchId={matchId} state={state} />
-        <Chat matchId={matchId} state={state} />
-        <MarketPanel matchId={matchId} state={state} selectedRegionId={selected} />
-        <Card>
-          <h2 className="mb-2 text-sm font-medium">Players</h2>
-          <ul className="space-y-1 text-sm">
-            {[...state.players]
-              .sort((a, b) => b.regions - a.regions)
-              .map((p) => (
-                <li key={p.id} className="flex items-center gap-2 text-slate-300">
-                  <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: colorOf(p.id) }} />
-                  <span className={p.id === state.me.playerId ? "text-white" : ""}>{p.name}</span>
-                  <span className="text-xs text-slate-500">
-                    {ageName(p.age)}
-                    {p.aiLevel ? ` · AI ${p.aiLevel}` : ""}
-                  </span>
-                  <span className="ml-auto text-slate-500">{p.regions} regions</span>
-                </li>
-              ))}
-          </ul>
-        </Card>
         <DevTools matchId={matchId} />
       </aside>
+      </div>
     </div>
   );
 }

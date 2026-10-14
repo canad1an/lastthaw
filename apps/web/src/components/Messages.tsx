@@ -1,51 +1,59 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
 import { api, keys, type MessageView } from "../api/client.js";
-import { Card } from "./ui.js";
 
 const KIND_ICON: Record<string, string> = { battle: "⚔", scout: "👁", build: "🔨", research: "📜", trade: "⚖", system: "ℹ", alliance: "🤝" };
+const TOAST_MS = 5000;
 
-/** The message centre: battle reports, scout reports, finished builds, trades. */
-export function Messages({ matchId }: { matchId: string }) {
-  const qc = useQueryClient();
-  const [open, setOpen] = useState(false);
-  const [selected, setSelected] = useState<MessageView | null>(null);
-  const q = useQuery({ queryKey: keys.messages(matchId), queryFn: () => api.messages(matchId), refetchInterval: 30_000 });
-  const markRead = useMutation({ mutationFn: () => api.markMessagesRead(matchId), onSuccess: () => void qc.invalidateQueries({ queryKey: keys.messages(matchId) }) });
-  const unread = q.data?.unread ?? 0;
-
+/** Recent messages list used inside the top menu dropdown. */
+export function MessagesList({ messages }: { messages: MessageView[] }) {
+  const [selected, setSelected] = useState<string | null>(null);
   return (
-    <Card className="space-y-2">
-      <button
-        className="flex w-full items-center justify-between text-sm font-medium"
-        onClick={() => {
-          setOpen((o) => !o);
-          if (!open && unread) markRead.mutate();
-        }}
-      >
-        <span>Messages</span>
-        <span className={`rounded px-1.5 py-0.5 text-xs ${unread ? "bg-rose-500/30 text-rose-200" : "bg-slate-800 text-slate-400"}`}>{unread ? `${unread} new` : q.data?.messages.length ?? 0}</span>
-      </button>
-      {open && (
-        <ul className="max-h-72 space-y-1 overflow-y-auto text-sm">
-          {q.data?.messages.length === 0 && <li className="text-slate-400">Nothing yet.</li>}
-          {q.data?.messages.map((m) => (
-            <li key={m.id}>
-              <button
-                className={`w-full rounded px-2 py-1 text-left hover:bg-slate-800 ${m.readAt ? "text-slate-400" : "text-slate-100"}`}
-                onClick={() => setSelected(selected?.id === m.id ? null : m)}
-              >
-                <span className="mr-2">{KIND_ICON[m.kind] ?? "•"}</span>
-                {m.subject}
-                <span className="ml-2 text-xs text-slate-500">{new Date(m.createdAt).toLocaleTimeString()}</span>
-              </button>
-              {selected?.id === m.id && <MessageBody m={m} />}
-            </li>
-          ))}
-        </ul>
-      )}
-    </Card>
+    <ul className="divide-y divide-slate-900">
+      {messages.length === 0 && <li className="px-3 py-2 text-slate-400">Nothing yet.</li>}
+      {messages.map((m) => (
+        <li key={m.id}>
+          <button className={`w-full px-3 py-1.5 text-left hover:bg-slate-900 ${m.readAt ? "text-slate-400" : "text-slate-100"}`} onClick={() => setSelected(selected === m.id ? null : m.id)}>
+            <span className="mr-2">{KIND_ICON[m.kind] ?? "•"}</span>
+            {m.subject}
+            <span className="ml-2 text-xs text-slate-500">{new Date(m.createdAt).toLocaleTimeString()}</span>
+          </button>
+          {selected === m.id && (
+            <div className="px-3 pb-2">
+              <MessageBody m={m} />
+            </div>
+          )}
+        </li>
+      ))}
+    </ul>
   );
+}
+
+export const messageIcon = (kind: string) => KIND_ICON[kind] ?? "•";
+
+/** Toast state: the newest message, shown for a few seconds when it first arrives. */
+export function useMessageToast(matchId: string, suppressed: boolean) {
+  const q = useQuery({ queryKey: keys.messages(matchId), queryFn: () => api.messages(matchId), refetchInterval: 20_000 });
+  const [toast, setToast] = useState<MessageView | null>(null);
+  const lastSeen = useRef<string | null>(null);
+  const newest = q.data?.messages[0] ?? null;
+  useEffect(() => {
+    if (!newest) return;
+    if (lastSeen.current === null) {
+      lastSeen.current = newest.id;
+      return;
+    }
+    if (newest.id !== lastSeen.current) {
+      lastSeen.current = newest.id;
+      if (!suppressed) setToast(newest);
+    }
+  }, [newest, suppressed]);
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), TOAST_MS);
+    return () => clearTimeout(t);
+  }, [toast]);
+  return { q, toast, clearToast: () => setToast(null) };
 }
 
 function MessageBody({ m }: { m: MessageView }) {
@@ -93,7 +101,7 @@ function BattleReport({ report }: { report: BattleReportPayload }) {
     </div>
   );
   return (
-    <div className="ml-6 space-y-1 rounded bg-slate-950/60 p-2 text-xs text-slate-400">
+    <div className="ml-6 space-y-1 rounded bg-slate-900/60 p-2 text-xs text-slate-400">
       <p>
         {report.attackerName} {report.mission}ed {report.regionName} ({report.defenderName}). {report.attackerWon ? "Attacker won" : "Defender held"} after {report.rounds} rounds.
         {report.conquered ? " The region was conquered." : ""}
