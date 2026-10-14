@@ -57,6 +57,13 @@
       "when": 1791993429313,
       "tag": "0007_sparkling_betty_ross",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791994548776,
+      "tag": "0008_little_bishop",
+      "breakpoints": true
     }
   ]
 }

@@ -127,8 +127,12 @@ export const balance = {
     raidShare: 0.5,
   },
   tribute: {
-    /** Highest share of a region's production that can be routed to the capital. */
+    /** Highest share of a region's production a share-mode trade route may carry away. */
     maxShare: 0.5,
+  },
+  trade: {
+    /** Automated caravan routes allowed per origin region. */
+    maxRoutesPerRegion: 5,
   },
   settle: {
     /** Settlers needed to claim an empty region; all of them become its first workers. */

@@ -2,7 +2,7 @@ import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { parseProfile } from "../sim/ai.js";
 import { emptySpecial, regionById, type ArmyView, type IncomingView, type JobView, type MatchStateView, type OwnedRegionView, type SightedRegionView } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
-import { allianceMembers, alliances, armies, jobs, matchRegions, matches, playerTechs, players, regionSightings } from "../db/schema.js";
+import { allianceMembers, alliances, armies, jobs, matchRegions, matches, playerTechs, players, regionSightings, tradeRoutes } from "../db/schema.js";
 import { matchNow } from "../sim/clock.js";
 import { alliesOf } from "../sim/alliances.js";
 import { countOwnedRegions, projectRegion } from "../sim/regions.js";
@@ -56,7 +56,6 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
         roads: effects.roads,
       },
       loyalty: row.loyalty,
-      tributeShare: row.tributeShare,
       frozen: economy.frozen,
       asOf: now.toISOString(),
       rates: { food: rates.food, wood: rates.wood, stone: rates.stone, population: rates.population, starving: rates.starving },
@@ -181,6 +180,8 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
   const occupiedFrontier = new Set(frontierRows.filter((r) => r.owner || r.pop >= 1).map((r) => r.regionId));
   const frontier = frontierIds.filter((id) => !occupiedFrontier.has(id) && !regionById(id)?.terrain.startsWith("tundra"));
 
+  const routeRows = await db.select().from(tradeRoutes).where(and(eq(tradeRoutes.matchId, matchId), eq(tradeRoutes.playerId, me.id))).orderBy(asc(tradeRoutes.createdAt));
+
   const incoming: IncomingView[] = hostile
     .filter((a) => a.playerId !== me.id)
     .map((a) => ({
@@ -221,6 +222,20 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
     armies: armyViews,
     incoming,
     frontier,
+    routes: routeRows.map((r) => ({
+      id: r.id,
+      fromRegionId: r.fromRegionId,
+      toRegionId: r.toRegionId,
+      mode: r.mode,
+      load: r.load,
+      share: r.share,
+      caravans: r.caravans,
+      everyHours: r.everyHours,
+      enabled: r.enabled,
+      nextAt: r.nextAt.toISOString(),
+      lastResult: r.lastResult,
+      lastRunAt: r.lastRunAt?.toISOString() ?? null,
+    })),
     allies,
   };
 }

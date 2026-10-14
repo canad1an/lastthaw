@@ -67,7 +67,11 @@ export const api = {
   research: (id: string, techId: string) => request<{ ok: true; jobId: string; endsAt: string }>("POST", `/api/matches/${id}/research`, { techId }),
   sendArmy: (id: string, regionId: string, body: { mission: string; targetRegionId: string; units: Record<string, number>; people: number; cargo: Record<string, number> }) =>
     request<{ ok: true; armyId: string; arrivesAt: string; path: string[] }>("POST", `/api/matches/${id}/regions/${regionId}/send`, body),
-  setTribute: (id: string, regionId: string, share: number) => request<{ ok: true; share: number }>("POST", `/api/matches/${id}/regions/${regionId}/tribute`, { share }),
+  createRoute: (id: string, regionId: string, body: { toRegionId: string; mode: "fixed" | "share"; load: Record<string, number>; share: number; caravans: number; everyHours: number }) =>
+    request<{ id: string }>("POST", `/api/matches/${id}/regions/${regionId}/routes`, body),
+  toggleRoute: (id: string, routeId: string) => request<{ ok: true; enabled: boolean }>("POST", `/api/matches/${id}/routes/${routeId}/toggle`, {}),
+  deleteRoute: (id: string, routeId: string) => request<{ ok: true }>("DELETE", `/api/matches/${id}/routes/${routeId}`),
+  runRoute: (id: string, routeId: string) => request<{ ok: true; result: string }>("POST", `/api/matches/${id}/routes/${routeId}/run`, {}),
   recallArmy: (id: string, armyId: string) => request<{ ok: true; returnsAt: string }>("POST", `/api/matches/${id}/armies/${armyId}/recall`, {}),
   cancelJob: (id: string, jobId: string) => request<{ ok: true }>("POST", `/api/matches/${id}/jobs/${jobId}/cancel`, {}),
   messages: (id: string) => request<MessagesResponse>("GET", `/api/matches/${id}/messages`),

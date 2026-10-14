@@ -190,8 +190,6 @@ export const matchRegions = pgTable(
     /** Stationed units by unit id. Sum equals popSoldiers. */
     units: jsonb("units").$type<Record<string, number>>().notNull().default({}),
     loyalty: doublePrecision("loyalty").notNull().default(1),
-    /** Share (0..1) of this region's gross production sent to the owner's capital each tick. */
-    tributeShare: doublePrecision("tribute_share").notNull().default(0),
     frozenAt: timestamp("frozen_at", { withTimezone: true }),
     /** Match-clock time the amounts above were last settled to. */
     settledAt: timestamp("settled_at", { withTimezone: true }).notNull(),
@@ -278,6 +276,37 @@ export const battles = pgTable(
     report: jsonb("report").notNull(),
   },
   (t) => [index("battles_match_idx").on(t.matchId, t.resolvedAt)],
+);
+
+export const tradeRouteMode = pgEnum("trade_route_mode", ["fixed", "share"]);
+
+/** Automated caravan routes: the worker dispatches transport missions on a schedule. */
+export const tradeRoutes = pgTable(
+  "trade_routes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    matchId: uuid("match_id")
+      .notNull()
+      .references(() => matches.id, { onDelete: "cascade" }),
+    playerId: uuid("player_id")
+      .notNull()
+      .references(() => players.id, { onDelete: "cascade" }),
+    fromRegionId: text("from_region_id").notNull(),
+    toRegionId: text("to_region_id").notNull(),
+    mode: tradeRouteMode("mode").notNull().default("fixed"),
+    /** Fixed mode: goods per trip. */
+    load: jsonb("load").$type<Record<string, number>>().notNull().default({}),
+    /** Share mode: fraction of gross production per interval. */
+    share: doublePrecision("share").notNull().default(0),
+    caravans: integer("caravans").notNull().default(1),
+    everyHours: doublePrecision("every_hours").notNull().default(2),
+    enabled: boolean("enabled").notNull().default(true),
+    nextAt: timestamp("next_at", { withTimezone: true }).notNull(),
+    lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+    lastResult: text("last_result"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("trade_routes_due_idx").on(t.nextAt), index("trade_routes_from_idx").on(t.matchId, t.fromRegionId)],
 );
 
 export const playerTechs = pgTable(

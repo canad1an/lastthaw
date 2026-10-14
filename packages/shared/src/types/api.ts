@@ -74,7 +74,6 @@ export const assignBody = z.object({
   wood: z.number().min(0).max(1),
   stone: z.number().min(0).max(1),
 });
-export const tributeBody = z.object({ share: z.number().min(0).max(1) });
 export const timeSkipBody = z.object({ seconds: z.number().int().min(1).max(60 * 60 * 24 * 40) });
 
 // ---------------------------------------------------------------------------
@@ -111,7 +110,6 @@ export const ownedRegionView = z.object({
     roads: z.number(),
   }),
   loyalty: z.number(),
-  tributeShare: z.number().default(0),
   frozen: z.boolean(),
   /** Server time the amounts above are valid for. Clients project forward from here. */
   asOf: z.string(),
@@ -180,6 +178,33 @@ export const routePreview = z.object({
   usesSea: z.boolean(),
 });
 
+export const routeMode = z.enum(["fixed", "share"]);
+export const createRouteBody = z.object({
+  toRegionId: z.string(),
+  mode: routeMode,
+  /** Fixed mode: goods per trip. */
+  load: z.record(z.string(), z.number().min(0)).default({}),
+  /** Share mode: fraction of gross production since the last trip. */
+  share: z.number().min(0).max(1).default(0),
+  caravans: z.number().int().min(1).max(50),
+  everyHours: z.number().min(0.5).max(48),
+});
+export const tradeRouteView = z.object({
+  id: z.string(),
+  fromRegionId: z.string(),
+  toRegionId: z.string(),
+  mode: routeMode,
+  load: z.record(z.string(), z.number()),
+  share: z.number(),
+  caravans: z.number(),
+  everyHours: z.number(),
+  enabled: z.boolean(),
+  nextAt: z.string(),
+  lastResult: z.string().nullable(),
+  lastRunAt: z.string().nullable(),
+});
+export type TradeRouteView = z.infer<typeof tradeRouteView>;
+
 export const buildBody = z.object({ buildingId: z.string() });
 export const trainBody = z.object({ unitId: z.string(), qty: z.number().int().min(1).max(1000) });
 export const researchBody = z.object({ techId: z.string() });
@@ -238,6 +263,8 @@ export const matchStateView = z.object({
   incoming: z.array(incomingView),
   /** Unclaimed, empty regions bordering mine: settle targets. */
   frontier: z.array(z.string()).default([]),
+  /** My automated caravan routes. */
+  routes: z.array(tradeRouteView).default([]),
   /** Player ids of my alliance mates (their regions are always visible). */
   allies: z.array(z.string()),
 });

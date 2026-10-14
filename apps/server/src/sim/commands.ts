@@ -9,6 +9,7 @@ import {
   armySpeed,
   balance,
   buildingBlockedBy,
+  carryCapacity,
   buildingById,
   buildingCost,
   buildingSeconds,
@@ -177,25 +178,34 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
   if (body.targetRegionId === regionId) throw httpError(400, "the army is already there");
   const units = Object.fromEntries(Object.entries(body.units).filter(([, n]) => n > 0));
   const unitCount = Object.values(units).reduce((a, b) => a + b, 0);
-  if (unitCount === 0 && body.mission !== "transport") throw httpError(400, "send at least one unit");
+  if (unitCount === 0) throw httpError(400, body.mission === "transport" ? "send at least one caravan to carry the goods" : "send at least one unit");
   if (body.mission === "conquer" && body.people < balance.conquest.occupiersRequired) {
     throw httpError(400, `conquering needs at least ${balance.conquest.occupiersRequired} people to occupy the region`);
   }
+  const civilians = Object.keys(units).filter((id) => unitById.get(id)?.civilian);
+  if ((HOSTILE.has(body.mission) || body.mission === "scout") && civilians.length) throw httpError(400, "caravans and settlers cannot raid, conquer or scout");
   if (body.mission === "settle") {
     const settlers = units.settler ?? 0;
     if (settlers < balance.settle.settlersRequired) throw httpError(400, `settling needs at least ${balance.settle.settlersRequired} settlers`);
     if (Object.keys(units).some((id) => id !== "settler")) throw httpError(400, "only settlers can settle; send escorts separately");
   }
   if (body.mission !== "settle" && (units.settler ?? 0) > 0) throw httpError(400, "settlers only go on settle missions");
+  const goods = Object.entries(body.cargo).reduce((a, [, v]) => a + v, 0);
+  if (goods > 0) {
+    const cap = carryCapacity(units);
+    if (goods > cap) throw httpError(400, `not enough carrying capacity: these units carry ${cap}, you are sending ${Math.round(goods)}. Caravans carry 500 each.`);
+  }
   const route = findRoute(regionId, body.targetRegionId, techs.has(balance.travel.seaTech));
   if (!route) throw httpError(400, techs.has(balance.travel.seaTech) ? "no route to that region" : "no land route; research Shipbuilding to cross the sea");
-  const speed = unitCount ? armySpeed(units) : 5;
-  const seconds = travelSeconds(route, speed, m.speed);
   const now = matchNow(m);
 
   return db.transaction(async (tx) => {
     const origin = await settleAndLockRegion(tx, m.id, regionId, now, m.speed);
     if (origin.ownerPlayerId !== p.id) throw httpError(403, "not your region");
+    // Roads at the origin speed up friendly traffic (caravans, moves, reinforcements).
+    const friendlyMission = body.mission === "transport" || body.mission === "move" || body.mission === "reinforce";
+    const roadBonus = friendlyMission ? effectsOf(origin.buildings).roads : 0;
+    const seconds = travelSeconds(route, armySpeed(units) * (1 + roadBonus), m.speed);
 
     const [target] = await tx
       .select()

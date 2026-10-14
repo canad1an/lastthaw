@@ -21,12 +21,12 @@ type App = Awaited<ReturnType<typeof buildApp>>;
 class Client {
   cookie = "";
   constructor(private readonly app: App) {}
-  async call(method: "GET" | "POST", url: string, body?: Record<string, unknown>) {
+  async call(method: "GET" | "POST" | "DELETE", url: string, body?: Record<string, unknown>) {
     const res = await this.app.inject({
       method,
       url,
       ...(body ? { payload: body } : {}),
-      headers: { cookie: this.cookie, "content-type": "application/json" },
+      headers: { cookie: this.cookie, ...(body ? { "content-type": "application/json" } : {}) },
     });
     const set = res.headers["set-cookie"];
     const first = Array.isArray(set) ? set[0] : set;
@@ -278,11 +278,34 @@ describe("milestone 1 flow", () => {
     expect(settled!.popWorkers).toBeGreaterThanOrEqual(4.9);
     expect(settled!.loyalty).toBeCloseTo(balance.settle.startingLoyalty, 5);
 
-    // Tribute: colonies can route production to the capital; the capital itself cannot send.
-    expect((await a.call("POST", `/api/matches/${matchId}/regions/${homestead}/tribute`, { share: 0.3 })).statusCode).toBe(200);
-    expect((await a.call("POST", `/api/matches/${matchId}/regions/${aPick}/tribute`, { share: 0.3 })).statusCode).toBe(400);
+    // Caravans and trade routes: goods need carrying capacity; a route dispatches caravans that deliver and return.
+    expect((await a.call("POST", `/api/matches/${matchId}/regions/${aPick}/send`, { mission: "transport", targetRegionId: homestead, units: {}, people: 0, cargo: { food: 100 } })).statusCode).toBe(400);
+    const caravanJob = await a.call("POST", `/api/matches/${matchId}/regions/${aPick}/train`, { unitId: "caravan", qty: 2 });
+    expect(caravanJob.statusCode, JSON.stringify(caravanJob.json())).toBe(200);
+    await skipTo((caravanJob.json() as { endsAt: string }).endsAt);
+    expect((await a.call("POST", `/api/matches/${matchId}/regions/${aPick}/send`, { mission: "transport", targetRegionId: homestead, units: { caravan: 1 }, people: 0, cargo: { food: 900 } })).statusCode).toBe(400);
+    expect((await a.call("POST", `/api/matches/${matchId}/regions/${aPick}/send`, { mission: "raid", targetRegionId: homestead, units: { caravan: 1 }, people: 0, cargo: {} })).statusCode).toBe(400);
+    const tradeRouteRes = await a.call("POST", `/api/matches/${matchId}/regions/${aPick}/routes`, { toRegionId: homestead, mode: "fixed", load: { food: 300 }, share: 0, caravans: 2, everyHours: 1 });
+    expect(tradeRouteRes.statusCode, JSON.stringify(tradeRouteRes.json())).toBe(201);
+    const routeId = (tradeRouteRes.json() as { id: string }).id;
+    const foodBefore = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json()).owned.find((o) => o.regionId === homestead)!.food;
+    const ran = await a.call("POST", `/api/matches/${matchId}/routes/${routeId}/run`, {});
+    expect(ran.statusCode).toBe(200);
+    expect((ran.json() as { result: string }).result).toMatch(/^sent 1 caravan with 300 food/);
     state = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json());
-    expect(state.owned.find((o) => o.regionId === homestead)!.tributeShare).toBeCloseTo(0.3, 5);
+    expect(state.routes).toHaveLength(1);
+    const convoy = state.armies.find((x) => x.mission === "transport")!;
+    expect(convoy.units.caravan).toBe(1);
+    await skipTo(convoy.arrivesAt);
+    state = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json());
+    expect(state.owned.find((o) => o.regionId === homestead)!.food).toBeGreaterThan(foodBefore + 250);
+    const back = state.armies.find((x) => x.id === convoy.id);
+    expect(back?.status).toBe("returning");
+    await skipTo(back!.returnsAt!);
+    state = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json());
+    expect(state.owned.find((o) => o.regionId === aPick)!.units.caravan).toBe(2);
+    expect((await a.call("POST", `/api/matches/${matchId}/routes/${routeId}/toggle`, {})).statusCode).toBe(200);
+    expect((await a.call("DELETE", `/api/matches/${matchId}/routes/${routeId}`)).statusCode).toBe(200);
 
     // Milestone 4: a match tick scores everyone and lets the AI tribe act.
     {

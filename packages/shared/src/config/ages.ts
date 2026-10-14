@@ -79,6 +79,8 @@ export interface UnitDef {
   hidden?: boolean;
   /** Smallest batch that can be trained (settlers travel in groups). */
   minBatch?: number;
+  /** Civilians never fight: no raids, conquests or scouting. */
+  civilian?: boolean;
 }
 
 export interface TechDef {
@@ -140,7 +142,8 @@ export const UNITS: readonly UnitDef[] = [
   { id: "warrior", name: "Warrior", age: 0, description: "Club and courage.", attack: 3, defense: 3, speed: 5, carry: 15, cost: { food: 20, wood: 10 }, baseSeconds: 30 },
   { id: "slinger", name: "Slinger", age: 0, description: "Cheap ranged harassment.", attack: 4, defense: 1, speed: 5, carry: 10, cost: { food: 15, stone: 10 }, baseSeconds: 30 },
   { id: "tracker", name: "Tracker", age: 0, description: "Fast and light; ideal for scouting.", attack: 1, defense: 2, speed: 9, carry: 10, cost: { food: 25 }, baseSeconds: 25 },
-  { id: "settler", name: "Settler", age: 0, description: "Families with tools and seed grain. A group of five can settle unclaimed land and become its first workers.", attack: 0, defense: 1, speed: 4, carry: 0, cost: { food: 60, wood: 60, stone: 25 }, baseSeconds: 120, minBatch: 5 },
+  { id: "settler", name: "Settler", age: 0, description: "Families with tools and seed grain. A group of five can settle unclaimed land and become its first workers.", attack: 0, defense: 1, speed: 4, carry: 0, cost: { food: 60, wood: 60, stone: 25 }, baseSeconds: 120, minBatch: 5, civilian: true },
+  { id: "caravan", name: "Caravan", age: 0, description: "Pack animals and drivers. Each carries 500 of any goods to your regions or an ally's, then walks back. Roads make them faster.", attack: 0, defense: 1, speed: 8, carry: 500, cost: { food: 40, wood: 60 }, baseSeconds: 60, civilian: true },
   // Bronze
   { id: "spearman", name: "Spearman", age: 1, description: "Bronze-tipped spears hold the line.", attack: 5, defense: 7, speed: 5, carry: 20, cost: { food: 30, wood: 15, copper: 2, tin: 1 }, baseSeconds: 60, requires: "bronze_working" },
   { id: "archer", name: "Archer", age: 1, description: "Composite bows strike before the melee.", attack: 7, defense: 3, speed: 5, carry: 15, cost: { food: 30, wood: 30 }, baseSeconds: 60, requires: "bronze_working" },

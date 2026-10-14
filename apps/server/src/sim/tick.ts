@@ -1,11 +1,11 @@
 import { and, eq, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import type pino from "pino";
-import { balance, distanceKm, effectsOf, regionById, seededRng, storageCaps } from "@lastthaw/shared";
+import { balance, distanceKm, effectsOf, regionById, seededRng } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { matchRegions, matches, players } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
 import { matchNow } from "./clock.js";
-import { projectRegion, settleAndLockRegion, type Tx } from "./regions.js";
+import { settleAndLockRegion, type Tx } from "./regions.js";
 import { handleRegionLost } from "./missions.js";
 import { checkEarlyWin, updateScores } from "./endgame.js";
 import { notify, type MatchRow } from "../worker/jobs.js";
@@ -46,7 +46,6 @@ async function tickMatch(db: Db, publisher: Publisher, matchId: string, log: pin
     const rng = seededRng(`${m.seed}:tick:${now.getTime()}`);
 
     await loyaltyAndRebellion(tx, m, now, elapsedGameHours, rng, (fn) => after.push(fn), publisher);
-    await collectTribute(tx, m, now, elapsedGameHours);
     await neutralGrowth(tx, m, now, elapsedGameHours);
     const standings = await updateScores(tx, m);
     await checkEarlyWin(tx, m, now, standings, publisher, (fn) => after.push(fn));
@@ -126,52 +125,6 @@ async function loyaltyAndRebellion(tx: Tx, m: MatchRow, now: Date, hours: number
     if (Math.abs(loyalty - row.loyalty) > 1e-6) {
       await tx.update(matchRegions).set({ loyalty }).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, row.regionId)));
     }
-  }
-}
-
-/**
- * Tribute: each non-capital region with a tribute share sends that share of
- * its gross production since the last tick to its owner's capital (caravans
- * are abstracted; the move is instant and capped by both stores).
- */
-async function collectTribute(tx: Tx, m: MatchRow, now: Date, hours: number): Promise<void> {
-  if (hours <= 0) return;
-  const rows = await tx
-    .select({ regionId: matchRegions.regionId, owner: matchRegions.ownerPlayerId, share: matchRegions.tributeShare })
-    .from(matchRegions)
-    .where(and(eq(matchRegions.matchId, m.id), isNotNull(matchRegions.ownerPlayerId), sql`${matchRegions.tributeShare} > 0`, isNull(matchRegions.frozenAt)));
-  if (!rows.length) return;
-  const capitals = new Map(
-    (await tx.select({ id: players.id, capital: players.capitalRegionId }).from(players).where(eq(players.matchId, m.id))).map((p) => [p.id, p.capital]),
-  );
-  for (const r of rows) {
-    const capitalId = capitals.get(r.owner!);
-    if (!capitalId || capitalId === r.regionId) continue;
-    // Lock in ascending region id order, as everywhere else.
-    const [firstId, secondId] = [r.regionId, capitalId].sort();
-    const first = await settleAndLockRegion(tx, m.id, firstId!, now, m.speed);
-    const second = await settleAndLockRegion(tx, m.id, secondId!, now, m.speed);
-    const source = first.regionId === r.regionId ? first : second;
-    const capital = first.regionId === capitalId ? first : second;
-    if (capital.ownerPlayerId !== r.owner) continue;
-    const { rates } = projectRegion(source, now, m.speed);
-    const caps = storageCaps(effectsOf(capital.buildings));
-    const moved: Record<string, number> = {};
-    for (const res of ["food", "wood", "stone"] as const) {
-      const want = Math.max(0, rates.gross[res] * hours * r.share);
-      const room = Math.max(0, caps[res] - capital[res]);
-      const amt = Math.min(want, source[res], room);
-      if (amt > 0) moved[res] = amt;
-    }
-    if (!Object.keys(moved).length) continue;
-    await tx
-      .update(matchRegions)
-      .set({ food: source.food - (moved.food ?? 0), wood: source.wood - (moved.wood ?? 0), stone: source.stone - (moved.stone ?? 0) })
-      .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, source.regionId)));
-    await tx
-      .update(matchRegions)
-      .set({ food: capital.food + (moved.food ?? 0), wood: capital.wood + (moved.wood ?? 0), stone: capital.stone + (moved.stone ?? 0) })
-      .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, capital.regionId)));
   }
 }
 

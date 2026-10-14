@@ -12,7 +12,7 @@ const MISSIONS: Array<{ id: MissionKind; label: string; hint: string }> = [
   { id: "scout", label: "Scout", hint: "Look at the region and come back." },
   { id: "move", label: "Move", hint: "Station units in your own or an ally's region." },
   { id: "reinforce", label: "Reinforce", hint: "Same as move, for allies." },
-  { id: "transport", label: "Send resources", hint: "Carry goods to your own or an ally's region." },
+  { id: "transport", label: "Send resources", hint: "Caravans (500 each) carry goods to your own or an ally's region. For regular deliveries use the Routes tab." },
 ];
 
 /** Compose and send an army from an owned region. The target is picked on the map. */
@@ -63,7 +63,7 @@ export function SendArmy({
   const needsPeople = mission === "conquer";
   const settlers = chosen.settler ?? 0;
   const settleOk = mission !== "settle" || (settlers >= balance.settle.settlersRequired && Object.keys(chosen).every((id) => id === "settler"));
-  const canSend = !!target && target !== owned.regionId && (Object.keys(chosen).length > 0 || mission === "transport") && (!needsPeople || people >= balance.conquest.occupiersRequired) && settleOk;
+  const canSend = !!target && target !== owned.regionId && Object.keys(chosen).length > 0 && (!needsPeople || people >= balance.conquest.occupiersRequired) && settleOk;
 
   return (
     <div className="space-y-3 text-sm">
