@@ -161,42 +161,10 @@ export function SendArmy({
         Send
       </Button>
       <ErrorText>{send.error?.message}</ErrorText>
-      <ArmiesList state={state} clockOffsetMs={clockOffsetMs} />
     </div>
   );
 }
 
-export function ArmiesList({ state, clockOffsetMs }: { state: MatchStateView; clockOffsetMs: number }) {
-  const qc = useQueryClient();
-  const recall = useMutation({ mutationFn: (armyId: string) => api.recallArmy(state.match.id, armyId), onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matchState(state.match.id) }) });
-  if (state.armies.length === 0) return null;
-  return (
-    <div className="border-t border-slate-800 pt-2">
-      <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500">Units on the move</h3>
-      <ul className="space-y-1 text-sm">
-        {state.armies.map((a) => (
-          <li key={a.id} className="flex items-center justify-between gap-2">
-            <span>
-              <span>{missionLabel(a.mission)}</span> {a.status === "returning" ? "returning to" : "→"} {regionById(a.status === "returning" ? a.originRegionId : a.targetRegionId)?.name}
-              {a.status === "returning" && a.note ? <span className="text-slate-500"> ({a.note})</span> : null}
-              <span className="ml-1 text-xs text-slate-500">({Object.values(a.units).reduce((x, y) => x + y, 0)} units)</span>
-            </span>
-            <span className="text-slate-400">
-              <Countdown to={a.status === "returning" ? (a.returnsAt ?? a.arrivesAt) : a.arrivesAt} clockOffsetMs={clockOffsetMs} />
-            </span>
-            {a.status === "outbound" && (
-              <button className="text-xs text-slate-500 hover:text-amber-300" onClick={() => recall.mutate(a.id)} title="Recall: turn around and come home">
-                Recall
-              </button>
-            )}
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-/** Red banner with countdowns for hostile armies heading our way. */
 export function IncomingWarnings({ state, clockOffsetMs, onSelect }: { state: MatchStateView; clockOffsetMs: number; onSelect: (regionId: string) => void }) {
   const list = useMemo(() => [...state.incoming].sort((a, b) => Date.parse(a.arrivesAt) - Date.parse(b.arrivesAt)), [state.incoming]);
   if (list.length === 0) return null;
