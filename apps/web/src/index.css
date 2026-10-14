@@ -38,3 +38,11 @@ body {
     animation: none;
   }
 }
+
+/* Landing hero: night sky fading to ice at the horizon. */
+.hero {
+  background:
+    radial-gradient(70% 80% at 80% 0%, rgba(56, 189, 248, 0.18), transparent 60%),
+    radial-gradient(50% 60% at 10% 100%, rgba(45, 212, 191, 0.12), transparent 60%),
+    linear-gradient(180deg, #0b1a2b 0%, #07111f 100%);
+}

@@ -6,6 +6,10 @@ import { MatchPage } from "./routes/match.js";
 import { LeaderboardPage } from "./routes/leaderboard.js";
 import { ProfilePage } from "./routes/profile.js";
 import { AdminPage } from "./routes/admin.js";
+import { HomePage } from "./routes/home.js";
+import { AboutPage } from "./routes/about.js";
+import { HowToPlayPage } from "./routes/howToPlay.js";
+import { HallOfFamePage } from "./routes/hallOfFame.js";
 
 const rootRoute = createRootRoute({
   component: () => (
@@ -19,7 +23,11 @@ const rootRoute = createRootRoute({
 const tokenSearch = (s: Record<string, unknown>) => ({ token: typeof s.token === "string" ? s.token : undefined });
 
 const routes = [
-  createRoute({ getParentRoute: () => rootRoute, path: "/", component: LobbyPage }),
+  createRoute({ getParentRoute: () => rootRoute, path: "/", component: HomePage }),
+  createRoute({ getParentRoute: () => rootRoute, path: "/matches", component: LobbyPage }),
+  createRoute({ getParentRoute: () => rootRoute, path: "/about", component: AboutPage }),
+  createRoute({ getParentRoute: () => rootRoute, path: "/how-to-play", component: HowToPlayPage }),
+  createRoute({ getParentRoute: () => rootRoute, path: "/hall-of-fame", component: HallOfFamePage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/login", component: LoginPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/register", component: RegisterPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/verify", component: VerifyPage, validateSearch: tokenSearch }),

@@ -18,6 +18,19 @@ export function TopBar() {
         <span className="hidden text-sm italic text-sky-200/80 sm:inline">{TAGLINE}</span>
       </Link>
       <nav className="relative flex items-center gap-3 text-sm">
+        <Link to="/matches" className="hidden text-slate-300 hover:text-white md:inline">
+          Matches
+        </Link>
+        <Link to="/how-to-play" className="hidden text-slate-300 hover:text-white md:inline">
+          How to play
+        </Link>
+        <Link to="/hall-of-fame" className="hidden text-slate-300 hover:text-white md:inline">
+          Hall of fame
+        </Link>
+        <Link to="/about" className="hidden text-slate-300 hover:text-white md:inline">
+          About
+        </Link>
+        <span className="hidden h-5 w-px bg-slate-700 md:inline-block" />
         {me.data ? (
           <>
             <Link to="/profile" className="text-slate-300 hover:text-white">

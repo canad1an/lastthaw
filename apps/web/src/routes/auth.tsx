@@ -22,7 +22,7 @@ export function LoginPage() {
     mutationFn: () => api.login({ email, password }),
     onSuccess: (u) => {
       qc.setQueryData(keys.me, u);
-      void nav({ to: "/" });
+      void nav({ to: "/matches" });
     },
   });
   const submit = (e: FormEvent) => {
@@ -66,7 +66,7 @@ export function RegisterPage() {
     mutationFn: () => api.register({ email, password, displayName }),
     onSuccess: (u) => {
       qc.setQueryData(keys.me, u);
-      void nav({ to: "/" });
+      void nav({ to: "/matches" });
     },
   });
   return (
