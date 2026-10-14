@@ -197,7 +197,17 @@ export function WorldMap({ paint, selected, onSelect, focus, className = "", ice
             return (
               <g key={a.id}>
                 {showRoute && (
-                  <polyline points={a.route.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke={a.hostile ? "#f43f5e" : "#38bdf8"} strokeWidth={1.5 * u} strokeDasharray={`${5 * u} ${4 * u}`} strokeLinejoin="round" />
+                  <>
+                    {(() => {
+                      const dest = allRegions().find((x) => x.id === a.destinationId);
+                      return dest ? <path d={dest.path} fill={a.hostile ? "#f43f5e" : "#38bdf8"} fillOpacity={0.25} stroke={a.hostile ? "#f43f5e" : "#38bdf8"} strokeWidth={1.5 * u} /> : null;
+                    })()}
+                    <polyline points={a.route.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke="#0b1a2b" strokeWidth={5 * u} strokeLinejoin="round" strokeLinecap="round" opacity={0.8} />
+                    <polyline points={a.route.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke={a.hostile ? "#f43f5e" : "#7dd3fc"} strokeWidth={2.5 * u} strokeDasharray={`${8 * u} ${5 * u}`} strokeLinejoin="round" strokeLinecap="round" />
+                    {a.route.map((p, i) => (
+                      <circle key={i} cx={p.x} cy={p.y} r={3 * u} fill="#0b1a2b" stroke="#7dd3fc" strokeWidth={1.5 * u} />
+                    ))}
+                  </>
                 )}
               </g>
             );
@@ -250,6 +260,7 @@ export function WorldMap({ paint, selected, onSelect, focus, className = "", ice
                   {l}
                 </p>
               ))}
+              {a.routeNames.length > 1 && <p className="text-slate-500">via {a.routeNames.join(" → ")}</p>}
               <p className="text-slate-500">{routeArmy === a.id ? "click to hide route" : "click to show route"}</p>
             </div>
           </foreignObject>

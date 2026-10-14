@@ -12,6 +12,10 @@ export interface ArmyMarker {
   /** 0..1 progress along `route`. */
   progress: number;
   mission: string;
+  /** Region names along the current leg, origin → destination. */
+  routeNames: string[];
+  /** Destination region id for highlighting. */
+  destinationId: string;
 }
 
 /** Point `p` (0..1) of the way along a polyline, by distance. */
@@ -63,6 +67,7 @@ export function armyMarkers(armies: ArmyView[], incoming: IncomingView[], nowMs:
       .filter(([, n]) => n > 0)
       .map(([k, n]) => `${Math.round(n)} ${k}`)
       .join(", ");
+    const routeIds = returning ? [...ids].reverse() : ids;
     out.push({
       id: a.id,
       x: pos.x,
@@ -73,6 +78,8 @@ export function armyMarkers(armies: ArmyView[], incoming: IncomingView[], nowMs:
       lines: [fmtUnits(a.units), cargo ? `carrying ${cargo}` : "", `arrives in ${formatCountdown((end - nowMs) / 1000)}`].filter(Boolean),
       route,
       progress,
+      routeNames: routeIds.map((id) => regionById(id)?.name ?? id),
+      destinationId: returning ? a.originRegionId : a.targetRegionId,
     });
   }
   for (const i of incoming) {
@@ -88,7 +95,22 @@ export function armyMarkers(armies: ArmyView[], incoming: IncomingView[], nowMs:
       lines: [`about ${i.size} units`, `arrives in ${formatCountdown((Date.parse(i.arrivesAt) - nowMs) / 1000)}`],
       route: [],
       progress: 1,
+      routeNames: [],
+      destinationId: i.targetRegionId,
     });
+  }
+  // Fan out markers that sit on (almost) the same spot so each one can be hovered and clicked.
+  const placed: Array<{ x: number; y: number }> = [];
+  for (const mk of out) {
+    let k = 0;
+    while (placed.some((p) => Math.hypot(p.x - mk.x, p.y - mk.y) < 6) && k < 12) {
+      const angle = (k * Math.PI) / 3;
+      const r = 8 * (1 + Math.floor(k / 6));
+      mk.x += Math.cos(angle) * r - (k > 0 ? Math.cos(((k - 1) * Math.PI) / 3) * (8 * (1 + Math.floor((k - 1) / 6))) : 0);
+      mk.y += Math.sin(angle) * r - (k > 0 ? Math.sin(((k - 1) * Math.PI) / 3) * (8 * (1 + Math.floor((k - 1) / 6))) : 0);
+      k += 1;
+    }
+    placed.push({ x: mk.x, y: mk.y });
   }
   return out;
 }
