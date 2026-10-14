@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { buildingById, regionById, techById, unitById, type MatchStateView, missionLabel } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { Card } from "./ui.js";
@@ -18,6 +18,34 @@ export function ActivityPanel({ matchId, state, clockOffsetMs, onSelect }: { mat
   const research = jobs.filter((j) => j.kind === "research");
   const work = jobs.filter((j) => j.kind === "build" || j.kind === "train");
   const armies = state.armies;
+  // Group moving units by what they are and whether they are heading out or home.
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  const toggleGroup = (key: string) => setOpenGroups((o) => ({ ...o, [key]: !(o[key] ?? false) }));
+  const groups = useMemo(() => {
+    const map = new Map<string, { key: string; label: string; items: Array<{ army: MatchStateView["armies"][number]; dest: string; to: string; note: string }> }>();
+    for (const a of armies) {
+      const returning = a.status === "returning";
+      const key = `${a.mission}:${returning ? "back" : "out"}`;
+      const label = returning ? `${missionLabel(a.mission)} returning` : missionLabel(a.mission);
+      const dest = regionById(returning ? a.originRegionId : a.targetRegionId)?.name ?? "";
+      const to = returning ? (a.returnsAt ?? a.arrivesAt) : a.arrivesAt;
+      const units = Object.entries(a.units)
+        .filter(([, n]) => n > 0)
+        .map(([id, n]) => `${n} ${unitById.get(id)?.name ?? id}`)
+        .join(", ");
+      const goods = Object.entries(a.cargo)
+        .filter(([k, n]) => k !== "people" && n > 0)
+        .map(([k, n]) => `${Math.round(n)} ${k}`)
+        .join(", ");
+      const note = [units, goods].filter(Boolean).join(" · ") || "no units";
+      const g = map.get(key) ?? { key, label, items: [] };
+      g.items.push({ army: a, dest, to, note });
+      map.set(key, g);
+    }
+    const out = [...map.values()];
+    for (const g of out) g.items.sort((x, y) => Date.parse(x.to) - Date.parse(y.to));
+    return out.sort((x, y) => Date.parse(x.items[0]!.to) - Date.parse(y.items[0]!.to));
+  }, [armies]);
   const total = research.length + work.length + armies.length;
 
   const label = (j: MatchStateView["jobs"][number]) =>
@@ -90,18 +118,41 @@ export function ActivityPanel({ matchId, state, clockOffsetMs, onSelect }: { mat
       )}
       {armies.length > 0 && (
         <Section title="On the move">
-          {armies.map((a) => (
-            <Row
-              key={a.id}
-              name={`${missionLabel(a.mission)} ${a.status === "returning" ? "returning to" : "→"} ${regionById(a.status === "returning" ? a.originRegionId : a.targetRegionId)?.name}${a.status === "returning" && a.note ? ` (${a.note})` : ""}`}
-              note={`${Object.values(a.units).reduce((x, y) => x + y, 0)} units`}
-              to={a.status === "returning" ? (a.returnsAt ?? a.arrivesAt) : a.arrivesAt}
-              clockOffsetMs={clockOffsetMs}
-              onClick={() => onSelect(a.targetRegionId)}
-              onCancel={a.status === "outbound" ? () => recall.mutate(a.id) : undefined}
-              cancelTitle="Recall: turn around and come home"
-            />
-          ))}
+          {groups.map((g) => {
+            const isOpen = openGroups[g.key] ?? g.items.length <= 2;
+            const soonest = g.items[0]!;
+            return (
+              <li key={g.key} className="text-sm">
+                <button type="button" onClick={() => toggleGroup(g.key)} className="flex w-full items-center gap-2 text-left hover:text-white" aria-expanded={isOpen}>
+                  <span className="inline-block w-3 text-slate-500">{isOpen ? "▾" : "▸"}</span>
+                  <span className="min-w-0 flex-1 truncate">
+                    {g.label} <span className="text-slate-500">× {g.items.length}</span>
+                  </span>
+                  {!isOpen && (
+                    <span className="shrink-0 text-xs text-slate-500">
+                      next <Countdown to={soonest.to} clockOffsetMs={clockOffsetMs} />
+                    </span>
+                  )}
+                </button>
+                {isOpen && (
+                  <ul className="ml-5 space-y-0.5 border-l border-slate-800 pl-2">
+                    {g.items.map((it) => (
+                      <Row
+                        key={it.army.id}
+                        name={`${it.army.status === "returning" ? "returning to" : "→"} ${it.dest}${it.army.status === "returning" && it.army.note ? ` (${it.army.note})` : ""}`}
+                        note={it.note}
+                        to={it.to}
+                        clockOffsetMs={clockOffsetMs}
+                        onClick={() => onSelect(it.army.targetRegionId)}
+                        onCancel={it.army.status === "outbound" ? () => recall.mutate(it.army.id) : undefined}
+                        cancelTitle="Recall: turn around and come home"
+                      />
+                    ))}
+                  </ul>
+                )}
+              </li>
+            );
+          })}
         </Section>
       )}
         </>
