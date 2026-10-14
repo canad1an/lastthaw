@@ -49,3 +49,31 @@ export async function evacuateRegion(ctx: CommandContext, regionId: string, toRe
   const result = await sendArmy(ctx, regionId, { mission: "move", targetRegionId: toRegionId, units, people, cargo });
   return { army: result.army, people, units, cargo, leftBehind: Math.max(0, snapshot.food + snapshot.wood + snapshot.stone - Object.values(cargo).reduce((a, b) => a + b, 0)) };
 }
+
+/**
+ * Disband stationed units: they put down their weapons and rejoin the
+ * workers of the region. Nothing is refunded. Civilians (settlers, caravans)
+ * disband the same way.
+ */
+export async function disbandUnits(ctx: CommandContext, regionId: string, units: Record<string, number>) {
+  const { db, m, p } = ctx;
+  return db.transaction(async (tx) => {
+    const row = await settleAndLockRegion(tx, m.id, regionId, matchNow(m), m.speed);
+    if (row.ownerPlayerId !== p.id) throw httpError(403, "not your region");
+    const next = { ...(row.units as Record<string, number>) };
+    let n = 0;
+    for (const [id, want] of Object.entries(units)) {
+      const have = next[id] ?? 0;
+      const take = Math.max(0, Math.min(Math.floor(want), have));
+      if (take === 0) continue;
+      next[id] = have - take;
+      n += take;
+    }
+    if (n === 0) throw httpError(409, "no units to disband");
+    await tx
+      .update(matchRegions)
+      .set({ units: next, popSoldiers: Math.max(0, row.popSoldiers - n), popWorkers: row.popWorkers + n })
+      .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, regionId)));
+    return { disbanded: n };
+  });
+}

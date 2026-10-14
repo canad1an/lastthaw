@@ -106,7 +106,7 @@ export function computeRates(traits: RegionTraits, e: RegionEconomy): Rates {
     population = -pop * eco.starvationPerHour;
   } else {
     const room = Math.max(0, 1 - pop / Math.max(1, e.capacity));
-    population = pop * eco.growthPerHour * room;
+    population = (pop * eco.growthPerHour + eco.arrivalsPerHour) * room;
   }
 
   return { food: foodNet, wood: gross.wood, stone: gross.stone, population, special, gross, starving };

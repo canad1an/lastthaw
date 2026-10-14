@@ -100,7 +100,7 @@ export function RegionPanel({ matchId, state, regionId, clockOffsetMs, onClose, 
           {tab === "train" && <TrainTab matchId={matchId} state={state} owned={owned} clockOffsetMs={clockOffsetMs} />}
           {tab === "army" && (
             <>
-              <ArmyTab owned={owned} />
+              <ArmyTab matchId={matchId} owned={owned} />
               <SendArmy matchId={matchId} state={state} owned={owned} target={target} onPickTarget={onPickTarget} clockOffsetMs={clockOffsetMs} />
             </>
           )}
@@ -381,8 +381,18 @@ function TrainTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
   );
 }
 
-function ArmyTab({ owned }: { owned: OwnedRegionView }) {
+function ArmyTab({ matchId, owned }: { matchId: string; owned: OwnedRegionView }) {
+  const qc = useQueryClient();
   const entries = Object.entries(owned.units).filter(([, n]) => n > 0);
+  const [disbanding, setDisbanding] = useState<Record<string, number>>({});
+  const disband = useMutation({
+    mutationFn: () => api.disband(matchId, owned.regionId, disbanding),
+    onSuccess: () => {
+      setDisbanding({});
+      void qc.invalidateQueries({ queryKey: keys.matchState(matchId) });
+    },
+  });
+  const total = Object.values(disbanding).reduce((a, b) => a + b, 0);
   return (
     <div className="space-y-2 text-sm">
       {entries.length === 0 ? (
@@ -390,14 +400,36 @@ function ArmyTab({ owned }: { owned: OwnedRegionView }) {
       ) : (
         <ul className="space-y-1">
           {entries.map(([id, n]) => (
-            <li key={id} className="flex justify-between">
+            <li key={id} className="flex items-center justify-between gap-2">
               <span>{unitById.get(id)?.name ?? id}</span>
-              <span className="tabular-nums text-slate-300">{n}</span>
+              <span className="flex items-center gap-2">
+                <span className="tabular-nums text-slate-300">{n}</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={n}
+                  value={disbanding[id] ?? 0}
+                  onChange={(e) => setDisbanding((d) => ({ ...d, [id]: Math.max(0, Math.min(n, Number(e.target.value) || 0)) }))}
+                  className="w-16 rounded border border-slate-700 bg-slate-900 px-1 py-0.5 text-right"
+                  aria-label={`Disband ${unitById.get(id)?.name ?? id}`}
+                />
+              </span>
             </li>
           ))}
         </ul>
       )}
       <p className="text-xs text-slate-500">Defence bonus from buildings: +{Math.round(owned.effects.defense * 100)}%</p>
+      {entries.length > 0 && (
+        <div className="flex items-center justify-between gap-2 border-t border-slate-800 pt-2">
+          <span className="text-xs text-slate-400">
+            Stationed units defend and eat {balance.economy.soldierFoodMultiplier}x a worker's food. Disbanded units rejoin the workers; nothing is refunded.
+          </span>
+          <Button variant="ghost" disabled={total === 0 || disband.isPending} onClick={() => disband.mutate()}>
+            Disband {total > 0 ? total : ""}
+          </Button>
+        </div>
+      )}
+      <ErrorText>{disband.error?.message}</ErrorText>
     </div>
   );
 }

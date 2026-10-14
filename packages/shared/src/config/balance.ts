@@ -58,7 +58,9 @@ export const balance = {
     /** Soldiers eat this many times a worker's ration: armies are a real food sink. */
     soldierFoodMultiplier: 3,
     /** Population growth per game hour as a fraction of current population, when fed. */
-    growthPerHour: 0.035,
+    growthPerHour: 0.08,
+    /** Newcomers per game hour that arrive in any fed region with room, so small colonies take off too. */
+    arrivalsPerHour: 1.5,
     /** Growth slows to zero as population approaches the region's capacity. */
     baseCapacity: 50,
     /** Population lost per game hour as a fraction of current population while starving. */

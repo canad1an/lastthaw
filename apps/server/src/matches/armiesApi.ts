@@ -7,7 +7,7 @@ import { matchNow } from "../sim/clock.js";
 import { requireUser } from "../auth/session.js";
 import type { Publisher } from "../realtime/publish.js";
 import { httpError, sendArmy, type CommandContext } from "../sim/commands.js";
-import { evacuateRegion } from "../sim/evacuate.js";
+import { disbandUnits, evacuateRegion } from "../sim/evacuate.js";
 import { z } from "zod";
 
 export async function armyRoutes(app: FastifyInstance, opts: { db: Db; publisher: Publisher }) {
@@ -49,6 +49,17 @@ export async function armyRoutes(app: FastifyInstance, opts: { db: Db; publisher
     const r = await evacuateRegion(ctx, regionId, toRegionId);
     await publisher.toPlayer(matchId, ctx.p.id, "army.sent", { armyId: r.army.id, evacuated: regionId });
     return { ok: true, armyId: r.army.id, arrivesAt: r.army.arrivesAt.toISOString(), people: r.people, units: r.units, cargo: r.cargo, leftBehind: r.leftBehind };
+  });
+
+  /** Disband stationed units: they rejoin the region's workers. */
+  app.post("/api/matches/:id/regions/:regionId/disband", async (req) => {
+    const user = requireUser(req);
+    const { id: matchId, regionId } = req.params as { id: string; regionId: string };
+    const { units } = z.object({ units: z.record(z.string(), z.number().int().min(0)) }).parse(req.body);
+    const ctx = await loadContext(matchId, user.id);
+    const r = await disbandUnits(ctx, regionId, units);
+    await publisher.toPlayer(matchId, ctx.p.id, "region.updated", { regionId });
+    return { ok: true, disbanded: r.disbanded };
   });
 
   /** Turn an outbound army around. It walks home over the time it has already spent travelling. */
