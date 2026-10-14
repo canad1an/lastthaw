@@ -9,6 +9,95 @@ import { Button, ErrorText } from "./ui.js";
  * regions sends settlers and how many, then colonize.
  */
 export function ColonizePanel({ matchId, state, regionId }: { matchId: string; state: MatchStateView; regionId: string }) {
+  const settling = state.armies.find((a) => a.mission === "settle" && a.status === "outbound" && a.targetRegionId === regionId);
+  if (settling) return <SettlingPanel matchId={matchId} state={state} regionId={regionId} armyOrigin={settling.originRegionId} arrivesAt={settling.arrivesAt} />;
+  return <ColonizeForm matchId={matchId} state={state} regionId={regionId} />;
+}
+
+/** Settlers are already walking there: show the arrival and let the player set up (or watch) a stock-up. */
+function SettlingPanel({ matchId, state, regionId, armyOrigin, arrivesAt }: { matchId: string; state: MatchStateView; regionId: string; armyOrigin: string; arrivesAt: string }) {
+  const qc = useQueryClient();
+  const target = regionById(regionId)!;
+  const existing = state.routes.filter((r) => r.toRegionId === regionId && r.target);
+  const sources = useMemo(
+    () => state.owned.filter((o) => (o.units.caravan ?? 0) >= 1).sort((a, b) => (a.regionId === armyOrigin ? -1 : b.regionId === armyOrigin ? 1 : distanceKm(a.regionId, regionId) - distanceKm(b.regionId, regionId))),
+    [state.owned, armyOrigin, regionId],
+  );
+  const [sourceId, setSourceId] = useState<string>(sources[0]?.regionId ?? "");
+  useEffect(() => {
+    if (!sourceId || !sources.some((s) => s.regionId === sourceId)) setSourceId(sources[0]?.regionId ?? "");
+  }, [sources, sourceId]);
+  const source = sources.find((s) => s.regionId === sourceId);
+  const caravansHome = source?.units.caravan ?? 0;
+  const perCaravan = unitById.get("caravan")?.carry ?? 500;
+  const [stock, setStock] = useState<Record<string, number>>({ food: 300, wood: 300, stone: 100 });
+  const [caravans, setCaravans] = useState(2);
+  useEffect(() => setCaravans((c) => Math.max(1, Math.min(c, Math.max(1, caravansHome)))), [caravansHome]);
+  const stockTotal = Object.values(stock).reduce((a, b) => a + b, 0);
+  const trips = Math.ceil(stockTotal / (perCaravan * Math.max(1, Math.min(caravans, caravansHome))));
+  const create = useMutation({
+    mutationFn: () => api.createRoute(matchId, sourceId, { toRegionId: regionId, mode: "fixed", load: stock, share: 0, caravans, everyHours: 1, target: stock }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matchState(matchId) }),
+  });
+  const secondsLeft = Math.max(0, (Date.parse(arrivesAt) - Date.now()) / 1000);
+  return (
+    <div className="space-y-3 rounded-md border border-amber-400/30 bg-amber-400/5 p-3 text-sm">
+      <div>
+        <h3 className="font-medium text-amber-200">Settlers on the way</h3>
+        <p className="text-xs text-slate-400">
+          Your settlers reach {target.name} in {formatCountdown(secondsLeft)}. The colony becomes yours when they arrive.
+        </p>
+      </div>
+      {existing.length > 0 ? (
+        <div className="text-xs text-slate-300">
+          Stock-up in progress from {existing.map((r) => regionById(r.fromRegionId)?.name).join(", ")}:{" "}
+          {existing
+            .flatMap((r) => Object.entries(r.target!).map(([k, v]) => `${Math.round(r.delivered[k] ?? 0)}/${v} ${k}`))
+            .join(", ")}
+          . Manage it under Trade Routes.
+        </div>
+      ) : sources.length === 0 ? (
+        <p className="text-xs text-slate-400">To stock the colony by caravan, train caravans in one of your regions first, then come back here.</p>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-xs text-slate-300">Stock the colony by caravan once founded:</p>
+          <label className="flex items-center gap-2">
+            <span className="w-16 text-slate-400">From</span>
+            <select value={sourceId} onChange={(e) => setSourceId(e.target.value)} className="flex-1 rounded border border-slate-700 bg-slate-900 px-2 py-1">
+              {sources.map((s) => (
+                <option key={s.regionId} value={s.regionId}>
+                  {regionById(s.regionId)?.name} · {s.units.caravan} caravans
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="grid grid-cols-3 gap-2">
+            {(["food", "wood", "stone"] as const).map((res) => (
+              <label key={res} className="flex flex-col gap-0.5 text-xs text-slate-400">
+                {res}
+                <input type="number" min={0} step={50} value={stock[res] ?? 0} onChange={(e) => setStock((s) => ({ ...s, [res]: Math.max(0, Number(e.target.value) || 0) }))} className="rounded border border-slate-700 bg-slate-900 px-2 py-1 text-right text-sm text-white" />
+              </label>
+            ))}
+          </div>
+          <label className="grid grid-cols-[5rem_1fr_3rem] items-center gap-2">
+            <span className="text-xs text-slate-400">Caravans</span>
+            <input type="range" min={1} max={Math.max(1, caravansHome)} value={caravans} onChange={(e) => setCaravans(Number(e.target.value))} className="accent-amber-400" />
+            <span className="text-right tabular-nums">{caravans}</span>
+          </label>
+          <p className="text-xs text-slate-400">
+            {stockTotal} goods in about {trips} trip{trips === 1 ? "" : "s"}, starting when the settlers arrive. The route removes itself when the totals are delivered.
+          </p>
+          <Button disabled={create.isPending || stockTotal < 1 || !sourceId} onClick={() => create.mutate()}>
+            Start stock-up
+          </Button>
+          <ErrorText>{create.error?.message}</ErrorText>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ColonizeForm({ matchId, state, regionId }: { matchId: string; state: MatchStateView; regionId: string }) {
   const qc = useQueryClient();
   const need = balance.settle.settlersRequired;
   const target = regionById(regionId)!;

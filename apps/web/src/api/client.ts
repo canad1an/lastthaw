@@ -67,7 +67,7 @@ export const api = {
   research: (id: string, techId: string) => request<{ ok: true; jobId: string; endsAt: string }>("POST", `/api/matches/${id}/research`, { techId }),
   sendArmy: (id: string, regionId: string, body: { mission: string; targetRegionId: string; units: Record<string, number>; people: number; cargo: Record<string, number> }) =>
     request<{ ok: true; armyId: string; arrivesAt: string; path: string[] }>("POST", `/api/matches/${id}/regions/${regionId}/send`, body),
-  createRoute: (id: string, regionId: string, body: { toRegionId: string; mode: "fixed" | "share"; load: Record<string, number>; share: number; caravans: number; everyHours: number }) =>
+  createRoute: (id: string, regionId: string, body: { toRegionId: string; mode: "fixed" | "share"; load: Record<string, number>; share: number; caravans: number; everyHours: number; target?: Record<string, number> }) =>
     request<{ id: string }>("POST", `/api/matches/${id}/regions/${regionId}/routes`, body),
   updateRoute: (id: string, routeId: string, body: { toRegionId: string; mode: "fixed" | "share"; load: Record<string, number>; share: number; caravans: number; everyHours: number }) =>
     request<{ ok: true }>("PATCH", `/api/matches/${id}/routes/${routeId}`, body),

@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { and, eq, sql } from "drizzle-orm";
 import { balance, createRouteBody, regionById } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
-import { matchRegions, matches, players, tradeRoutes } from "../db/schema.js";
+import { armies, matchRegions, matches, players, tradeRoutes } from "../db/schema.js";
 import { requireUser } from "../auth/session.js";
 import type { Publisher } from "../realtime/publish.js";
 import { matchNow } from "../sim/clock.js";
@@ -45,15 +45,26 @@ export async function tradeRouteRoutes(app: FastifyInstance, opts: { db: Db; pub
       .from(matchRegions)
       .where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, body.toRegionId)))
       .limit(1);
-    const friendly = dest?.owner === p.id || (dest?.owner ? await areAllied(db, matchId, p.id, dest.owner) : false);
-    if (!friendly) throw httpError(400, "the destination must be yours or an ally's");
+    const target = body.target ? Object.fromEntries(Object.entries(body.target).filter(([, v]) => v >= 1).map(([k, v]) => [k, Math.floor(v)])) : null;
+    if (target && Object.keys(target).length === 0) throw httpError(400, "choose totals to deliver");
+    let friendly = dest?.owner === p.id || (dest?.owner ? await areAllied(db, matchId, p.id, dest.owner) : false);
+    if (!friendly && target && !dest?.owner) {
+      // Stock-up may be set up while settlers are still on the road.
+      const settling = await db
+        .select({ id: armies.id })
+        .from(armies)
+        .where(and(eq(armies.matchId, matchId), eq(armies.playerId, p.id), eq(armies.targetRegionId, body.toRegionId), eq(armies.mission, "settle"), eq(armies.status, "outbound")))
+        .limit(1);
+      friendly = settling.length > 0;
+    }
+    if (!friendly) throw httpError(400, "the destination must be yours, an ally's, or a region your settlers are heading to");
     const [count] = await db
       .select({ n: sql<number>`count(*)::int` })
       .from(tradeRoutes)
       .where(and(eq(tradeRoutes.matchId, matchId), eq(tradeRoutes.fromRegionId, regionId)));
     if ((count?.n ?? 0) >= balance.trade.maxRoutesPerRegion) throw httpError(409, `at most ${balance.trade.maxRoutesPerRegion} routes per region`);
-    if (body.mode === "share" && body.share <= 0) throw httpError(400, "share must be above 0%");
-    if (body.mode === "fixed" && !Object.values(body.load).some((v) => v > 0)) throw httpError(400, "choose something to carry");
+    if (!target && body.mode === "share" && body.share <= 0) throw httpError(400, "share must be above 0%");
+    if (!target && body.mode === "fixed" && !Object.values(body.load).some((v) => v > 0)) throw httpError(400, "choose something to carry");
     const [r] = await db
       .insert(tradeRoutes)
       .values({
@@ -61,11 +72,13 @@ export async function tradeRouteRoutes(app: FastifyInstance, opts: { db: Db; pub
         playerId: p.id,
         fromRegionId: regionId,
         toRegionId: body.toRegionId,
-        mode: body.mode,
-        load: body.load,
-        share: Math.min(balance.tribute.maxShare, body.share),
+        mode: target ? "fixed" : body.mode,
+        load: target ?? body.load,
+        share: target ? 0 : Math.min(balance.tribute.maxShare, body.share),
         caravans: body.caravans,
-        everyHours: body.everyHours,
+        everyHours: target ? 1 : body.everyHours,
+        target,
+        delivered: {},
         nextAt: matchNow(m),
       })
       .returning();

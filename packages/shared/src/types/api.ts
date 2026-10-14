@@ -190,6 +190,8 @@ export const createRouteBody = z.object({
   share: z.number().min(0).max(1).default(0),
   caravans: z.number().int().min(1).max(50),
   everyHours: z.number().min(0.5).max(48),
+  /** Stock-up: deliver these totals (fixed mode), then the route removes itself. May target a region my settlers are on their way to. */
+  target: z.record(z.string(), z.number().min(0)).optional(),
 });
 export const tradeRouteView = z.object({
   id: z.string(),

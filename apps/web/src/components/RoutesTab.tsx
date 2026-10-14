@@ -23,11 +23,14 @@ export function RoutesTab({ matchId, state, owned, clockOffsetMs, allRoutes = fa
   const destinations = useMemo(() => {
     const mine = state.owned.filter((o) => o.regionId !== owned.regionId).map((o) => ({ id: o.regionId, label: `${regionById(o.regionId)?.name}${o.isCapital ? " (capital)" : ""}` }));
     const allied = state.sighted.filter((s) => s.ownerPlayerId && state.allies.includes(s.ownerPlayerId)).map((s) => ({ id: s.regionId, label: `${regionById(s.regionId)?.name} (${s.ownerName})` }));
-    return [...mine, ...allied];
+    const settling = state.armies
+      .filter((a) => a.mission === "settle" && a.status === "outbound" && !state.owned.some((o) => o.regionId === a.targetRegionId))
+      .map((a) => ({ id: a.targetRegionId, label: `${regionById(a.targetRegionId)?.name} (settlers on the way)` }));
+    return [...mine, ...allied, ...settling.filter((s, i) => settling.findIndex((x) => x.id === s.id) === i)];
   }, [state, owned.regionId]);
 
   const [to, setTo] = useState<string>(destinations[0]?.id ?? "");
-  const [mode, setMode] = useState<"fixed" | "share">("fixed");
+  const [mode, setMode] = useState<"fixed" | "share" | "stockup">("fixed");
   const [load, setLoad] = useState<Record<string, number>>({ food: 0, wood: 200, stone: 0 });
   const [share, setShare] = useState(0.3);
   const [count, setCount] = useState(2);
@@ -36,7 +39,7 @@ export function RoutesTab({ matchId, state, owned, clockOffsetMs, allRoutes = fa
   const startEdit = (r: TradeRouteView) => {
     setEditing(r);
     setTo(r.toRegionId);
-    setMode(r.mode);
+    setMode(r.target ? "stockup" : r.mode);
     setLoad({ food: 0, wood: 0, stone: 0, ...r.load });
     setShare(r.share || 0.3);
     setCount(r.caravans);
@@ -96,13 +99,13 @@ export function RoutesTab({ matchId, state, owned, clockOffsetMs, allRoutes = fa
               </select>
             </label>
             <div className="flex gap-1">
-              {(["fixed", "share"] as const).map((m) => (
+              {(["fixed", "share", "stockup"] as const).map((m) => (
                 <button key={m} onClick={() => setMode(m)} className={`rounded px-2 py-1 text-xs ${mode === m ? "bg-sky-500 text-slate-950" : "bg-slate-800 text-slate-300"}`}>
-                  {m === "fixed" ? "Fixed amounts" : "Share of production"}
+                  {m === "fixed" ? "Fixed amounts" : m === "share" ? "Share of production" : "Stock-up totals"}
                 </button>
               ))}
             </div>
-            {mode === "fixed" ? (
+            {mode !== "share" ? (
               <div className="grid grid-cols-2 gap-1">
                 {GOODS.map((g) => (
                   <label key={g} className="flex items-center gap-2">
@@ -129,11 +132,15 @@ export function RoutesTab({ matchId, state, owned, clockOffsetMs, allRoutes = fa
                 <span className="text-xs text-slate-500">game h</span>
               </label>
             </div>
-            <p className="text-xs text-slate-500">Up to {count} caravans ({fmt(count * perCaravan)} goods) leave every {every} game hours, unload, and come back. Trips are skipped when nothing is in stock or no caravans are home.</p>
+            <p className="text-xs text-slate-500">
+              {mode === "stockup"
+                ? `Delivers these totals in trips of up to ${count} caravans (${fmt(count * perCaravan)} goods), one trip per game hour while caravans are home, then the route removes itself. Works for a region your settlers are still walking to.`
+                : `Up to ${count} caravans (${fmt(count * perCaravan)} goods) leave every ${every} game hours, unload, and come back. Trips are skipped when nothing is in stock or no caravans are home.`}
+            </p>
             <div className="flex flex-wrap gap-2">
               {editing ? (
                 <>
-                  <Button disabled={update.isPending || !to} onClick={() => update.mutate({ toRegionId: to, mode, load: mode === "fixed" ? load : {}, share: mode === "share" ? share : 0, caravans: count, everyHours: every })}>
+                  <Button disabled={update.isPending || !to || mode === "stockup"} onClick={() => update.mutate({ toRegionId: to, mode: mode === "share" ? "share" : "fixed", load: mode === "share" ? {} : load, share: mode === "share" ? share : 0, caravans: count, everyHours: every })}>
                     Save changes
                   </Button>
                   <Button variant="ghost" onClick={() => setEditing(null)}>
@@ -141,8 +148,21 @@ export function RoutesTab({ matchId, state, owned, clockOffsetMs, allRoutes = fa
                   </Button>
                 </>
               ) : (
-                <Button disabled={create.isPending || !to} onClick={() => create.mutate({ toRegionId: to, mode, load: mode === "fixed" ? load : {}, share: mode === "share" ? share : 0, caravans: count, everyHours: every })}>
-                  Add route
+                <Button
+                  disabled={create.isPending || !to}
+                  onClick={() =>
+                    create.mutate({
+                      toRegionId: to,
+                      mode: mode === "share" ? "share" : "fixed",
+                      load: mode === "share" ? {} : load,
+                      share: mode === "share" ? share : 0,
+                      caravans: count,
+                      everyHours: every,
+                      ...(mode === "stockup" ? { target: load } : {}),
+                    })
+                  }
+                >
+                  {mode === "stockup" ? "Start stock-up" : "Add route"}
                 </Button>
               )}
               {capital && capital !== owned.regionId && (
