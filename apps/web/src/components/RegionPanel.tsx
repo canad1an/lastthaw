@@ -49,7 +49,7 @@ interface Props {
   onPickTarget: (picking: boolean) => void;
 }
 
-type Tab = "overview" | "build" | "train" | "army";
+type Tab = "overview" | "build" | "train" | "units";
 
 export function RegionPanel({ matchId, state, regionId, clockOffsetMs, onClose, target, onPickTarget }: Props) {
   const region = regionById(regionId);
@@ -80,7 +80,7 @@ export function RegionPanel({ matchId, state, regionId, clockOffsetMs, onClose, 
       {owned ? (
         <>
           <nav className="flex gap-1 border-b border-slate-800 text-sm">
-            {(["overview", "build", "train", "army"] as Tab[]).map((t) => (
+            {(["overview", "build", "train", "units"] as Tab[]).map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
@@ -98,7 +98,7 @@ export function RegionPanel({ matchId, state, regionId, clockOffsetMs, onClose, 
           )}
           {tab === "build" && <BuildTab matchId={matchId} state={state} owned={owned} clockOffsetMs={clockOffsetMs} />}
           {tab === "train" && <TrainTab matchId={matchId} state={state} owned={owned} clockOffsetMs={clockOffsetMs} />}
-          {tab === "army" && (
+          {tab === "units" && (
             <>
               <ArmyTab matchId={matchId} owned={owned} />
               <SendArmy matchId={matchId} state={state} owned={owned} target={target} onPickTarget={onPickTarget} clockOffsetMs={clockOffsetMs} />

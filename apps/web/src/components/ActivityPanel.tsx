@@ -57,7 +57,7 @@ export function ActivityPanel({ matchId, state, clockOffsetMs, onSelect }: { mat
         </Section>
       )}
       {armies.length > 0 && (
-        <Section title="Armies">
+        <Section title="On the move">
           {armies.map((a) => (
             <Row
               key={a.id}

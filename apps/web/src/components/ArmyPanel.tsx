@@ -159,7 +159,7 @@ export function ArmiesList({ state, clockOffsetMs }: { state: MatchStateView; cl
   if (state.armies.length === 0) return null;
   return (
     <div className="border-t border-slate-800 pt-2">
-      <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500">Armies in the field</h3>
+      <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500">Units on the move</h3>
       <ul className="space-y-1 text-sm">
         {state.armies.map((a) => (
           <li key={a.id} className="flex items-center justify-between gap-2">
