@@ -4,6 +4,29 @@ import { balance, distanceKm, formatCountdown, regionById, unitById, type MatchS
 import { api, keys } from "../api/client.js";
 import { Button, ErrorText } from "./ui.js";
 
+/** The last stock-up settings used on this device, so the form does not reset to defaults each time. */
+const STOCK_KEY = "lt_stockup";
+type StockPrefs = { stock: Record<string, number>; caravans: number; stockUp: boolean };
+function loadStockPrefs(): StockPrefs {
+  try {
+    const raw = localStorage.getItem(STOCK_KEY);
+    if (raw) {
+      const v = JSON.parse(raw) as Partial<StockPrefs>;
+      return { stock: { food: 300, wood: 300, stone: 100, ...(v.stock ?? {}) }, caravans: Math.max(1, Number(v.caravans) || 2), stockUp: !!v.stockUp };
+    }
+  } catch {
+    // ignore
+  }
+  return { stock: { food: 300, wood: 300, stone: 100 }, caravans: 2, stockUp: false };
+}
+function saveStockPrefs(p: StockPrefs): void {
+  try {
+    localStorage.setItem(STOCK_KEY, JSON.stringify(p));
+  } catch {
+    // ignore
+  }
+}
+
 /**
  * Shown when an unclaimed frontier region is selected: choose which of your
  * regions sends settlers and how many, then colonize.
@@ -30,13 +53,17 @@ function SettlingPanel({ matchId, state, regionId, armyOrigin, arrivesAt }: { ma
   const source = sources.find((s) => s.regionId === sourceId);
   const caravansHome = source?.units.caravan ?? 0;
   const perCaravan = unitById.get("caravan")?.carry ?? 500;
-  const [stock, setStock] = useState<Record<string, number>>({ food: 300, wood: 300, stone: 100 });
-  const [caravans, setCaravans] = useState(2);
+  const [prefs] = useState(loadStockPrefs);
+  const [stock, setStock] = useState<Record<string, number>>(prefs.stock);
+  const [caravans, setCaravans] = useState(prefs.caravans);
   useEffect(() => setCaravans((c) => Math.max(1, Math.min(c, Math.max(1, caravansHome)))), [caravansHome]);
   const stockTotal = Object.values(stock).reduce((a, b) => a + b, 0);
   const trips = Math.ceil(stockTotal / (perCaravan * Math.max(1, Math.min(caravans, caravansHome))));
   const create = useMutation({
-    mutationFn: () => api.createRoute(matchId, sourceId, { toRegionId: regionId, mode: "fixed", load: stock, share: 0, caravans, everyHours: 1, target: stock }),
+    mutationFn: () => {
+      saveStockPrefs({ stock, caravans, stockUp: true });
+      return api.createRoute(matchId, sourceId, { toRegionId: regionId, mode: "fixed", load: stock, share: 0, caravans, everyHours: 1, target: stock });
+    },
     onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matchState(matchId) }),
   });
   const secondsLeft = Math.max(0, (Date.parse(arrivesAt) - Date.now()) / 1000);
@@ -126,19 +153,22 @@ function ColonizeForm({ matchId, state, regionId }: { matchId: string; state: Ma
   });
   const caravansHome = source?.units.caravan ?? 0;
   const perCaravan = unitById.get("caravan")?.carry ?? 500;
-  const [stockUp, setStockUp] = useState(false);
-  const [stock, setStock] = useState<Record<string, number>>({ food: 300, wood: 300, stone: 100 });
-  const [caravans, setCaravans] = useState(2);
+  const [prefs] = useState(loadStockPrefs);
+  const [stockUp, setStockUp] = useState(prefs.stockUp);
+  const [stock, setStock] = useState<Record<string, number>>(prefs.stock);
+  const [caravans, setCaravans] = useState(prefs.caravans);
   useEffect(() => setCaravans((c) => Math.max(1, Math.min(c, Math.max(1, caravansHome)))), [caravansHome]);
   const stockTotal = Object.values(stock).reduce((a, b) => a + b, 0);
   const trips = Math.ceil(stockTotal / (perCaravan * Math.max(1, Math.min(caravans, caravansHome))));
   const send = useMutation({
-    mutationFn: () =>
-      api.colonize(matchId, sourceId!, {
+    mutationFn: () => {
+      saveStockPrefs({ stock, caravans, stockUp });
+      return api.colonize(matchId, sourceId!, {
         targetRegionId: regionId,
         settlers: count,
         ...(stockUp && stockTotal > 0 ? { stock, caravans } : {}),
-      }),
+      });
+    },
     onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matchState(matchId) }),
   });
 
