@@ -28,6 +28,9 @@ export interface WorldMapProps {
   roads?: Array<[string, string, string]>;
 }
 
+/** Missions drawn as military (orange, sword) rather than civil traffic. */
+const MILITARY = new Set(["raid", "conquer", "reinforce"]);
+
 const TERRAIN_FILL: Record<string, string> = {
   plains: "#6b8f3a",
   forest: "#2f6b3a",
@@ -264,11 +267,20 @@ export function WorldMap({ paint, selected, onSelect, focus, className = "", ice
                     <circle cx={4} cy={5} r={1.8} fill="none" stroke="#0b1a2b" strokeWidth={1.3} />
                   </g>
                 ) : (
-                  <circle r={7} fill={a.hostile ? "#f43f5e" : "#38bdf8"} stroke="#0b1a2b" strokeWidth={1.5} />
+                  // Enemy attacks pulse rose; my own military (raid, conquer, reinforce) is orange with a sword; civil traffic is blue.
+                  <circle r={7} fill={a.hostile ? "#f43f5e" : MILITARY.has(a.mission) ? "#f97316" : "#38bdf8"} stroke="#0b1a2b" strokeWidth={1.5} />
                 )}
-                {a.mission !== "relocate" && (
-                  <path d={a.mission === "transport" ? "M-3.5 -1h7v4h-7z M-2 -3h4v2h-4z" : a.mission === "settle" ? "M-4 2h8v1h-8z M-3 2v-4l3-2 3 2v4" : "M-3 3L3 -3 M3 -3h-2.5 M3 -3v2.5"} fill={a.mission === "transport" || a.mission === "settle" ? "#0b1a2b" : "none"} stroke="#0b1a2b" strokeWidth={1.4} strokeLinecap="round" />
-                )}
+                {a.mission !== "relocate" &&
+                  (a.hostile || MILITARY.has(a.mission) ? (
+                    <g stroke="#0b1a2b" strokeWidth={1.4} strokeLinecap="round" fill="none">
+                      <path d="M-3.2 3.2L3.4 -3.4" />
+                      <path d="M3.4 -3.4l1.2 -1.2" strokeWidth={1.8} />
+                      <path d="M-3.6 0.6L-0.6 3.6" />
+                      <path d="M-4.2 4.2l-0.8 0.8" strokeWidth={2} />
+                    </g>
+                  ) : (
+                    <path d={a.mission === "transport" ? "M-3.5 -1h7v4h-7z M-2 -3h4v2h-4z" : a.mission === "settle" ? "M-4 2h8v1h-8z M-3 2v-4l3-2 3 2v4" : "M-3 3L3 -3 M3 -3h-2.5 M3 -3v2.5"} fill={a.mission === "transport" || a.mission === "settle" ? "#0b1a2b" : "none"} stroke="#0b1a2b" strokeWidth={1.4} strokeLinecap="round" />
+                  ))}
               </g>
             );
           })}
