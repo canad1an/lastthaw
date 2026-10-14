@@ -25,27 +25,31 @@ export async function applyIceStep(tx: Tx, m: MatchRow, job: JobRow, publisher: 
   const tapering = allRegions()
     .map((r) => ({ id: r.id, ...iceExposure(r, day) }))
     .filter((x) => x.touched && !x.frozen);
-  if (tapering.length) {
-    const taperRows = await tx
-      .select({ regionId: matchRegions.regionId, iceFactor: matchRegions.iceFactor })
-      .from(matchRegions)
-      .where(and(eq(matchRegions.matchId, m.id), isNull(matchRegions.frozenAt), inArray(matchRegions.regionId, tapering.map((t) => t.id))));
-    for (const row of taperRows) {
-      const f = tapering.find((t) => t.id === row.regionId)!.factor;
-      if (Math.abs(f - row.iceFactor) < 0.01) continue;
-      await settleAndLockRegion(tx, m.id, row.regionId, job.endsAt, m.speed);
-      await tx.update(matchRegions).set({ iceFactor: f }).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, row.regionId)));
-    }
-  }
+  const taperRows = tapering.length
+    ? await tx
+        .select({ regionId: matchRegions.regionId, iceFactor: matchRegions.iceFactor })
+        .from(matchRegions)
+        .where(and(eq(matchRegions.matchId, m.id), isNull(matchRegions.frozenAt), inArray(matchRegions.regionId, tapering.map((t) => t.id))))
+    : [];
+  const taperChanges = taperRows
+    .map((row) => ({ regionId: row.regionId, factor: tapering.find((t) => t.id === row.regionId)!.factor, current: row.iceFactor }))
+    .filter((x) => Math.abs(x.factor - x.current) >= 0.01);
   const toFreeze = allRegions().filter((r) => Math.abs(r.lat) >= lat).map((r) => r.id);
-  if (toFreeze.length === 0) return;
-  const rows = await tx
-    .select({ regionId: matchRegions.regionId, owner: matchRegions.ownerPlayerId })
-    .from(matchRegions)
-    .where(and(eq(matchRegions.matchId, m.id), isNull(matchRegions.frozenAt), inArray(matchRegions.regionId, toFreeze)));
+  const rows = toFreeze.length
+    ? await tx
+        .select({ regionId: matchRegions.regionId, owner: matchRegions.ownerPlayerId })
+        .from(matchRegions)
+        .where(and(eq(matchRegions.matchId, m.id), isNull(matchRegions.frozenAt), inArray(matchRegions.regionId, toFreeze)))
+    : [];
+  if (taperChanges.length === 0 && rows.length === 0) return;
+  // Lock every region we touch in ascending order (the lock order used everywhere) before changing any.
+  const touched = [...new Set([...taperChanges.map((t) => t.regionId), ...rows.map((r) => r.regionId)])].sort();
+  for (const id of touched) await settleAndLockRegion(tx, m.id, id, job.endsAt, m.speed);
+  for (const t of taperChanges) {
+    await tx.update(matchRegions).set({ iceFactor: t.factor }).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, t.regionId)));
+  }
   const byOwner = new Map<string, string[]>();
   for (const r of rows) {
-    await settleAndLockRegion(tx, m.id, r.regionId, job.endsAt, m.speed);
     await tx.update(matchRegions).set({ frozenAt: job.endsAt, iceFactor: 0 }).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, r.regionId)));
     if (r.owner) byOwner.set(r.owner, [...(byOwner.get(r.owner) ?? []), r.regionId]);
   }
