@@ -7,8 +7,9 @@ import { AlliancePanel } from "./AlliancePanel.js";
 import { Chat } from "./Chat.js";
 import { MarketPanel } from "./MarketPanel.js";
 import { ageName } from "./RegionPanel.js";
+import { LeaderboardTable } from "../routes/leaderboard.js";
 
-type Menu = "messages" | "alliance" | "chat" | "market" | "players";
+type Menu = "messages" | "alliance" | "chat" | "market" | "players" | "leaderboard";
 
 /**
  * Slim menu bar above the map: Messages (with a 5-second toast for new ones),
@@ -54,6 +55,7 @@ export function TopMenu({ matchId, state, selectedRegionId, colorOf }: { matchId
         <Tab id="chat" label="Chat" />
         <Tab id="market" label="Market" />
         <Tab id="players" label="Players" badge={state.players.length} />
+        <Tab id="leaderboard" label="Leaderboard" />
         <div className="mx-2 h-5 w-px bg-slate-800" />
         {toast ? (
           <button className="min-w-0 flex-1 truncate text-left text-sm text-slate-100" onClick={() => toggle("messages")}>
@@ -80,6 +82,11 @@ export function TopMenu({ matchId, state, selectedRegionId, colorOf }: { matchId
           {open === "market" && (
             <div className="p-3">
               <MarketPanel matchId={matchId} state={state} selectedRegionId={selectedRegionId} />
+            </div>
+          )}
+          {open === "leaderboard" && (
+            <div className="overflow-x-auto">
+              <LeaderboardTable matchId={matchId} compact />
             </div>
           )}
           {open === "players" && (

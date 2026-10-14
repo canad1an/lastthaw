@@ -186,7 +186,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
           dashed={state.frontier}
         />
         {picking && <div className="pointer-events-none absolute inset-x-0 top-2 text-center text-sm text-amber-300">Click a region to target it</div>}
-        <div className="pointer-events-none absolute bottom-2 left-2 flex flex-wrap gap-2 text-xs">
+        <div className="pointer-events-none absolute bottom-2 left-2 hidden flex-wrap gap-2 text-xs lg:flex">
           <Badge>{state.match.name}</Badge>
           <Badge>{state.match.speed}x</Badge>
           <Badge>{finished ? "finished" : `Day ${Math.min(balance.match.lengthDays, Math.floor(matchDay) + 1)} of ${balance.match.lengthDays} · ends in ${formatCountdown(endsIn)}`}</Badge>
@@ -199,9 +199,6 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
           <button onClick={() => setForecast((f) => !f)} className={`rounded px-2 py-1 ${forecast ? "bg-sky-200 text-slate-900" : "bg-slate-950/80 text-slate-200 hover:bg-slate-800"}`}>
             Ice forecast
           </button>
-          <Link to="/match/$matchId/leaderboard" params={{ matchId }} className="rounded bg-slate-950/80 px-2 py-1 text-slate-200 hover:bg-slate-800">
-            Leaderboard
-          </Link>
         </div>
       </div>
       <aside className="w-full space-y-3 overflow-y-auto border-t border-slate-800 p-4 lg:w-96 lg:border-l lg:border-t-0">
