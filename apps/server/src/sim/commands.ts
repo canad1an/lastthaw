@@ -178,7 +178,9 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
   if (body.targetRegionId === regionId) throw httpError(400, "the army is already there");
   const units = Object.fromEntries(Object.entries(body.units).filter(([, n]) => n > 0));
   const unitCount = Object.values(units).reduce((a, b) => a + b, 0);
-  if (unitCount === 0) throw httpError(400, body.mission === "transport" ? "send at least one caravan to carry the goods" : "send at least one unit");
+  // People may travel unescorted on friendly moves (evacuations); every other mission needs units.
+  const unescorted = (body.mission === "move" || body.mission === "reinforce") && body.people > 0;
+  if (unitCount === 0 && !unescorted) throw httpError(400, body.mission === "transport" ? "send at least one caravan to carry the goods" : "send at least one unit");
   if (body.mission === "conquer" && body.people < balance.conquest.occupiersRequired) {
     throw httpError(400, `conquering needs at least ${balance.conquest.occupiersRequired} people to occupy the region`);
   }
@@ -192,8 +194,8 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
   if (body.mission !== "settle" && (units.settler ?? 0) > 0) throw httpError(400, "settlers only go on settle missions");
   const goods = Object.entries(body.cargo).reduce((a, [, v]) => a + v, 0);
   if (goods > 0) {
-    const cap = carryCapacity(units);
-    if (goods > cap) throw httpError(400, `not enough carrying capacity: these units carry ${cap}, you are sending ${Math.round(goods)}. Caravans carry 500 each.`);
+    const cap = carryCapacity(units) + (HOSTILE.has(body.mission) ? 0 : body.people * balance.travel.carryPerPerson);
+    if (goods > cap) throw httpError(400, `not enough carrying capacity: these units and people carry ${cap}, you are sending ${Math.round(goods)}. Caravans carry 500 each.`);
   }
   const route = findRoute(regionId, body.targetRegionId, techs.has(balance.travel.seaTech));
   if (!route) throw httpError(400, techs.has(balance.travel.seaTech) ? "no route to that region" : "no land route; research Shipbuilding to cross the sea");
@@ -205,7 +207,8 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
     // Roads at the origin speed up friendly traffic (caravans, moves, reinforcements).
     const friendlyMission = body.mission === "transport" || body.mission === "move" || body.mission === "reinforce";
     const roadBonus = friendlyMission ? effectsOf(origin.buildings).roads : 0;
-    const seconds = travelSeconds(route, armySpeed(units) * (1 + roadBonus), m.speed);
+    const walking = unitById.get("settler")?.speed ?? 4;
+    const seconds = travelSeconds(route, (unitCount ? armySpeed(units) : walking) * (1 + roadBonus), m.speed);
 
     const [target] = await tx
       .select()

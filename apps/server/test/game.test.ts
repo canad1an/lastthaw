@@ -312,6 +312,24 @@ describe("milestone 1 flow", () => {
     expect((await a.call("POST", `/api/matches/${matchId}/routes/${routeId}/toggle`, {})).statusCode).toBe(200);
     expect((await a.call("DELETE", `/api/matches/${matchId}/routes/${routeId}`)).statusCode).toBe(200);
 
+    // Evacuate: everyone and the stock they can carry leave the colony for the capital.
+    {
+      const before = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json());
+      const colony = before.owned.find((o) => o.regionId === homestead)!;
+      const ev = await a.call("POST", `/api/matches/${matchId}/regions/${homestead}/evacuate`, { toRegionId: aPick });
+      expect(ev.statusCode, JSON.stringify(ev.json())).toBe(200);
+      const body = ev.json() as { people: number; cargo: Record<string, number>; arrivesAt: string };
+      expect(body.people).toBe(Math.floor(colony.popWorkers + colony.popOccupiers));
+      expect(body.cargo.food ?? 0).toBeGreaterThan(0);
+      let after = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json());
+      expect(after.owned.find((o) => o.regionId === homestead)!.popWorkers).toBeLessThan(1);
+      const capitalPeopleBefore = after.owned.find((o) => o.regionId === aPick)!.popWorkers;
+      await skipTo(body.arrivesAt);
+      after = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json());
+      expect(after.owned.find((o) => o.regionId === aPick)!.popWorkers).toBeGreaterThan(capitalPeopleBefore + body.people - 1);
+      expect((await a.call("POST", `/api/matches/${matchId}/regions/${homestead}/evacuate`, { toRegionId: aPick })).statusCode).toBe(409);
+    }
+
     // Milestone 4: a match tick scores everyone and lets the AI tribe act.
     {
       const redis = createRedis();

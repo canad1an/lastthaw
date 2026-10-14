@@ -7,6 +7,8 @@ import { matchNow } from "../sim/clock.js";
 import { requireUser } from "../auth/session.js";
 import type { Publisher } from "../realtime/publish.js";
 import { httpError, sendArmy, type CommandContext } from "../sim/commands.js";
+import { evacuateRegion } from "../sim/evacuate.js";
+import { z } from "zod";
 
 export async function armyRoutes(app: FastifyInstance, opts: { db: Db; publisher: Publisher }) {
   const { db, publisher } = opts;
@@ -36,6 +38,17 @@ export async function armyRoutes(app: FastifyInstance, opts: { db: Db; publisher
     if (!route) throw httpError(400, techs.has(balance.travel.seaTech) ? "no route" : "no land route; Shipbuilding allows sea crossings");
     const speed = Number(q.speed ?? 5) || 5;
     return { path: route.path, seconds: travelSeconds(route, speed, m.speed), usesSea: route.usesSea };
+  });
+
+  /** Evacuate a region: everyone and every unit moves to another of your regions with as much stock as they can carry. */
+  app.post("/api/matches/:id/regions/:regionId/evacuate", async (req) => {
+    const user = requireUser(req);
+    const { id: matchId, regionId } = req.params as { id: string; regionId: string };
+    const { toRegionId } = z.object({ toRegionId: z.string() }).parse(req.body);
+    const ctx = await loadContext(matchId, user.id);
+    const r = await evacuateRegion(ctx, regionId, toRegionId);
+    await publisher.toPlayer(matchId, ctx.p.id, "army.sent", { armyId: r.army.id, evacuated: regionId });
+    return { ok: true, armyId: r.army.id, arrivesAt: r.army.arrivesAt.toISOString(), people: r.people, units: r.units, cargo: r.cargo, leftBehind: r.leftBehind };
   });
 
   /** Turn an outbound army around. It walks home over the time it has already spent travelling. */

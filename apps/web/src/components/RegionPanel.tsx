@@ -32,6 +32,7 @@ import { Button, Card, ErrorText, fmt, signed } from "./ui.js";
 import { Countdown, CostLine } from "./Countdown.js";
 import { SendArmy } from "./ArmyPanel.js";
 import { ColonizePanel } from "./ColonizePanel.js";
+import { EvacuatePanel } from "./EvacuatePanel.js";
 import { BeforeAfter, Tooltip } from "./Tooltip.js";
 import { buildingPreview, unitPreview } from "./previews.js";
 import type { BuildingDef, UnitDef } from "@lastthaw/shared";
@@ -89,7 +90,12 @@ export function RegionPanel({ matchId, state, regionId, clockOffsetMs, onClose, 
               </button>
             ))}
           </nav>
-          {tab === "overview" && <OwnedDetails matchId={matchId} owned={owned} clockOffsetMs={clockOffsetMs} speed={state.match.speed} />}
+          {tab === "overview" && (
+            <>
+              <OwnedDetails matchId={matchId} owned={owned} clockOffsetMs={clockOffsetMs} speed={state.match.speed} />
+              <EvacuatePanel matchId={matchId} state={state} owned={owned} matchDay={Math.max(0, ((Date.now() + clockOffsetMs - Date.parse(state.match.startsAt)) / 86400_000) * state.match.speed)} />
+            </>
+          )}
           {tab === "build" && <BuildTab matchId={matchId} state={state} owned={owned} clockOffsetMs={clockOffsetMs} />}
           {tab === "train" && <TrainTab matchId={matchId} state={state} owned={owned} clockOffsetMs={clockOffsetMs} />}
           {tab === "army" && (

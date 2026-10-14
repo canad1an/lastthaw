@@ -110,6 +110,8 @@ export const balance = {
     seaFactor: 0.7,
     /** Tech that allows armies to use sea routes. */
     seaTech: "shipbuilding",
+    /** Goods each travelling person can carry on moves, reinforcements and evacuations. */
+    carryPerPerson: 20,
   },
   combat: {
     maxRounds: 6,
