@@ -110,6 +110,8 @@ export const ownedRegionView = z.object({
     harbor: z.boolean(),
   }),
   loyalty: z.number(),
+  /** Taken by force: needs occupiers (10 per 100 people) to stay loyal. */
+  conquered: z.boolean().default(false),
   /** Production multiplier from the ice taper: 1 untouched, down to 0.25 before freezing. */
   iceFactor: z.number().default(1),
   frozen: z.boolean(),

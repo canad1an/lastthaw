@@ -105,8 +105,22 @@ async function loyaltyAndRebellion(tx: Tx, m: MatchRow, now: Date, hours: number
     const effects = effectsOf(row.buildings);
     const km = distanceKm(capital, row.regionId);
     const pop = row.popWorkers + row.popSoldiers + row.popOccupiers;
-    const occupierNeed = (pop / 100) * c.occupiersPerHundred;
-    const occupierFactor = occupierNeed > 0 ? Math.min(1, row.popOccupiers / occupierNeed) : 1;
+    const occupierNeed = row.conquered ? (pop / 100) * c.occupiersPerHundred : 0;
+    // Temples turn workers into occupiers over time, so a growing conquest keeps up without fresh settlers.
+    const templeLevel = row.buildings.temple ?? 0;
+    let occupiers = row.popOccupiers;
+    if (row.conquered && templeLevel > 0 && occupiers < occupierNeed) {
+      const convert = Math.min(occupierNeed - occupiers, templeLevel * c.templeConvertsPerLevelPerHour * hours, Math.max(0, row.popWorkers - 1));
+      if (convert > 0) {
+        const settled = await settleAndLockRegion(tx, m.id, row.regionId, now, m.speed);
+        const take = Math.min(convert, Math.max(0, settled.popWorkers - 1));
+        if (take > 0) {
+          occupiers = settled.popOccupiers + take;
+          await tx.update(matchRegions).set({ popWorkers: settled.popWorkers - take, popOccupiers: occupiers }).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, row.regionId)));
+        }
+      }
+    }
+    const occupierFactor = occupierNeed > 0 ? Math.min(1, occupiers / occupierNeed) : 1;
     const target = Math.max(0, Math.min(1, 1 - km / c.distanceScaleKm + effects.loyalty)) * (0.5 + 0.5 * occupierFactor);
     const loyalty = row.loyalty + (target - row.loyalty) * Math.min(1, c.loyaltyRate * hours);
 

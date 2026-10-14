@@ -21,14 +21,14 @@ export interface LoyaltyOutlook {
  * the capital sets the base, loyalty buildings add to it, and missing occupiers
  * halve it. Capitals are always fully loyal.
  */
-export function loyaltyOutlook(regionId: string, capitalId: string | null, buildingLoyalty: number, population: number, occupiers: number, current: number): LoyaltyOutlook {
+export function loyaltyOutlook(regionId: string, capitalId: string | null, buildingLoyalty: number, population: number, occupiers: number, current: number, conquered = true): LoyaltyOutlook {
   const c = balance.conquest;
   if (!capitalId || capitalId === regionId) {
     return { target: 1, km: 0, distancePenalty: 0, buildingBonus: 0, occupierFactor: 1, occupiersNeeded: 0, rebelBelow: c.rebelBelow, hoursToSettle: 0 };
   }
   const km = distanceKm(capitalId, regionId);
   const distancePenalty = Math.min(1, km / c.distanceScaleKm);
-  const occupiersNeeded = (population / 100) * c.occupiersPerHundred;
+  const occupiersNeeded = conquered ? (population / 100) * c.occupiersPerHundred : 0;
   const occupierFactor = occupiersNeeded > 0 ? Math.min(1, occupiers / occupiersNeeded) : 1;
   const target = Math.max(0, Math.min(1, 1 - distancePenalty + buildingLoyalty)) * (0.5 + 0.5 * occupierFactor);
   const gap = Math.abs(target - current);

@@ -173,7 +173,8 @@ function OwnedDetails({ matchId, state, owned, clockOffsetMs, speed }: { matchId
 /** Loyalty now, where it is heading, and why; hover for the breakdown. */
 function LoyaltyRow({ owned, state }: { owned: OwnedRegionView; state: MatchStateView }) {
   const pop = owned.popWorkers + owned.popSoldiers + owned.popOccupiers;
-  const o = loyaltyOutlook(owned.regionId, state.me.capitalRegionId, owned.effects.loyalty, pop, owned.popOccupiers, owned.loyalty);
+  const o = loyaltyOutlook(owned.regionId, state.me.capitalRegionId, owned.effects.loyalty, pop, owned.popOccupiers, owned.loyalty, owned.conquered);
+  const templeLevel = owned.buildings.temple ?? 0;
   const band = loyaltyBand(owned.loyalty);
   const tone = band === "rebellious" ? "text-rose-400" : band === "uneasy" ? "text-amber-300" : "text-emerald-400";
   const arrow = o.target > owned.loyalty + 0.01 ? "↑" : o.target < owned.loyalty - 0.01 ? "↓" : "→";
@@ -196,9 +197,16 @@ function LoyaltyRow({ owned, state }: { owned: OwnedRegionView; state: MatchStat
             </p>
             <p className="text-slate-300">Distance from capital: {Math.round(o.km)} km, −{Math.round(o.distancePenalty * 100)}%</p>
             <p className="text-slate-300">Roads, temples, forts: +{Math.round(o.buildingBonus * 100)}%</p>
-            <p className="text-slate-300">
-              Occupiers: {Math.round(owned.popOccupiers)} of {Math.ceil(o.occupiersNeeded)} needed ({o.occupierFactor >= 1 ? "no penalty" : `target halved by ${Math.round((1 - o.occupierFactor) * 50)}%`})
-            </p>
+            {owned.conquered ? (
+              <p className="text-slate-300">
+                Occupiers: {Math.round(owned.popOccupiers)} of {Math.ceil(o.occupiersNeeded)} needed ({o.occupierFactor >= 1 ? "no penalty" : `target cut by ${Math.round((1 - o.occupierFactor) * 50)}%`})
+                {templeLevel > 0
+                  ? `; the Temple converts ${templeLevel * balance.conquest.templeConvertsPerLevelPerHour} workers an hour into occupiers`
+                  : "; a Temple would convert workers into occupiers over time"}
+              </p>
+            ) : (
+              <p className="text-slate-300">Settled by your own people: no occupiers needed.</p>
+            )}
             <p className="text-slate-500">Below {Math.round(o.rebelBelow * 100)}% the region can rebel: it goes neutral and your occupiers are lost.</p>
           </div>
         </Tooltip>

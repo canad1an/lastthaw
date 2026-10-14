@@ -130,6 +130,7 @@ async function settleLand(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publishe
     .set({
       ownerPlayerId: army.playerId,
       popWorkers: settlers + (army.cargo.people ?? 0),
+      conquered: false,
       popSoldiers: 0,
       popOccupiers: 0,
       units: {},
@@ -331,6 +332,7 @@ async function battle(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher: P
       Object.assign(set, {
         ownerPlayerId: army.playerId,
         isCapital: false,
+        conquered: true,
         units: survivors,
         popSoldiers: sumUnits(survivors),
         popOccupiers: occupiers,

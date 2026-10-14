@@ -120,7 +120,7 @@ export const BUILDINGS: readonly BuildingDef[] = [
   { id: "forge", name: "Forge", age: 2, description: "Works iron faster; speeds up training.", maxLevel: 10, cost: { wood: 200, stone: 200, iron: 20 }, baseSeconds: 400, effect: { trainSpeed: 0.06, extract: { iron: 0.8 } }, requires: "iron_working" },
   { id: "walls", name: "Stone walls", age: 2, description: "Solid walls around the settlement.", maxLevel: 10, cost: { stone: 400, wood: 100 }, baseSeconds: 500, effect: { defense: 0.18 }, requires: "masonry" },
   { id: "roads", name: "Roads", age: 1, description: "Paved roads to every neighbouring region. Built once; legs between two road regions are much faster, and the region is easier to hold.", maxLevel: 1, cost: { stone: 80, wood: 40 }, perNeighbor: true, baseSeconds: 600, effect: { loyalty: 0.1 }, requires: "road_building" },
-  { id: "temple", name: "Temple", age: 2, description: "Binds a conquered people to their new rulers.", maxLevel: 10, cost: { stone: 300, wood: 150, food: 100 }, baseSeconds: 450, effect: { loyalty: 0.12 } },
+  { id: "temple", name: "Temple", age: 2, description: "Binds a conquered people to their new rulers: raises loyalty, and each level turns half a worker an hour into an occupier until the region has enough.", maxLevel: 10, cost: { stone: 300, wood: 150, food: 100 }, baseSeconds: 450, effect: { loyalty: 0.12 } },
   { id: "barracks", name: "Barracks", age: 2, description: "Trains soldiers faster.", maxLevel: 10, cost: { wood: 300, stone: 150 }, baseSeconds: 400, effect: { trainSpeed: 0.1 } },
   // Classical
   { id: "aqueduct", name: "Aqueduct", age: 3, description: "Clean water lets the city grow.", maxLevel: 10, cost: { stone: 600, wood: 200 }, baseSeconds: 900, effect: { capacity: 40 } },

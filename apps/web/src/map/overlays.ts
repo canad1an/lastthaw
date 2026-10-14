@@ -83,7 +83,7 @@ export function overlayBadges(state: MatchStateView, enabled: Set<string>, match
     }
     if (enabled.has("noroads") && state.me.techs.includes("road_building") && (r.buildings.roads ?? 0) < 1) push("noroads", r.regionId, `${name}: no roads`);
     if (enabled.has("loyalty") && !r.isCapital) {
-      const o = loyaltyOutlook(r.regionId, state.me.capitalRegionId, r.effects.loyalty, r.popWorkers + r.popSoldiers + r.popOccupiers, r.popOccupiers, r.loyalty);
+      const o = loyaltyOutlook(r.regionId, state.me.capitalRegionId, r.effects.loyalty, r.popWorkers + r.popSoldiers + r.popOccupiers, r.popOccupiers, r.loyalty, r.conquered);
       if (o.target < r.loyalty - 0.02 || r.loyalty < o.rebelBelow) push("loyalty", r.regionId, `${name}: loyalty ${Math.round(r.loyalty * 100)}% heading to ${Math.round(o.target * 100)}%${r.loyalty < o.rebelBelow ? ", may rebel" : ""}`);
     }
   }

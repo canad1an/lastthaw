@@ -195,6 +195,8 @@ export const matchRegions = pgTable(
     iceFactor: doublePrecision("ice_factor").notNull().default(1),
     /** True for the owner's capital: bigger storage, destination of overflow caravans. Kept in step with players.capitalRegionId. */
     isCapital: boolean("is_capital").notNull().default(false),
+    /** Taken by force from someone else: needs occupiers to stay loyal. Settled and founded regions are your own people. */
+    conquered: boolean("conquered").notNull().default(false),
     /** Match-clock time the amounts above were last settled to. */
     settledAt: timestamp("settled_at", { withTimezone: true }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

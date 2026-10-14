@@ -55,6 +55,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
         harbor: effects.harbor,
       },
       loyalty: row.loyalty,
+      conquered: row.conquered,
       iceFactor: economy.iceFactor,
       frozen: economy.frozen,
       asOf: now.toISOString(),
