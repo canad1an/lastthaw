@@ -43,10 +43,12 @@ export async function runTradeRoutes(db: Db, publisher: Publisher, log: pino.Log
         .set({ lastResult: result, lastRunAt: now, nextAt: new Date(now.getTime() + (waitHours * 3600 * 1000) / m.speed) })
         .where(eq(tradeRoutes.id, route.id));
     } catch (err) {
-      log.warn({ err, routeId: route.id }, "trade route failed");
+      // A rule refusal (caravans just left, stock just spent) is a normal skipped trip; anything else is logged.
+      const refusal = typeof (err as { statusCode?: number }).statusCode === "number" && (err as { statusCode: number }).statusCode < 500;
+      if (!refusal) log.warn({ err, routeId: route.id }, "trade route failed");
       await db
         .update(tradeRoutes)
-        .set({ lastResult: `error: ${(err as Error).message}`, lastRunAt: now, nextAt: new Date(now.getTime() + (route.everyHours * 3600 * 1000) / m.speed) })
+        .set({ lastResult: refusal ? `skipped: ${(err as Error).message}` : `error: ${(err as Error).message}`, lastRunAt: now, nextAt: new Date(now.getTime() + ((refusal ? Math.min(route.everyHours, 0.25) : route.everyHours) * 3600 * 1000) / m.speed) })
         .where(eq(tradeRoutes.id, route.id));
     }
   }
