@@ -279,7 +279,10 @@ function BuildTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
     mutationFn: (buildingId: string) => api.build(matchId, owned.regionId, buildingId),
     onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matchState(matchId) }),
   });
+  // Buildings draw on the capital's treasury too, so affordability counts both.
+  const capital = !owned.isCapital ? state.owned.find((o) => o.isCapital && !o.frozen) : null;
   const stock = stockOf(live.e);
+  if (capital) for (const [k, v] of Object.entries({ food: capital.food, wood: capital.wood, stone: capital.stone, ...capital.special })) stock[k] = (stock[k] ?? 0) + v;
   const list = availableBuildings(state.me.age, techs);
   return (
     <div className="space-y-2">

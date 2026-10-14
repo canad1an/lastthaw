@@ -48,7 +48,15 @@ export async function queueBuild(ctx: CommandContext, regionId: string, building
 
   return db.transaction(async (tx) => {
     const now = matchNow(m);
-    const row = await settleAndLockRegion(tx, m.id, regionId, now, m.speed);
+    // Buildings are paid from the region first, then from the capital's treasury, so late
+    // levels that cost more than one region can hold stay buildable. Lock both in ascending order.
+    const capitalId = p.capitalRegionId && p.capitalRegionId !== regionId ? p.capitalRegionId : null;
+    const ids = capitalId ? [regionId, capitalId].sort() : [regionId];
+    const locked = new Map<string, MatchRegionRow>();
+    for (const id of ids) locked.set(id, await settleAndLockRegion(tx, m.id, id, now, m.speed));
+    const row = locked.get(regionId)!;
+    const capital = capitalId ? locked.get(capitalId)! : null;
+    const treasury = capital && capital.ownerPlayerId === p.id && !capital.frozenAt ? capital : null;
     if (row.ownerPlayerId !== p.id) throw httpError(403, "not your region");
     if (row.frozenAt) throw httpError(409, "this region is frozen");
     const pending = await pendingRegionJobs(tx, m.id, regionId);
@@ -57,9 +65,19 @@ export async function queueBuild(ctx: CommandContext, regionId: string, building
     const level = (row.buildings[buildingId] ?? 0) + queuedLevels + 1;
     if (level > def.maxLevel) throw httpError(400, `${def.name} is at its maximum level`);
     const cost = buildingCost(def, level, matchDayAt(m, now), regionById(regionId)?.neighbors.length ?? 1);
-    const stock = stockOf(row);
-    if (!canAfford(stock, cost)) throw httpError(409, `not enough ${missingFor(stock, cost).join(", ")}`);
-    await applyCost(tx, row, cost);
+    const here = stockOf(row);
+    const pooled: Record<string, number> = { ...here };
+    if (treasury) for (const [k, v] of Object.entries(stockOf(treasury))) pooled[k] = (pooled[k] ?? 0) + v;
+    if (!canAfford(pooled, cost)) throw httpError(409, `not enough ${missingFor(pooled, cost).join(", ")} here or in the capital`);
+    const fromHere: Record<string, number> = {};
+    const fromCapital: Record<string, number> = {};
+    for (const [k, v] of Object.entries(cost)) {
+      const local = Math.min(v, here[k] ?? 0);
+      if (local > 0) fromHere[k] = local;
+      if (v - local > 1e-9) fromCapital[k] = v - local;
+    }
+    if (Object.keys(fromHere).length) await applyCost(tx, row, fromHere as Cost);
+    if (Object.keys(fromCapital).length) await applyCost(tx, treasury!, fromCapital as Cost);
     const startsAt = pending.length ? pending[pending.length - 1]!.endsAt : now;
     const endsAt = new Date(startsAt.getTime() + realSeconds(buildingSeconds(def, level), 0, m.speed) * 1000);
     const [j] = await tx
