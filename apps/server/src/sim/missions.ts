@@ -5,7 +5,7 @@ import type { Publisher } from "../realtime/publish.js";
 import { settleAndLockRegion, type MatchRegionRow, type Tx, setCapital, ownerTechEffects, waySetsFor } from "./regions.js";
 import { notify, type JobRow, type MatchRow } from "../worker/jobs.js";
 import { areAllied, alliesOf } from "./alliances.js";
-import { startWaitingBuilds } from "./commands.js";
+import { receiveMaterials } from "./commands.js";
 
 type ArmyRow = typeof armies.$inferSelect;
 type After = (fn: () => Promise<void>) => void;
@@ -228,10 +228,13 @@ async function deliverCargo(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publis
     return sendHome(tx, m, army, at, army.units, army.cargo, `${regionById(army.targetRegionId)?.name} is no longer friendly`);
   }
   const { people: _people, ...goods } = army.cargo;
-  await depositInto(tx, target, {}, army.cargo);
   if (target.ownerPlayerId === army.playerId) {
-    const started = await startWaitingBuilds(tx, m, army.targetRegionId, at);
+    // Materials for waiting builds are applied first, outside the storage cap; the rest is stored.
+    const { rest, started } = await receiveMaterials(tx, m, army.targetRegionId, goods, at);
+    await depositInto(tx, target, {}, { ...rest, people: army.cargo.people ?? 0 });
     if (started) await notify(tx, m.id, army.playerId, "build", `Materials arrived in ${regionById(army.targetRegionId)?.name}: ${started} build${started === 1 ? "" : "s"} started`, { regionId: army.targetRegionId });
+  } else {
+    await depositInto(tx, target, {}, army.cargo);
   }
   if (target.ownerPlayerId && target.ownerPlayerId !== army.playerId) {
     const { transfers } = await import("../db/schema.js");

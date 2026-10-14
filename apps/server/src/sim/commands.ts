@@ -368,29 +368,46 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
  * Materials arrived in a region: start any build jobs that were waiting for
  * them, in queue order, paying the owed part from the region's stock now.
  */
-export async function startWaitingBuilds(tx: Tx, m: MatchRow, regionId: string, at: Date): Promise<number> {
+/**
+ * Materials delivered to a region go straight into its waiting builds, in queue
+ * order, before anything is put into storage: that money is already spent, so
+ * the region's storage cap never blocks a build. Returns what was not needed
+ * (to be stored normally) and how many builds started.
+ */
+export async function receiveMaterials(tx: Tx, m: MatchRow, regionId: string, cargo: Record<string, number>, at: Date): Promise<{ rest: Record<string, number>; started: number }> {
+  const rest: Record<string, number> = { ...cargo };
   const pending = await pendingRegionJobs(tx, m.id, regionId);
   const waiting = pending.filter((j) => j.waitingFor && j.kind === "build");
-  if (waiting.length === 0) return 0;
-  let row = await settleAndLockRegion(tx, m.id, regionId, at, m.speed);
   let started = 0;
   for (const j of waiting) {
-    const owed = j.waitingFor as Record<string, number>;
-    const stock = stockOf(row);
-    if (!canAfford(stock, owed as Cost)) break;
-    row = await applyCost(tx, row, owed as Cost);
-    const def = buildingById.get(j.refId ?? "");
-    if (!def) continue;
-    const active = (await pendingRegionJobs(tx, m.id, regionId)).filter((x) => !x.waitingFor);
-    const startsAt = new Date(Math.max(at.getTime(), active.length ? active[active.length - 1]!.endsAt.getTime() : 0));
-    const endsAt = new Date(startsAt.getTime() + realSeconds(buildingSeconds(def, j.level ?? 1), 0, m.speed) * 1000);
+    const owed: Record<string, number> = { ...(j.waitingFor as Record<string, number>) };
     const payload = (j.payload ?? {}) as { cost?: Cost; paid?: Record<string, number> };
     const paid = { ...(payload.paid ?? {}) };
-    for (const [k, v] of Object.entries(owed)) paid[k] = (paid[k] ?? 0) + v;
-    await tx.update(jobs).set({ waitingFor: null, startsAt, endsAt, payload: { ...payload, paid } }).where(eq(jobs.id, j.id));
-    started += 1;
+    let changed = false;
+    for (const [k, v] of Object.entries(owed)) {
+      const take = Math.min(v, rest[k] ?? 0);
+      if (take <= 0) continue;
+      owed[k] = v - take;
+      rest[k] = (rest[k] ?? 0) - take;
+      paid[k] = (paid[k] ?? 0) + take;
+      changed = true;
+      if (owed[k]! <= 0.5) delete owed[k];
+    }
+    if (!changed) continue;
+    if (Object.keys(owed).length === 0) {
+      const def = buildingById.get(j.refId ?? "");
+      if (!def) continue;
+      const active = (await pendingRegionJobs(tx, m.id, regionId)).filter((x) => !x.waitingFor);
+      const startsAt = new Date(Math.max(at.getTime(), active.length ? active[active.length - 1]!.endsAt.getTime() : 0));
+      const endsAt = new Date(startsAt.getTime() + realSeconds(buildingSeconds(def, j.level ?? 1), 0, m.speed) * 1000);
+      await tx.update(jobs).set({ waitingFor: null, startsAt, endsAt, payload: { ...payload, paid } }).where(eq(jobs.id, j.id));
+      started += 1;
+    } else {
+      await tx.update(jobs).set({ waitingFor: owed, payload: { ...payload, paid } }).where(eq(jobs.id, j.id));
+    }
   }
-  return started;
+  for (const k of Object.keys(rest)) if ((rest[k] ?? 0) <= 0) delete rest[k];
+  return { rest, started };
 }
 
 /** Upgrade haulers in place: caravans to wagons, caravans or wagons to trains. Costs per unit, needs the unit's tech. */
