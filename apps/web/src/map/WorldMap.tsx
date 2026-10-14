@@ -162,7 +162,7 @@ export function WorldMap({ paint, selected, onSelect, focus, className = "", ice
     >
       <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>
         <Regions paint={paint} selected={selected} strokeWidth={0.8 / view.k} />
-        {ice && <IceLayer ice={ice} />}
+        {ice && <IceLayer ice={ice} k={view.k} />}
         <g pointerEvents="none">
           {dashed.map((id) => {
             const r = allRegions().find((x) => x.id === id);
@@ -192,11 +192,13 @@ export function WorldMap({ paint, selected, onSelect, focus, className = "", ice
  * region is tinted by the day it freezes (soon = bright, never = none). The
  * current ice edge is drawn as two dashed lines.
  */
-const IceLayer = memo(function IceLayer({ ice }: { ice: { latitude: number; forecast: boolean; day: number } }) {
+const IceLayer = memo(function IceLayer({ ice, k: zoom }: { ice: { latitude: number; forecast: boolean; day: number }; k: number }) {
   const H = world.height;
   const W = world.width;
   const yN = ((90 - ice.latitude) / 180) * H;
   const yS = ((90 + ice.latitude) / 180) * H;
+  // Sizes are divided by the zoom so lines and labels stay the same size on screen.
+  const px = (n: number) => n / zoom;
   return (
     <g pointerEvents="none">
       {allRegions().map((r) => {
@@ -206,24 +208,25 @@ const IceLayer = memo(function IceLayer({ ice }: { ice: { latitude: number; fore
         const day = freezeDayForLatitude(Math.abs(r.lat));
         if (day === null) return null;
         const soon = Math.max(0, 1 - (day - ice.day) / 20);
-        return <path key={r.id} d={r.path} fill="#7dd3fc" fillOpacity={0.15 + soon * 0.45} />;
+        return <path key={r.id} d={r.path} fill="#7dd3fc" fillOpacity={0.1 + soon * 0.35} />;
       })}
-      <line x1={0} x2={W} y1={yN} y2={yN} stroke="#e0f2fe" strokeDasharray="6 4" strokeWidth={1} />
-      <line x1={0} x2={W} y1={yS} y2={yS} stroke="#e0f2fe" strokeDasharray="6 4" strokeWidth={1} />
+      <line x1={0} x2={W} y1={yN} y2={yN} stroke="#e0f2fe" strokeDasharray={`${px(6)} ${px(4)}`} strokeWidth={px(1.5)} />
+      <line x1={0} x2={W} y1={yS} y2={yS} stroke="#e0f2fe" strokeDasharray={`${px(6)} ${px(4)}`} strokeWidth={px(1.5)} />
       {ice.forecast &&
-        [1, 2, 3, 4, 5].map((k) => {
-          const day = Math.floor(ice.day) + k;
+        [1, 2, 3, 4, 5].map((d) => {
+          const day = Math.floor(ice.day) + d;
           if (day > balance.match.lengthDays) return null;
           const lat = iceLatitudeOnDay(day);
           const n = ((90 - lat) / 180) * H;
           const s = ((90 + lat) / 180) * H;
-          const alpha = 0.9 - k * 0.12;
+          // Each day's label sits further along its line so close lines never overlap.
+          const labelX = px(8 + (d - 1) * 78);
           return (
-            <g key={k} opacity={alpha}>
-              <line x1={0} x2={W} y1={n} y2={n} stroke="#7dd3fc" strokeDasharray="3 5" strokeWidth={0.8} />
-              <line x1={0} x2={W} y1={s} y2={s} stroke="#7dd3fc" strokeDasharray="3 5" strokeWidth={0.8} />
+            <g key={d} opacity={0.95 - d * 0.1}>
+              <line x1={0} x2={W} y1={n} y2={n} stroke="#7dd3fc" strokeDasharray={`${px(3)} ${px(5)}`} strokeWidth={px(1)} />
+              <line x1={0} x2={W} y1={s} y2={s} stroke="#7dd3fc" strokeDasharray={`${px(3)} ${px(5)}`} strokeWidth={px(1)} />
               {[n, s].map((y, i) => (
-                <text key={i} x={6} y={y - 2} fill="#bae6fd" fontSize={9} fontFamily="ui-sans-serif, system-ui" paintOrder="stroke" stroke="#0b1a2b" strokeWidth={2.5}>
+                <text key={i} x={labelX} y={y - px(3)} fill="#e0f2fe" fontSize={px(11)} fontWeight={600} fontFamily="ui-sans-serif, system-ui" paintOrder="stroke" stroke="#0b1a2b" strokeWidth={px(3)}>
                   Day {day} · {lat.toFixed(0)}°
                 </text>
               ))}
