@@ -4,7 +4,7 @@
  * Every function validates, settles the regions it touches under a lock,
  * pays costs up front and returns what it created. Errors carry statusCode.
  */
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import {
   armySpeed,
   balance,
@@ -53,7 +53,7 @@ export async function pendingRegionJobs(tx: Tx | Db, matchId: string, regionId: 
   return tx
     .select()
     .from(jobs)
-    .where(and(eq(jobs.matchId, matchId), eq(jobs.regionId, regionId), isNull(jobs.completedAt), isNull(jobs.cancelledAt)))
+    .where(and(eq(jobs.matchId, matchId), eq(jobs.regionId, regionId), inArray(jobs.kind, ["build", "train"]), isNull(jobs.completedAt), isNull(jobs.cancelledAt)))
     .orderBy(asc(jobs.startsAt), asc(jobs.id));
 }
 

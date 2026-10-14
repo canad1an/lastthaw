@@ -296,6 +296,11 @@ describe("milestone 1 flow", () => {
     expect(state.routes).toHaveLength(1);
     const convoy = state.armies.find((x) => x.mission === "transport")!;
     expect(convoy.units.caravan).toBe(1);
+    // A convoy heading for the colony must not occupy its build queue.
+    {
+      const b = await a.call("POST", `/api/matches/${matchId}/regions/${homestead}/build`, { buildingId: "huts" });
+      expect((b.json() as { error?: string }).error ?? "").not.toMatch(/queue is full/);
+    }
     await skipTo(convoy.arrivesAt);
     state = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json());
     expect(state.owned.find((o) => o.regionId === homestead)!.food).toBeGreaterThan(foodBefore + 250);
