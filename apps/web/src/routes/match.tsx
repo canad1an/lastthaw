@@ -198,7 +198,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
           <Badge>{state.owned.length} regions · {fmt(totals.pop)} people</Badge>
           <Badge>{ageName(state.me.age)} Age</Badge>
           <Badge>ice beyond {ice.latitude.toFixed(0)}°</Badge>
-          <Badge muted={rtStatus !== "open"}>live {rtStatus}</Badge>
+          <Badge muted={rtStatus !== "open"}>{rtStatus === "open" ? "live" : rtStatus === "closed" ? "reconnecting…" : "connecting…"}</Badge>
         </div>
         <div className="absolute right-2 top-2 flex gap-2 text-xs">
           <button onClick={() => setForecast((f) => !f)} className={`rounded px-2 py-1 ${forecast ? "bg-sky-200 text-slate-900" : "bg-slate-950/80 text-slate-200 hover:bg-slate-800"}`}>

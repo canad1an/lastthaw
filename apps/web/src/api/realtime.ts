@@ -61,8 +61,9 @@ export function useMatchRealtime(matchId: string | null) {
       ws.onclose = () => {
         setStatus("closed");
         if (closedByUs) return;
+        // First drop (usually a deploy) reconnects almost at once; then back off to 15s.
+        timer = setTimeout(connect, retry === 0 ? 500 : Math.min(15_000, 1000 * 2 ** retry));
         retry += 1;
-        timer = setTimeout(connect, Math.min(30_000, 1000 * 2 ** retry));
       };
     };
     connect();
