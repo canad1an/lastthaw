@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { and, eq, isNull } from "drizzle-orm";
-import { balance, colonizeBody, findRoute, sendArmyBody, travelSeconds, setCapitalBody } from "@lastthaw/shared";
+import { balance, colonizeBody, findRoute, sendArmyBody, travelSeconds, setCapitalBody, regionById } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { armies, jobs, matchRegions, matches, playerTechs, players, tradeRoutes } from "../db/schema.js";
 import { matchNow } from "../sim/clock.js";
@@ -8,7 +8,7 @@ import { requireUser } from "../auth/session.js";
 import type { Publisher } from "../realtime/publish.js";
 import { httpError, sendArmy, type CommandContext } from "../sim/commands.js";
 import { disbandUnits, evacuateRegion } from "../sim/evacuate.js";
-import { roadSetFor, setCapital } from "../sim/regions.js";
+import { applyCost, roadSetFor, settleAndLockRegion, stockOf } from "../sim/regions.js";
 import { alliesOf } from "../sim/alliances.js";
 import { z } from "zod";
 
@@ -100,25 +100,62 @@ export async function armyRoutes(app: FastifyInstance, opts: { db: Db; publisher
     return { ok: true, armyId: r.army.id, arrivesAt: r.army.arrivesAt.toISOString(), routeId };
   });
 
-  /** Move the capital to another region you own. Research is paid from here, overflow caravans deliver here, loyalty is measured from here. */
+  /**
+   * Move the capital: a slow capital wagon leaves the old capital carrying as
+   * much of its stores as it can. The capital changes when it arrives, and
+   * every idle caravan then gathers at the new capital.
+   */
   app.post("/api/matches/:id/capital", async (req) => {
     const user = requireUser(req);
     const matchId = (req.params as { id: string }).id;
     const { regionId } = setCapitalBody.parse(req.body);
     const ctx = await loadContext(matchId, user.id);
-    await db.transaction(async (tx) => {
-      const [row] = await tx
-        .select({ owner: matchRegions.ownerPlayerId, frozenAt: matchRegions.frozenAt })
-        .from(matchRegions)
-        .where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, regionId)))
-        .for("update");
-      if (row?.owner !== ctx.p.id) throw httpError(403, "not your region");
-      if (row.frozenAt) throw httpError(409, "a frozen region cannot be the capital");
-      if (ctx.p.capitalRegionId === regionId) throw httpError(409, "this is already your capital");
-      await setCapital(tx, matchId, ctx.p.id, regionId);
+    const { m, p, techs } = ctx;
+    if (!p.capitalRegionId) throw httpError(409, "you have no capital");
+    if (p.capitalRegionId === regionId) throw httpError(409, "this is already your capital");
+    const inFlight = await db
+      .select({ id: armies.id, target: armies.targetRegionId, arrivesAt: armies.arrivesAt })
+      .from(armies)
+      .where(and(eq(armies.matchId, matchId), eq(armies.playerId, p.id), eq(armies.mission, "relocate"), eq(armies.status, "outbound")))
+      .limit(1);
+    if (inFlight[0]) throw httpError(409, `the capital wagon is already on its way to ${regionById(inFlight[0].target)?.name ?? "another region"}`);
+    const roads = await roadSetFor(db, matchId, p.id, await alliesOf(db, matchId, p.id));
+    const route = findRoute(p.capitalRegionId, regionId, techs.has(balance.travel.seaTech), roads);
+    if (!route) throw httpError(400, "no route for the wagon");
+    const now = matchNow(m);
+    const seconds = travelSeconds(route, balance.capital.wagonSpeed, m.speed);
+    const result = await db.transaction(async (tx) => {
+      const ids = [p.capitalRegionId!, regionId].sort();
+      const locked = new Map<string, Awaited<ReturnType<typeof settleAndLockRegion>>>();
+      for (const id of ids) locked.set(id, await settleAndLockRegion(tx, matchId, id, now, m.speed));
+      const target = locked.get(regionId)!;
+      const old = locked.get(p.capitalRegionId!)!;
+      if (target.ownerPlayerId !== p.id) throw httpError(403, "not your region");
+      if (target.frozenAt) throw httpError(409, "a frozen region cannot be the capital");
+      if (old.ownerPlayerId !== p.id) throw httpError(409, "you have lost your capital");
+      // Load the wagon: food, wood, stone, then ore and horses, up to its capacity.
+      const stock = stockOf(old);
+      const cargo: Record<string, number> = {};
+      let left = balance.capital.wagonCarry;
+      for (const k of ["food", "wood", "stone", ...Object.keys(stock).filter((x) => !["food", "wood", "stone"].includes(x))]) {
+        const take = Math.floor(Math.min(stock[k] ?? 0, left));
+        if (take >= 1) {
+          cargo[k] = take;
+          left -= take;
+        }
+        if (left <= 0) break;
+      }
+      if (Object.keys(cargo).length) await applyCost(tx, old, cargo);
+      const arrivesAt = new Date(now.getTime() + seconds * 1000);
+      const [a] = await tx
+        .insert(armies)
+        .values({ matchId, playerId: p.id, mission: "relocate", originRegionId: p.capitalRegionId!, targetRegionId: regionId, units: {}, cargo, path: route.path, status: "outbound", departsAt: now, arrivesAt })
+        .returning();
+      await tx.insert(jobs).values({ matchId, playerId: p.id, regionId, kind: "mission", refId: a!.id, startsAt: now, endsAt: arrivesAt });
+      return { armyId: a!.id, arrivesAt, cargo };
     });
-    await publisher.toPlayer(matchId, ctx.p.id, "region.updated", { regionId });
-    return { ok: true, capitalRegionId: regionId };
+    await publisher.toPlayer(matchId, p.id, "army.sent", { armyId: result.armyId, relocate: regionId });
+    return { ok: true, armyId: result.armyId, arrivesAt: result.arrivesAt.toISOString(), cargo: result.cargo, path: route.path };
   });
 
   /** Disband stationed units: they rejoin the region's workers. */

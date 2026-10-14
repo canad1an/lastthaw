@@ -193,6 +193,7 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
   }
   const civilians = Object.keys(units).filter((id) => unitById.get(id)?.civilian);
   if ((HOSTILE.has(body.mission) || body.mission === "scout") && civilians.length) throw httpError(400, "caravans and settlers cannot raid, conquer or scout");
+  if (body.mission === "relocate") throw httpError(400, "move the capital from the region panel");
   if (body.mission === "settle") {
     const settlers = units.settler ?? 0;
     if (settlers < balance.settle.settlersRequired) throw httpError(400, `settling needs at least ${balance.settle.settlersRequired} settlers`);

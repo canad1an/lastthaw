@@ -132,7 +132,7 @@ export const jobView = z.object({
 });
 export type JobView = z.infer<typeof jobView>;
 
-export const missionKind = z.enum(["raid", "conquer", "reinforce", "move", "transport", "scout", "settle"]);
+export const missionKind = z.enum(["raid", "conquer", "reinforce", "move", "transport", "scout", "settle", "relocate"]);
 export type MissionKind = z.infer<typeof missionKind>;
 
 export const sendArmyBody = z.object({

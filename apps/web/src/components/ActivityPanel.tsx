@@ -93,7 +93,7 @@ export function ActivityPanel({ matchId, state, clockOffsetMs, onSelect }: { mat
           {armies.map((a) => (
             <Row
               key={a.id}
-              name={`${a.mission[0]!.toUpperCase()}${a.mission.slice(1)} ${a.status === "returning" ? "returning to" : "→"} ${regionById(a.status === "returning" ? a.originRegionId : a.targetRegionId)?.name}`}
+              name={`${a.mission === "relocate" ? "Capital wagon" : `${a.mission[0]!.toUpperCase()}${a.mission.slice(1)}`} ${a.status === "returning" ? "returning to" : "→"} ${regionById(a.status === "returning" ? a.originRegionId : a.targetRegionId)?.name}`}
               note={`${Object.values(a.units).reduce((x, y) => x + y, 0)} units`}
               to={a.status === "returning" ? (a.returnsAt ?? a.arrivesAt) : a.arrivesAt}
               clockOffsetMs={clockOffsetMs}

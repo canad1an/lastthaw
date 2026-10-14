@@ -255,8 +255,20 @@ export function WorldMap({ paint, selected, onSelect, focus, className = "", ice
                 onPointerLeave={() => setHoverArmy((h) => (h === a.id ? null : h))}
               >
                 {a.hostile && <circle r={11} fill="none" stroke="#f43f5e" strokeWidth={1.5} className="animate-ping" />}
-                <circle r={7} fill={a.hostile ? "#f43f5e" : "#38bdf8"} stroke="#0b1a2b" strokeWidth={1.5} />
-                <path d={a.mission === "transport" ? "M-3.5 -1h7v4h-7z M-2 -3h4v2h-4z" : a.mission === "settle" ? "M-4 2h8v1h-8z M-3 2v-4l3-2 3 2v4" : "M-3 3L3 -3 M3 -3h-2.5 M3 -3v2.5"} fill={a.mission === "transport" || a.mission === "settle" ? "#0b1a2b" : "none"} stroke="#0b1a2b" strokeWidth={1.4} strokeLinecap="round" />
+                {a.mission === "relocate" ? (
+                  <g>
+                    <circle r={12} fill="#f59e0b" stroke="#0b1a2b" strokeWidth={1.8} />
+                    <path d="M-7 2h9l2.5-4.5H7V2h-1.5" fill="none" stroke="#0b1a2b" strokeWidth={1.4} strokeLinejoin="round" />
+                    <rect x={-7} y={-4} width={8.5} height={6} rx={1} fill="#0b1a2b" opacity={0.5} />
+                    <circle cx={-4} cy={5} r={1.8} fill="none" stroke="#0b1a2b" strokeWidth={1.3} />
+                    <circle cx={4} cy={5} r={1.8} fill="none" stroke="#0b1a2b" strokeWidth={1.3} />
+                  </g>
+                ) : (
+                  <circle r={7} fill={a.hostile ? "#f43f5e" : "#38bdf8"} stroke="#0b1a2b" strokeWidth={1.5} />
+                )}
+                {a.mission !== "relocate" && (
+                  <path d={a.mission === "transport" ? "M-3.5 -1h7v4h-7z M-2 -3h4v2h-4z" : a.mission === "settle" ? "M-4 2h8v1h-8z M-3 2v-4l3-2 3 2v4" : "M-3 3L3 -3 M3 -3h-2.5 M3 -3v2.5"} fill={a.mission === "transport" || a.mission === "settle" ? "#0b1a2b" : "none"} stroke="#0b1a2b" strokeWidth={1.4} strokeLinecap="round" />
+                )}
               </g>
             );
           })}

@@ -1,10 +1,10 @@
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { balance, effectsOf, emptySpecial, storageCaps, regionById, resolveCombat, carryCapacity, travelSeconds, findRoute, armySpeed, type UnitCounts } from "@lastthaw/shared";
-import { armies, battles, jobs, matchRegions, players, regionSightings } from "../db/schema.js";
+import { armies, battles, jobs, matchRegions, players, regionSightings, playerTechs } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
-import { settleAndLockRegion, type MatchRegionRow, type Tx, setCapital } from "./regions.js";
+import { settleAndLockRegion, type MatchRegionRow, type Tx, setCapital, roadSetFor } from "./regions.js";
 import { notify, type JobRow, type MatchRow } from "../worker/jobs.js";
-import { areAllied } from "./alliances.js";
+import { areAllied, alliesOf } from "./alliances.js";
 
 type ArmyRow = typeof armies.$inferSelect;
 type After = (fn: () => Promise<void>) => void;
@@ -58,7 +58,60 @@ export async function resolveMission(tx: Tx, m: MatchRow, job: JobRow, publisher
       return battle(tx, m, army, at, publisher, after);
     case "settle":
       return settleLand(tx, m, army, at, publisher, after);
+    case "relocate":
+      return relocateCapital(tx, m, army, at, publisher, after);
   }
+}
+
+/** The capital wagon arrives: stores are unloaded, the capital moves, and every idle caravan sets off for it. */
+async function relocateCapital(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher: Publisher, after: After): Promise<void> {
+  const target = await lockRegion(tx, m, army.targetRegionId, at);
+  const name = regionById(army.targetRegionId)?.name ?? army.targetRegionId;
+  if (target.ownerPlayerId !== army.playerId || target.frozenAt) {
+    await notify(tx, m.id, army.playerId, "system", `${name} is no longer a place for your capital; the wagon is coming back`, { regionId: army.targetRegionId });
+    return sendHome(tx, m, army, at, army.units, army.cargo);
+  }
+  await depositInto(tx, target, {}, army.cargo);
+  await setCapital(tx, m.id, army.playerId, army.targetRegionId);
+  await tx.update(armies).set({ status: "done" }).where(eq(armies.id, army.id));
+  const sent = await gatherCaravans(tx, m, army.playerId, army.targetRegionId, at);
+  await notify(tx, m.id, army.playerId, "system", `${name} is now your capital${sent ? `; ${sent} caravan${sent === 1 ? "" : "s"} are on their way there` : ""}`, { regionId: army.targetRegionId, caravans: sent });
+  after(() => publisher.toPlayer(m.id, army.playerId, "region.updated", { regionId: army.targetRegionId }));
+}
+
+/** Every stationed caravan outside `targetRegionId` walks there. Returns how many were sent. */
+async function gatherCaravans(tx: Tx, m: MatchRow, playerId: string, targetRegionId: string, at: Date): Promise<number> {
+  const [p] = await tx.select().from(players).where(eq(players.id, playerId)).limit(1);
+  if (!p) return 0;
+  const techRows = await tx.select({ id: playerTechs.techId }).from(playerTechs).where(eq(playerTechs.playerId, playerId));
+  const techs = new Set(techRows.map((t) => t.id));
+  const roads = await roadSetFor(tx, m.id, playerId, await alliesOf(tx, m.id, playerId));
+  const rows = await tx
+    .select({ regionId: matchRegions.regionId, units: matchRegions.units, frozenAt: matchRegions.frozenAt })
+    .from(matchRegions)
+    .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.ownerPlayerId, playerId)))
+    .orderBy(matchRegions.regionId);
+  let sent = 0;
+  for (const r of rows) {
+    const n = r.units.caravan ?? 0;
+    if (r.regionId === targetRegionId || r.frozenAt || n <= 0) continue;
+    const route = findRoute(r.regionId, targetRegionId, techs.has(balance.travel.seaTech), roads);
+    if (!route) continue;
+    const row = await settleAndLockRegion(tx, m.id, r.regionId, at, m.speed);
+    const have = row.units.caravan ?? 0;
+    if (have <= 0) continue;
+    const seconds = travelSeconds(route, armySpeed({ caravan: have }), m.speed);
+    const units = { ...row.units, caravan: 0 };
+    await tx.update(matchRegions).set({ units, popSoldiers: Math.max(0, row.popSoldiers - have) }).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, r.regionId)));
+    const arrivesAt = new Date(at.getTime() + seconds * 1000);
+    const [a] = await tx
+      .insert(armies)
+      .values({ matchId: m.id, playerId, mission: "move", originRegionId: r.regionId, targetRegionId, units: { caravan: have }, cargo: {}, path: route.path, status: "outbound", departsAt: at, arrivesAt })
+      .returning();
+    await tx.insert(jobs).values({ matchId: m.id, playerId, regionId: targetRegionId, kind: "mission", refId: a!.id, startsAt: at, endsAt: arrivesAt });
+    sent += have;
+  }
+  return sent;
 }
 
 /** Settlers claim an empty region and become its first workers. */

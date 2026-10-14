@@ -85,6 +85,13 @@
       "when": 1792004342798,
       "tag": "0011_brainy_puff_adder",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1792007777818,
+      "tag": "0012_glossy_firestar",
+      "breakpoints": true
     }
   ]
 }

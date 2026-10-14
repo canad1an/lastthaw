@@ -160,6 +160,11 @@ export const balance = {
     /** Techs that raise how much each caravan carries (added together: +50% and +50% = 2x). */
     caravanCarryTechs: { the_wheel: 0.5, engineering: 0.5, scholasticism: 1.0 } as Record<string, number>,
   },
+  capital: {
+    /** The capital wagon: slow, but it carries the old capital's stores to the new one. Speed in unit-speed units (settlers are 4). */
+    wagonSpeed: 2.5,
+    wagonCarry: 25000,
+  },
   settle: {
     /** Settlers needed to claim an empty region; all of them become its first workers. */
     settlersRequired: 5,

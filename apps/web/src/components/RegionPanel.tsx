@@ -1,32 +1,6 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import {
-  AGES,
-  availableBuildings,
-  availableUnits,
-  buildingBlockedBy,
-  balance,
-  buildingById,
-  buildingCost,
-  matchDayOf,
-  buildingSeconds,
-  canAfford,
-  computeRates,
-  normalizeAssignment,
-  realSeconds,
-  regionById,
-  settle,
-  totalPopulation,
-  trainSeconds,
-  unitById,
-  unitCost,
-  formatCountdown,
-  type MatchStateView,
-  type OwnedRegionView,
-  type RegionEconomy,
-  type SightedRegionView,
-  type SpecialResource,
-} from "@lastthaw/shared";
+import { AGES, availableBuildings, availableUnits, buildingBlockedBy, balance, buildingById, buildingCost, matchDayOf, buildingSeconds, canAfford, computeRates, normalizeAssignment, realSeconds, regionById, settle, totalPopulation, trainSeconds, unitById, unitCost, formatCountdown, type MatchStateView, type OwnedRegionView, type RegionEconomy, type SightedRegionView, type SpecialResource } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { useNow } from "../hooks/useNow.js";
 import { Button, Card, ErrorText, fmt, signed } from "./ui.js";
@@ -93,7 +67,7 @@ export function RegionPanel({ matchId, state, regionId, clockOffsetMs, onClose, 
           </nav>
           {tab === "overview" && (
             <>
-              <OwnedDetails matchId={matchId} owned={owned} clockOffsetMs={clockOffsetMs} speed={state.match.speed} />
+              <OwnedDetails matchId={matchId} state={state} owned={owned} clockOffsetMs={clockOffsetMs} speed={state.match.speed} />
               <EvacuatePanel matchId={matchId} state={state} owned={owned} matchDay={Math.max(0, ((Date.now() + clockOffsetMs - Date.parse(state.match.startsAt)) / 86400_000) * state.match.speed)} />
             </>
           )}
@@ -156,7 +130,7 @@ export function useLiveEconomy(owned: OwnedRegionView, clockOffsetMs: number, sp
   }, [owned, now, clockOffsetMs, speed]);
 }
 
-function OwnedDetails({ matchId, owned, clockOffsetMs, speed }: { matchId: string; owned: OwnedRegionView; clockOffsetMs: number; speed: number }) {
+function OwnedDetails({ matchId, state, owned, clockOffsetMs, speed }: { matchId: string; state: MatchStateView; owned: OwnedRegionView; clockOffsetMs: number; speed: number }) {
   const live = useLiveEconomy(owned, clockOffsetMs, speed);
   const pop = totalPopulation(live.e);
   const perHour = (v: number) => signed(v * speed, 1);
@@ -166,7 +140,7 @@ function OwnedDetails({ matchId, owned, clockOffsetMs, speed }: { matchId: strin
     <div className="space-y-3">
       {owned.isCapital && <span className="inline-block rounded bg-sky-500/20 px-1.5 py-0.5 text-xs text-sky-300">Capital</span>}
       {owned.frozen && <span className="ml-2 inline-block rounded bg-cyan-200/20 px-1.5 py-0.5 text-xs text-cyan-200">Frozen</span>}
-      {!owned.isCapital && !owned.frozen && <MakeCapital matchId={matchId} regionId={owned.regionId} />}
+      {!owned.isCapital && !owned.frozen && <MakeCapital matchId={matchId} state={state} regionId={owned.regionId} clockOffsetMs={clockOffsetMs} />}
       <dl className="grid grid-cols-[auto_1fr_auto] gap-x-3 gap-y-1 text-sm">
         <Row label="People" value={`${fmt(pop)} / ${fmt(live.e.capacity)}`} rate={perHour(live.rates.population)} />
         <Row label="Food" value={`${fmt(live.e.food)} / ${fmt(live.e.storage.food)}`} rate={perHour(live.rates.food)} warn={live.rates.starving} />
@@ -436,10 +410,18 @@ function ArmyTab({ matchId, owned }: { matchId: string; owned: OwnedRegionView }
   );
 }
 
-/** Move the capital here. Everything that keys off the capital follows: research, overflow caravans, loyalty distance, the bigger storage. */
-function MakeCapital({ matchId, regionId }: { matchId: string; regionId: string }) {
+/** Move the capital here: a capital wagon sets out from the old capital with its stores; the capital changes on arrival. */
+function MakeCapital({ matchId, state, regionId, clockOffsetMs }: { matchId: string; state: MatchStateView; regionId: string; clockOffsetMs: number }) {
   const qc = useQueryClient();
   const [confirm, setConfirm] = useState(false);
+  const capital = state.me.capitalRegionId;
+  const wagon = state.armies.find((a) => a.mission === "relocate" && a.status === "outbound");
+  const route = useQuery({
+    queryKey: ["route", matchId, capital, regionId, "wagon"],
+    queryFn: () =>
+      fetch(`/api/matches/${matchId}/route?from=${capital}&to=${regionId}&speed=${balance.capital.wagonSpeed}`, { credentials: "include" }).then((r) => r.json() as Promise<{ seconds?: number; error?: string }>),
+    enabled: confirm && !!capital,
+  });
   const m = useMutation({
     mutationFn: () => api.setCapital(matchId, regionId),
     onSuccess: () => {
@@ -447,25 +429,51 @@ function MakeCapital({ matchId, regionId }: { matchId: string; regionId: string 
       void qc.invalidateQueries({ queryKey: keys.matchState(matchId) });
     },
   });
+  const old = state.owned.find((o) => o.regionId === capital);
+  const stores = old ? Math.min(balance.capital.wagonCarry, Math.floor(old.food + old.wood + old.stone + Object.values(old.special).reduce((x, y) => x + y, 0))) : 0;
+  if (wagon) {
+    const here = wagon.targetRegionId === regionId;
+    return (
+      <div className="mt-2 rounded-md border border-amber-400/30 bg-amber-400/5 px-2 py-1.5 text-xs text-amber-100">
+        Capital wagon on its way to {regionById(wagon.targetRegionId)?.name}{here ? " (here)" : ""}: arrives in <Countdown to={wagon.arrivesAt} clockOffsetMs={clockOffsetMs} />.
+      </div>
+    );
+  }
   return (
-    <span className="ml-2 inline-flex items-center gap-2 align-middle">
-      {confirm ? (
-        <>
-          <span className="text-xs text-slate-400">Research, overflow caravans and loyalty distance will key off this region, and it gets {balance.economy.capitalStorageMult}x storage.</span>
-          <Button variant="primary" disabled={m.isPending} onClick={() => m.mutate()}>
-            Confirm
-          </Button>
-          <Button variant="ghost" onClick={() => setConfirm(false)}>
-            Cancel
-          </Button>
-        </>
-      ) : (
-        <button className="text-xs text-sky-400 hover:text-sky-200" onClick={() => setConfirm(true)}>
-          make capital
+    <div className="mt-2">
+      {!confirm ? (
+        <button
+          type="button"
+          onClick={() => setConfirm(true)}
+          className="inline-flex items-center gap-2 rounded-md border border-amber-400/40 bg-amber-400/10 px-2.5 py-1 text-xs font-medium text-amber-200 hover:bg-amber-400/20"
+        >
+          <svg width="16" height="12" viewBox="0 0 16 12" aria-hidden="true" className="shrink-0">
+            <path d="M1 7h10l2-4h2v5h-1" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+            <rect x="1" y="2" width="9" height="5" rx="1" fill="currentColor" opacity="0.35" />
+            <circle cx="4" cy="9.5" r="1.6" fill="none" stroke="currentColor" strokeWidth="1.3" />
+            <circle cx="12" cy="9.5" r="1.6" fill="none" stroke="currentColor" strokeWidth="1.3" />
+          </svg>
+          Move capital here
         </button>
+      ) : (
+        <div className="space-y-2 rounded-md border border-amber-400/30 bg-amber-400/5 p-2 text-xs">
+          <p className="text-amber-100">A capital wagon leaves {old ? regionById(old.regionId)?.name : "your capital"} carrying up to {fmt(balance.capital.wagonCarry)} of its stores ({fmt(stores)} now).</p>
+          <p className="text-slate-300">
+            Travel: {route.data?.seconds !== undefined ? formatCountdown(route.data.seconds) : route.data?.error ? route.data.error : "…"}. The capital changes when it arrives; research, overflow caravans and loyalty distance then key off this region, which gets{" "}
+            {balance.economy.capitalStorageMult}x storage. Every idle caravan then gathers here.
+          </p>
+          <div className="flex gap-2">
+            <Button variant="primary" disabled={m.isPending || !!route.data?.error} onClick={() => m.mutate()}>
+              Send the wagon
+            </Button>
+            <Button variant="ghost" onClick={() => setConfirm(false)}>
+              Cancel
+            </Button>
+          </div>
+          <ErrorText>{m.error?.message}</ErrorText>
+        </div>
       )}
-      <ErrorText>{m.error?.message}</ErrorText>
-    </span>
+    </div>
   );
 }
 
