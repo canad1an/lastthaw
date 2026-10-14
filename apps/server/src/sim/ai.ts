@@ -76,7 +76,7 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
     .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.ownerPlayerId, p.id)));
   if (owned.length === 0) return;
   const pendingJobs = await db
-    .select({ regionId: jobs.regionId, kind: jobs.kind, refId: jobs.refId })
+    .select({ regionId: jobs.regionId, kind: jobs.kind, refId: jobs.refId, waitingFor: jobs.waitingFor })
     .from(jobs)
     .where(and(eq(jobs.matchId, m.id), eq(jobs.playerId, p.id), isNull(jobs.completedAt), isNull(jobs.cancelledAt)));
   const researching = pendingJobs.some((j) => j.kind === "research");
@@ -127,7 +127,9 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
       if (!wanted) wanted = cost;
       if (slots <= 0) break;
       if (tier.hoards && !comfortablyAffordable(economy, cost)) continue;
-      if (await attempt(() => queueBuild(ctx, row.regionId, id, { allowWait: false }))) slots -= 1;
+      // AI tribes may have one build per region waiting on materials, so their late-game queues do not go dead.
+      const waitingHere = pendingJobs.some((j) => j.regionId === row.regionId && j.kind === "build" && j.waitingFor);
+      if (await attempt(() => queueBuild(ctx, row.regionId, id, { allowWait: !waitingHere }))) slots -= 1;
       else if (rng() < 0.5) break;
     }
 
