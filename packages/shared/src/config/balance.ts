@@ -55,6 +55,8 @@ export const balance = {
     riverFoodBonus: 1.1,
     /** Food eaten per person per game hour. */
     foodPerPersonPerHour: 0.4,
+    /** Soldiers eat this many times a worker's ration: armies are a real food sink. */
+    soldierFoodMultiplier: 3,
     /** Population growth per game hour as a fraction of current population, when fed. */
     growthPerHour: 0.035,
     /** Growth slows to zero as population approaches the region's capacity. */
@@ -89,9 +91,9 @@ export const balance = {
   },
   travel: {
     /** Unit speed (km per game hour in the tables) is multiplied by this to get map km per hour. */
-    speedScale: 12,
+    speedScale: 50,
     /** Minimum trip in game seconds, so adjacent regions still take a moment. */
-    minSeconds: 600,
+    minSeconds: 300,
     /** Terrain of the region being entered multiplies the leg's distance. */
     terrain: {
       plains: 1.0,
@@ -123,6 +125,10 @@ export const balance = {
     militiaPerTenPeople: 0.5,
     /** Soldiers lost while a raid is repelled do not take the loot; winners take up to this share of unprotected stock. */
     raidShare: 0.5,
+  },
+  tribute: {
+    /** Highest share of a region's production that can be routed to the capital. */
+    maxShare: 0.5,
   },
   settle: {
     /** Settlers needed to claim an empty region; all of them become its first workers. */

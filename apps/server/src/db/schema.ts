@@ -190,6 +190,8 @@ export const matchRegions = pgTable(
     /** Stationed units by unit id. Sum equals popSoldiers. */
     units: jsonb("units").$type<Record<string, number>>().notNull().default({}),
     loyalty: doublePrecision("loyalty").notNull().default(1),
+    /** Share (0..1) of this region's gross production sent to the owner's capital each tick. */
+    tributeShare: doublePrecision("tribute_share").notNull().default(0),
     frozenAt: timestamp("frozen_at", { withTimezone: true }),
     /** Match-clock time the amounts above were last settled to. */
     settledAt: timestamp("settled_at", { withTimezone: true }).notNull(),

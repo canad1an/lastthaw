@@ -74,6 +74,7 @@ export const assignBody = z.object({
   wood: z.number().min(0).max(1),
   stone: z.number().min(0).max(1),
 });
+export const tributeBody = z.object({ share: z.number().min(0).max(1) });
 export const timeSkipBody = z.object({ seconds: z.number().int().min(1).max(60 * 60 * 24 * 40) });
 
 // ---------------------------------------------------------------------------
@@ -110,6 +111,7 @@ export const ownedRegionView = z.object({
     roads: z.number(),
   }),
   loyalty: z.number(),
+  tributeShare: z.number().default(0),
   frozen: z.boolean(),
   /** Server time the amounts above are valid for. Clients project forward from here. */
   asOf: z.string(),

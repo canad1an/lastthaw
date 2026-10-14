@@ -50,6 +50,13 @@
       "when": 1791986100585,
       "tag": "0006_slimy_wendigo",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791993429313,
+      "tag": "0007_sparkling_betty_ross",
+      "breakpoints": true
     }
   ]
 }

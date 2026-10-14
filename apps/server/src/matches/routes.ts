@@ -9,6 +9,7 @@ import {
   pickStartBody,
   regionById,
   timeSkipBody,
+  tributeBody,
   type MatchSummary,
 } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
@@ -182,6 +183,25 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
     });
     await publisher.toPlayer(matchId, p.id, "region.updated", { regionId });
     return { ok: true, assignment: shares };
+  });
+
+  /** Route a share of a region's production to the capital. Applied by the match tick. */
+  app.post("/api/matches/:id/regions/:regionId/tribute", async (req) => {
+    const user = requireUser(req);
+    const { id: matchId, regionId } = req.params as { id: string; regionId: string };
+    const share = Math.min(balance.tribute.maxShare, tributeBody.parse(req.body).share);
+    const [m] = await db.select().from(matches).where(eq(matches.id, matchId)).limit(1);
+    if (!m) throw httpError(404, "match not found");
+    const p = await myPlayer(matchId, user.id);
+    if (!p) throw httpError(403, "not your match");
+    if (regionId === p.capitalRegionId) throw httpError(400, "the capital receives tribute; it cannot send it");
+    await db.transaction(async (tx) => {
+      const row = await settleAndLockRegion(tx, matchId, regionId, matchNow(m), m.speed);
+      if (row.ownerPlayerId !== p.id) throw httpError(403, "not your region");
+      await tx.update(matchRegions).set({ tributeShare: share }).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, regionId)));
+    });
+    await publisher.toPlayer(matchId, p.id, "region.updated", { regionId });
+    return { ok: true, share };
   });
 
   // -------------------------------------------------------------------------

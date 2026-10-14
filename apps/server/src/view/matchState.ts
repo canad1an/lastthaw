@@ -56,6 +56,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
         roads: effects.roads,
       },
       loyalty: row.loyalty,
+      tributeShare: row.tributeShare,
       frozen: economy.frozen,
       asOf: now.toISOString(),
       rates: { food: rates.food, wood: rates.wood, stone: rates.stone, population: rates.population, starving: rates.starving },

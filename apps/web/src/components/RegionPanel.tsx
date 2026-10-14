@@ -172,6 +172,7 @@ function OwnedDetails({ matchId, owned, clockOffsetMs, speed }: { matchId: strin
       </p>
       {live.rates.starving && <p className="text-sm text-rose-400">Your people are starving. Assign more workers to food.</p>}
       <AssignmentEditor matchId={matchId} owned={owned} workers={live.e.popWorkers} />
+      {!owned.isCapital && <TributeEditor matchId={matchId} owned={owned} />}
       {Object.keys(owned.buildings).length > 0 && (
         <p className="text-xs text-slate-400">
           Buildings:{" "}
@@ -180,6 +181,32 @@ function OwnedDetails({ matchId, owned, clockOffsetMs, speed }: { matchId: strin
             .join(", ")}
         </p>
       )}
+    </div>
+  );
+}
+
+/** Share of this region's production that caravans carry to the capital every few minutes. */
+function TributeEditor({ matchId, owned }: { matchId: string; owned: OwnedRegionView }) {
+  const qc = useQueryClient();
+  const [share, setShare] = useState(owned.tributeShare);
+  useEffect(() => setShare(owned.tributeShare), [owned.tributeShare]);
+  const m = useMutation({ mutationFn: () => api.setTribute(matchId, owned.regionId, share), onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matchState(matchId) }) });
+  const max = Math.round(balance.tribute.maxShare * 100);
+  return (
+    <div className="space-y-2 border-t border-slate-800 pt-3">
+      <h3 className="text-sm font-medium">Tribute to capital</h3>
+      <label className="grid grid-cols-[4rem_1fr_3rem] items-center gap-2 text-sm">
+        <span className="text-slate-300">Send</span>
+        <input type="range" min={0} max={max} value={Math.round(share * 100)} onChange={(e) => setShare(Number(e.target.value) / 100)} className="accent-amber-400" />
+        <span className="text-right tabular-nums text-slate-400">{Math.round(share * 100)}%</span>
+      </label>
+      <p className="text-xs text-slate-500">That share of everything this region gathers is carried to your capital every few minutes, so colonies can fund research and the capital's upgrades.</p>
+      {Math.abs(share - owned.tributeShare) > 0.004 && (
+        <Button onClick={() => m.mutate()} disabled={m.isPending}>
+          Apply
+        </Button>
+      )}
+      <ErrorText>{m.error?.message}</ErrorText>
     </div>
   );
 }

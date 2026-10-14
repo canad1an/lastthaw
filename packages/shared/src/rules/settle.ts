@@ -95,7 +95,7 @@ export function computeRates(traits: RegionTraits, e: RegionEconomy): Rates {
       if (traits.resources.includes(s)) special[s] = e.extract[s] ?? 0;
     }
   }
-  const consumption = pop * eco.foodPerPersonPerHour;
+  const consumption = (e.popWorkers + e.popOccupiers + e.popSoldiers * eco.soldierFoodMultiplier) * eco.foodPerPersonPerHour;
   const foodNet = gross.food - consumption;
   const starving = e.food <= 0 && foodNet < 0;
 

@@ -1,0 +1,1 @@
+ALTER TABLE "match_regions" ADD COLUMN "tribute_share" double precision DEFAULT 0 NOT NULL;

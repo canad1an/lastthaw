@@ -278,6 +278,12 @@ describe("milestone 1 flow", () => {
     expect(settled!.popWorkers).toBeGreaterThanOrEqual(4.9);
     expect(settled!.loyalty).toBeCloseTo(balance.settle.startingLoyalty, 5);
 
+    // Tribute: colonies can route production to the capital; the capital itself cannot send.
+    expect((await a.call("POST", `/api/matches/${matchId}/regions/${homestead}/tribute`, { share: 0.3 })).statusCode).toBe(200);
+    expect((await a.call("POST", `/api/matches/${matchId}/regions/${aPick}/tribute`, { share: 0.3 })).statusCode).toBe(400);
+    state = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json());
+    expect(state.owned.find((o) => o.regionId === homestead)!.tributeShare).toBeCloseTo(0.3, 5);
+
     // Milestone 4: a match tick scores everyone and lets the AI tribe act.
     {
       const redis = createRedis();
