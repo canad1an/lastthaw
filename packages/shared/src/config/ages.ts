@@ -181,11 +181,11 @@ export const TECHS: readonly TechDef[] = [
   // Iron
   { id: "siegecraft", name: "Siegecraft", age: 2, description: "Engines to break walls.", cost: { wood: 900, iron: 40 }, baseSeconds: 1800 },
   { id: "masonry", name: "Masonry", age: 2, description: "Cut and fitted stone. Unlocks Stone walls and Roads, and leads to Drill.", cost: { stone: 1000, wood: 400 }, baseSeconds: 1800 },
-  { id: "drill", name: "Drill", age: 2, description: "Professional soldiers. Enters the Classical Age.", cost: { food: 40000, wood: 25000, iron: 300 }, baseSeconds: 21600, requires: ["masonry", "writing"], advancesTo: 3 },
+  { id: "drill", name: "Drill", age: 2, description: "Professional soldiers. Enters the Classical Age.", cost: { food: 40000, wood: 25000, iron: 800 }, baseSeconds: 21600, requires: ["masonry", "writing"], advancesTo: 3 },
   // Classical
   { id: "shipbuilding", name: "Shipbuilding", age: 3, description: "Boats that cross open sea.", cost: { wood: 2000, stone: 500 }, baseSeconds: 4800 },
   { id: "engineering", name: "Engineering", age: 3, description: "Aqueducts and ballistae.", cost: { stone: 1800, wood: 800, iron: 60 }, baseSeconds: 4800 },
-  { id: "chivalry", name: "Chivalry", age: 3, description: "Knights and castles. Enters the Medieval Age.", cost: { food: 150000, wood: 80000, iron: 1000 }, baseSeconds: 28800, requires: ["engineering"], advancesTo: 4 },
+  { id: "chivalry", name: "Chivalry", age: 3, description: "Knights and castles. Enters the Medieval Age.", cost: { food: 150000, wood: 80000, iron: 4000 }, baseSeconds: 28800, requires: ["engineering"], advancesTo: 4 },
   // Medieval
   { id: "siege_engines", name: "Siege engines", age: 4, description: "Trebuchets.", cost: { wood: 3000, iron: 200 }, baseSeconds: 9000 },
   { id: "scholasticism", name: "Scholasticism", age: 4, description: "Universities.", cost: { wood: 2500, stone: 2500 }, baseSeconds: 9000 },
