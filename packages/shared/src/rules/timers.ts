@@ -30,8 +30,9 @@ export function buildingCost(def: BuildingDef, level: number, day = 0): Cost {
   return scaleCost(def.cost, g * dayCostMultiplier(day));
 }
 
+/** Age advances are priced in absolute empire wealth (paid from every region) and do not scale with the day; other techs do. */
 export function techCost(def: TechDef, day = 0): Cost {
-  return scaleCost(def.cost, dayCostMultiplier(day));
+  return scaleCost(def.cost, def.advancesTo !== undefined ? 1 : dayCostMultiplier(day));
 }
 
 export function unitCost(def: UnitDef, qty: number, day = 0): Cost {
