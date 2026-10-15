@@ -7,6 +7,7 @@ import type { Publisher } from "../realtime/publish.js";
 import { matchNow } from "./clock.js";
 import { ownerTechEffects, settleAndLockRegion, type Tx } from "./regions.js";
 import { sweepEvacuated } from "./missions.js";
+import { repairWaitingBuilds } from "./commands.js";
 import { handleRegionLost } from "./missions.js";
 import { checkEarlyWin, updateScores } from "./endgame.js";
 import { notify, type MatchRow } from "../worker/jobs.js";
@@ -47,6 +48,7 @@ async function tickMatch(db: Db, publisher: Publisher, matchId: string, log: pin
     const rng = seededRng(`${m.seed}:tick:${now.getTime()}`);
 
     await sweepEvacuated(tx, m, now);
+    await repairWaitingBuilds(tx, m, now);
     await loyaltyAndRebellion(tx, m, now, elapsedGameHours, rng, (fn) => after.push(fn), publisher);
     await neutralGrowth(tx, m, now, elapsedGameHours);
     const standings = await updateScores(tx, m);

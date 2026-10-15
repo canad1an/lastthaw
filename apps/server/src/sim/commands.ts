@@ -445,3 +445,70 @@ export async function convertUnits(ctx: CommandContext, regionId: string, from: 
     return { converted: n, cost };
   });
 }
+
+/**
+ * Self-healing for builds waiting on materials: if the region's own stock now
+ * covers what is owed, pay and start; otherwise make sure a materials route
+ * exists to bring it (routes that shipped and retired before the goods landed
+ * would otherwise leave the build waiting for ever).
+ */
+export async function repairWaitingBuilds(tx: Tx, m: MatchRow, now: Date): Promise<number> {
+  const waiting = await tx
+    .select()
+    .from(jobs)
+    .where(and(eq(jobs.matchId, m.id), eq(jobs.kind, "build"), isNull(jobs.completedAt), isNull(jobs.cancelledAt), sql`${jobs.waitingFor} is not null`))
+    .orderBy(asc(jobs.regionId), asc(jobs.slot), asc(jobs.id));
+  if (waiting.length === 0) return 0;
+  let fixed = 0;
+  const byRegion = new Map<string, typeof waiting>();
+  for (const j of waiting) if (j.regionId) byRegion.set(j.regionId, [...(byRegion.get(j.regionId) ?? []), j]);
+  for (const [regionId, list] of byRegion) {
+    const first = list[0]!;
+    if (!first.playerId) continue;
+    const row = await settleAndLockRegion(tx, m.id, regionId, now, m.speed);
+    if (row.ownerPlayerId !== first.playerId || row.frozenAt) continue;
+    const owed = first.waitingFor as Record<string, number>;
+    const stock = stockOf(row);
+    if (Object.keys(owed).length === 0 || canAfford(stock, owed as Cost)) {
+      if (Object.keys(owed).length) await applyCost(tx, row, owed as Cost);
+      const r = await receiveMaterials(tx, m, regionId, owed, now);
+      fixed += r.started;
+      continue;
+    }
+    const [route] = await tx
+      .select({ id: tradeRoutes.id })
+      .from(tradeRoutes)
+      .where(and(eq(tradeRoutes.matchId, m.id), eq(tradeRoutes.toRegionId, regionId), sql`${tradeRoutes.forJobId} is not null`))
+      .limit(1);
+    if (route) continue;
+    // No route is bringing it: source the shortfall from the capital, then the nearest region with stock.
+    const [p] = await tx.select().from(players).where(eq(players.id, first.playerId)).limit(1);
+    if (!p) continue;
+    const mine = await tx
+      .select()
+      .from(matchRegions)
+      .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.ownerPlayerId, p.id), isNull(matchRegions.frozenAt)));
+    const sources = mine
+      .filter((r) => r.regionId !== regionId)
+      .sort((a, b) => (a.regionId === p.capitalRegionId ? -1 : b.regionId === p.capitalRegionId ? 1 : distanceKm(regionId, a.regionId) - distanceKm(regionId, b.regionId)));
+    const still: Record<string, number> = {};
+    for (const [k, v] of Object.entries(owed)) still[k] = v - (stock[k] ?? 0) > 0 ? Math.ceil(v - (stock[k] ?? 0)) : 0;
+    for (const k of Object.keys(still)) if (still[k]! <= 0) delete still[k];
+    for (const src of sources) {
+      const have = stockOf(src);
+      const part: Record<string, number> = {};
+      for (const [k, v] of Object.entries(still)) {
+        const t = Math.min(v, Math.floor(have[k] ?? 0));
+        if (t >= 1) part[k] = t;
+      }
+      if (Object.keys(part).length === 0) continue;
+      await tx.insert(tradeRoutes).values({ matchId: m.id, playerId: p.id, fromRegionId: src.regionId, toRegionId: regionId, mode: "fixed", load: part, share: 0, caravans: 3, everyHours: 1, target: part, delivered: {}, nextAt: now, forJobId: first.id });
+      for (const [k, t] of Object.entries(part)) {
+        still[k] = (still[k] ?? 0) - t;
+        if (still[k]! <= 0) delete still[k];
+      }
+      if (Object.keys(still).length === 0) break;
+    }
+  }
+  return fixed;
+}
