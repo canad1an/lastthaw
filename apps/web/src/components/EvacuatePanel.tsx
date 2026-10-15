@@ -43,10 +43,11 @@ export function EvacuatePanel({ matchId, state, owned, matchDay }: { matchId: st
   });
 
   // All hooks above run every render; only then may the evacuated state short-circuit.
-  if (owned.evacuated && !owned.frozen) {
+  if (owned.evacuated) {
     return (
       <div className="border-t border-slate-800 pt-3 text-sm text-slate-400">
-        Evacuated. Nobody lives here, nothing grows or is gathered. Move people back in to make it a home again.
+        Evacuated{owned.frozen ? " and frozen" : ""}. Whatever was left is being carried to the capital; once the ice takes the region, the rest is lost.
+        {!owned.frozen && " Move people back in to make it a home again."}
       </div>
     );
   }

@@ -1,8 +1,8 @@
 import { and, eq } from "drizzle-orm";
 import { balance, carryCapacity, emptySpecial } from "@lastthaw/shared";
-import { matchRegions } from "../db/schema.js";
+import { matchRegions, tradeRoutes } from "../db/schema.js";
 import { matchNow } from "./clock.js";
-import { settleAndLockRegion } from "./regions.js";
+import { settleAndLockRegion, stockOf } from "./regions.js";
 import { httpError, sendArmy, type CommandContext } from "./commands.js";
 
 /**
@@ -48,7 +48,33 @@ export async function evacuateRegion(ctx: CommandContext, regionId: string, toRe
     if (left <= 0) break;
   }
   const result = await sendArmy(ctx, regionId, { mission: "move", targetRegionId: toRegionId, units, people, cargo });
-  await db.update(matchRegions).set({ evacuatedAt: matchNow(m) }).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, regionId)));
+  // Nobody stays: the odd fraction of a person leaves too. The stores follow on a stock-up route (haulers are fetched as needed).
+  await db.transaction(async (tx) => {
+    const row = await settleAndLockRegion(tx, m.id, regionId, matchNow(m), m.speed);
+    await tx
+      .update(matchRegions)
+      .set({ evacuatedAt: matchNow(m), popWorkers: 0, popOccupiers: 0 })
+      .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, regionId)));
+    const left = stockOf(row);
+    const target: Record<string, number> = {};
+    for (const [k, v] of Object.entries(left)) if (v >= 1) target[k] = Math.floor(v);
+    if (Object.keys(target).length && !row.frozenAt) {
+      await tx.insert(tradeRoutes).values({
+        matchId: m.id,
+        playerId: p.id,
+        fromRegionId: regionId,
+        toRegionId: toRegionId,
+        mode: "fixed",
+        load: target,
+        share: 0,
+        caravans: 5,
+        everyHours: 1,
+        target,
+        delivered: {},
+        nextAt: matchNow(m),
+      });
+    }
+  });
   return { army: result.army, people, units, cargo, leftBehind: Math.max(0, snapshot.food + snapshot.wood + snapshot.stone - Object.values(cargo).reduce((a, b) => a + b, 0)) };
 }
 

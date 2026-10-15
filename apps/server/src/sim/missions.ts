@@ -1,8 +1,8 @@
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
-import { balance, effectsOf, emptySpecial, storageCaps, regionById, resolveCombat, carryCapacity, travelSeconds, findRoute, armySpeed, type UnitCounts, HAULER_IDS, haulerCount } from "@lastthaw/shared";
-import { armies, battles, jobs, matchRegions, players, regionSightings, playerTechs } from "../db/schema.js";
+import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { balance, effectsOf, emptySpecial, storageCaps, regionById, resolveCombat, carryCapacity, travelSeconds, findRoute, armySpeed, type UnitCounts, HAULER_IDS, haulerCount, unitById } from "@lastthaw/shared";
+import { armies, battles, jobs, matchRegions, players, regionSightings, playerTechs, tradeRoutes } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
-import { settleAndLockRegion, type MatchRegionRow, type Tx, setCapital, ownerTechEffects, waySetsFor } from "./regions.js";
+import { settleAndLockRegion, type MatchRegionRow, type Tx, setCapital, ownerTechEffects, waySetsFor, stockOf } from "./regions.js";
 import { notify, type JobRow, type MatchRow } from "../worker/jobs.js";
 import { areAllied, alliesOf } from "./alliances.js";
 import { receiveMaterials } from "./commands.js";
@@ -78,6 +78,90 @@ async function relocateCapital(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, pub
   const sent = await gatherCaravans(tx, m, army.playerId, army.targetRegionId, at);
   await notify(tx, m.id, army.playerId, "system", `${name} is now your capital${sent ? `; ${sent} caravan${sent === 1 ? "" : "s"} are on their way there` : ""}`, { regionId: army.targetRegionId, caravans: sent });
   after(() => publisher.toPlayer(m.id, army.playerId, "region.updated", { regionId: army.targetRegionId }));
+}
+
+/**
+ * Evacuated regions are swept each tick: whatever arrived or was left behind
+ * leaves for the owner's capital, carrying what it can; a frozen region then
+ * loses the rest for good, an unfrozen one keeps a stock-up route alive.
+ */
+export async function sweepEvacuated(tx: Tx, m: MatchRow, now: Date): Promise<void> {
+  const rows = await tx
+    .select()
+    .from(matchRegions)
+    .where(and(eq(matchRegions.matchId, m.id), isNotNull(matchRegions.evacuatedAt), isNotNull(matchRegions.ownerPlayerId)))
+    .orderBy(matchRegions.regionId);
+  if (rows.length === 0) return;
+  const owners = [...new Set(rows.map((r) => r.ownerPlayerId!))];
+  const ps = await tx.select().from(players).where(inArray(players.id, owners));
+  const byOwner = new Map(ps.map((p) => [p.id, p]));
+  for (const r of rows) {
+    const p = byOwner.get(r.ownerPlayerId!);
+    const capital = p?.capitalRegionId;
+    if (!p || !capital || capital === r.regionId) continue;
+    const row = await settleAndLockRegion(tx, m.id, r.regionId, now, m.speed);
+    const units: UnitCounts = {};
+    for (const [id, n] of Object.entries(row.units)) if (n > 0) units[id] = n;
+    const people = Math.floor(row.popWorkers + row.popOccupiers + 0.000001);
+    const stock = stockOf(row);
+    if (sumUnits(units) > 0 || people > 0) {
+      const techRows = await tx.select({ id: playerTechs.techId }).from(playerTechs).where(eq(playerTechs.playerId, p.id));
+      const techs = new Set(techRows.map((t) => t.id));
+      const { roads, rails } = await waySetsFor(tx, m.id, p.id, await alliesOf(tx, m.id, p.id));
+      const route = findRoute(r.regionId, capital, techs.has(balance.travel.seaTech), roads, rails);
+      if (route) {
+        const capacity = carryCapacity(units, techs) + people * balance.travel.carryPerPerson;
+        const cargo: Record<string, number> = {};
+        let left = capacity;
+        for (const k of ["food", "wood", "stone", ...Object.keys(stock).filter((x) => !["food", "wood", "stone"].includes(x))]) {
+          const take = Math.floor(Math.min(stock[k] ?? 0, left));
+          if (take >= 1) {
+            cargo[k] = take;
+            left -= take;
+          }
+          if (left <= 0) break;
+        }
+        const seconds = travelSeconds(route, sumUnits(units) ? armySpeed(units) : (unitById.get("settler")?.speed ?? 4), m.speed);
+        const arrivesAt = new Date(now.getTime() + seconds * 1000);
+        const [a] = await tx
+          .insert(armies)
+          .values({ matchId: m.id, playerId: p.id, mission: "move", originRegionId: r.regionId, targetRegionId: capital, units, cargo: { ...cargo, people }, path: route.path, status: "outbound", departsAt: now, arrivesAt })
+          .returning();
+        await tx.insert(jobs).values({ matchId: m.id, playerId: p.id, regionId: capital, kind: "mission", refId: a!.id, startsAt: now, endsAt: arrivesAt });
+        const emptied = { ...row.units };
+        for (const id of Object.keys(units)) emptied[id] = 0;
+        const set: Partial<MatchRegionRow> = { units: emptied, popSoldiers: 0, popWorkers: 0, popOccupiers: 0 };
+        for (const [k, v] of Object.entries(cargo)) {
+          if (k === "food" || k === "wood" || k === "stone") set[k] = Math.max(0, row[k] - v);
+        }
+        const special = { ...emptySpecial(), ...(row.special as Record<string, number>) };
+        for (const [k, v] of Object.entries(cargo)) if (k in special) special[k as keyof typeof special] = Math.max(0, (special[k as keyof typeof special] ?? 0) - v);
+        set.special = special;
+        await tx.update(matchRegions).set(set).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, r.regionId)));
+      }
+    }
+    if (row.frozenAt) {
+      // The ice has it: nothing left here is coming out.
+      await tx
+        .update(matchRegions)
+        .set({ food: 0, wood: 0, stone: 0, special: emptySpecial(), popWorkers: 0, popOccupiers: 0 })
+        .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, r.regionId)));
+      await tx.delete(tradeRoutes).where(and(eq(tradeRoutes.matchId, m.id), eq(tradeRoutes.fromRegionId, r.regionId)));
+    } else {
+      // Keep a stock-up route alive for whatever is still in store.
+      const remaining = stockOf(await settleAndLockRegion(tx, m.id, r.regionId, now, m.speed));
+      const target: Record<string, number> = {};
+      for (const [k, v] of Object.entries(remaining)) if (v >= 1) target[k] = Math.floor(v);
+      const [existing] = await tx
+        .select({ id: tradeRoutes.id })
+        .from(tradeRoutes)
+        .where(and(eq(tradeRoutes.matchId, m.id), eq(tradeRoutes.fromRegionId, r.regionId), eq(tradeRoutes.toRegionId, capital), sql`${tradeRoutes.target} is not null`))
+        .limit(1);
+      if (Object.keys(target).length && !existing) {
+        await tx.insert(tradeRoutes).values({ matchId: m.id, playerId: p.id, fromRegionId: r.regionId, toRegionId: capital, mode: "fixed", load: target, share: 0, caravans: 5, everyHours: 1, target, delivered: {}, nextAt: now });
+      }
+    }
+  }
 }
 
 /** Every stationed caravan outside `targetRegionId` walks there. Returns how many were sent. */
