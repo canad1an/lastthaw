@@ -49,7 +49,7 @@ export function ResearchPanel({ matchId, state, clockOffsetMs }: { matchId: stri
       {capital ? (
         <TechList state={state} clockOffsetMs={clockOffsetMs} list={list} busy={full || m.isPending} capital={capital} onPick={(id) => m.mutate(id)} />
       ) : (
-        <p className="text-xs text-slate-400">Research is paid from all your regions: food, wood and stone from the capital first, ore and horses from wherever you have them.</p>
+        <p className="text-xs text-slate-400">Research is paid from all your regions at once: the capital first, then the rest, for every resource. Nothing has to be hauled.</p>
       )}
     </Card>
   );
@@ -93,10 +93,12 @@ function TechList({
   onPick: (id: string) => void;
 }) {
   const live = useLiveEconomy(capital, clockOffsetMs, state.match.speed);
-  // Research draws ore and horses from every region, so show the pooled special stock.
-  const pooledSpecial: Record<string, number> = {};
-  for (const o of state.owned) if (!o.frozen) for (const [k, v] of Object.entries(o.special)) pooledSpecial[k] = (pooledSpecial[k] ?? 0) + v;
-  const stock = { food: live.e.food, wood: live.e.wood, stone: live.e.stone, ...live.e.special, ...pooledSpecial };
+  // Research is paid from every region you own (capital first), so affordability counts the whole empire.
+  const stock: Record<string, number> = { food: live.e.food, wood: live.e.wood, stone: live.e.stone, ...live.e.special };
+  for (const o of state.owned) {
+    if (o.frozen || o.regionId === capital.regionId) continue;
+    for (const [k, v] of Object.entries({ food: o.food, wood: o.wood, stone: o.stone, ...o.special })) stock[k] = (stock[k] ?? 0) + v;
+  }
   if (list.length === 0) return <p className="text-xs text-slate-400">Nothing left to research in this age.</p>;
   return (
     <ul className="divide-y divide-slate-800">

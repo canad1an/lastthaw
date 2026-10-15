@@ -21,10 +21,10 @@ export function TechTreePanel({ matchId, state, clockOffsetMs }: { matchId: stri
   const available = useMemo(() => new Set(availableTechs(state.me.age, known).map((t) => t.id)), [state.me.age, known]);
   const capital = state.owned.find((o) => o.isCapital) ?? state.owned[0] ?? null;
   const pooled = useMemo(() => {
-    const s: Record<string, number> = capital ? { food: capital.food, wood: capital.wood, stone: capital.stone } : {};
-    for (const o of state.owned) if (!o.frozen) for (const [k, v] of Object.entries(o.special)) s[k] = (s[k] ?? 0) + v;
+    const s: Record<string, number> = {};
+    for (const o of state.owned) if (!o.frozen) for (const [k, v] of Object.entries({ food: o.food, wood: o.wood, stone: o.stone, ...o.special })) s[k] = (s[k] ?? 0) + v;
     return s;
-  }, [state.owned, capital]);
+  }, [state.owned]);
   const research = useMutation({
     mutationFn: (techId: string) => api.research(matchId, techId),
     onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matchState(matchId) }),
