@@ -4,7 +4,7 @@ import { AGES, availableBuildings, availableUnits, buildingBlockedBy, balance, b
 import { api, keys } from "../api/client.js";
 import { useNow } from "../hooks/useNow.js";
 import { Button, Card, ErrorText, fmt, signed } from "./ui.js";
-import { Countdown, CostLine } from "./Countdown.js";
+import { Countdown, CostLine, JobTime } from "./Countdown.js";
 import { SendArmy } from "./ArmyPanel.js";
 import { ColonizePanel } from "./ColonizePanel.js";
 import { EvacuatePanel } from "./EvacuatePanel.js";
@@ -663,7 +663,7 @@ function QueueList({ matchId, state, regionId, clockOffsetMs }: { matchId: strin
                   waiting for materials
                 </span>
               ) : (
-                <Countdown to={j.endsAt} clockOffsetMs={clockOffsetMs} />
+                <JobTime startsAt={j.startsAt} endsAt={j.endsAt} clockOffsetMs={clockOffsetMs} />
               )}
             </span>
             <button className="text-xs text-slate-500 hover:text-rose-400" onClick={() => cancel.mutate(j.id)} title="Cancel">

@@ -5,7 +5,7 @@ import { Tooltip } from "./Tooltip.js";
 import { techPreview } from "./previews.js";
 import { api, keys } from "../api/client.js";
 import { Button, Card, ErrorText } from "./ui.js";
-import { Countdown, CostLine } from "./Countdown.js";
+import { Countdown, CostLine, JobTime } from "./Countdown.js";
 import { useLiveEconomy } from "./RegionPanel.js";
 
 /** Research panel: a queue of up to N techs, one researching at a time, paid from the capital. */
@@ -35,7 +35,7 @@ export function ResearchPanel({ matchId, state, clockOffsetMs }: { matchId: stri
                 {i > 0 && <span className="ml-1 text-xs text-slate-500">queued</span>}
               </span>
               <span className="text-slate-400">
-                <Countdown to={j.endsAt} clockOffsetMs={clockOffsetMs} />
+                <JobTime startsAt={j.startsAt} endsAt={j.endsAt} clockOffsetMs={clockOffsetMs} />
               </span>
               <button className="text-xs text-slate-500 hover:text-rose-400" onClick={() => cancel.mutate(j.id)} title="Cancel">
                 ✕

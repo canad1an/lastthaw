@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { buildingById, regionById, techById, unitById, type MatchStateView, missionLabel } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { Card } from "./ui.js";
-import { Countdown } from "./Countdown.js";
+import { Countdown, JobTime } from "./Countdown.js";
 
 /**
  * Everything in progress, always visible at the top of the side panel:
@@ -97,7 +97,7 @@ export function ActivityPanel({ matchId, state, clockOffsetMs, onSelect }: { mat
       {research.length > 0 && (
         <Section title="Research">
           {research.map((j, i) => (
-            <Row key={j.id} name={label(j)} note={i > 0 ? "queued" : ""} to={j.endsAt} clockOffsetMs={clockOffsetMs} waiting={Date.parse(j.startsAt) > now} onCancel={() => cancel.mutate(j.id)} />
+            <Row key={j.id} name={label(j)} note={i > 0 ? "queued" : ""} to={j.endsAt} startsAt={j.startsAt} clockOffsetMs={clockOffsetMs} waiting={Date.parse(j.startsAt) > now} onCancel={() => cancel.mutate(j.id)} />
           ))}
         </Section>
       )}
@@ -111,6 +111,7 @@ export function ActivityPanel({ matchId, state, clockOffsetMs, onSelect }: { mat
               to={j.endsAt}
               clockOffsetMs={clockOffsetMs}
               waiting={Date.parse(j.startsAt) > now}
+              startsAt={j.startsAt}
               status={j.waitingFor ? "materials" : undefined}
               onCancel={() => cancel.mutate(j.id)}
               onClick={j.regionId ? () => onSelect(j.regionId!) : undefined}
@@ -172,7 +173,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function Row({ name, note, to, clockOffsetMs, waiting, onCancel, onClick, cancelTitle = "Cancel", status }: { name: string; note: string; to: string; clockOffsetMs: number; waiting?: boolean | undefined; onCancel?: (() => void) | undefined; onClick?: (() => void) | undefined; cancelTitle?: string; status?: string | undefined }) {
+function Row({ name, note, to, clockOffsetMs, waiting, onCancel, onClick, cancelTitle = "Cancel", status, startsAt }: { name: string; note: string; to: string; clockOffsetMs: number; waiting?: boolean | undefined; onCancel?: (() => void) | undefined; onClick?: (() => void) | undefined; cancelTitle?: string; status?: string | undefined; startsAt?: string | undefined }) {
   return (
     <li className="flex items-center gap-2 text-sm">
       <button className={`min-w-0 flex-1 truncate text-left ${onClick ? "hover:text-white" : "cursor-default"}`} onClick={onClick}>
@@ -180,7 +181,7 @@ function Row({ name, note, to, clockOffsetMs, waiting, onCancel, onClick, cancel
         {note && <span className="ml-1 text-xs text-slate-500">{note}</span>}
       </button>
       <span className={`tabular-nums ${waiting ? "text-slate-500" : "text-sky-300"}`}>
-        {status ? <span className="text-xs text-amber-300">{status}</span> : <Countdown to={to} clockOffsetMs={clockOffsetMs} />}
+        {status ? <span className="text-xs text-amber-300">{status}</span> : startsAt ? <JobTime startsAt={startsAt} endsAt={to} clockOffsetMs={clockOffsetMs} /> : <Countdown to={to} clockOffsetMs={clockOffsetMs} />}
       </span>
       {onCancel && (
         <button className="text-xs text-slate-600 hover:text-rose-400" onClick={onCancel} title={cancelTitle}>

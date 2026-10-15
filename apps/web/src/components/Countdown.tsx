@@ -35,3 +35,22 @@ export function costText(cost: Record<string, number | undefined>): string {
     .map(([k, v]) => `${v} ${k.replace("_", " ")}`)
     .join(", ");
 }
+
+/**
+ * Time for a queued job: the one that is running counts down; the ones behind
+ * it wait, showing how long they will take once their turn comes.
+ */
+export function JobTime({ startsAt, endsAt, clockOffsetMs }: { startsAt: string; endsAt: string; clockOffsetMs: number }) {
+  const now = useNow(1000);
+  const t = now + clockOffsetMs;
+  const start = Date.parse(startsAt);
+  const end = Date.parse(endsAt);
+  if (t < start) {
+    return (
+      <span className="tabular-nums text-slate-500" title={`Starts in ${formatCountdown((start - t) / 1000)}`}>
+        waiting · {formatCountdown((end - start) / 1000)}
+      </span>
+    );
+  }
+  return <span className="tabular-nums">{end - t <= 0 ? "done" : formatCountdown((end - t) / 1000)}</span>;
+}
