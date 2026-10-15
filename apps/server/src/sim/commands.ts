@@ -88,7 +88,9 @@ export async function queueBuild(ctx: CommandContext, regionId: string, building
     }
     if (Object.keys(paid).length) await applyCost(tx, row, paid as Cost);
     const active = pending.filter((j) => !j.waitingFor);
-    if (Object.keys(owed).length === 0) {
+    // A level queued behind a waiting job must not overtake it: it waits too, even if fully paid.
+    const behindWaiting = pending.some((j) => j.waitingFor);
+    if (Object.keys(owed).length === 0 && !behindWaiting) {
       const startsAt = active.length ? active[active.length - 1]!.endsAt : now;
       const endsAt = new Date(startsAt.getTime() + realSeconds(buildingSeconds(def, level), 0, m.speed) * 1000);
       const [j] = await tx
@@ -387,7 +389,7 @@ export async function receiveMaterials(tx: Tx, m: MatchRow, regionId: string, ca
     const owed: Record<string, number> = { ...(j.waitingFor as Record<string, number>) };
     const payload = (j.payload ?? {}) as { cost?: Cost; paid?: Record<string, number> };
     const paid = { ...(payload.paid ?? {}) };
-    let changed = false;
+    let changed = Object.keys(owed).length === 0; // fully paid, only waiting its turn
     for (const [k, v] of Object.entries(owed)) {
       const take = Math.min(v, rest[k] ?? 0);
       if (take <= 0) continue;
@@ -408,6 +410,7 @@ export async function receiveMaterials(tx: Tx, m: MatchRow, regionId: string, ca
       started += 1;
     } else {
       await tx.update(jobs).set({ waitingFor: owed, payload: { ...payload, paid } }).where(eq(jobs.id, j.id));
+      break; // later jobs keep waiting behind this one
     }
   }
   for (const k of Object.keys(rest)) if ((rest[k] ?? 0) <= 0) delete rest[k];

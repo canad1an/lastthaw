@@ -210,6 +210,10 @@ async function deliverUnits(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publis
   const { settler: settlersArriving = 0, ...rest } = army.units;
   const joinAsOccupiers = settlersArriving > 0 && target.conquered && target.ownerPlayerId === army.playerId;
   await depositInto(tx, target, joinAsOccupiers ? rest : army.units, army.cargo);
+  // People moving back into an evacuated region make it a home again.
+  if (target.evacuatedAt && ((army.cargo.people ?? 0) > 0 || settlersArriving > 0)) {
+    await tx.update(matchRegions).set({ evacuatedAt: null }).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, army.targetRegionId)));
+  }
   if (joinAsOccupiers) {
     await tx
       .update(matchRegions)

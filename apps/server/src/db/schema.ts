@@ -197,6 +197,8 @@ export const matchRegions = pgTable(
     isCapital: boolean("is_capital").notNull().default(false),
     /** Taken by force from someone else: needs occupiers to stay loyal. Settled and founded regions are your own people. */
     conquered: boolean("conquered").notNull().default(false),
+    /** Emptied by an evacuation: no growth or production until people move back in. */
+    evacuatedAt: timestamp("evacuated_at", { withTimezone: true }),
     /** Match-clock time the amounts above were last settled to. */
     settledAt: timestamp("settled_at", { withTimezone: true }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

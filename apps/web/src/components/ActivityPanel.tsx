@@ -25,8 +25,9 @@ export function ActivityPanel({ matchId, state, clockOffsetMs, onSelect }: { mat
     const map = new Map<string, { key: string; label: string; items: Array<{ army: MatchStateView["armies"][number]; dest: string; to: string; note: string }> }>();
     for (const a of armies) {
       const returning = a.status === "returning";
-      const key = `${a.mission}:${returning ? "back" : "out"}`;
-      const label = returning ? `${missionLabel(a.mission)} returning` : missionLabel(a.mission);
+      const base = missionLabel(a.mission, a.units);
+      const key = `${base}:${returning ? "back" : "out"}`;
+      const label = returning ? `${base} returning` : base;
       const dest = regionById(returning ? a.originRegionId : a.targetRegionId)?.name ?? "";
       const to = returning ? (a.returnsAt ?? a.arrivesAt) : a.arrivesAt;
       const units = Object.entries(a.units)

@@ -30,6 +30,7 @@ export function economyOf(row: MatchRegionRow, effects: RegionEffects = effectsO
     extract: effects.extract,
     iceFactor: row.frozenAt ? 0 : row.iceFactor,
     growthMult,
+    abandoned: row.evacuatedAt !== null,
     frozen: row.frozenAt !== null,
   };
 }

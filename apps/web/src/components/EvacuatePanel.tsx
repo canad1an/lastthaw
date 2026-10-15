@@ -16,6 +16,13 @@ export function EvacuatePanel({ matchId, state, owned, matchDay }: { matchId: st
   const touchLeft = touchDay === null ? null : touchDay - matchDay;
   const urgent = owned.frozen || (touchLeft !== null && touchLeft <= 3) || owned.iceFactor < 1;
   const [open, setOpen] = useState(false);
+  if (owned.evacuated && !owned.frozen) {
+    return (
+      <div className="border-t border-slate-800 pt-3 text-sm text-slate-400">
+        Evacuated. Nobody lives here, nothing grows or is gathered. Move people back in to make it a home again.
+      </div>
+    );
+  }
 
   // Destinations: my other regions, safest (latest freeze) and nearest first.
   const destinations = useMemo(() => {

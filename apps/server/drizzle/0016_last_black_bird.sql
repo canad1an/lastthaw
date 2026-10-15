@@ -1,0 +1,1 @@
+ALTER TABLE "match_regions" ADD COLUMN "evacuated_at" timestamp with time zone;

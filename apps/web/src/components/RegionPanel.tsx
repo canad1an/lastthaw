@@ -125,6 +125,7 @@ export function useLiveEconomy(owned: OwnedRegionView, clockOffsetMs: number, sp
       extract: owned.extract as Partial<Record<SpecialResource, number>>,
       iceFactor: owned.iceFactor,
       growthMult: owned.growthMult,
+      abandoned: owned.evacuated,
       frozen: owned.frozen,
     };
     const elapsed = Math.max(0, (now + clockOffsetMs - Date.parse(owned.asOf)) / 1000);
@@ -144,6 +145,7 @@ function OwnedDetails({ matchId, state, owned, clockOffsetMs, speed }: { matchId
       {owned.isCapital && <span className="inline-block rounded bg-sky-500/20 px-1.5 py-0.5 text-xs text-sky-300">Capital</span>}
       {owned.isCapital && !owned.frozen && <Rally matchId={matchId} state={state} />}
       {owned.frozen && <span className="ml-2 inline-block rounded bg-cyan-200/20 px-1.5 py-0.5 text-xs text-cyan-200">Frozen</span>}
+      {owned.evacuated && !owned.frozen && <span className="ml-2 inline-block rounded bg-slate-700 px-1.5 py-0.5 text-xs text-slate-300" title="Nobody lives here: no growth or production until people move back in">Evacuated</span>}
       {!owned.isCapital && !owned.frozen && <MakeCapital matchId={matchId} state={state} regionId={owned.regionId} clockOffsetMs={clockOffsetMs} />}
       <dl className="grid grid-cols-[auto_1fr_auto] gap-x-3 gap-y-1 text-sm">
         <Row label="People" value={`${fmt(pop)} / ${fmt(live.e.capacity)}`} rate={perHour(live.rates.population)} />

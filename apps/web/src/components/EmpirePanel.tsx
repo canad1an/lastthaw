@@ -129,7 +129,7 @@ export function EmpirePanel({ state, onSelect }: { state: MatchStateView; onSele
       </table>
       {state.armies.length > 0 && (
         <p className="mt-2 text-xs text-slate-500">
-          Moving: {state.armies.map((a) => `${missionLabel(a.mission)} → ${regionById(a.status === "returning" ? a.originRegionId : a.targetRegionId)?.name}`).join(" · ")}
+          Moving: {state.armies.map((a) => `${missionLabel(a.mission, a.units)} → ${regionById(a.status === "returning" ? a.originRegionId : a.targetRegionId)?.name}`).join(" · ")}
         </p>
       )}
     </div>

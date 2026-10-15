@@ -39,6 +39,8 @@ export interface RegionEconomy {
   iceFactor: number;
   /** Population growth multiplier from the owner's techs (1 = none). */
   growthMult: number;
+  /** Evacuated: nobody lives here, nothing grows or is gathered until people return. */
+  abandoned: boolean;
   frozen: boolean;
 }
 
@@ -91,7 +93,7 @@ export function computeRates(traits: RegionTraits, e: RegionEconomy): Rates {
   const assignment = normalizeAssignment(e.assignment);
   const gross: Record<BaseResource, number> = { food: 0, wood: 0, stone: 0 };
   const special = emptySpecial();
-  if (!e.frozen) {
+  if (!e.frozen && !e.abandoned) {
     for (const res of BASE_RESOURCES) {
       gross[res] = e.popWorkers * assignment[res] * yieldPerWorker(traits, res) * (e.yieldMult[res] ?? 1) * e.iceFactor;
     }
@@ -106,6 +108,8 @@ export function computeRates(traits: RegionTraits, e: RegionEconomy): Rates {
   let population: number;
   if (e.frozen) {
     population = -pop * eco.frozenDeathPerHour;
+  } else if (e.abandoned) {
+    population = 0;
   } else if (starving) {
     population = -pop * eco.starvationPerHour;
   } else {
@@ -190,6 +194,7 @@ export function startingEconomy(): RegionEconomy {
     extract: {},
     iceFactor: 1,
     growthMult: 1,
+    abandoned: false,
     frozen: false,
   };
 }

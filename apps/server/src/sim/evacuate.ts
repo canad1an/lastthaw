@@ -16,6 +16,7 @@ export async function evacuateRegion(ctx: CommandContext, regionId: string, toRe
   const snapshot = await db.transaction(async (tx) => {
     const row = await settleAndLockRegion(tx, m.id, regionId, matchNow(m), m.speed);
     if (row.ownerPlayerId !== p.id) throw httpError(403, "not your region");
+    if (row.evacuatedAt) throw httpError(409, "this region has already been evacuated");
     if (row.popOccupiers > 0) {
       await tx
         .update(matchRegions)
@@ -47,6 +48,7 @@ export async function evacuateRegion(ctx: CommandContext, regionId: string, toRe
     if (left <= 0) break;
   }
   const result = await sendArmy(ctx, regionId, { mission: "move", targetRegionId: toRegionId, units, people, cargo });
+  await db.update(matchRegions).set({ evacuatedAt: matchNow(m) }).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, regionId)));
   return { army: result.army, people, units, cargo, leftBehind: Math.max(0, snapshot.food + snapshot.wood + snapshot.stone - Object.values(cargo).reduce((a, b) => a + b, 0)) };
 }
 

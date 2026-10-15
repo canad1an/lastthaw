@@ -121,6 +121,8 @@ export const ownedRegionView = z.object({
   /** Population growth multiplier from techs. */
   growthMult: z.number().default(1),
   frozen: z.boolean(),
+  /** Evacuated and empty: no growth or production until people move back in. */
+  evacuated: z.boolean().default(false),
   /** Server time the amounts above are valid for. Clients project forward from here. */
   asOf: z.string(),
   rates: z.object({ food: z.number(), wood: z.number(), stone: z.number(), population: z.number(), starving: z.boolean() }),

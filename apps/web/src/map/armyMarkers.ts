@@ -78,7 +78,7 @@ export function armyMarkers(armies: ArmyView[], incoming: IncomingView[], nowMs:
       y: pos.y,
       hostile: false,
       mission: a.mission,
-      title: `${missionLabel(a.mission)} ${returning ? "returning to" : "→"} ${dest}`,
+      title: `${missionLabel(a.mission, a.units)} ${returning ? "returning to" : "→"} ${dest}`,
       lines: [
         returning && a.note ? a.note : "",
         `from ${regionById(a.originRegionId)?.name ?? a.originRegionId}`,

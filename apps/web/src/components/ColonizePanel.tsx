@@ -43,7 +43,7 @@ function SettlingPanel({ matchId, state, regionId, armyOrigin, arrivesAt }: { ma
   const target = regionById(regionId)!;
   const existing = state.routes.filter((r) => r.toRegionId === regionId && r.target);
   const sources = useMemo(
-    () => state.owned.filter((o) => haulerCount(o.units) >= 1).sort((a, b) => (a.regionId === armyOrigin ? -1 : b.regionId === armyOrigin ? 1 : distanceKm(a.regionId, regionId) - distanceKm(b.regionId, regionId))),
+    () => state.owned.filter((o) => !o.frozen).sort((a, b) => (a.regionId === armyOrigin ? -1 : b.regionId === armyOrigin ? 1 : distanceKm(a.regionId, regionId) - distanceKm(b.regionId, regionId))),
     [state.owned, armyOrigin, regionId],
   );
   const [sourceId, setSourceId] = useState<string>(sources[0]?.regionId ?? "");
@@ -56,7 +56,7 @@ function SettlingPanel({ matchId, state, regionId, armyOrigin, arrivesAt }: { ma
   const [prefs] = useState(loadStockPrefs);
   const [stock, setStock] = useState<Record<string, number>>(prefs.stock);
   const [caravans, setCaravans] = useState(prefs.caravans);
-  useEffect(() => setCaravans((c) => Math.max(1, Math.min(c, Math.max(1, caravansHome)))), [caravansHome]);
+  useEffect(() => setCaravans((c) => Math.max(1, Math.min(c, Math.max(10, caravansHome)))), [caravansHome]);
   const stockTotal = Object.values(stock).reduce((a, b) => a + b, 0);
   const trips = Math.ceil(stockTotal / (perCaravan * Math.max(1, Math.min(caravans, caravansHome))));
   const create = useMutation({
@@ -84,7 +84,7 @@ function SettlingPanel({ matchId, state, regionId, armyOrigin, arrivesAt }: { ma
           . Manage it under Trade Routes.
         </div>
       ) : sources.length === 0 ? (
-        <p className="text-xs text-slate-400">To stock the colony by caravan, train caravans in one of your regions first, then come back here.</p>
+        <p className="text-xs text-slate-400">You have no other region to stock the colony from yet.</p>
       ) : (
         <div className="space-y-2">
           <p className="text-xs text-slate-300">Stock the colony by caravan once founded:</p>
@@ -108,7 +108,7 @@ function SettlingPanel({ matchId, state, regionId, armyOrigin, arrivesAt }: { ma
           </div>
           <label className="grid grid-cols-[5rem_1fr_3rem] items-center gap-2">
             <span className="text-xs text-slate-400">Caravans</span>
-            <input type="range" min={1} max={Math.max(1, caravansHome)} value={caravans} onChange={(e) => setCaravans(Number(e.target.value))} className="accent-amber-400" />
+            <input type="range" min={1} max={Math.max(10, caravansHome)} value={caravans} onChange={(e) => setCaravans(Number(e.target.value))} className="accent-amber-400" />
             <span className="text-right tabular-nums">{caravans}</span>
           </label>
           <p className="text-xs text-slate-400">
@@ -157,7 +157,7 @@ function ColonizeForm({ matchId, state, regionId }: { matchId: string; state: Ma
   const [stockUp, setStockUp] = useState(prefs.stockUp);
   const [stock, setStock] = useState<Record<string, number>>(prefs.stock);
   const [caravans, setCaravans] = useState(prefs.caravans);
-  useEffect(() => setCaravans((c) => Math.max(1, Math.min(c, Math.max(1, caravansHome)))), [caravansHome]);
+  useEffect(() => setCaravans((c) => Math.max(1, Math.min(c, Math.max(10, caravansHome)))), [caravansHome]);
   const stockTotal = Object.values(stock).reduce((a, b) => a + b, 0);
   const trips = Math.ceil(stockTotal / (perCaravan * Math.max(1, Math.min(caravans, caravansHome))));
   const send = useMutation({
@@ -210,12 +210,13 @@ function ColonizeForm({ matchId, state, regionId }: { matchId: string; state: Ma
           </p>
           <div className="space-y-2 rounded border border-slate-800 bg-slate-900/50 p-2">
             <label className="flex items-center gap-2">
-              <input type="checkbox" checked={stockUp} disabled={caravansHome < 1} onChange={(e) => setStockUp(e.target.checked)} className="accent-amber-400" />
-              <span className={caravansHome < 1 ? "text-slate-500" : ""}>Stock the colony by caravan once founded</span>
+              <input type="checkbox" checked={stockUp} onChange={(e) => setStockUp(e.target.checked)} className="accent-amber-400" />
+              <span>Stock the colony by caravan once founded</span>
             </label>
-            {caravansHome < 1 ? (
-              <p className="text-xs text-slate-500">Needs at least one caravan in {source ? regionById(source.regionId)?.name : "the source region"}. Train caravans under the Train tab.</p>
-            ) : (
+            {caravansHome < 1 && stockUp && (
+              <p className="text-xs text-slate-400">No haulers in {source ? regionById(source.regionId)?.name : "the source region"} right now: idle ones will be called over from your nearest region when the route runs, or train some under the Train tab.</p>
+            )}
+            {(
               stockUp && (
                 <>
                   <div className="grid grid-cols-3 gap-2">
@@ -235,7 +236,7 @@ function ColonizeForm({ matchId, state, regionId }: { matchId: string; state: Ma
                   </div>
                   <label className="grid grid-cols-[5rem_1fr_3rem] items-center gap-2">
                     <span className="text-xs text-slate-400">Caravans</span>
-                    <input type="range" min={1} max={Math.max(1, caravansHome)} value={caravans} onChange={(e) => setCaravans(Number(e.target.value))} className="accent-amber-400" />
+                    <input type="range" min={1} max={Math.max(10, caravansHome)} value={caravans} onChange={(e) => setCaravans(Number(e.target.value))} className="accent-amber-400" />
                     <span className="text-right tabular-nums">{caravans}</span>
                   </label>
                   <p className="text-xs text-slate-400">

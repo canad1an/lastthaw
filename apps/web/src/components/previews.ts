@@ -35,6 +35,7 @@ export function buildingPreview(def: BuildingDef, level: number, buildings: Reco
     extract: f.extract,
     iceFactor: economy.iceFactor,
     growthMult: economy.growthMult,
+    abandoned: economy.abandoned,
   });
   const rb = computeRates(traits, withEffects(before));
   const ra = computeRates(traits, withEffects(after));

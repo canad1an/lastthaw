@@ -66,14 +66,7 @@ export async function armyRoutes(app: FastifyInstance, opts: { db: Db; publisher
     const ctx = await loadContext(matchId, user.id);
     const stock = Object.fromEntries(Object.entries(body.stock ?? {}).filter(([, v]) => v >= 1).map(([k, v]) => [k, Math.floor(v)]));
     const wantsStock = Object.keys(stock).length > 0;
-    if (wantsStock) {
-      const [origin] = await db
-        .select({ units: matchRegions.units })
-        .from(matchRegions)
-        .where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, regionId)))
-        .limit(1);
-      if (((origin?.units as Record<string, number>)?.caravan ?? 0) < 1) throw httpError(400, "stocking the colony needs at least one caravan in this region");
-    }
+    // No hauler needs to be here: the route calls idle ones over from the nearest region when it runs.
     const r = await sendArmy(ctx, regionId, { mission: "settle", targetRegionId: body.targetRegionId, units: { settler: body.settlers }, people: 0, cargo: {} });
     let routeId: string | null = null;
     if (wantsStock) {

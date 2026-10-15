@@ -87,12 +87,15 @@ export function travelSeconds(route: Route, speedKmPerHour: number, matchSpeed: 
 }
 
 /** Human name for a mission as a moving group: Settlers, Caravans, Capital wagon, Raid... */
-export function missionLabel(mission: string): string {
+export function missionLabel(mission: string, units?: Record<string, number>): string {
   switch (mission) {
     case "settle":
       return "Settlers";
-    case "transport":
+    case "transport": {
+      if (units?.train) return "Trains";
+      if (units?.wagon) return "Wagons";
       return "Caravans";
+    }
     case "relocate":
       return "Capital wagon";
     case "move":

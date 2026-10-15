@@ -61,6 +61,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
       iceFactor: economy.iceFactor,
       growthMult: economy.growthMult,
       frozen: economy.frozen,
+      evacuated: economy.abandoned,
       asOf: now.toISOString(),
       rates: { food: rates.food, wood: rates.wood, stone: rates.stone, population: rates.population, starving: rates.starving },
       isCapital: row.regionId === me.capitalRegionId,
