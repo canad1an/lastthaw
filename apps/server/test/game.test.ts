@@ -4,7 +4,7 @@ import { balance, buildingById,
   buildingCost, iceLatitudeOnDay, matchStateView, regionById } from "@lastthaw/shared";
 import { buildApp } from "../src/api/app.js";
 import { createDb, type Db } from "../src/db/client.js";
-import { battles, jobs, matchRegions, matches, transfers, users } from "../src/db/schema.js";
+import { battles, jobs, matchRegions, matches, players, transfers, users } from "../src/db/schema.js";
 import { runAiDecisions, runMatchTicks } from "../src/sim/tick.js";
 import { Publisher } from "../src/realtime/publish.js";
 import { createRedis } from "../src/redis.js";
@@ -287,7 +287,9 @@ describe("milestone 1 flow", () => {
     await skipTo(state.armies[0]!.arrivesAt);
     state = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json());
     const settled = state.owned.find((o) => o.regionId === homestead);
-    expect(settled, JSON.stringify({ homestead, armies: state.armies, owned: state.owned.map((o) => o.regionId), inbox: ((await a.call("GET", `/api/matches/${matchId}/messages`)).json() as { messages: { subject: string }[] }).messages.slice(0, 6).map((x) => x.subject) })).toBeTruthy();
+    const homeRow = await db.select().from(matchRegions).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, homestead)));
+    const meRow = await db.select({ id: players.id, capital: players.capitalRegionId, eliminatedAt: players.eliminatedAt }).from(players).where(eq(players.matchId, matchId));
+    expect(settled, JSON.stringify({ homestead, homeRow, meRow, armies: state.armies, owned: state.owned.map((o) => o.regionId), inbox: ((await a.call("GET", `/api/matches/${matchId}/messages`)).json() as { messages: { subject: string }[] }).messages.slice(0, 6).map((x) => x.subject) })).toBeTruthy();
     expect(settled!.popWorkers).toBeGreaterThanOrEqual(4.9);
     expect(settled!.loyalty).toBeCloseTo(balance.settle.startingLoyalty, 5);
 
