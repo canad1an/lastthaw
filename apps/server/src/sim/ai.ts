@@ -58,6 +58,9 @@ export function randomProfile(rng: () => number, setting: string | undefined): s
 export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, _publisher: Publisher): Promise<void> {
   const { difficulty, temperament } = parseProfile(p.aiProfile);
   const tier = TIER[difficulty];
+  // Every tribe has its own streak, fixed for the match, so two mediums never play the same way:
+  // how often it strikes, how much risk it accepts, and whether it holds a grudge against the leader.
+  const persona = personaOf(m.seed, p.id, difficulty);
   const rng = seededRng(`${m.seed}:${p.id}:${now.getTime()}`);
   const techRows = await db.select({ id: playerTechs.techId }).from(playerTechs).where(eq(playerTechs.playerId, p.id));
   const techs = new Set(techRows.map((t) => t.id));
@@ -222,8 +225,9 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
   const standings = await db.select({ owner: matchRegions.ownerPlayerId, n: sql<number>`count(*)::int` }).from(matchRegions).where(and(eq(matchRegions.matchId, m.id), sql`${matchRegions.ownerPlayerId} is not null`)).groupBy(matchRegions.ownerPlayerId);
   const leader = Math.max(...standings.map((s) => s.n), 1);
   const behind = tier.scoresTargets && leader - owned.length > 2 ? 1.5 : 1;
-  const raidChance = (balance.ai.raidChance[temperament] ?? 0.15) * tier.aggression * behind;
-  const conquerChance = (balance.ai.conquerChance[temperament] ?? 0.2) * tier.aggression * behind;
+  const raidChance = (balance.ai.raidChance[temperament] ?? 0.15) * tier.aggression * behind * persona.aggression;
+  const conquerChance = (balance.ai.conquerChance[temperament] ?? 0.2) * tier.aggression * behind * persona.aggression;
+  const leaderId = standings.length ? [...standings].sort((a, b) => b.n - a.n)[0]!.owner : null;
   const inFlight = await db
     .select({ id: armies.id })
     .from(armies)
@@ -231,8 +235,10 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
   const maxInFlight = difficulty === "hard" ? 3 : 2;
   if (inFlight.length < maxInFlight && threatened.size === 0) {
     const roll = rng();
-    if (roll < raidChance + conquerChance) {
-      const wantConquer = roll >= raidChance;
+    // A bold strike ignores the usual odds now and then (medium and hard only): the one time a cautious tribe surprises you.
+    const boldStrike = difficulty !== "easy" && rng() < persona.boldStrike;
+    if (roll < raidChance + conquerChance || boldStrike) {
+      const wantConquer = boldStrike ? rng() < 0.5 : roll >= raidChance;
       const strong = [...owned].sort((a, b) => b.popSoldiers - a.popSoldiers)[0]!;
       const soldiers = Object.values(strong.units).reduce((a, b) => a + b, 0);
       if (soldiers >= 6) {
@@ -264,10 +270,14 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
           if (wantConquer && owner && !o?.isAi && !tier.conquersHumans) continue;
           const effects = r ? effectsOf(r.buildings) : null;
           const defenders = r ? Object.values(r.units).reduce((a, b) => a + b, 0) * (1 + (effects?.defense ?? 0)) + (r.popWorkers / 10) * balance.combat.militiaPerTenPeople : 0;
-          if (defenders > soldiers * balance.ai.maxTargetStrengthRatio) continue;
+          const ratio = balance.ai.maxTargetStrengthRatio * persona.boldness * (boldStrike ? 1.8 : 1);
+          if (defenders > soldiers * ratio) continue;
           const loot = r ? Math.max(0, r.food + r.wood + r.stone - 3 * (effects?.protect ?? 0)) : 0;
           const dist = distanceKm(strong.regionId, n);
-          const score = tier.scoresTargets ? (wantConquer ? regionById(n)!.value * 1000 : loot) / (defenders + 1) / (1 + dist / 1000) : -defenders;
+          // Grudge: the leader's land looks sweeter to tribes that resent being behind.
+          const grudge = owner && owner === leaderId && owner !== p.id ? 1 + persona.grudge : 1;
+          const human = o && !o.isAi ? 1 + persona.grudge * 0.5 : 1;
+          const score = tier.scoresTargets || boldStrike ? ((wantConquer ? regionById(n)!.value * 1000 : loot) / (defenders + 1) / (1 + dist / 1000)) * grudge * human : -defenders * (2 - grudge * human);
           candidates.push({ id: n, defenders, score });
         }
         candidates.sort((a, b) => b.score - a.score);
@@ -437,4 +447,14 @@ async function buyOre(ctx: CommandContext, owned: MatchRegionRow[], matchDay: nu
     }
     return;
   }
+}
+
+/** A tribe's fixed streak for the match: aggression 0.6..1.6, boldness 0.7..1.6 (hard up to 2.0), grudge 0..1, bold-strike chance per decision. */
+function personaOf(seed: string, playerId: string, difficulty: Difficulty): { aggression: number; boldness: number; grudge: number; boldStrike: number } {
+  const r = seededRng(`${seed}:persona:${playerId}`);
+  const aggression = 0.6 + r() * 1.0;
+  const boldness = 0.7 + r() * (difficulty === "hard" ? 1.3 : 0.9);
+  const grudge = r();
+  const boldStrike = difficulty === "hard" ? 0.08 + r() * 0.12 : difficulty === "medium" ? 0.03 + r() * 0.07 : 0;
+  return { aggression, boldness, grudge, boldStrike };
 }
