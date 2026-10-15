@@ -300,8 +300,8 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
     const cap = carryCapacity(units, techs) + (HOSTILE.has(body.mission) ? 0 : body.people * balance.travel.carryPerPerson);
     if (goods > cap) throw httpError(400, `not enough carrying capacity: these units and people carry ${cap}, you are sending ${Math.round(goods)}. Caravans carry ${caravanCarry(techs)} each.`);
   }
-  const { roads, rails } = await waySetsFor(db, m.id, p.id, await alliesOf(db, m.id, p.id));
-  const route = findRoute(regionId, body.targetRegionId, techs.has(balance.travel.seaTech), roads, rails);
+  const { roads, rails, harbors } = await waySetsFor(db, m.id, p.id, await alliesOf(db, m.id, p.id));
+  const route = findRoute(regionId, body.targetRegionId, techs.has(balance.travel.seaTech), roads, rails, harbors);
   if (!route) throw httpError(400, techs.has(balance.travel.seaTech) ? "no route to that region" : "no land route; research Shipbuilding to cross the sea");
   const now = matchNow(m);
 

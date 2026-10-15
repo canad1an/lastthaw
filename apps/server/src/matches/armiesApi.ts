@@ -37,8 +37,8 @@ export async function armyRoutes(app: FastifyInstance, opts: { db: Db; publisher
     const q = req.query as { from?: string; to?: string; speed?: string };
     if (!q.from || !q.to) throw httpError(400, "from and to are required");
     const { m, p, techs } = await loadContext(matchId, user.id);
-    const { roads, rails } = await waySetsFor(db, m.id, p.id, await alliesOf(db, m.id, p.id));
-    const route = findRoute(q.from, q.to, techs.has(balance.travel.seaTech), roads, rails);
+    const { roads, rails, harbors } = await waySetsFor(db, m.id, p.id, await alliesOf(db, m.id, p.id));
+    const route = findRoute(q.from, q.to, techs.has(balance.travel.seaTech), roads, rails, harbors);
     if (!route) throw httpError(400, techs.has(balance.travel.seaTech) ? "no route" : "no land route; Shipbuilding allows sea crossings");
     const speed = Number(q.speed ?? 5) || 5;
     return { path: route.path, seconds: travelSeconds(route, speed, m.speed), usesSea: route.usesSea };
@@ -113,8 +113,8 @@ export async function armyRoutes(app: FastifyInstance, opts: { db: Db; publisher
       .where(and(eq(armies.matchId, matchId), eq(armies.playerId, p.id), eq(armies.mission, "relocate"), eq(armies.status, "outbound")))
       .limit(1);
     if (inFlight[0]) throw httpError(409, `the capital wagon is already on its way to ${regionById(inFlight[0].target)?.name ?? "another region"}`);
-    const { roads, rails } = await waySetsFor(db, matchId, p.id, await alliesOf(db, matchId, p.id));
-    const route = findRoute(p.capitalRegionId, regionId, techs.has(balance.travel.seaTech), roads, rails);
+    const { roads, rails, harbors } = await waySetsFor(db, matchId, p.id, await alliesOf(db, matchId, p.id));
+    const route = findRoute(p.capitalRegionId, regionId, techs.has(balance.travel.seaTech), roads, rails, harbors);
     if (!route) throw httpError(400, "no route for the wagon");
     const now = matchNow(m);
     const seconds = travelSeconds(route, balance.capital.wagonSpeed, m.speed);

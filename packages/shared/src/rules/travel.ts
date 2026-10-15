@@ -10,12 +10,15 @@ export interface Route {
   usesSea: boolean;
 }
 
-function edgeCost(from: string, to: string, sea: boolean, roads?: ReadonlySet<string>, rails?: ReadonlySet<string>): number {
+function edgeCost(from: string, to: string, sea: boolean, roads?: ReadonlySet<string>, rails?: ReadonlySet<string>, harbors?: ReadonlySet<string>): number {
   const a = regionById(from)!;
   const b = regionById(to)!;
   const t = balance.travel;
   let c = distanceKm(a, b);
-  if (sea) return c * t.seaFactor;
+  if (sea) {
+    const n = harbors ? (harbors.has(from) ? 1 : 0) + (harbors.has(to) ? 1 : 0) : 0;
+    return c * t.seaFactor * (n === 2 ? t.harborBothFactor : n === 1 ? t.harborOneFactor : 1);
+  }
   c *= t.terrain[b.terrain] ?? 1;
   if (b.river || b.coastal) c *= t.waterwayFactor;
   if (rails && rails.has(from) && rails.has(to)) return c * t.railBothFactor;
@@ -31,7 +34,7 @@ function edgeCost(from: string, to: string, sea: boolean, roads?: ReadonlySet<st
  * Shortest route over land borders and, if allowed, sea routes. Dijkstra over
  * ~400 nodes; cheap enough to run per request.
  */
-export function findRoute(origin: string, target: string, allowSea: boolean, roads?: ReadonlySet<string>, rails?: ReadonlySet<string>): Route | null {
+export function findRoute(origin: string, target: string, allowSea: boolean, roads?: ReadonlySet<string>, rails?: ReadonlySet<string>, harbors?: ReadonlySet<string>): Route | null {
   if (origin === target) return { path: [origin], cost: 0, usesSea: false };
   const dist = new Map<string, number>([[origin, 0]]);
   const prev = new Map<string, { from: string; sea: boolean }>();
@@ -57,7 +60,7 @@ export function findRoute(origin: string, target: string, allowSea: boolean, roa
     if (allowSea) for (const n of r.seaRoutes) edges.push([n, true]);
     for (const [n, sea] of edges) {
       if (closed.has(n)) continue;
-      const nd = best + edgeCost(cur, n, sea, roads, rails);
+      const nd = best + edgeCost(cur, n, sea, roads, rails, harbors);
       if (nd < (dist.get(n) ?? Infinity)) {
         dist.set(n, nd);
         prev.set(n, { from: cur, sea });

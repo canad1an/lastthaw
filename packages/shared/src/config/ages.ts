@@ -153,7 +153,7 @@ export const BUILDINGS: readonly BuildingDef[] = [
   { id: "aqueduct", name: "Aqueduct", age: 3, description: "Clean water lets the city grow.", maxLevel: 10, cost: { stone: 600, wood: 200 }, baseSeconds: 900, effect: { capacity: 40 } },
   { id: "fort", name: "Fort", age: 3, description: "A garrison that defends and holds the province.", maxLevel: 10, cost: { stone: 700, wood: 300, iron: 40 }, baseSeconds: 1000, effect: { defense: 0.15, loyalty: 0.15 } },
   { id: "library", name: "Library", age: 3, description: "Scholars speed up research.", maxLevel: 10, cost: { wood: 500, stone: 400 }, baseSeconds: 900, effect: { researchSpeed: 0.08 }, requires: "writing" },
-  { id: "harbor", name: "Harbor", age: 3, description: "Boats carry armies and goods across the sea.", maxLevel: 5, cost: { wood: 800, stone: 300 }, baseSeconds: 1100, effect: { harbor: true }, requires: "shipbuilding", needsCoast: true },
+  { id: "harbor", name: "Harbor", age: 3, description: "Quays and boats. Built once on a coast: sea legs to another harbour of yours are far faster, and faster still than open water at one end.", maxLevel: 1, cost: { wood: 2500, stone: 1500 }, baseSeconds: 1800, effect: { harbor: true }, requires: "shipbuilding", needsCoast: true },
   { id: "market", name: "Market", age: 3, description: "More goods kept safely in town.", maxLevel: 10, cost: { wood: 400, stone: 400 }, baseSeconds: 800, effect: { storage: 0.6, protect: 200 } },
   // Medieval
   { id: "castle", name: "Castle", age: 4, description: "The strongest defence money can build.", maxLevel: 5, cost: { stone: 1500, wood: 500, iron: 120 }, baseSeconds: 2400, effect: { defense: 0.3, loyalty: 0.1 } },

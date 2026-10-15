@@ -127,6 +127,9 @@ export const balance = {
     roadOneFactor: 0.8,
     /** A leg between two Railway regions (yours or an ally's) is this much shorter. */
     railBothFactor: 0.3,
+    /** A sea leg is this much shorter with a Harbour (yours or an ally's) at both ends, or at one end. */
+    harborBothFactor: 0.5,
+    harborOneFactor: 0.75,
     /** Sea legs are fast once boats exist. */
     seaFactor: 0.7,
     /** Tech that allows armies to use sea routes. */

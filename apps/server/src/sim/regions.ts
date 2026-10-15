@@ -140,7 +140,7 @@ export async function setCapital(tx: Tx, matchId: string, playerId: string, regi
 }
 
 /** Regions with Roads and with Railways that this player may use: their own and their allies'. */
-export async function waySetsFor(db: Db | Tx, matchId: string, playerId: string, allies: readonly string[]): Promise<{ roads: Set<string>; rails: Set<string> }> {
+export async function waySetsFor(db: Db | Tx, matchId: string, playerId: string, allies: readonly string[]): Promise<{ roads: Set<string>; rails: Set<string>; harbors: Set<string> }> {
   const owners = [playerId, ...allies];
   const rows = await db
     .select({ regionId: matchRegions.regionId, buildings: matchRegions.buildings })
@@ -148,7 +148,8 @@ export async function waySetsFor(db: Db | Tx, matchId: string, playerId: string,
     .where(and(eq(matchRegions.matchId, matchId), inArray(matchRegions.ownerPlayerId, owners), isNull(matchRegions.frozenAt)));
   const roads = new Set(rows.filter((r) => ((r.buildings as Record<string, number>).roads ?? 0) >= 1).map((r) => r.regionId));
   const rails = new Set(rows.filter((r) => ((r.buildings as Record<string, number>).railway ?? 0) >= 1).map((r) => r.regionId));
-  return { roads, rails };
+  const harbors = new Set(rows.filter((r) => ((r.buildings as Record<string, number>).harbor ?? 0) >= 1).map((r) => r.regionId));
+  return { roads, rails, harbors };
 }
 
 /** Regions with Roads that this player may use: their own and their allies'. */

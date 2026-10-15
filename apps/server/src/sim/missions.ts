@@ -107,8 +107,8 @@ export async function sweepEvacuated(tx: Tx, m: MatchRow, now: Date): Promise<vo
     if (sumUnits(units) > 0 || people > 0) {
       const techRows = await tx.select({ id: playerTechs.techId }).from(playerTechs).where(eq(playerTechs.playerId, p.id));
       const techs = new Set(techRows.map((t) => t.id));
-      const { roads, rails } = await waySetsFor(tx, m.id, p.id, await alliesOf(tx, m.id, p.id));
-      const route = findRoute(r.regionId, capital, techs.has(balance.travel.seaTech), roads, rails);
+      const { roads, rails, harbors } = await waySetsFor(tx, m.id, p.id, await alliesOf(tx, m.id, p.id));
+      const route = findRoute(r.regionId, capital, techs.has(balance.travel.seaTech), roads, rails, harbors);
       if (route) {
         const capacity = carryCapacity(units, techs) + people * balance.travel.carryPerPerson;
         const cargo: Record<string, number> = {};
@@ -170,7 +170,7 @@ async function gatherCaravans(tx: Tx, m: MatchRow, playerId: string, targetRegio
   if (!p) return 0;
   const techRows = await tx.select({ id: playerTechs.techId }).from(playerTechs).where(eq(playerTechs.playerId, playerId));
   const techs = new Set(techRows.map((t) => t.id));
-  const { roads, rails } = await waySetsFor(tx, m.id, playerId, await alliesOf(tx, m.id, playerId));
+  const { roads, rails, harbors } = await waySetsFor(tx, m.id, playerId, await alliesOf(tx, m.id, playerId));
   const rows = await tx
     .select({ regionId: matchRegions.regionId, units: matchRegions.units, frozenAt: matchRegions.frozenAt })
     .from(matchRegions)
@@ -179,7 +179,7 @@ async function gatherCaravans(tx: Tx, m: MatchRow, playerId: string, targetRegio
   let sent = 0;
   for (const r of rows) {
     if (r.regionId === targetRegionId || r.frozenAt || haulerCount(r.units) <= 0) continue;
-    const route = findRoute(r.regionId, targetRegionId, techs.has(balance.travel.seaTech), roads, rails);
+    const route = findRoute(r.regionId, targetRegionId, techs.has(balance.travel.seaTech), roads, rails, harbors);
     if (!route) continue;
     const row = await settleAndLockRegion(tx, m.id, r.regionId, at, m.speed);
     const going: UnitCounts = {};
