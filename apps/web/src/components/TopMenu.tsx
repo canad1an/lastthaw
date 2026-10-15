@@ -97,7 +97,7 @@ export function TopMenu({
         )}
       </div>
       {open && (
-        <Dropdown onClose={() => setOpen(null)}>
+        <Dropdown onClose={() => setOpen(null)} title={{ messages: "Messages", alliance: "Alliance", chat: "Chat", market: "Market", players: "Players", leaderboard: "Leaderboard", view: "View", empire: "Empire", logistics: "Logistics", tech: "Tech tree" }[open]}>
           {open === "messages" && <MessagesList messages={q.data?.messages ?? []} />}
           {open === "alliance" && (
             <div className="p-3">
@@ -181,11 +181,24 @@ export function TopMenu({
   );
 }
 
-function Dropdown({ children, onClose }: { children: ReactNode; onClose: () => void }) {
+/** Every menu opens as a centred overlay on top of the map: wide enough for tables and the tech tree, scrollable, closed by the X, Escape or a click outside. */
+function Dropdown({ children, onClose, title }: { children: ReactNode; onClose: () => void; title?: string }) {
   return (
-    <>
-      <div className="fixed inset-0 z-20" onClick={onClose} />
-      <div className="absolute left-0 right-0 top-full z-30 max-h-[65vh] overflow-y-auto border-b border-slate-800 bg-slate-950 shadow-2xl lg:left-2 lg:right-auto lg:w-[34rem] lg:rounded-b-md lg:border-x">{children}</div>
-    </>
+    <div className="fixed inset-0 z-40 flex items-start justify-center bg-slate-950/70 p-2 pt-12 backdrop-blur-sm sm:p-6 sm:pt-14" onClick={onClose}>
+      <div
+        className="flex max-h-[88vh] w-full max-w-6xl flex-col overflow-hidden rounded-lg border border-slate-700 bg-slate-950 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+      >
+        <div className="flex items-center justify-between border-b border-slate-800 px-3 py-2">
+          <span className="text-sm font-medium text-slate-200">{title}</span>
+          <button className="rounded px-2 py-0.5 text-slate-400 hover:bg-slate-800 hover:text-white" onClick={onClose} aria-label="Close">
+            ✕
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto">{children}</div>
+      </div>
+    </div>
   );
 }

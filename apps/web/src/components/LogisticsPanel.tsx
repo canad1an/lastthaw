@@ -52,7 +52,7 @@ export function LogisticsPanel({ state, onSelect }: { state: MatchStateView; onS
   const shortBy = Math.max(0, ideal - have);
 
   return (
-    <div className="max-h-[70vh] space-y-3 overflow-auto p-3 text-sm">
+    <div className="space-y-3 overflow-auto p-3 text-sm">
       <div className="rounded-md border border-slate-800 bg-slate-900/60 p-3">
         <p className="text-base text-slate-100">
           You have <span className="font-semibold">{have}</span> hauler{have === 1 ? "" : "s"}
