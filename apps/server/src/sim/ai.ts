@@ -187,7 +187,8 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
   // Research: hard tribes jump on age advances; easy tribes only research with a comfortable surplus.
   if (!researching) {
     const avail = availableTechs(p.age, techs);
-    let next = tier.adaptiveResearch ? avail.find((t) => t.advancesTo !== undefined)?.id : undefined;
+    // Every tier goes for the next age as soon as its day has come; the rest of the order fills the time before it.
+    let next = avail.find((t) => t.advancesTo !== undefined && (t.earliestDay ?? 0) <= matchDay)?.id;
     if (!next) {
       const ids = new Set(avail.map((t) => t.id));
       next = RESEARCH_ORDER.find((t) => ids.has(t));
