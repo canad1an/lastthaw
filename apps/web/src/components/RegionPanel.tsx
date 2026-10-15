@@ -378,17 +378,18 @@ function TrainTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
   });
   const stock = stockOf(live.e);
   const list = availableUnits(state.me.age, techs);
-  return (
-    <div className="space-y-2">
-      <label className="flex items-center gap-2 text-sm">
-        <span className="text-slate-400">Batch size</span>
-        <input type="number" min={1} max={1000} value={qty} onChange={(e) => setQty(Math.max(1, Number(e.target.value)))} className="w-20 rounded border border-slate-700 bg-slate-900 px-2 py-1" />
-        <span className="text-xs text-slate-500">free workers {fmt(live.e.popWorkers)}</span>
-      </label>
-      {queueFull && <p className="text-xs text-amber-300">Queue full.</p>}
-      <ErrorText>{m.error?.message}</ErrorText>
-      <ul className="divide-y divide-slate-800">
-        {list.map((u) => {
+  const here = (us: UnitDef[]) => us.reduce((a, u) => a + (owned.units[u.id] ?? 0), 0);
+  const groups = [
+    { title: "Army", hint: "fight on land", units: list.filter((u) => !u.civilian && !u.naval && !u.hauler) },
+    { title: "Ships", hint: "sail one sea lane at a time; need a Harbor", units: list.filter((u) => u.naval) },
+    { title: "Haulers", hint: "carry goods on routes and transports", units: list.filter((u) => u.hauler && !u.naval) },
+    { title: "Settlers", hint: "found colonies and occupy conquests", units: list.filter((u) => u.civilian && !u.hauler && !u.naval) },
+  ]
+    .filter((g) => g.units.length)
+    .map((g) => ({ ...g, hint: `${here(g.units) ? `${fmt(here(g.units))} here · ` : ""}${g.hint}` }));
+  const renderRows = (units: UnitDef[]) => (
+    <>
+        {units.map((u) => {
           const n = Math.max(qty, u.minBatch ?? 1);
           const cost = unitCost(u, n, matchDayOf(state, clockOffsetMs));
           const needs = (u.needsResource && !region.resources.includes(u.needsResource)) || (u.naval && !region.coastal) || (u.needsBuilding && (owned.buildings[u.needsBuilding] ?? 0) < 1);
@@ -402,8 +403,9 @@ function TrainTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-medium">{u.name}</span>
+                      {(owned.units[u.id] ?? 0) > 0 && <span className="rounded bg-slate-800 px-1.5 text-xs text-slate-300">{fmt(owned.units[u.id]!)} here</span>}
                       <span className="text-xs text-slate-500">
-                        atk {u.attack} · def {u.defense} · spd {u.speed}
+                        atk {u.attack} · def {u.defense} · spd {u.speed}{u.carry ? ` · carry ${fmt(u.carry)}` : ""}
                       </span>
                       <span className="text-xs text-slate-600">ⓘ</span>
                     </div>
@@ -430,7 +432,28 @@ function TrainTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
             </li>
           );
         })}
-      </ul>
+    </>
+  );
+  return (
+    <div className="space-y-2">
+      <label className="flex items-center gap-2 text-sm">
+        <span className="text-slate-400">Batch size</span>
+        <input type="number" min={1} max={1000} value={qty} onChange={(e) => setQty(Math.max(1, Number(e.target.value)))} className="w-20 rounded border border-slate-700 bg-slate-900 px-2 py-1" />
+        <span className="text-xs text-slate-500">free workers {fmt(live.e.popWorkers)}</span>
+      </label>
+      {queueFull && <p className="text-xs text-amber-300">Queue full.</p>}
+      <ErrorText>{m.error?.message}</ErrorText>
+      {groups.map((g) => (
+        <section key={g.title}>
+          <h4 className="mb-1 mt-3 flex items-baseline justify-between border-b border-slate-800 pb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+            <span>{g.title}</span>
+            <span className="font-normal normal-case tracking-normal text-slate-500">{g.hint}</span>
+          </h4>
+          <ul className="divide-y divide-slate-800">
+            {renderRows(g.units)}
+          </ul>
+        </section>
+      ))}
     </div>
   );
 }
