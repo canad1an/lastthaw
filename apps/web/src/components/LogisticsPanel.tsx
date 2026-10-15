@@ -41,8 +41,37 @@ export function LogisticsPanel({ state, onSelect }: { state: MatchStateView; onS
         ? { tone: "text-slate-300", text: "Your haulers are all at home with nothing to do. Set up trade routes or let overflow use them." }
         : { tone: "text-emerald-400", text: "Hauling is keeping up: nothing is waiting on a caravan." };
 
+  // What the fleet is asked to do right now, in hauler-trips: routes want their caravan count per trip,
+  // every full region wants one convoy, and waiting materials need enough capacity to ship in one go.
+  const bestCarry = Math.max(...fleet.map((r) => r.carry), haulerCarry("caravan", state.me.techs));
+  const routeDemand = state.routes.filter((r) => r.enabled).reduce((a, r) => a + r.caravans, 0);
+  const overflowDemand = state.owned.filter((o) => !o.frozen && !o.isCapital && (["food", "wood", "stone"] as const).some((k) => o[k] >= o.storage[k] * 0.95)).length;
+  const materialsDemand = Math.ceil(Object.values(owed).reduce((a, b) => a + b, 0) / bestCarry);
+  const ideal = routeDemand + overflowDemand + materialsDemand;
+  const have = totalHome + totalRoad;
+  const shortBy = Math.max(0, ideal - have);
+
   return (
     <div className="max-h-[70vh] space-y-3 overflow-auto p-3 text-sm">
+      <div className="rounded-md border border-slate-800 bg-slate-900/60 p-3">
+        <p className="text-base text-slate-100">
+          You have <span className="font-semibold">{have}</span> hauler{have === 1 ? "" : "s"}
+          {fleet.filter((r) => r.home + r.road > 0).length > 0 && (
+            <span className="text-slate-400"> ({fleet.filter((r) => r.home + r.road > 0).map((r) => `${r.home + r.road} ${r.name.toLowerCase()}${r.home + r.road === 1 ? "" : "s"}`).join(", ")})</span>
+          )}
+          : {totalHome} at home, {totalRoad} on the road.
+        </p>
+        <p className={`mt-1 text-base ${shortBy > 0 ? "text-amber-300" : "text-emerald-400"}`}>
+          {ideal === 0
+            ? "Nothing needs hauling right now."
+            : shortBy > 0
+              ? `You need about ${ideal}: train ${shortBy} more${!state.me.techs.includes("wagon_building") ? ", or research Wagon building so each one carries 1,200" : !state.me.techs.includes("railways") ? ", or research Railways for trains" : ""}.`
+              : `About ${ideal} are needed and you have enough.`}
+        </p>
+        <p className="mt-1 text-xs text-slate-500">
+          Needed = {routeDemand} for routes (their per-trip counts) + {overflowDemand} for full regions + {materialsDemand} for waiting materials. Idle capacity at home: {fmt(capacityHome)}.
+        </p>
+      </div>
       <p className={`text-xs ${verdict.tone}`}>{verdict.text}</p>
 
       <table className="w-full text-xs">
