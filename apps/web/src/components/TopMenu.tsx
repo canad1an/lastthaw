@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type ReactNode } from "react";
 import { TECHS, type MatchStateView } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
@@ -50,6 +50,9 @@ export function TopMenu({
   // Routes waiting on haulers plus builds waiting on materials: the number that needs attention.
   const logisticsBadge =
     state.routes.filter((r) => r.enabled && (r.lastResult ?? "").startsWith("no haulers at home")).length + state.jobs.filter((j) => j.kind === "build" && j.waitingFor).length || undefined;
+  // Open offers on the market (everyone's, including mine), refreshed every half minute.
+  const marketQ = useQuery({ queryKey: keys.market(matchId), queryFn: () => api.market(matchId), refetchInterval: 30_000 });
+  const marketOpen = (marketQ.data?.open.length ?? 0) + (marketQ.data?.mine.filter((o) => o.status === "open" && !marketQ.data?.open.some((x) => x.id === o.id)).length ?? 0);
   const toggle = (m: Menu) => {
     setOpen((o) => (o === m ? null : m));
     clearToast();
@@ -79,7 +82,7 @@ export function TopMenu({
         <Tab id="messages" label="Messages" badge={unread ? `${unread} new` : undefined} tone="alert" />
         <Tab id="alliance" label="Alliance" badge={state.me.allianceTag ? `[${state.me.allianceTag}]` : invites ? `${invites} invite` : undefined} />
         <Tab id="chat" label="Chat" />
-        <Tab id="market" label="Market" />
+        <Tab id="market" label="Market" badge={marketOpen || undefined} />
         <Tab id="players" label="Players" badge={state.players.length} />
         <Tab id="leaderboard" label="Leaderboard" />
         <Tab id="empire" label="Empire" badge={state.owned.length} />
