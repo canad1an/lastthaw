@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type ReactNode } from "react";
 import { TECHS, type MatchStateView } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
-import { MessagesList, messageIcon, useMessageToast } from "./Messages.js";
+import { MessagesList, isImportant, messageIcon, useMessageToast } from "./Messages.js";
 import { AlliancePanel } from "./AlliancePanel.js";
 import { Chat } from "./Chat.js";
 import { MarketPanel } from "./MarketPanel.js";
@@ -42,7 +42,8 @@ export function TopMenu({
   const [open, setOpen] = useState<Menu | null>(null);
   const { q, toast, clearToast } = useMessageToast(matchId, open === "messages");
   const markRead = useMutation({ mutationFn: () => api.markMessagesRead(matchId), onSuccess: () => void qc.invalidateQueries({ queryKey: keys.messages(matchId) }) });
-  const unread = q.data?.unread ?? 0;
+  // Only important unread messages count toward the alert badge; the rest sit quietly in the inbox.
+  const unread = (q.data?.messages ?? []).filter((m) => !m.readAt && isImportant(m)).length;
   const newest = q.data?.messages[0] ?? null;
   const invites = state.me.allianceId ? 0 : (state as { invites?: unknown[] }).invites?.length ?? 0;
 

@@ -8,10 +8,19 @@ const TOAST_MS = 5000;
 /** Recent messages list used inside the top menu dropdown. */
 export function MessagesList({ messages }: { messages: MessageView[] }) {
   const [selected, setSelected] = useState<string | null>(null);
+  const [onlyImportant, setOnlyImportant] = useState(true);
+  const shown = onlyImportant ? messages.filter(isImportant) : messages;
   return (
     <ul className="divide-y divide-slate-900">
-      {messages.length === 0 && <li className="px-3 py-2 text-slate-400">Nothing yet.</li>}
-      {messages.map((m) => (
+      <li className="flex items-center justify-between px-3 py-1.5 text-xs text-slate-400">
+        <span>{onlyImportant ? `${shown.length} important of ${messages.length}` : `${messages.length} messages`}</span>
+        <label className="flex items-center gap-1">
+          <input type="checkbox" checked={onlyImportant} onChange={(e) => setOnlyImportant(e.target.checked)} className="accent-sky-400" />
+          important only
+        </label>
+      </li>
+      {shown.length === 0 && <li className="px-3 py-2 text-slate-400">Nothing yet.</li>}
+      {shown.map((m) => (
         <li key={m.id}>
           <button className={`w-full px-3 py-1.5 text-left hover:bg-slate-900 ${m.readAt ? "text-slate-400" : "text-slate-100"}`} onClick={() => setSelected(selected === m.id ? null : m.id)}>
             <span className="mr-2">{KIND_ICON[m.kind] ?? "•"}</span>
@@ -32,6 +41,19 @@ export function MessagesList({ messages }: { messages: MessageView[] }) {
 export const messageIcon = (kind: string) => KIND_ICON[kind] ?? "•";
 
 /** Toast state: the newest message, shown for a few seconds when it first arrives. */
+/**
+ * Which messages deserve an alert. Routine traffic (builds done, goods
+ * delivered, troops arrived) stays in the inbox but never toasts or counts.
+ */
+export function isImportant(m: MessageView): boolean {
+  if (m.kind === "battle" || m.kind === "alliance" || m.kind === "scout") return true;
+  if (m.kind === "system") {
+    const s = m.subject;
+    return !(s.startsWith("Troops arrived") || s.startsWith("Army returned") || /joined the occupiers|are on their way there|founded a new home/.test(s));
+  }
+  return false;
+}
+
 export function useMessageToast(matchId: string, suppressed: boolean) {
   const q = useQuery({ queryKey: keys.messages(matchId), queryFn: () => api.messages(matchId), refetchInterval: 20_000 });
   const [toast, setToast] = useState<MessageView | null>(null);
@@ -45,7 +67,7 @@ export function useMessageToast(matchId: string, suppressed: boolean) {
     }
     if (newest.id !== lastSeen.current) {
       lastSeen.current = newest.id;
-      if (!suppressed) setToast(newest);
+      if (!suppressed && isImportant(newest)) setToast(newest);
     }
   }, [newest, suppressed]);
   useEffect(() => {
