@@ -287,7 +287,7 @@ describe("milestone 1 flow", () => {
     await skipTo(state.armies[0]!.arrivesAt);
     state = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json());
     const settled = state.owned.find((o) => o.regionId === homestead);
-    expect(settled).toBeTruthy();
+    expect(settled, JSON.stringify({ homestead, armies: state.armies, owned: state.owned.map((o) => o.regionId), inbox: ((await a.call("GET", `/api/matches/${matchId}/messages`)).json() as { messages: { subject: string }[] }).messages.slice(0, 6).map((x) => x.subject) })).toBeTruthy();
     expect(settled!.popWorkers).toBeGreaterThanOrEqual(4.9);
     expect(settled!.loyalty).toBeCloseTo(balance.settle.startingLoyalty, 5);
 
