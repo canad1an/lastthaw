@@ -48,9 +48,10 @@ async function tickMatch(db: Db, publisher: Publisher, matchId: string, log: pin
     const elapsedGameHours = Math.min(48, (Math.max(0, now.getTime() - last.getTime()) / 3600_000) * m.speed);
     const rng = seededRng(`${m.seed}:tick:${now.getTime()}`);
 
+    // Loyalty first: it locks every owned region in ascending order; the passes below re-lock rows already held.
+    await loyaltyAndRebellion(tx, m, now, elapsedGameHours, rng, (fn) => after.push(fn), publisher);
     await sweepEvacuated(tx, m, now);
     await repairWaitingBuilds(tx, m, now);
-    await loyaltyAndRebellion(tx, m, now, elapsedGameHours, rng, (fn) => after.push(fn), publisher);
     await neutralGrowth(tx, m, now, elapsedGameHours);
     const standings = await updateScores(tx, m);
     await checkEarlyWin(tx, m, now, standings, publisher, (fn) => after.push(fn));
