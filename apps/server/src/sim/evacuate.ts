@@ -17,6 +17,7 @@ export async function evacuateRegion(ctx: CommandContext, regionId: string, toRe
     const row = await settleAndLockRegion(tx, m.id, regionId, matchNow(m), m.speed);
     if (row.ownerPlayerId !== p.id) throw httpError(403, "not your region");
     if (row.evacuatedAt) throw httpError(409, "this region has already been evacuated");
+    if (row.frozenAt) throw httpError(409, "this region is frozen solid; nothing is left to evacuate");
     if (row.popOccupiers > 0) {
       await tx
         .update(matchRegions)

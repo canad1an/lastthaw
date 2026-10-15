@@ -1,5 +1,5 @@
 import { and, eq, inArray, isNull } from "drizzle-orm";
-import { allRegions, balance, iceExposure, iceLatitudeOnDay, regionById } from "@lastthaw/shared";
+import { allRegions, balance, emptySpecial, iceExposure, iceLatitudeOnDay, regionById } from "@lastthaw/shared";
 import { events, jobs, matchRegions, players } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
 import { settleAndLockRegion, type Tx } from "./regions.js";
@@ -50,13 +50,17 @@ export async function applyIceStep(tx: Tx, m: MatchRow, job: JobRow, publisher: 
   }
   const byOwner = new Map<string, string[]>();
   for (const r of rows) {
-    await tx.update(matchRegions).set({ frozenAt: job.endsAt, iceFactor: 0 }).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, r.regionId)));
+    // Fully frozen: nothing and nobody survives. Stores, people and units all go to zero.
+    await tx
+      .update(matchRegions)
+      .set({ frozenAt: job.endsAt, iceFactor: 0, food: 0, wood: 0, stone: 0, special: emptySpecial(), popWorkers: 0, popSoldiers: 0, popOccupiers: 0, units: {} })
+      .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, r.regionId)));
     if (r.owner) byOwner.set(r.owner, [...(byOwner.get(r.owner) ?? []), r.regionId]);
   }
   await tx.insert(events).values({ matchId: m.id, at: job.endsAt, kind: "ice.advanced", payload: { day, latitude: lat, frozen: rows.length } });
   for (const [owner, regions] of byOwner) {
     const names = regions.map((id) => regionById(id)?.name ?? id).join(", ");
-    await notify(tx, m.id, owner, "system", `The ice has reached ${names}. Production there has stopped and people will leave or die.`, { regions, day });
+    await notify(tx, m.id, owner, "system", `The ice has taken ${names}. Everything and everyone there is lost.`, { regions, day });
   }
   const humans = await tx.select({ id: players.id }).from(players).where(and(eq(players.matchId, m.id), eq(players.isAi, false)));
   if (day % 5 === 0) {

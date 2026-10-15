@@ -85,7 +85,7 @@ export function TopMenu({
         <Tab id="market" label="Market" badge={marketOpen || undefined} />
         <Tab id="players" label="Players" badge={state.players.length} />
         <Tab id="leaderboard" label="Leaderboard" />
-        <Tab id="empire" label="Empire" badge={state.owned.length} />
+        <Tab id="empire" label="Resources" badge={state.owned.length} />
         <Tab id="logistics" label="Logistics" badge={logisticsBadge} tone={logisticsBadge ? "alert" : undefined} />
         <Tab id="tech" label="Tech" badge={`${state.me.techs.length}/${TECHS.length}`} />
         <Tab id="view" label="View" badge={overlays.size || undefined} />
@@ -100,7 +100,7 @@ export function TopMenu({
         )}
       </div>
       {open && (
-        <Dropdown onClose={() => setOpen(null)} title={{ messages: "Messages", alliance: "Alliance", chat: "Chat", market: "Market", players: "Players", leaderboard: "Leaderboard", view: "View", empire: "Empire", logistics: "Logistics", tech: "Tech tree" }[open]}>
+        <Dropdown onClose={() => setOpen(null)} title={{ messages: "Messages", alliance: "Alliance", chat: "Chat", market: "Market", players: "Players", leaderboard: "Leaderboard", view: "View", empire: "Resources", logistics: "Logistics", tech: "Tech tree" }[open]}>
           {open === "messages" && <MessagesList messages={q.data?.messages ?? []} />}
           {open === "alliance" && (
             <div className="p-3">
