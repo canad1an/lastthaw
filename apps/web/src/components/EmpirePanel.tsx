@@ -51,9 +51,9 @@ export function EmpirePanel({ state, onSelect }: { state: MatchStateView; onSele
   const shownRes = RES.filter((r) => r === "food" || r === "wood" || r === "stone" || totals.res[r] > 0 || (moving.cargo[r] ?? 0) > 0);
 
   return (
-    <div className="overflow-auto p-3 text-sm">
+    <div className="p-3 text-sm">
       <table className="w-full min-w-max border-collapse text-xs">
-        <thead className="sticky top-0 bg-slate-950 text-slate-400">
+        <thead className="sticky top-0 z-10 bg-slate-950 text-slate-400 shadow-[0_1px_0_0_rgb(30_41_59)]">
           <tr>
             <th className="px-2 py-1 text-left font-medium">Region</th>
             <th className="px-2 py-1 text-right font-medium">People</th>

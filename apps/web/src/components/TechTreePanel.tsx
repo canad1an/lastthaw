@@ -34,7 +34,7 @@ export function TechTreePanel({ matchId, state, clockOffsetMs }: { matchId: stri
   const doneCount = TECHS.filter((t) => done.has(t.id)).length;
 
   return (
-    <div className="overflow-auto p-3 text-sm">
+    <div className="p-3 text-sm">
       <p className="mb-2 text-xs text-slate-400">
         {doneCount} of {TECHS.length} techs researched · {AGES[state.me.age as AgeIndex] ?? "Unknown"} Age · day {Math.floor(day) + 1}. Ages have an earliest day; everything else needs only its prerequisites and the resources.
       </p>
