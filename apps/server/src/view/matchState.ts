@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { parseProfile } from "../sim/ai.js";
-import { emptySpecial, regionById, type ArmyView, type IncomingView, type JobView, type MatchStateView, type OwnedRegionView, type SightedRegionView, techEffectsOf } from "@lastthaw/shared";
+import { emptySpecial, regionById, type ArmyView, type IncomingView, type JobView, type MatchStateView, type OwnedRegionView, type SightedRegionView, techEffectsOf, allRegions } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { allianceMembers, alliances, armies, jobs, matchRegions, matches, playerTechs, players, regionSightings, tradeRoutes } from "../db/schema.js";
 import { matchNow } from "../sim/clock.js";
@@ -115,6 +115,54 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
       } else {
         sighted.push(view);
         seen.add(row.regionId);
+      }
+    }
+  }
+
+  // Radar and satellites: live sight of regions near (or everywhere beyond) my borders.
+  if (myTechFx.vision > 0) {
+    const mineIds = new Set(ownedRows.map((r) => r.regionId));
+    let ring = new Set<string>(mineIds);
+    const visible = new Set<string>();
+    if (myTechFx.vision >= 99) {
+      for (const r of allRegions()) if (!mineIds.has(r.id)) visible.add(r.id);
+    } else {
+      for (let i = 0; i < myTechFx.vision; i++) {
+        const next = new Set<string>();
+        for (const id of ring) for (const n of regionById(id)?.neighbors ?? []) if (!mineIds.has(n) && !visible.has(n)) { visible.add(n); next.add(n); }
+        ring = next;
+      }
+    }
+    if (visible.size) {
+      const rows = await db
+        .select()
+        .from(matchRegions)
+        .where(and(eq(matchRegions.matchId, matchId), inArray(matchRegions.regionId, [...visible])));
+      const ownerIds = [...new Set(rows.map((r) => r.ownerPlayerId).filter((x): x is string => !!x))];
+      const names = new Map(ownerIds.length ? (await db.select({ id: players.id, name: players.name }).from(players).where(inArray(players.id, ownerIds))).map((p) => [p.id, p.name]) : []);
+      const seen = new Set(sighted.map((s) => s.regionId));
+      for (const row of rows) {
+        const { economy } = projectRegion(row, now, m.speed);
+        const view: SightedRegionView = {
+          regionId: row.regionId,
+          ownerPlayerId: row.ownerPlayerId,
+          ownerName: row.ownerPlayerId ? (names.get(row.ownerPlayerId) ?? null) : null,
+          population: economy.popWorkers + economy.popSoldiers + economy.popOccupiers,
+          seenAt: now.toISOString(),
+          roads: ((row.buildings as Record<string, number>).roads ?? 0) >= 1,
+        };
+        const i = sighted.findIndex((s) => s.regionId === row.regionId);
+        if (i >= 0) sighted[i] = view;
+        else {
+          sighted.push(view);
+          seen.add(row.regionId);
+        }
+      }
+      // Empty land in view is listed too, so it reads as explored.
+      for (const id of visible) {
+        if (seen.has(id)) continue;
+        sighted.push({ regionId: id, ownerPlayerId: null, ownerName: null, population: 0, seenAt: now.toISOString(), roads: false });
+        seen.add(id);
       }
     }
   }

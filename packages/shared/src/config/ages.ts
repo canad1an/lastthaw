@@ -4,8 +4,8 @@
  * see rules/timers.ts for how level and age scale cost and time.
  */
 
-export const AGES = ["Stone", "Bronze", "Iron", "Classical", "Medieval"] as const;
-export type AgeIndex = 0 | 1 | 2 | 3 | 4;
+export const AGES = ["Stone", "Bronze", "Iron", "Classical", "Medieval", "Industrial", "Modern"] as const;
+export type AgeIndex = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
 /** Everything a job or unit can cost. Metals come from mines on special regions. */
 export type CostResource = "food" | "wood" | "stone" | "copper" | "tin" | "iron" | "horses";
@@ -106,6 +106,8 @@ export interface TechEffect {
   /** Army and caravan travel speed bonus. */
   travel?: number;
   loyalty?: number;
+  /** Vision in hops beyond your borders (99 = the whole map). */
+  vision?: number;
 }
 
 export interface TechDef {
@@ -158,6 +160,12 @@ export const BUILDINGS: readonly BuildingDef[] = [
   { id: "windmill", name: "Windmill", age: 4, description: "Grinds grain for a growing population.", maxLevel: 10, cost: { wood: 900, stone: 300 }, baseSeconds: 1800, effect: { yield: { food: 0.25 } } },
   { id: "guild_hall", name: "Guild hall", age: 4, description: "Organised craftsmen work faster.", maxLevel: 10, cost: { wood: 800, stone: 800 }, baseSeconds: 2000, effect: { yield: { wood: 0.2, stone: 0.2 }, trainSpeed: 0.05 } },
   { id: "cathedral", name: "Cathedral", age: 4, description: "A monument that commands loyalty far and wide.", maxLevel: 5, cost: { stone: 2000, wood: 600 }, baseSeconds: 3000, effect: { loyalty: 0.3 } },
+  // Industrial
+  { id: "factory", name: "Factory", age: 5, description: "Machines and shifts: trains troops faster and turns out more wood and stone.", maxLevel: 10, cost: { wood: 3000, stone: 2500, iron: 100 }, baseSeconds: 3000, effect: { trainSpeed: 0.1, yield: { wood: 0.1, stone: 0.1 } }, requires: "steam_power" },
+  { id: "arsenal", name: "Arsenal", age: 5, description: "Stores of powder and shot: a hard place to take.", maxLevel: 5, cost: { stone: 5000, iron: 300 }, baseSeconds: 3600, effect: { defense: 0.25, protect: 2000 } },
+  // Modern
+  { id: "power_plant", name: "Power plant", age: 6, description: "Electricity for every workshop and field.", maxLevel: 10, cost: { stone: 8000, iron: 400 }, baseSeconds: 4000, effect: { yield: { food: 0.15, wood: 0.15, stone: 0.15 }, capacity: 20 }, requires: "electricity" },
+  { id: "bunker", name: "Bunker", age: 6, description: "Concrete and steel: the strongest defence there is.", maxLevel: 5, cost: { stone: 6000, iron: 500 }, baseSeconds: 3600, effect: { defense: 0.5 } },
   { id: "university", name: "University", age: 4, description: "The fastest research in the land.", maxLevel: 5, cost: { wood: 1200, stone: 1200 }, baseSeconds: 2600, effect: { researchSpeed: 0.15 } },
 ];
 
@@ -191,6 +199,13 @@ export const UNITS: readonly UnitDef[] = [
   { id: "knight", name: "Knight", age: 4, description: "The finest heavy cavalry.", attack: 32, defense: 22, speed: 12, carry: 70, cost: { food: 250, iron: 20, horses: 1 }, baseSeconds: 600, requires: "chivalry", needsResource: "horses" },
   { id: "longbowman", name: "Longbowman", age: 4, description: "Deadly at range.", attack: 24, defense: 10, speed: 6, carry: 30, cost: { food: 120, wood: 80 }, baseSeconds: 420, requires: "chivalry" },
   { id: "trebuchet", name: "Trebuchet", age: 4, description: "Nothing stands against it for long.", attack: 45, defense: 5, speed: 2, carry: 0, cost: { wood: 700, iron: 30 }, baseSeconds: 900, requires: "siege_engines" },
+  // Industrial
+  { id: "rifleman", name: "Rifleman", age: 5, description: "Drilled infantry with rifled muskets.", attack: 40, defense: 35, speed: 6, carry: 40, cost: { food: 150, iron: 25 }, baseSeconds: 300, requires: "rifling" },
+  { id: "cannon", name: "Cannon", age: 5, description: "Field guns that break walls and lines alike.", attack: 70, defense: 8, speed: 4, carry: 0, cost: { wood: 800, iron: 60 }, baseSeconds: 600, requires: "steam_power" },
+  // Modern
+  { id: "infantry", name: "Infantry", age: 6, description: "Modern soldiers with automatic weapons.", attack: 70, defense: 60, speed: 7, carry: 50, cost: { food: 250, iron: 40 }, baseSeconds: 420, requires: "combined_arms" },
+  { id: "tank", name: "Tank", age: 6, description: "Armour and a gun on tracks: fast and nearly unstoppable.", attack: 140, defense: 70, speed: 20, carry: 80, cost: { iron: 150, wood: 500 }, baseSeconds: 900, requires: "combined_arms" },
+  { id: "artillery", name: "Artillery", age: 6, description: "Long guns that flatten anything in range.", attack: 200, defense: 10, speed: 5, carry: 0, cost: { iron: 120, wood: 600 }, baseSeconds: 900, requires: "ballistics" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -225,7 +240,7 @@ export const TECHS: readonly TechDef[] = [
   { id: "iron_tools", name: "Iron tools", age: 2, description: "Iron axes and picks for the camps and quarries.", cost: { wood: 4000, stone: 3000, iron: 30 }, baseSeconds: 3600, effect: { yield: { wood: 0.2, stone: 0.2 } } },
   { id: "iron_weapons", name: "Iron weapons", age: 2, description: "Harder edges for every soldier.", cost: { wood: 3000, iron: 60 }, baseSeconds: 4200, requires: ["bronze_weapons"], effect: { attack: 0.15, defense: 0.1 } },
   { id: "mathematics", name: "Mathematics", age: 2, description: "Numbers and records: research goes faster.", cost: { food: 4000, stone: 2500 }, baseSeconds: 3600, requires: ["writing"], effect: { researchSpeed: 0.15 } },
-  { id: "drill", name: "Drill", age: 2, description: "Professional soldiers. Enters the Classical Age.", cost: { food: 40000, wood: 25000, iron: 500 }, baseSeconds: 21600, requires: ["masonry", "writing"], advancesTo: 3, earliestDay: 11 },
+  { id: "drill", name: "Drill", age: 2, description: "Professional soldiers. Enters the Classical Age.", cost: { food: 40000, wood: 25000, iron: 500 }, baseSeconds: 21600, requires: ["masonry", "writing"], advancesTo: 3, earliestDay: 9 },
   // Classical
   { id: "shipbuilding", name: "Shipbuilding", age: 3, description: "Boats that cross open sea.", cost: { wood: 2000, stone: 500 }, baseSeconds: 4800 },
   { id: "engineering", name: "Engineering", age: 3, description: "Aqueducts and ballistae.", cost: { stone: 1800, wood: 800, iron: 60 }, baseSeconds: 4800 },
@@ -234,7 +249,7 @@ export const TECHS: readonly TechDef[] = [
   { id: "logistics", name: "Logistics", age: 3, description: "Supply trains and relays: armies and caravans move faster.", cost: { food: 12000, wood: 10000 }, baseSeconds: 7200, requires: ["road_building"], effect: { travel: 0.2 } },
   { id: "civil_service", name: "Civil service", age: 3, description: "Governors and clerks keep distant lands loyal.", cost: { food: 10000, stone: 8000 }, baseSeconds: 7200, requires: ["writing"], effect: { loyalty: 0.1 } },
   { id: "heavy_plough", name: "Heavy plough", age: 3, description: "Turns heavy soils that hoes never could.", cost: { wood: 15000, iron: 80 }, baseSeconds: 9000, requires: ["crop_rotation"], effect: { yield: { food: 0.3 } } },
-  { id: "chivalry", name: "Chivalry", age: 3, description: "Knights and castles. Enters the Medieval Age.", cost: { food: 150000, wood: 80000, iron: 1500 }, baseSeconds: 28800, requires: ["engineering"], advancesTo: 4, earliestDay: 19 },
+  { id: "chivalry", name: "Chivalry", age: 3, description: "Knights and castles. Enters the Medieval Age.", cost: { food: 150000, wood: 80000, iron: 1500 }, baseSeconds: 28800, requires: ["engineering"], advancesTo: 4, earliestDay: 14 },
   // Medieval
   { id: "three_field_system", name: "Three-field system", age: 4, description: "A third of the land rests while two thirds feed.", cost: { food: 40000, wood: 25000 }, baseSeconds: 14400, requires: ["heavy_plough"], effect: { yield: { food: 0.3 } } },
   { id: "blast_furnace", name: "Blast furnace", age: 4, description: "Far more metal from every mine.", cost: { stone: 30000, iron: 300 }, baseSeconds: 14400, effect: { extract: 0.5 } },
@@ -243,6 +258,20 @@ export const TECHS: readonly TechDef[] = [
   { id: "railways", name: "Railways", age: 4, description: "Iron rails and steam engines. When it completes, every wagon you have becomes a Train, and Railway can be built on top of Roads.", cost: { stone: 60000, wood: 40000, iron: 2000 }, baseSeconds: 28800, requires: ["engineering", "wagon_building"] },
   { id: "siege_engines", name: "Siege engines", age: 4, description: "Trebuchets.", cost: { wood: 3000, iron: 200 }, baseSeconds: 9000 },
   { id: "scholasticism", name: "Scholasticism", age: 4, description: "Universities: research goes much faster.", cost: { wood: 2500, stone: 2500 }, baseSeconds: 9000, effect: { researchSpeed: 0.3 } },
+  { id: "industrialisation", name: "Industrialisation", age: 4, description: "Coal, iron and machines. Enters the Industrial Age.", cost: { food: 300000, wood: 200000, iron: 3000 }, baseSeconds: 28800, requires: ["engineering", "railways"], advancesTo: 5, earliestDay: 19 },
+  // Industrial
+  { id: "steam_power", name: "Steam power", age: 5, description: "Engines that never tire: more wood and stone, and unlocks the Factory and Cannon.", cost: { stone: 50000, wood: 40000, iron: 800 }, baseSeconds: 14400, effect: { yield: { wood: 0.3, stone: 0.3 } } },
+  { id: "telegraph", name: "Telegraph", age: 5, description: "Wires carry word in an instant: research goes much faster.", cost: { stone: 30000, wood: 30000, iron: 400 }, baseSeconds: 10800, effect: { researchSpeed: 0.3 } },
+  { id: "rifling", name: "Rifling", age: 5, description: "Grooved barrels: unlocks the Rifleman.", cost: { iron: 1500, wood: 30000 }, baseSeconds: 14400, effect: { attack: 0.25, defense: 0.1 } },
+  { id: "vaccination", name: "Vaccination", age: 5, description: "Far fewer die of disease.", cost: { food: 80000, stone: 20000 }, baseSeconds: 10800, effect: { growth: 0.4 } },
+  { id: "electronics", name: "Electronics", age: 5, description: "Circuits and radio. Enters the Modern Age.", cost: { food: 600000, wood: 400000, iron: 6000 }, baseSeconds: 28800, requires: ["telegraph", "steam_power"], advancesTo: 6, earliestDay: 24 },
+  // Modern
+  { id: "electricity", name: "Electricity", age: 6, description: "Power for everything: unlocks the Power plant.", cost: { iron: 3000, stone: 80000 }, baseSeconds: 14400, effect: { yield: { food: 0.25, wood: 0.25, stone: 0.25 } } },
+  { id: "radar", name: "Radar", age: 6, description: "See every region within two hops of your borders, live.", cost: { iron: 2500, wood: 60000 }, baseSeconds: 14400, effect: { vision: 2 } },
+  { id: "satellites", name: "Satellites", age: 6, description: "Eyes in orbit: the whole map, live.", cost: { iron: 8000, stone: 150000 }, baseSeconds: 21600, requires: ["radar"], effect: { vision: 99 } },
+  { id: "combined_arms", name: "Combined arms", age: 6, description: "Infantry, armour and guns fighting as one: unlocks Infantry and the Tank.", cost: { iron: 4000, food: 150000 }, baseSeconds: 18000, effect: { attack: 0.3, defense: 0.2 } },
+  { id: "ballistics", name: "Ballistics", age: 6, description: "Fire control for long guns: unlocks Artillery.", cost: { iron: 2000, stone: 40000 }, baseSeconds: 10800, requires: ["combined_arms"] },
+  { id: "synthetic_fertilizer", name: "Synthetic fertilizer", age: 6, description: "Nitrogen from the air: fields yield half as much again.", cost: { iron: 1500, food: 100000 }, baseSeconds: 14400, effect: { yield: { food: 0.5 } } },
 ];
 
 export const buildingById = new Map(BUILDINGS.map((b) => [b.id, b]));

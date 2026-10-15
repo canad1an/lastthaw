@@ -12,13 +12,15 @@ import type { MatchRow } from "../worker/jobs.js";
 export type Difficulty = "easy" | "medium" | "hard";
 export type Temperament = "peaceful" | "balanced" | "raider";
 
-const BUILD_ORDER = ["huts", "hunting_grounds", "lumber_camp", "storehouse", "quarry", "farm", "palisade", "granary", "mine", "stables", "walls", "barracks", "roads", "railway", "temple", "forge", "market", "aqueduct", "fort", "library", "harbor", "windmill", "castle", "guild_hall", "university", "cathedral"];
+const BUILD_ORDER = ["huts", "hunting_grounds", "lumber_camp", "storehouse", "quarry", "farm", "palisade", "granary", "mine", "stables", "walls", "barracks", "roads", "railway", "temple", "forge", "market", "aqueduct", "fort", "library", "harbor", "windmill", "castle", "guild_hall", "university", "cathedral", "factory", "arsenal", "power_plant", "bunker"];
 const RESEARCH_ORDER = [
   "fire_making", "flint_tools", "agriculture", "fishing_nets", "stone_axes", "animal_husbandry", "weaving", "bronze_working",
   "mining", "irrigation", "writing", "the_wheel", "wagon_building", "pottery", "herbal_medicine", "road_building", "bronze_weapons", "iron_working",
   "masonry", "crop_rotation", "iron_tools", "mathematics", "iron_weapons", "siegecraft", "drill",
   "engineering", "heavy_plough", "philosophy", "logistics", "civil_service", "steel", "shipbuilding", "chivalry",
-  "three_field_system", "railways", "guilds", "blast_furnace", "plate_armour", "siege_engines", "scholasticism",
+  "three_field_system", "railways", "guilds", "blast_furnace", "plate_armour", "siege_engines", "scholasticism", "industrialisation",
+  "steam_power", "telegraph", "rifling", "vaccination", "electronics",
+  "electricity", "combined_arms", "radar", "synthetic_fertilizer", "ballistics", "satellites",
 ];
 
 /** What each difficulty is allowed to do. Harder tiers never cheat; they just decide better and more often. */

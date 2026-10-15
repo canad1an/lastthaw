@@ -1,17 +1,4 @@
-import {
-  BUILDINGS,
-  UNITS,
-  balance,
-  computeRates,
-  effectsOf,
-  regionById,
-  storageCaps,
-  techById,
-  type BuildingDef,
-  type RegionEconomy,
-  type TechDef,
-  type UnitDef,
-} from "@lastthaw/shared";
+import { BUILDINGS, UNITS, balance, computeRates, effectsOf, regionById, storageCaps, techById, type BuildingDef, type RegionEconomy, type TechDef, type UnitDef, AGES } from "@lastthaw/shared";
 import type { Delta } from "./Tooltip.js";
 import { fmt, signed } from "./ui.js";
 
@@ -115,7 +102,7 @@ export function techPreview(def: TechDef): { summary: string; unlocks: string[] 
   const unlocks: string[] = [];
   for (const b of BUILDINGS) if (b.requires === def.id) unlocks.push(`${b.name} (building)`);
   for (const u of UNITS) if (u.requires === def.id && !u.hidden) unlocks.push(`${u.name} (unit)`);
-  if (def.advancesTo !== undefined) unlocks.push(`advance to the ${["Stone", "Bronze", "Iron", "Classical", "Medieval"][def.advancesTo]} Age: all its buildings, units and techs${def.earliestDay !== undefined ? ` (from day ${def.earliestDay + 1})` : ""}`);
+  if (def.advancesTo !== undefined) unlocks.push(`advance to the ${AGES[def.advancesTo]} Age: all its buildings, units and techs${def.earliestDay !== undefined ? ` (from day ${def.earliestDay + 1})` : ""}`);
   if (def.id === balance.travel.seaTech) unlocks.push("armies may cross sea routes");
   const carry = balance.trade.caravanCarryTechs[def.id];
   if (carry) unlocks.push(`caravans carry ${Math.round(carry * 100)}% more`);
@@ -135,6 +122,7 @@ export function techPreview(def: TechDef): { summary: string; unlocks: string[] 
     if (fx.researchSpeed) unlocks.push(`research ${p(fx.researchSpeed)} faster`);
     if (fx.travel) unlocks.push(`armies and caravans ${p(fx.travel)} faster`);
     if (fx.loyalty) unlocks.push(`loyalty ${p(fx.loyalty)} in every region`);
+    if (fx.vision) unlocks.push(fx.vision >= 99 ? "live sight of the whole map" : `live sight ${fx.vision} hops beyond your borders`);
   }
   const metals = Object.keys(def.cost).filter((k) => k === "copper" || k === "tin" || k === "iron" || k === "horses");
   const note = metals.length ? ` Costs ${metals.join(" and ")}: these come from a Mine or Stables on a region that has them, from raids, or from the market.` : "";

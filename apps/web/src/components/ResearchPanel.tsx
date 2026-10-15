@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
-import { AGES, availableTechs, balance, canAfford, formatCountdown, realSeconds, techById, techSeconds, type MatchStateView, type TechDef, techCost, matchDayOf } from "@lastthaw/shared";
+import { AGES, availableTechs, balance, canAfford, formatCountdown, realSeconds, techById, techSeconds, type MatchStateView, type TechDef, techCost, matchDayOf, type AgeIndex } from "@lastthaw/shared";
 import { Tooltip } from "./Tooltip.js";
 import { techPreview } from "./previews.js";
 import { api, keys } from "../api/client.js";
@@ -24,7 +24,7 @@ export function ResearchPanel({ matchId, state, clockOffsetMs }: { matchId: stri
     <Card className="space-y-2">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-medium">Research</h2>
-        <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-300">{AGES[state.me.age as 0 | 1 | 2 | 3 | 4]} Age</span>
+        <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-300">{AGES[state.me.age as AgeIndex]} Age</span>
       </div>
       {queued.length > 0 && (
         <ul className="space-y-1">

@@ -101,9 +101,11 @@ export interface TechEffects {
   researchSpeed: number;
   travel: number;
   loyalty: number;
+  /** Hops of live vision beyond your borders (99 = whole map). */
+  vision: number;
 }
 
-export const NO_TECH_EFFECTS: TechEffects = { yield: { food: 0, wood: 0, stone: 0 }, capacity: 0, storage: 0, growth: 0, extract: 0, attack: 0, defense: 0, trainSpeed: 0, researchSpeed: 0, travel: 0, loyalty: 0 };
+export const NO_TECH_EFFECTS: TechEffects = { yield: { food: 0, wood: 0, stone: 0 }, capacity: 0, storage: 0, growth: 0, extract: 0, attack: 0, defense: 0, trainSpeed: 0, researchSpeed: 0, travel: 0, loyalty: 0, vision: 0 };
 
 export function techEffectsOf(techs: ReadonlySet<string> | readonly string[]): TechEffects {
   const has = techs instanceof Set ? (id: string) => techs.has(id) : (id: string) => (techs as readonly string[]).includes(id);
@@ -124,6 +126,7 @@ export function techEffectsOf(techs: ReadonlySet<string> | readonly string[]): T
     t.researchSpeed += e.researchSpeed ?? 0;
     t.travel += e.travel ?? 0;
     t.loyalty += e.loyalty ?? 0;
+    t.vision = Math.max(t.vision, e.vision ?? 0);
   }
   return t;
 }

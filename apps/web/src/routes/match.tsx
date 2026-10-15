@@ -212,7 +212,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
 
   return (
     <div className="flex h-[calc(100dvh-3rem)] flex-col">
-      <TopMenu matchId={matchId} state={state} selectedRegionId={selected} colorOf={colorOf} overlays={overlays} onToggleOverlay={toggleOverlay} onSelectRegion={setSelected} />
+      <TopMenu matchId={matchId} state={state} selectedRegionId={selected} colorOf={colorOf} overlays={overlays} onToggleOverlay={toggleOverlay} onSelectRegion={setSelected} clockOffsetMs={clockOffsetMs} />
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
       <div className="relative h-1/2 w-full lg:h-full lg:flex-1">
         <WorldMap

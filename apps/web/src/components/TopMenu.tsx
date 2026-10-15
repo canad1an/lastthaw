@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type ReactNode } from "react";
-import type { MatchStateView } from "@lastthaw/shared";
+import { TECHS, type MatchStateView } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { MessagesList, messageIcon, useMessageToast } from "./Messages.js";
 import { AlliancePanel } from "./AlliancePanel.js";
@@ -11,8 +11,9 @@ import { LeaderboardTable } from "../routes/leaderboard.js";
 import { OVERLAYS, OVERLAY_HINT } from "../map/overlays.js";
 import { EmpirePanel } from "./EmpirePanel.js";
 import { LogisticsPanel } from "./LogisticsPanel.js";
+import { TechTreePanel } from "./TechTreePanel.js";
 
-type Menu = "messages" | "alliance" | "chat" | "market" | "players" | "leaderboard" | "view" | "empire" | "logistics";
+type Menu = "messages" | "alliance" | "chat" | "market" | "players" | "leaderboard" | "view" | "empire" | "logistics" | "tech";
 
 /**
  * Slim menu bar above the map: Messages (with a 5-second toast for new ones),
@@ -26,6 +27,7 @@ export function TopMenu({
   overlays,
   onToggleOverlay,
   onSelectRegion,
+  clockOffsetMs,
 }: {
   matchId: string;
   state: MatchStateView;
@@ -34,6 +36,7 @@ export function TopMenu({
   overlays: Set<string>;
   onToggleOverlay: (id: string) => void;
   onSelectRegion: (regionId: string) => void;
+  clockOffsetMs: number;
 }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState<Menu | null>(null);
@@ -80,6 +83,7 @@ export function TopMenu({
         <Tab id="leaderboard" label="Leaderboard" />
         <Tab id="empire" label="Empire" badge={state.owned.length} />
         <Tab id="logistics" label="Logistics" badge={logisticsBadge} tone={logisticsBadge ? "alert" : undefined} />
+        <Tab id="tech" label="Tech" badge={`${state.me.techs.length}/${TECHS.length}`} />
         <Tab id="view" label="View" badge={overlays.size || undefined} />
         <div className="mx-2 h-5 w-px bg-slate-800" />
         {toast ? (
@@ -114,6 +118,7 @@ export function TopMenu({
               <LeaderboardTable matchId={matchId} compact />
             </div>
           )}
+          {open === "tech" && <TechTreePanel matchId={matchId} state={state} clockOffsetMs={clockOffsetMs} />}
           {open === "logistics" && (
             <LogisticsPanel
               state={state}
