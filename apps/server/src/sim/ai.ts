@@ -134,7 +134,7 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
       if (tier.hoards && !comfortablyAffordable(economy, cost)) continue;
       // AI tribes may have one build per region waiting on materials, so their late-game queues do not go dead.
       const waitingHere = pendingJobs.some((j) => j.regionId === row.regionId && j.kind === "build" && j.waitingFor);
-      if (await attempt(() => queueBuild(ctx, row.regionId, id, { allowWait: !waitingHere }))) slots -= 1;
+      if (await attempt(() => queueBuild(ctx, row.regionId, id, { allowWait: !waitingHere, maxOwed: balance.ai.maxWaitingShipment }))) slots -= 1;
       else if (rng() < 0.5) break;
     }
 

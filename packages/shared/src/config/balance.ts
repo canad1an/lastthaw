@@ -240,6 +240,8 @@ export const balance = {
     oreAskWoodPerUnit: 12,
     /** AI tribes start colonizing once a region has this many workers. */
     settleAbove: 40,
+    /** AI tribes only queue a build that waits on materials when the shortfall is at most this much (a few hauler loads). */
+    maxWaitingShipment: 6000,
     /** AI tribes keep this many caravans per region once stores pass 85% of a cap (hard tribes one more). */
     caravansPerRegion: 2,
     neutralWarriors: { min: 2, max: 10 },

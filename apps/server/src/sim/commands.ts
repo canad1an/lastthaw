@@ -35,8 +35,9 @@ export async function pendingRegionJobs(tx: Tx | Db, matchId: string, regionId: 
     .orderBy(asc(jobs.startsAt), asc(jobs.id));
 }
 
-export async function queueBuild(ctx: CommandContext, regionId: string, buildingId: string, opts: { allowWait?: boolean } = {}) {
+export async function queueBuild(ctx: CommandContext, regionId: string, buildingId: string, opts: { allowWait?: boolean; maxOwed?: number } = {}) {
   const allowWait = opts.allowWait ?? true;
+  const maxOwed = opts.maxOwed ?? Infinity;
   const { db, m, p, techs } = ctx;
   const def = buildingById.get(buildingId);
   if (!def) throw httpError(400, "unknown building");
@@ -77,6 +78,11 @@ export async function queueBuild(ctx: CommandContext, regionId: string, building
     for (const r of payers) for (const [k, v] of Object.entries(stockOf(r))) pooled[k] = (pooled[k] ?? 0) + v;
     if (!canAfford(pooled, cost)) throw httpError(409, `not enough ${missingFor(pooled, cost).join(", ")} across your regions`);
     if (!allowWait && !canAfford(stockOf(row), cost)) throw httpError(409, `not enough ${missingFor(stockOf(row), cost).join(", ")} here`);
+    {
+      const localStock = stockOf(row);
+      const shortfall = Object.entries(cost).reduce((a, [k, v]) => a + Math.max(0, v - (localStock[k] ?? 0)), 0);
+      if (shortfall > maxOwed) throw httpError(409, `too much would have to be shipped here (${Math.round(shortfall)}); build it where the stock is`);
+    }
     // Pay what this region has now. Anything short is owed, and must arrive by caravan before the build starts.
     const here = stockOf(row);
     const paid: Record<string, number> = {};
@@ -469,6 +475,18 @@ export async function repairWaitingBuilds(tx: Tx, m: MatchRow, now: Date): Promi
     if (row.ownerPlayerId !== first.playerId || row.frozenAt) continue;
     const owed = first.waitingFor as Record<string, number>;
     const stock = stockOf(row);
+    // AI tribes never wait on big shipments: anything beyond a few hauler loads is cancelled and refunded.
+    const [who] = await tx.select({ isAi: players.isAi }).from(players).where(eq(players.id, first.playerId)).limit(1);
+    const owedTotal = Object.values(owed).reduce((a, b) => a + b, 0);
+    if (who?.isAi && owedTotal > balance.ai.maxWaitingShipment) {
+      for (const j of list) {
+        const paid = ((j.payload ?? {}) as { paid?: Record<string, number> }).paid ?? {};
+        if (Object.keys(paid).length) await applyCost(tx, row, paid as Cost, -1);
+        await tx.update(jobs).set({ cancelledAt: now }).where(eq(jobs.id, j.id));
+      }
+      await tx.delete(tradeRoutes).where(and(eq(tradeRoutes.matchId, m.id), eq(tradeRoutes.toRegionId, regionId), sql`${tradeRoutes.forJobId} is not null`));
+      continue;
+    }
     if (Object.keys(owed).length === 0 || canAfford(stock, owed as Cost)) {
       if (Object.keys(owed).length) await applyCost(tx, row, owed as Cost);
       const r = await receiveMaterials(tx, m, regionId, owed, now);
