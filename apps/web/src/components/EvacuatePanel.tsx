@@ -16,13 +16,6 @@ export function EvacuatePanel({ matchId, state, owned, matchDay }: { matchId: st
   const touchLeft = touchDay === null ? null : touchDay - matchDay;
   const urgent = owned.frozen || (touchLeft !== null && touchLeft <= 3) || owned.iceFactor < 1;
   const [open, setOpen] = useState(false);
-  if (owned.evacuated && !owned.frozen) {
-    return (
-      <div className="border-t border-slate-800 pt-3 text-sm text-slate-400">
-        Evacuated. Nobody lives here, nothing grows or is gathered. Move people back in to make it a home again.
-      </div>
-    );
-  }
 
   // Destinations: my other regions, safest (latest freeze) and nearest first.
   const destinations = useMemo(() => {
@@ -48,6 +41,15 @@ export function EvacuatePanel({ matchId, state, owned, matchDay }: { matchId: st
       void qc.invalidateQueries({ queryKey: keys.matchState(matchId) });
     },
   });
+
+  // All hooks above run every render; only then may the evacuated state short-circuit.
+  if (owned.evacuated && !owned.frozen) {
+    return (
+      <div className="border-t border-slate-800 pt-3 text-sm text-slate-400">
+        Evacuated. Nobody lives here, nothing grows or is gathered. Move people back in to make it a home again.
+      </div>
+    );
+  }
 
   return (
     <div className={`space-y-2 border-t border-slate-800 pt-3 ${urgent ? "rounded-md border border-cyan-300/40 bg-cyan-200/5 p-2" : ""}`}>
