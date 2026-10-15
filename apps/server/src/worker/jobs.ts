@@ -25,7 +25,7 @@ export async function runDueJobs(db: Db, publisher: Publisher, log: pino.Logger)
     .innerJoin(matches, eq(matches.id, jobs.matchId))
     .where(
       sql`${jobs.completedAt} is null and ${jobs.cancelledAt} is null and ${jobs.attempts} < ${MAX_ATTEMPTS}
-          and ${jobs.waitingFor} is null and ${matches.pausedAt} is null
+          and ${jobs.waitingFor} is null and ${matches.pausedAt} is null and ${matches.status} = 'running'
           and ${jobs.endsAt} <= now() + make_interval(secs => ${matches.clockOffsetSeconds})`,
     )
     .orderBy(jobs.endsAt, jobs.id)

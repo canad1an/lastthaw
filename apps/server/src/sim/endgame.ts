@@ -97,6 +97,8 @@ export async function finishMatch(tx: Tx, m: MatchRow, at: Date, publisher: Publ
   const ranked = [...ps].sort((a, b) => (standings.find((s) => s.id === b.id)?.score ?? 0) - (standings.find((s) => s.id === a.id)?.score ?? 0));
   const winner = winnerPlayerId ?? ranked[0]?.id ?? null;
   await tx.update(matches).set({ status: "finished", finishedAt: at, winnerPlayerId: winner }).where(eq(matches.id, m.id));
+  // Nothing outlives the match: pending jobs are cancelled so they never clog the due queue.
+  await tx.update(jobs).set({ cancelledAt: at }).where(and(eq(jobs.matchId, m.id), isNull(jobs.completedAt), isNull(jobs.cancelledAt)));
   for (let i = 0; i < ranked.length; i++) {
     const p = ranked[i]!;
     if (!p.userId) continue;

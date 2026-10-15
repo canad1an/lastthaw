@@ -171,7 +171,8 @@ describe("milestone 1 flow", () => {
       await redis.quit().catch(() => {});
     }
     state = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json());
-    expect(state.jobs).toHaveLength(0);
+    const leftover = await db.select({ kind: jobs.kind, refId: jobs.refId, attempts: jobs.attempts, lastError: jobs.lastError, endsAt: jobs.endsAt, waitingFor: jobs.waitingFor }).from(jobs).where(and(eq(jobs.matchId, matchId), isNull(jobs.completedAt)));
+    expect(state.jobs, JSON.stringify({ leftover, now: state.match.now })).toHaveLength(0);
     expect(state.owned[0]!.buildings.huts).toBe(1);
     expect(state.owned[0]!.units.warrior).toBe(3);
     expect(state.owned[0]!.popSoldiers).toBeCloseTo(3, 5);
