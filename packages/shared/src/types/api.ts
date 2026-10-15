@@ -144,7 +144,7 @@ export const jobView = z.object({
 });
 export type JobView = z.infer<typeof jobView>;
 
-export const missionKind = z.enum(["raid", "conquer", "reinforce", "move", "transport", "scout", "settle", "relocate"]);
+export const missionKind = z.enum(["raid", "conquer", "reinforce", "move", "transport", "scout", "settle", "relocate", "patrol"]);
 export type MissionKind = z.infer<typeof missionKind>;
 
 export const sendArmyBody = z.object({
@@ -172,6 +172,8 @@ export const armyView = z.object({
   path: z.array(z.string()).default([]),
   /** Why it turned back, when returning early. */
   note: z.string().nullable().default(null),
+  /** Sea lane a patrol holds, as "a|b" (region ids sorted). */
+  lane: z.string().nullable().default(null),
 });
 export type ArmyView = z.infer<typeof armyView>;
 

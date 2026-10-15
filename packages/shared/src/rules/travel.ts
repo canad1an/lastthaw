@@ -107,7 +107,31 @@ export function missionLabel(mission: string, units?: Record<string, number>): s
       return "Reinforcements";
     case "scout":
       return "Scouts";
+    case "patrol":
+      return "Patrol";
     default:
       return mission.charAt(0).toUpperCase() + mission.slice(1);
   }
+}
+
+/** Canonical key for the sea lane between two coastal regions. */
+export function laneKey(a: string, b: string): string {
+  return a < b ? `${a}|${b}` : `${b}|${a}`;
+}
+
+/** The sea lanes a path crosses: consecutive regions joined by a sea route, not a land border. */
+export function seaLegsOf(path: readonly string[]): string[] {
+  const out: string[] = [];
+  for (let i = 1; i < path.length; i++) {
+    const a = regionById(path[i - 1]!);
+    const b = path[i]!;
+    if (a && !a.neighbors.includes(b) && a.seaRoutes.includes(b)) out.push(laneKey(a.id, b));
+  }
+  return out;
+}
+
+/** Label for a mission as a moving group, continued: patrols. */
+export function laneName(lane: string): string {
+  const [a, b] = lane.split("|");
+  return `${regionById(a ?? "")?.name ?? a} – ${regionById(b ?? "")?.name ?? b}`;
 }

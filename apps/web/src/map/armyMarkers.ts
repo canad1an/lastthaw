@@ -1,4 +1,4 @@
-import { balance, carryCapacity, regionById, unitById, type ArmyView, type IncomingView, missionLabel } from "@lastthaw/shared";
+import { balance, carryCapacity, regionById, unitById, type ArmyView, type IncomingView, missionLabel, laneName } from "@lastthaw/shared";
 
 export interface ArmyMarker {
   id: string;
@@ -64,7 +64,7 @@ export function armyMarkers(armies: ArmyView[], incoming: IncomingView[], nowMs:
     const end = returning ? Date.parse(a.returnsAt ?? a.arrivesAt) : Date.parse(a.arrivesAt);
     const legStart = returning ? Math.min(start, nowMs) : start;
     const progress = end > legStart ? Math.min(1, Math.max(0, (nowMs - legStart) / (end - legStart))) : 1;
-    const pos = along(route, progress);
+    const pos = a.mission === "patrol" && route.length >= 2 ? { x: (route[0]!.x + route[route.length - 1]!.x) / 2, y: (route[0]!.y + route[route.length - 1]!.y) / 2 } : along(route, progress);
     const dest = regionById(returning ? a.originRegionId : a.targetRegionId)?.name ?? "";
     const people = Math.round(a.cargo.people ?? 0);
     const goods = Object.entries(a.cargo).filter(([k, n]) => k !== "people" && n > 0);
@@ -78,13 +78,13 @@ export function armyMarkers(armies: ArmyView[], incoming: IncomingView[], nowMs:
       y: pos.y,
       hostile: false,
       mission: a.mission,
-      title: `${missionLabel(a.mission, a.units)} ${returning ? "returning to" : "→"} ${dest}`,
+      title: a.mission === "patrol" && !returning ? `Patrol on the ${laneName(a.lane ?? "")} lane` : `${missionLabel(a.mission, a.units)} ${returning ? "returning to" : "→"} ${dest}`,
       lines: [
         returning && a.note ? a.note : "",
         `from ${regionById(a.originRegionId)?.name ?? a.originRegionId}`,
         a.mission === "relocate" ? "the capital's stores and court" : fmtUnits(a.units) + (people > 0 ? ` and ${people} people` : ""),
         cargo ? `carrying ${cargo}${capacity > 0 ? ` (${Math.round(goodsTotal)} of ${Math.round(capacity)})` : ""}` : capacity > 0 && !returning ? "carrying nothing" : "",
-        `${returning ? "home" : "arrives"} in ${formatCountdown((end - nowMs) / 1000)}`,
+        `${returning ? "home" : a.mission === "patrol" ? "holds the lane for" : "arrives"} ${a.mission === "patrol" && !returning ? "" : "in "}${formatCountdown((end - nowMs) / 1000)}`,
       ].filter(Boolean),
       route,
       progress,

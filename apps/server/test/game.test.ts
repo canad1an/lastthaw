@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { and, eq, isNull } from "drizzle-orm";
-import { balance, buildingById,
+import { allRegions, balance, buildingById,
   buildingCost, iceLatitudeOnDay, matchStateView, regionById } from "@lastthaw/shared";
 import { buildApp } from "../src/api/app.js";
 import { createDb, type Db } from "../src/db/client.js";
@@ -9,6 +9,7 @@ import { runAiDecisions, runMatchTicks } from "../src/sim/tick.js";
 import { Publisher } from "../src/realtime/publish.js";
 import { createRedis } from "../src/redis.js";
 import { runDueJobs } from "../src/worker/jobs.js";
+import { foundCapital } from "../src/sim/regions.js";
 import { logger } from "../src/logger.js";
 
 process.env.DATABASE_URL ??= "postgres://lastthaw:lastthaw@localhost:5432/lastthaw";
@@ -365,6 +366,46 @@ describe("milestone 1 flow", () => {
       .where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.ownerPlayerId, aiPlayer.id)));
     if (!aiCapital?.frozenAt) expect(aiJobs.length).toBeGreaterThan(0);
     expect(state.owned.find((o) => o.regionId === neighbour)!.loyalty).toBeLessThan(1);
+
+    // Naval: ships are built where there is a Harbor, sail one lane coast to coast, patrol it and intercept enemy crossings.
+    {
+      const [aliceRow] = await db.select({ id: players.id }).from(players).where(and(eq(players.matchId, matchId), eq(players.name, alice.displayName)));
+      const [bobRow] = await db.select({ id: players.id }).from(players).where(and(eq(players.matchId, matchId), eq(players.name, bob.displayName)));
+      // Find two coastal regions joined by a sea lane that nobody holds yet and give one to each side.
+      const taken = new Set((await db.select({ regionId: matchRegions.regionId }).from(matchRegions).where(eq(matchRegions.matchId, matchId))).map((r) => r.regionId));
+      let port = "";
+      let far = "";
+      for (const r of allRegions()) {
+        if (taken.has(r.id) || Math.abs(r.lat) > 30) continue;
+        const other = r.seaRoutes.find((n) => !taken.has(n) && Math.abs(regionById(n)!.lat) <= 30);
+        if (other) {
+          port = r.id;
+          far = other;
+          break;
+        }
+      }
+      expect(port, "a free coastal pair").not.toBe("");
+      const at = new Date(Date.parse(matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json()).match.now));
+      await foundCapital(db, matchId, aliceRow!.id, port, at);
+      await foundCapital(db, matchId, bobRow!.id, far, at);
+      await db.update(matchRegions).set({ isCapital: false, popWorkers: 50, popSoldiers: 4, units: { galley: 4 }, buildings: { harbor: 1 }, wood: 5000, food: 5000 }).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, port)));
+      await db.update(matchRegions).set({ isCapital: false, popWorkers: 50, popSoldiers: 1, units: { galley: 1 } }).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, far)));
+      // Training a ship needs the Harbor and the tech: the far side has neither.
+      expect((await b.call("POST", `/api/matches/${matchId}/regions/${far}/train`, { unitId: "galley", qty: 1 })).statusCode).toBe(400);
+      // Ships only sail a direct lane.
+      const inland = regionById(port)!.neighbors[0]!;
+      expect((await a.call("POST", `/api/matches/${matchId}/regions/${port}/send`, { mission: "move", targetRegionId: inland, units: { galley: 1 }, people: 0, cargo: {} })).statusCode).toBe(400);
+      // Bob patrols the lane with his single galley.
+      const patrol = await b.call("POST", `/api/matches/${matchId}/regions/${far}/send`, { mission: "patrol", targetRegionId: port, units: { galley: 1 }, people: 0, cargo: {} });
+      expect(patrol.statusCode, JSON.stringify(patrol.json())).toBe(200);
+      const bView = matchStateView.parse((await b.call("GET", `/api/matches/${matchId}/state`)).json());
+      expect(bView.armies.find((x) => x.mission === "patrol")?.lane).toBeTruthy();
+      // Alice's four galleys crossing the same lane fight the patrol first and win.
+      const cross = await a.call("POST", `/api/matches/${matchId}/regions/${port}/send`, { mission: "raid", targetRegionId: far, units: { galley: 4 }, people: 0, cargo: {} });
+      expect(cross.statusCode, JSON.stringify(cross.json())).toBe(200);
+      const seaFights = await db.select().from(battles).where(and(eq(battles.matchId, matchId), eq(battles.attackerPlayerId, aliceRow!.id)));
+      expect(seaFights.some((f) => (f.report as { mission?: string }).mission === "sea")).toBe(true);
+    }
 
     // Skip past the end of the match; the worker finishes it.
     const seconds = Math.ceil((balance.match.lengthDays * 86400) / 10) + 60;

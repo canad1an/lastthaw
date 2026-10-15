@@ -169,6 +169,12 @@ export const balance = {
     /** Techs that raise how much each hauler carries (added together: +50% and +50% = 2x). */
     caravanCarryTechs: { the_wheel: 0.5, engineering: 0.5, scholasticism: 1.0 } as Record<string, number>,
   },
+  naval: {
+    /** A patrol holds its lane for this many game hours, then sails home. */
+    patrolHours: 12,
+    /** Which missions may carry ships: ships only ever sail one lane, coast to coast. */
+    maxSeaLegs: 1,
+  },
   capital: {
     /** The capital wagon: slow, but it carries the old capital's stores to the new one. Speed in unit-speed units (settlers are 4). */
     wagonSpeed: 2.5,

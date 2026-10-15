@@ -31,7 +31,7 @@ export interface WorldMapProps {
 }
 
 /** Missions drawn as military (orange, sword) rather than civil traffic. */
-const MILITARY = new Set(["raid", "conquer", "reinforce"]);
+const MILITARY = new Set(["raid", "conquer", "reinforce", "patrol"]);
 
 const TERRAIN_FILL: Record<string, string> = {
   plains: "#6b8f3a",

@@ -196,7 +196,7 @@ export async function armyRoutes(app: FastifyInstance, opts: { db: Db; publisher
     for (const r of rows) {
       if (r.regionId === p.capitalRegionId || r.frozenAt) continue;
       const units: Record<string, number> = {};
-      for (const [id, n] of Object.entries(r.units)) if (n > 0 && !unitById.get(id)?.civilian) units[id] = n;
+      for (const [id, n] of Object.entries(r.units)) if (n > 0 && !unitById.get(id)?.civilian && !unitById.get(id)?.naval) units[id] = n;
       const n = Object.values(units).reduce((a, b) => a + b, 0);
       if (n === 0) continue;
       try {

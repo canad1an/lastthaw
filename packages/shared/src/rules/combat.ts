@@ -116,10 +116,26 @@ export function caravanCarry(techs?: ReadonlySet<string> | readonly string[]): n
   return haulerCarry("caravan", techs);
 }
 
-/** The best hauler kind stationed in `units`, or null. */
-export function bestHauler(units: UnitCounts): string | null {
-  for (const id of HAULER_IDS) if ((units[id] ?? 0) > 0) return id;
+/** The best hauler kind stationed in `units`, or null. Ships only count when the trip is a single sea lane. */
+export function bestHauler(units: UnitCounts, allowNaval = false): string | null {
+  for (const id of HAULER_IDS) {
+    if ((units[id] ?? 0) <= 0) continue;
+    if (!allowNaval && unitById.get(id)?.naval) continue;
+    return id;
+  }
   return null;
+}
+
+/** Split an army into its ships and everything else. */
+export function splitNaval(units: UnitCounts): { ships: UnitCounts; rest: UnitCounts } {
+  const ships: UnitCounts = {};
+  const rest: UnitCounts = {};
+  for (const [id, n] of Object.entries(units)) {
+    if (n <= 0) continue;
+    if (unitById.get(id)?.naval) ships[id] = n;
+    else rest[id] = n;
+  }
+  return { ships, rest };
 }
 
 /** Total haulers of every kind in `units`. */

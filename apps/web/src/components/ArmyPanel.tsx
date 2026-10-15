@@ -13,6 +13,7 @@ const MISSIONS: Array<{ id: MissionKind; label: string; hint: string }> = [
   { id: "move", label: "Move", hint: "Move units and people to a region of yours or an ally's. Settlers sent to a conquered region of yours become occupiers." },
   { id: "reinforce", label: "Reinforce", hint: "Same as move, for allies." },
   { id: "transport", label: "Send resources", hint: "Caravans (500 each) carry goods to your own or an ally's region. For regular deliveries use the Routes tab." },
+  { id: "patrol", label: "Patrol", hint: "Ships only: hold the sea lane to the chosen coast for 12 hours and fight any enemy ship that uses it." },
 ];
 
 /** Compose and send an army from an owned region. The target is picked on the map. */

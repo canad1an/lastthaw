@@ -391,7 +391,7 @@ function TrainTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
         {list.map((u) => {
           const n = Math.max(qty, u.minBatch ?? 1);
           const cost = unitCost(u, n, matchDayOf(state, clockOffsetMs));
-          const needs = u.needsResource && !region.resources.includes(u.needsResource);
+          const needs = (u.needsResource && !region.resources.includes(u.needsResource)) || (u.naval && !region.coastal) || (u.needsBuilding && (owned.buildings[u.needsBuilding] ?? 0) < 1);
           const ok = !queueFull && !needs && canAfford(stock, cost) && live.e.popWorkers >= n;
           const secs = realSeconds(trainSeconds(u, n), owned.effects.trainSpeed, state.match.speed);
           return (
@@ -407,7 +407,11 @@ function TrainTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
                       </span>
                       <span className="text-xs text-slate-600">ⓘ</span>
                     </div>
-                    {needs ? <p className="text-xs text-rose-400">needs {u.needsResource} here</p> : <p><CostLine cost={cost} stock={stock} suffix={formatCountdown(secs)} /></p>}
+                    {needs ? (
+                      <p className="text-xs text-rose-400">needs {u.needsResource ? `${u.needsResource} here` : u.naval && !region.coastal ? "a coast" : `a ${buildingById.get(u.needsBuilding ?? "")?.name ?? u.needsBuilding} here`}</p>
+                    ) : (
+                      <p><CostLine cost={cost} stock={stock} suffix={formatCountdown(secs)} /></p>
+                    )}
                     {u.minBatch && <p className="text-xs text-slate-500">trained in groups of at least {u.minBatch}</p>}
                   </div>
                 }

@@ -5,9 +5,9 @@
  * pays costs up front and returns what it created. Errors carry statusCode.
  */
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
-import { availableUnits, armySpeed, balance, buildingBlockedBy, carryCapacity, buildingById, buildingCost, buildingSeconds, canAfford, effectsOf, findRoute, missingFor, realSeconds, regionById, techById, techCost, techSeconds, trainSeconds, travelSeconds, unitById, unitCost, type Cost, type MissionKind, caravanCarry, techEffectsOf, distanceKm } from "@lastthaw/shared";
+import { availableUnits, armySpeed, balance, buildingBlockedBy, carryCapacity, buildingById, buildingCost, buildingSeconds, canAfford, effectsOf, findRoute, missingFor, realSeconds, regionById, techById, techCost, techSeconds, trainSeconds, travelSeconds, unitById, unitCost, type Cost, type MissionKind, caravanCarry, techEffectsOf, distanceKm, splitNaval, seaLegsOf, laneKey, laneName, resolveCombat } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
-import { armies, jobs, matchRegions, players, tradeRoutes } from "../db/schema.js";
+import { armies, battles, jobs, matchRegions, messages, players, tradeRoutes } from "../db/schema.js";
 import { matchDayAt, matchNow } from "./clock.js";
 import { applyCost, settleAndLockRegion, stockOf, type MatchRegionRow, type Tx, waySetsFor } from "./regions.js";
 import { alliesOf, areAllied } from "./alliances.js";
@@ -166,6 +166,7 @@ export async function queueTrain(ctx: CommandContext, regionId: string, unitId: 
   if (def.requires && !techs.has(def.requires)) throw httpError(400, `${def.name} needs ${techById.get(def.requires)?.name ?? def.requires}`);
   const region = regionById(regionId);
   if (def.needsResource && !region?.resources.includes(def.needsResource)) throw httpError(400, `${def.name} can only be trained where there are ${def.needsResource}`);
+  if (def.naval && !region?.coastal) throw httpError(400, `${def.name}s are built on a coast`);
   if (def.minBatch && qty < def.minBatch) throw httpError(400, `${def.name}s are trained in groups of at least ${def.minBatch}`);
   if (def.hauler) {
     const better = availableUnits(p.age, techs).find((u) => u.hauler && u.carry > def.carry);
@@ -179,6 +180,7 @@ export async function queueTrain(ctx: CommandContext, regionId: string, unitId: 
     if (row.frozenAt) throw httpError(409, "this region is frozen");
     const pending = await pendingRegionJobs(tx, m.id, regionId);
     if (pending.length >= balance.queue.slotsPerRegion) throw httpError(409, "the build queue is full");
+    if (def.needsBuilding && (row.buildings[def.needsBuilding] ?? 0) < 1) throw httpError(400, `${def.name}s need a ${buildingById.get(def.needsBuilding)?.name ?? def.needsBuilding} here`);
     const queuedPeople = pending.filter((j) => j.kind === "train").reduce((a, j) => a + (j.qty ?? 0), 0);
     if (row.popWorkers - queuedPeople < qty) throw httpError(409, "not enough free workers to train that many");
     const cost: Cost = unitCost(def, qty, matchDayAt(m, now));
@@ -277,7 +279,7 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
   if (!regionById(body.targetRegionId)) throw httpError(400, "unknown target");
   if (body.targetRegionId === regionId) throw httpError(400, "the army is already there");
   const units = Object.fromEntries(Object.entries(body.units).filter(([, n]) => n > 0));
-  const unitCount = Object.values(units).reduce((a, b) => a + b, 0);
+  let unitCount = Object.values(units).reduce((a, b) => a + b, 0);
   // People may travel unescorted on friendly moves (evacuations); every other mission needs units.
   const unescorted = (body.mission === "move" || body.mission === "reinforce") && body.people > 0;
   if (unitCount === 0 && !unescorted) throw httpError(400, body.mission === "transport" ? "send at least one caravan to carry the goods" : "send at least one unit");
@@ -289,6 +291,13 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
   const civilians = Object.keys(units).filter((id) => unitById.get(id)?.civilian && !(body.mission === "conquer" && id === "settler"));
   if ((HOSTILE.has(body.mission) || body.mission === "scout") && civilians.length) throw httpError(400, "caravans cannot raid, conquer or scout; settlers only go along to occupy a conquest");
   if (body.mission === "relocate") throw httpError(400, "move the capital from the region panel");
+  const { ships, rest: landUnits } = splitNaval(units);
+  const hasShips = Object.keys(ships).length > 0;
+  if (body.mission === "patrol") {
+    if (!hasShips) throw httpError(400, "only ships patrol");
+    if (Object.keys(landUnits).length) throw httpError(400, "a patrol is ships only; send the rest separately");
+    if (body.people > 0 || Object.keys(body.cargo).length) throw httpError(400, "patrols carry nothing");
+  }
   if (body.mission === "settle") {
     const settlers = units.settler ?? 0;
     if (settlers < balance.settle.settlersRequired) throw httpError(400, `settling needs at least ${balance.settle.settlersRequired} settlers`);
@@ -301,16 +310,65 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
     if (goods > cap) throw httpError(400, `not enough carrying capacity: these units and people carry ${cap}, you are sending ${Math.round(goods)}. Caravans carry ${caravanCarry(techs)} each.`);
   }
   const { roads, rails, harbors } = await waySetsFor(db, m.id, p.id, await alliesOf(db, m.id, p.id));
-  const route = findRoute(regionId, body.targetRegionId, techs.has(balance.travel.seaTech), roads, rails, harbors);
+  const origin0 = regionById(regionId);
+  // Ships sail one lane: coast to coast, directly. Patrols sit on that lane.
+  const directLane = !!origin0 && origin0.seaRoutes.includes(body.targetRegionId);
+  if ((hasShips || body.mission === "patrol") && !directLane) throw httpError(400, "ships sail directly from one coast to another across a sea lane; pick a region joined to this one by sea");
+  const route = hasShips || body.mission === "patrol"
+    ? { path: [regionId, body.targetRegionId], cost: distanceKm(regionId, body.targetRegionId) * balance.travel.seaFactor * (harbors.has(regionId) && harbors.has(body.targetRegionId) ? balance.travel.harborBothFactor : harbors.has(regionId) || harbors.has(body.targetRegionId) ? balance.travel.harborOneFactor : 1), usesSea: true }
+    : findRoute(regionId, body.targetRegionId, techs.has(balance.travel.seaTech), roads, rails, harbors);
   if (!route) throw httpError(400, techs.has(balance.travel.seaTech) ? "no route to that region" : "no land route; research Shipbuilding to cross the sea");
   const now = matchNow(m);
+  // Enemy patrols on the lanes this trip crosses: fight them first, or be turned back.
+  const lanes = seaLegsOf(route.path);
+  let shipsAfter: Record<string, number> = { ...ships };
+  if (lanes.length && body.mission !== "patrol") {
+    const allies = await alliesOf(db, m.id, p.id);
+    const patrols = await db
+      .select()
+      .from(armies)
+      .where(and(eq(armies.matchId, m.id), eq(armies.mission, "patrol"), eq(armies.status, "outbound"), inArray(armies.lane, lanes), sql`${armies.playerId} <> ${p.id}`));
+    for (const patrol of patrols) {
+      if (allies.includes(patrol.playerId) || patrol.arrivesAt.getTime() <= now.getTime()) continue;
+      const theirs = splitNaval(patrol.units).ships;
+      if (Object.keys(theirs).length === 0) continue;
+      if (Object.keys(shipsAfter).length === 0) throw httpError(409, `enemy ships patrol the ${laneName(patrol.lane!)} lane; send an escort of your own ships first`);
+      const seed = `${m.seed}:lane:${patrol.id}:${now.getTime()}`;
+      const result = resolveCombat({ units: shipsAfter, bonus: 0 }, { units: theirs, bonus: 0 }, seed);
+      const remainingTheirs: Record<string, number> = { ...patrol.units };
+      for (const [id, lost] of Object.entries(result.defenderLosses)) remainingTheirs[id] = Math.max(0, (remainingTheirs[id] ?? 0) - lost);
+      const theirsLeft = Object.values(splitNaval(remainingTheirs).ships).reduce((a, b) => a + b, 0);
+      await db.update(armies).set({ units: remainingTheirs, ...(theirsLeft === 0 ? { status: "done" as const } : {}) }).where(eq(armies.id, patrol.id));
+      await db.insert(battles).values({ matchId: m.id, regionId, resolvedAt: now, seed, attackerPlayerId: p.id, defenderPlayerId: patrol.playerId, report: { mission: "sea", lane: patrol.lane, attacker: { before: ships, losses: result.attackerLosses }, defender: { before: theirs, losses: result.defenderLosses }, attackerWon: result.attackerWon } });
+      const [other] = await db.select({ name: players.name }).from(players).where(eq(players.id, patrol.playerId)).limit(1);
+      await db.insert(messages).values({ matchId: m.id, playerId: patrol.playerId, kind: "battle", subject: `${p.name} fought your patrol on the ${laneName(patrol.lane!)} lane: ${result.attackerWon ? "your ships were beaten" : "your ships held"}`, payload: { lane: patrol.lane, losses: result.defenderLosses } });
+      await db.insert(messages).values({ matchId: m.id, playerId: p.id, kind: "battle", subject: `Sea battle on the ${laneName(patrol.lane!)} lane against ${other?.name ?? "an enemy"}: ${result.attackerWon ? "lane cleared" : "escort beaten"}`, payload: { lane: patrol.lane, losses: result.attackerLosses } });
+      shipsAfter = result.attackerRemaining;
+      if (!result.attackerWon) {
+        // The escort is sunk; the crossing is called off before it starts, nothing else is lost.
+        await db.transaction(async (tx) => {
+          const row = await settleAndLockRegion(tx, m.id, regionId, now, m.speed);
+          const newUnits = { ...row.units };
+          for (const [id, n] of Object.entries(ships)) newUnits[id] = Math.max(0, (newUnits[id] ?? 0) - (n - (shipsAfter[id] ?? 0)));
+          await tx.update(matchRegions).set({ units: newUnits, popSoldiers: Math.max(0, row.popSoldiers - Object.values(ships).reduce((a, b) => a + b, 0) + Object.values(shipsAfter).reduce((a, b) => a + b, 0)) }).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, regionId)));
+        });
+        throw httpError(409, `your escort was beaten on the ${laneName(patrol.lane!)} lane; the crossing is called off`);
+      }
+    }
+  }
+  if (hasShips) {
+    // Ships sunk clearing the lanes do not sail.
+    for (const id of Object.keys(ships)) units[id] = shipsAfter[id] ?? 0;
+    for (const id of Object.keys(units)) if (units[id]! <= 0) delete units[id];
+    unitCount = Object.values(units).reduce((a, b) => a + b, 0);
+  }
 
   return db.transaction(async (tx) => {
     const origin = await settleAndLockRegion(tx, m.id, regionId, now, m.speed);
     if (origin.ownerPlayerId !== p.id) throw httpError(403, "not your region");
     // Roads are already in the route cost: legs between road regions are shorter.
     const walking = unitById.get("settler")?.speed ?? 4;
-    const seconds = travelSeconds(route, (unitCount ? armySpeed(units) : walking) * (1 + techEffectsOf(techs).travel), m.speed);
+    const seconds = body.mission === "patrol" ? (balance.naval.patrolHours * 3600) / m.speed : travelSeconds(route, (unitCount ? armySpeed(units) : walking) * (1 + techEffectsOf(techs).travel), m.speed);
 
     const [target] = await tx
       .select()
@@ -365,6 +423,7 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
         targetRegionId: body.targetRegionId,
         units,
         cargo: { ...body.cargo, people: body.people },
+        lane: body.mission === "patrol" ? laneKey(regionId, body.targetRegionId) : null,
         path: route.path,
         status: "outbound",
         departsAt: now,

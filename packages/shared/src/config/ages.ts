@@ -85,6 +85,10 @@ export interface UnitDef {
   minBatch?: number;
   /** Carries goods on trade routes, overflow and transports (caravan, wagon, train). */
   hauler?: boolean;
+  /** A ship: sails one sea lane at a time between coasts, fights other ships on the lane, built only where there is a Harbor. */
+  naval?: boolean;
+  /** Region must have this building to train here (ships need a Harbor). */
+  needsBuilding?: string;
   /** Civilians never fight: no raids, conquests or scouting. */
   civilian?: boolean;
 }
@@ -194,18 +198,22 @@ export const UNITS: readonly UnitDef[] = [
   { id: "legionary", name: "Legionary", age: 3, description: "Disciplined heavy infantry.", attack: 15, defense: 15, speed: 6, carry: 30, cost: { food: 90, iron: 8 }, baseSeconds: 240, requires: "drill" },
   { id: "cataphract", name: "Cataphract", age: 3, description: "Armoured horse and rider.", attack: 20, defense: 12, speed: 12, carry: 50, cost: { food: 150, iron: 10, horses: 1 }, baseSeconds: 360, requires: "drill", needsResource: "horses" },
   { id: "ballista", name: "Ballista", age: 3, description: "Precise siege engine.", attack: 28, defense: 4, speed: 3, carry: 0, cost: { wood: 350, iron: 15 }, baseSeconds: 480, requires: "engineering" },
+  { id: "galley", name: "Galley", age: 3, description: "Oared warship. Escorts crossings and sinks what it meets on its lane.", attack: 20, defense: 15, speed: 12, carry: 400, cost: { wood: 400, food: 100 }, baseSeconds: 420, requires: "shipbuilding", naval: true, needsBuilding: "harbor" },
   // Medieval
   { id: "train", name: "Train", age: 4, description: "Iron rails and steam: carries eight caravans' worth and moves four times as fast. Needs Railways.", attack: 0, defense: 1, speed: 30, carry: 4000, cost: { wood: 400, iron: 30 }, baseSeconds: 900, requires: "railways", civilian: true, hauler: true },
   { id: "knight", name: "Knight", age: 4, description: "The finest heavy cavalry.", attack: 32, defense: 22, speed: 12, carry: 70, cost: { food: 250, iron: 20, horses: 1 }, baseSeconds: 600, requires: "chivalry", needsResource: "horses" },
   { id: "longbowman", name: "Longbowman", age: 4, description: "Deadly at range.", attack: 24, defense: 10, speed: 6, carry: 30, cost: { food: 120, wood: 80 }, baseSeconds: 420, requires: "chivalry" },
   { id: "trebuchet", name: "Trebuchet", age: 4, description: "Nothing stands against it for long.", attack: 45, defense: 5, speed: 2, carry: 0, cost: { wood: 700, iron: 30 }, baseSeconds: 900, requires: "siege_engines" },
+  { id: "cog", name: "Cog", age: 4, description: "Broad-beamed merchantman: hauls like three wagons across a sea lane, and can carry settlers to a new shore.", attack: 5, defense: 10, speed: 14, carry: 3000, cost: { wood: 900, iron: 20 }, baseSeconds: 600, requires: "shipbuilding", naval: true, hauler: true, needsBuilding: "harbor" },
   // Industrial
   { id: "rifleman", name: "Rifleman", age: 5, description: "Drilled infantry with rifled muskets.", attack: 40, defense: 35, speed: 6, carry: 40, cost: { food: 150, iron: 25 }, baseSeconds: 300, requires: "rifling" },
   { id: "cannon", name: "Cannon", age: 5, description: "Field guns that break walls and lines alike.", attack: 70, defense: 8, speed: 4, carry: 0, cost: { wood: 800, iron: 60 }, baseSeconds: 600, requires: "steam_power" },
+  { id: "ironclad", name: "Ironclad", age: 5, description: "Steam and armour plate: masters any lane it patrols.", attack: 120, defense: 100, speed: 16, carry: 600, cost: { iron: 300, wood: 1500 }, baseSeconds: 1200, requires: "steam_power", naval: true, needsBuilding: "harbor" },
   // Modern
   { id: "infantry", name: "Infantry", age: 6, description: "Modern soldiers with automatic weapons.", attack: 70, defense: 60, speed: 7, carry: 50, cost: { food: 250, iron: 40 }, baseSeconds: 420, requires: "combined_arms" },
   { id: "tank", name: "Tank", age: 6, description: "Armour and a gun on tracks: fast and nearly unstoppable.", attack: 140, defense: 70, speed: 20, carry: 80, cost: { iron: 150, wood: 500 }, baseSeconds: 900, requires: "combined_arms" },
   { id: "artillery", name: "Artillery", age: 6, description: "Long guns that flatten anything in range.", attack: 200, defense: 10, speed: 5, carry: 0, cost: { iron: 120, wood: 600 }, baseSeconds: 900, requires: "ballistics" },
+  { id: "destroyer", name: "Destroyer", age: 6, description: "Fast, gunned and radar-guided.", attack: 250, defense: 200, speed: 24, carry: 800, cost: { iron: 800, wood: 2000 }, baseSeconds: 1500, requires: "electronics", naval: true, needsBuilding: "harbor" },
 ];
 
 // ---------------------------------------------------------------------------

@@ -244,7 +244,7 @@ export const jobs = pgTable(
   ],
 );
 
-export const missionKind = pgEnum("mission_kind", ["raid", "conquer", "reinforce", "move", "transport", "scout", "settle", "relocate"]);
+export const missionKind = pgEnum("mission_kind", ["raid", "conquer", "reinforce", "move", "transport", "scout", "settle", "relocate", "patrol"]);
 export const armyStatus = pgEnum("army_status", ["outbound", "returning", "done"]);
 
 export const armies = pgTable(
@@ -260,6 +260,8 @@ export const armies = pgTable(
     mission: missionKind("mission").notNull(),
     /** Why the army turned back, shown next to it while returning (null when all went to plan). */
     note: text("note"),
+    /** Sea lane held by a patrol ("a|b", region ids sorted). */
+    lane: text("lane"),
     originRegionId: text("origin_region_id").notNull(),
     targetRegionId: text("target_region_id").notNull(),
     units: jsonb("units").$type<Record<string, number>>().notNull().default({}),

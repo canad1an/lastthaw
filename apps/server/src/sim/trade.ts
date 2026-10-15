@@ -94,7 +94,7 @@ export async function dispatchRoute(db: Db, m: MatchRow, p: PlayerRow, route: Tr
       return "stock-up complete";
     }
   }
-  const kind = bestHauler(origin.units);
+  const kind = bestHauler(origin.units, regionById(route.fromRegionId)?.seaRoutes.includes(route.toRegionId) ?? false);
   if (!kind) return fetchCaravans(db, m, p, route.fromRegionId, route.caravans, now);
   const home = origin.units[kind] ?? 0;
   const ctx = await contextFor(db, m, p);
@@ -170,7 +170,7 @@ async function fetchCaravans(db: Db, m: MatchRow, p: PlayerRow, fromRegionId: st
     .from(matchRegions)
     .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.ownerPlayerId, p.id)));
   // First come, first served: any hauler standing idle anywhere is fair game; the biggest kind goes first.
-  const spareOf = (r: { units: Record<string, number> }) => haulerCount(r.units);
+  const spareOf = (r: { units: Record<string, number> }) => HAULER_IDS.filter((id) => !unitById.get(id)?.naval).reduce((a, id) => a + (r.units[id] ?? 0), 0);
   const candidates = mine
     .filter((r) => r.regionId !== fromRegionId && !r.frozenAt && spareOf(r) > 0)
     .sort((a, b) => distanceKm(a.regionId, fromRegionId) - distanceKm(b.regionId, fromRegionId));
@@ -179,6 +179,7 @@ async function fetchCaravans(db: Db, m: MatchRow, p: PlayerRow, fromRegionId: st
   const going: Record<string, number> = {};
   let left = wanted;
   for (const id of HAULER_IDS) {
+    if (unitById.get(id)?.naval) continue;
     const take = Math.min(left, source.units[id] ?? 0);
     if (take > 0) going[id] = take;
     left -= take;
@@ -234,7 +235,7 @@ export async function runOverflow(db: Db, publisher: Publisher, log: pino.Logger
         const total = Object.values(cargo).reduce((a, b) => a + b, 0);
         if (total < 1) continue;
         ctx ??= await contextFor(db, m, p);
-        const kind = bestHauler(row.units);
+        const kind = bestHauler(row.units, regionById(row.regionId)?.seaRoutes.includes(capital) ?? false);
         const per = haulerCarry(kind ?? "caravan", ctx.techs);
         const need = Math.ceil(total / per);
         const home = kind ? (row.units[kind] ?? 0) : 0;

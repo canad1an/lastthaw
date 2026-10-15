@@ -1,5 +1,5 @@
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
-import { balance, effectsOf, emptySpecial, storageCaps, regionById, resolveCombat, carryCapacity, travelSeconds, findRoute, armySpeed, type UnitCounts, HAULER_IDS, haulerCount, unitById } from "@lastthaw/shared";
+import { balance, effectsOf, emptySpecial, storageCaps, regionById, resolveCombat, carryCapacity, travelSeconds, findRoute, armySpeed, type UnitCounts, HAULER_IDS, haulerCount, unitById, laneName } from "@lastthaw/shared";
 import { armies, battles, jobs, matchRegions, players, regionSightings, playerTechs, tradeRoutes } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
 import { settleAndLockRegion, type MatchRegionRow, type Tx, setCapital, ownerTechEffects, waySetsFor, stockOf } from "./regions.js";
@@ -61,6 +61,9 @@ export async function resolveMission(tx: Tx, m: MatchRow, job: JobRow, publisher
       return settleLand(tx, m, army, at, publisher, after);
     case "relocate":
       return relocateCapital(tx, m, army, at, publisher, after);
+    case "patrol":
+      await notify(tx, m.id, army.playerId, "system", `Patrol on the ${laneName(army.lane ?? "")} lane is over; the ships are sailing home`, { lane: army.lane });
+      return sendHome(tx, m, army, at, army.units, army.cargo);
   }
 }
 
@@ -183,7 +186,7 @@ async function gatherCaravans(tx: Tx, m: MatchRow, playerId: string, targetRegio
     if (!route) continue;
     const row = await settleAndLockRegion(tx, m.id, r.regionId, at, m.speed);
     const going: UnitCounts = {};
-    for (const id of HAULER_IDS) if ((row.units[id] ?? 0) > 0) going[id] = row.units[id]!;
+    for (const id of HAULER_IDS) if ((row.units[id] ?? 0) > 0 && !unitById.get(id)?.naval) going[id] = row.units[id]!;
     const have = sumUnits(going);
     if (have <= 0) continue;
     const seconds = travelSeconds(route, armySpeed(going), m.speed);

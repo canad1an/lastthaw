@@ -287,7 +287,7 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
           const send: Record<string, number> = {};
           // Never strip the capital: attacks launched from it take at most half its garrison.
           const sendShare = strong.regionId === p.capitalRegionId ? 0.5 : difficulty === "hard" ? 0.8 : 0.7;
-          for (const [id, n] of Object.entries(strong.units)) if (!unitById.get(id)?.civilian) send[id] = Math.floor(n * sendShare);
+          for (const [id, n] of Object.entries(strong.units)) if (!unitById.get(id)?.civilian && !unitById.get(id)?.naval) send[id] = Math.floor(n * sendShare);
           const need = balance.conquest.occupiersRequired;
           if (wantConquer) {
             if ((strong.units.settler ?? 0) >= need) {
