@@ -1,4 +1,4 @@
-import { and, eq, lte, sql } from "drizzle-orm";
+import { and, eq, isNull, lte, sql } from "drizzle-orm";
 import type pino from "pino";
 import { balance, bestHauler, carryCapacity, distanceKm, haulerCarry, haulerCount, HAULER_IDS, regionById, unitById } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
@@ -23,7 +23,7 @@ export async function runTradeRoutes(db: Db, publisher: Publisher, log: pino.Log
     .select({ route: tradeRoutes, m: matches })
     .from(tradeRoutes)
     .innerJoin(matches, eq(matches.id, tradeRoutes.matchId))
-    .where(and(eq(matches.status, "running"), eq(tradeRoutes.enabled, true), lte(tradeRoutes.nextAt, sql`now() + make_interval(secs => ${matches.clockOffsetSeconds})`)))
+    .where(and(eq(matches.status, "running"), isNull(matches.pausedAt), eq(tradeRoutes.enabled, true), lte(tradeRoutes.nextAt, sql`now() + make_interval(secs => ${matches.clockOffsetSeconds})`)))
     .limit(200);
   let sent = 0;
   for (const { route, m } of due) {
@@ -203,7 +203,7 @@ function regionNameOf(id: string): string {
  */
 export async function runOverflow(db: Db, publisher: Publisher, log: pino.Logger): Promise<number> {
   if (!balance.trade.overflowToCapital) return 0;
-  const running = await db.select().from(matches).where(eq(matches.status, "running"));
+  const running = await db.select().from(matches).where(and(eq(matches.status, "running"), isNull(matches.pausedAt)));
   let sent = 0;
   for (const m of running) {
     const now = matchNow(m);

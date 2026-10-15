@@ -169,6 +169,7 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
     const [m] = await db.select().from(matches).where(eq(matches.id, matchId)).limit(1);
     if (!m) throw httpError(404, "match not found");
     if (m.status !== "running") throw httpError(409, "the match is not running");
+    if (m.pausedAt) throw httpError(409, "the match is paused");
     const p = await myPlayer(matchId, user.id);
     if (!p) throw httpError(403, "not your match");
 
@@ -187,6 +188,39 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
   // -------------------------------------------------------------------------
   // Dev tools (DEV_TOOLS=true only; refused in production by config()).
   // -------------------------------------------------------------------------
+
+  /** Pause: the match clock stops. Nothing completes, moves, produces or decides until resumed. */
+  app.post("/api/matches/:id/pause", async (req) => {
+    const user = requireUser(req);
+    if (!devTools && !user.isAdmin) throw httpError(403, "admins only");
+    const matchId = (req.params as { id: string }).id;
+    const [m] = await db.update(matches).set({ pausedAt: sql`coalesce(${matches.pausedAt}, now())` }).where(and(eq(matches.id, matchId), eq(matches.status, "running"))).returning({ pausedAt: matches.pausedAt });
+    if (!m) throw httpError(404, "no running match with that id");
+    await publisher.toMatch(matchId, "match.paused", { pausedAt: m.pausedAt?.toISOString() });
+    return { ok: true, pausedAt: m.pausedAt?.toISOString() ?? null };
+  });
+
+  /** Resume: every timestamp in the match moves forward by the time it was paused, so the game continues exactly where it stopped. */
+  app.post("/api/matches/:id/resume", async (req) => {
+    const user = requireUser(req);
+    if (!devTools && !user.isAdmin) throw httpError(403, "admins only");
+    const matchId = (req.params as { id: string }).id;
+    const resumed = await db.transaction(async (tx) => {
+      const [m] = await tx.select().from(matches).where(eq(matches.id, matchId)).for("no key update");
+      if (!m || !m.pausedAt) return null;
+      const gap = sql`(now() - ${m.pausedAt})`;
+      await tx.execute(sql`update jobs set starts_at = starts_at + ${gap}, ends_at = ends_at + ${gap} where match_id = ${matchId} and completed_at is null and cancelled_at is null`);
+      await tx.execute(sql`update armies set departs_at = departs_at + ${gap}, arrives_at = arrives_at + ${gap}, returns_at = returns_at + ${gap} where match_id = ${matchId} and status <> 'done'`);
+      await tx.execute(sql`update trade_routes set next_at = next_at + ${gap} where match_id = ${matchId}`);
+      await tx.execute(sql`update players set protection_until = protection_until + ${gap}, next_ai_at = next_ai_at + ${gap} where match_id = ${matchId}`);
+      await tx.execute(sql`update match_regions set settled_at = settled_at + ${gap}, frozen_at = frozen_at + ${gap}, evacuated_at = evacuated_at + ${gap} where match_id = ${matchId}`);
+      await tx.execute(sql`update matches set starts_at = starts_at + ${gap}, ends_at = ends_at + ${gap}, last_tick_at = last_tick_at + ${gap}, paused_at = null where id = ${matchId}`);
+      return m.pausedAt;
+    });
+    if (!resumed) throw httpError(409, "that match is not paused");
+    await publisher.toMatch(matchId, "match.resumed", {});
+    return { ok: true, pausedFor: Math.round((Date.now() - resumed.getTime()) / 1000) };
+  });
 
   app.post("/api/matches/:id/dev/start", async (req) => {
     const user = requireUser(req);

@@ -270,9 +270,10 @@ export const matchStateView = z.object({
     speed: z.number(),
     startsAt: z.string(),
     endsAt: z.string(),
-    /** Match clock (server time plus any dev time skip), ISO. */
+    /** Match clock (server time plus any dev time skip), ISO. While paused this is the moment the pause began. */
     now: z.string(),
     clockOffsetSeconds: z.number(),
+    pausedAt: z.string().nullable().default(null),
   }),
   me: z.object({
     playerId: z.string(),
@@ -336,6 +337,8 @@ export type WsServerMessage = z.infer<typeof wsServerMessage>;
 /** Event kinds published on match and player channels. */
 export const EVENT_KINDS = [
   "match.started",
+  "match.paused",
+  "match.resumed",
   "match.finished",
   "region.updated",
   "player.joined",

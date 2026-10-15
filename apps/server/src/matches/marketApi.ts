@@ -62,6 +62,7 @@ export async function marketRoutes(app: FastifyInstance, opts: { db: Db; publish
     const [m] = await db.select().from(matches).where(eq(matches.id, matchId)).limit(1);
     if (!m) throw httpError(404, "match not found");
     if (mustRun && m.status !== "running") throw httpError(409, "the match is not running");
+    if (mustRun && m.pausedAt) throw httpError(409, "the match is paused");
     const [p] = await db
       .select()
       .from(players)

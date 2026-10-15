@@ -127,6 +127,8 @@ export const matches = pgTable(
     workerLeaseUntil: timestamp("worker_lease_until", { withTimezone: true }),
     /** Match-clock time of the last periodic tick (loyalty, AI, score, win check). */
     lastTickAt: timestamp("last_tick_at", { withTimezone: true }),
+    /** Set while the match is paused: the clock stands still, nothing completes, moves or acts; resuming shifts every timestamp forward. */
+    pausedAt: timestamp("paused_at", { withTimezone: true }),
     seed: text("seed").notNull(),
     lobbyOpensAt: timestamp("lobby_opens_at", { withTimezone: true }).notNull().defaultNow(),
     startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),

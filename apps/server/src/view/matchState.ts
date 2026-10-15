@@ -260,6 +260,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
       endsAt: m.endsAt.toISOString(),
       now: now.toISOString(),
       clockOffsetSeconds: m.clockOffsetSeconds,
+      pausedAt: m.pausedAt?.toISOString() ?? null,
     },
     me: {
       playerId: me.id,

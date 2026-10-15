@@ -1,0 +1,1 @@
+ALTER TABLE "matches" ADD COLUMN "paused_at" timestamp with time zone;

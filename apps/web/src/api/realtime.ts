@@ -41,7 +41,7 @@ export function useMatchRealtime(matchId: string | null) {
           if (["job.completed", "age.advanced", "message.new", "army.arrived", "region.conquered"].includes(msg.kind)) {
             void qc.invalidateQueries({ queryKey: keys.messages(msg.matchId) });
           }
-          if (msg.kind === "match.started" || msg.kind === "match.finished" || msg.kind === "player.joined") {
+          if (msg.kind === "match.started" || msg.kind === "match.finished" || msg.kind === "player.joined" || msg.kind === "match.paused" || msg.kind === "match.resumed") {
             void qc.invalidateQueries({ queryKey: keys.matches });
           }
           if (msg.kind === "chat.message") {

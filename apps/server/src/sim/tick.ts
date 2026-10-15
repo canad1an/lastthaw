@@ -25,6 +25,7 @@ export async function runMatchTicks(db: Db, publisher: Publisher, log: pino.Logg
     .where(
       and(
         eq(matches.status, "running"),
+        isNull(matches.pausedAt),
         or(isNull(matches.lastTickAt), lte(matches.lastTickAt, sql`now() + make_interval(secs => ${matches.clockOffsetSeconds}) - make_interval(mins => ${balance.tick.minutes})`)),
       ),
     );
@@ -64,7 +65,7 @@ async function tickMatch(db: Db, publisher: Publisher, matchId: string, log: pin
  * job completion or the tick. Each command commits on its own.
  */
 export async function runAiDecisions(db: Db, publisher: Publisher, log: pino.Logger, limit = Number(process.env.AI_PASS_LIMIT) || 25): Promise<number> {
-  const running = await db.select().from(matches).where(eq(matches.status, "running"));
+  const running = await db.select().from(matches).where(and(eq(matches.status, "running"), isNull(matches.pausedAt)));
   let acted = 0;
   for (const m of running) {
     const now = matchNow(m);

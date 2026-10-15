@@ -32,6 +32,7 @@ export async function tradeRouteRoutes(app: FastifyInstance, opts: { db: Db; pub
     const body = createRouteBody.parse(req.body);
     const { m, p } = await ctx(matchId, user.id);
     if (m.status !== "running") throw httpError(409, "the match is not running");
+    if (m.pausedAt) throw httpError(409, "the match is paused");
     if (!regionById(body.toRegionId)) throw httpError(400, "unknown destination");
     if (body.toRegionId === regionId) throw httpError(400, "a route needs two different regions");
     const [origin] = await db
@@ -143,6 +144,7 @@ export async function tradeRouteRoutes(app: FastifyInstance, opts: { db: Db; pub
     const { id: matchId, routeId } = req.params as { id: string; routeId: string };
     const { m, p } = await ctx(matchId, user.id);
     if (m.status !== "running") throw httpError(409, "the match is not running");
+    if (m.pausedAt) throw httpError(409, "the match is paused");
     const [r] = await db.select().from(tradeRoutes).where(and(eq(tradeRoutes.id, routeId), eq(tradeRoutes.playerId, p.id))).limit(1);
     if (!r) throw httpError(404, "route not found");
     const now = matchNow(m);

@@ -232,6 +232,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
         <div className="pointer-events-none absolute bottom-2 left-2 hidden flex-wrap gap-2 text-xs lg:flex">
           <Badge>{state.match.name}</Badge>
           <Badge>{state.match.speed}x</Badge>
+          {state.match.pausedAt && <Badge>paused</Badge>}
           <Badge>{finished ? "finished" : `Day ${Math.min(balance.match.lengthDays, Math.floor(matchDay) + 1)} of ${balance.match.lengthDays} · ends in ${formatCountdown(endsIn)}`}</Badge>
           <Badge>{state.owned.length} regions · {fmt(totals.pop)} people</Badge>
           <Badge>{ageName(state.me.age)} Age</Badge>

@@ -7,7 +7,8 @@ export interface HasClockOffset {
   clockOffsetSeconds: number;
 }
 
-export function matchNow(match: HasClockOffset, realNow: Date = new Date()): Date {
+export function matchNow(match: HasClockOffset & { pausedAt?: Date | null }, realNow: Date = new Date()): Date {
+  if (match.pausedAt) return new Date(match.pausedAt.getTime() + match.clockOffsetSeconds * 1000);
   return new Date(realNow.getTime() + match.clockOffsetSeconds * 1000);
 }
 
