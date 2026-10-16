@@ -9,6 +9,7 @@ import { ResearchPanel } from "../components/ResearchPanel.js";
 import { TopMenu } from "../components/TopMenu.js";
 import { BottomSheet, type SheetStop } from "../components/BottomSheet.js";
 import { MatchSummary, useSummaryOpen } from "../components/MatchSummary.js";
+import { MatchNight, useWinterNight } from "../components/MatchNight.js";
 import { MatchIntro, useIntroOpen } from "../components/MatchIntro.js";
 import { RefugeePanel } from "../components/RefugeePanel.js";
 import { overlayBadges, useOverlays } from "../map/overlays.js";
@@ -185,6 +186,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
   const finished = state.match.status === "finished";
   const eliminated = state.owned.length === 0 && !finished;
   const [summaryOpen, setSummaryOpen] = useSummaryOpen(matchId, finished);
+  const [night, leaveNight] = useWinterNight(matchId, finished ? state.match.finishedAt : null);
   const [introOpen, setIntroOpen] = useIntroOpen(matchId, !finished && !eliminated);
 
   // Colours follow join order (the server returns players in that order) and never change during a match.
@@ -259,7 +261,18 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
   return (
     <div className="flex h-[calc(100dvh-3rem)] flex-col bg-slate-950">
       <TopMenu matchId={matchId} state={state} selectedRegionId={selected} colorOf={colorOf} overlays={overlays} onToggleOverlay={toggleOverlay} onSelectRegion={setSelected} clockOffsetMs={clockOffsetMs} />
-      {finished && <MatchSummary matchId={matchId} open={summaryOpen} onClose={() => setSummaryOpen(false)} colorOf={colorOf} />}
+      {finished && night && state.match.finishedAt && (
+        <MatchNight
+          finishedAt={state.match.finishedAt}
+          matchName={state.match.name}
+          winnerName={state.players.find((p) => p.id === state.match.winnerPlayerId)?.name ?? null}
+          onReport={() => {
+            leaveNight();
+            setSummaryOpen(true);
+          }}
+        />
+      )}
+      {finished && <MatchSummary matchId={matchId} open={summaryOpen && !night} onClose={() => setSummaryOpen(false)} colorOf={colorOf} />}
       {!finished && <MatchIntro open={introOpen} onClose={() => setIntroOpen(false)} matchName={state.match.name} speed={state.match.speed} />}
       <div className="relative flex min-h-0 flex-1 flex-col lg:flex-row">
       <div className="relative h-full w-full lg:flex-1">

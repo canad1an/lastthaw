@@ -3,7 +3,8 @@ import { and, eq } from "drizzle-orm";
 import { balance, matchStateView, regionById } from "@lastthaw/shared";
 import { buildApp } from "../src/api/app.js";
 import { createDb, type Db } from "../src/db/client.js";
-import { armies, jobs, matchRegions, matches, mercenaryOffers, players, refugeeOffers, transfers, users } from "../src/db/schema.js";
+import { armies, bounties, dailyObjectives, jobs, matchMilestones, matchRegions, matches, mercenaryOffers, players, refugeeOffers, transfers, users } from "../src/db/schema.js";
+import { claimBounties, pickObjective, placeBounty, resolveObjective } from "../src/sim/objectives.js";
 import { Publisher } from "../src/realtime/publish.js";
 import { createRedis } from "../src/redis.js";
 import { stormHits, mercenariesLeave } from "../src/sim/worldEvents.js";
@@ -220,5 +221,39 @@ describe("world events", () => {
     // The last stand is refused while the ice is far from the capital.
     const ls = await call("POST", `/api/matches/${matchId}/last-stand`, { targetRegionId: capR.neighbors[0]! });
     expect(ls.statusCode).toBe(409);
+  });
+
+  it("daily objectives award score and bounties pay out to the winner of a battle", async () => {
+    const [m] = await db.select().from(matches).where(eq(matches.id, matchId));
+    const [me] = await db.select().from(players).where(and(eq(players.matchId, matchId), eq(players.isAi, false)));
+    const capital = me!.capitalRegionId!;
+    const now = new Date();
+    // Day 0's objective is picked by the seeded rng; force a stock objective so the result is deterministic.
+    await db.transaction((tx) => pickObjective(tx, m!, 0, () => 0.4));
+    await db.update(dailyObjectives).set({ key: "food" }).where(and(eq(dailyObjectives.matchId, matchId), eq(dailyObjectives.day, 0)));
+    await db.update(matchRegions).set({ food: 99_999 }).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, capital)));
+    await db.transaction((tx) => resolveObjective(tx, m!, 0, now));
+    const [obj] = await db.select().from(dailyObjectives).where(and(eq(dailyObjectives.matchId, matchId), eq(dailyObjectives.day, 0)));
+    expect(obj?.winnerPlayerId).toBe(me!.id);
+    const [ms] = await db.select().from(matchMilestones).where(and(eq(matchMilestones.matchId, matchId), eq(matchMilestones.key, "day_0")));
+    expect(ms?.playerId).toBe(me!.id);
+    // A bounty on a neighbour, claimed by winning a battle there: the reward lands in the capital.
+    const target = regionById(capital)!.neighbors[0]!;
+    await db.transaction((tx) => placeBounty(tx, m!, { kind: "region", regionId: target, amount: { wood: 250, iron: 10 }, reason: "test" }, now));
+    const [before] = await db.select().from(matchRegions).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, capital)));
+    const claimed = await db.transaction((tx) => claimBounties(tx, m!, me!.id, target, null, now));
+    expect(claimed).toBe(1);
+    const [after] = await db.select().from(matchRegions).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, capital)));
+    expect(after!.wood - before!.wood).toBeGreaterThanOrEqual(249);
+    expect((after!.special as Record<string, number>).iron ?? 0).toBeGreaterThanOrEqual(10);
+    const open = await db.select().from(bounties).where(and(eq(bounties.matchId, matchId), eq(bounties.regionId, target)));
+    expect(open[0]?.claimedBy).toBe(me!.id);
+    const feed = (await call("GET", `/api/matches/${matchId}/feed`)).json() as { items: { kind: string }[] };
+    expect(feed.items.some((i) => i.kind === "objective.won")).toBe(true);
+    expect(feed.items.some((i) => i.kind === "bounty.claimed")).toBe(true);
+    // Titles and the objective show up on the public surfaces.
+    const state = matchStateView.parse((await call("GET", `/api/matches/${matchId}/state`)).json());
+    expect(state.objective?.day).toBe(0);
+    expect(state.bounties.length).toBe(0);
   });
 });

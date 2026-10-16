@@ -2,7 +2,8 @@ import { and, asc, eq, inArray, isNull, or, sql, gt } from "drizzle-orm";
 import { parseProfile } from "../sim/ai.js";
 import { emptySpecial, regionById, type ArmyView, type IncomingView, type JobView, type MatchStateView, type OwnedRegionView, type SightedRegionView, techEffectsOf, allRegions, wallOf, balance, freezeDayForLatitude } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
-import { allianceMembers, alliances, armies, jobs, matchRegions, matches, playerTechs, players, regionSightings, tradeRoutes, refugeeOffers, pacts, mercenaryOffers } from "../db/schema.js";
+import { allianceMembers, alliances, armies, jobs, matchRegions, matches, playerTechs, players, regionSightings, tradeRoutes, refugeeOffers, pacts, mercenaryOffers, dailyObjectives, bounties } from "../db/schema.js";
+import { OBJECTIVES } from "../sim/objectives.js";
 import { matchNow } from "../sim/clock.js";
 import { alliesOf } from "../sim/alliances.js";
 import { countOwnedRegions, projectRegion } from "../sim/regions.js";
@@ -260,6 +261,12 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
   const mercRows = await db.select().from(mercenaryOffers).where(and(eq(mercenaryOffers.matchId, matchId), isNull(mercenaryOffers.hiredBy), gt(mercenaryOffers.expiresAt, now))).orderBy(asc(mercenaryOffers.expiresAt));
   const capLat = me.capitalRegionId ? Math.abs(regionById(me.capitalRegionId)?.lat ?? 0) : 0;
   const matchDayNow = ((now.getTime() - m.startsAt.getTime()) / 86400_000) * m.speed;
+  const dayIdx = Math.max(0, Math.floor(matchDayNow));
+  const objRows = await db.select().from(dailyObjectives).where(and(eq(dailyObjectives.matchId, matchId), inArray(dailyObjectives.day, [dayIdx, dayIdx - 1])));
+  const today = objRows.find((o) => o.day === dayIdx);
+  const yday = objRows.find((o) => o.day === dayIdx - 1);
+  const objective = today ? { day: today.day, label: OBJECTIVES[today.key] ?? today.key, yesterday: yday ? { label: OBJECTIVES[yday.key] ?? yday.key, playerId: yday.winnerPlayerId, value: yday.value ?? 0 } : null } : null;
+  const bountyRows = await db.select().from(bounties).where(and(eq(bounties.matchId, matchId), isNull(bounties.claimedBy), or(isNull(bounties.expiresAt), gt(bounties.expiresAt, now)))).orderBy(asc(bounties.createdAt));
   const lastStandEligible = !!me.capitalRegionId && !me.lastStandAt && (freezeDayForLatitude(capLat) ?? 999) - matchDayNow <= balance.events.lastStand.withinDays;
   const stormSet = new Set(stormRows.map((r) => r.regionId));
   for (const s of sighted) s.storm = stormSet.has(s.regionId);
@@ -288,6 +295,8 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
       now: now.toISOString(),
       clockOffsetSeconds: m.clockOffsetSeconds,
       pausedAt: m.pausedAt?.toISOString() ?? null,
+      finishedAt: m.finishedAt?.toISOString() ?? null,
+      winnerPlayerId: m.winnerPlayerId ?? null,
     },
     me: {
       playerId: me.id,
@@ -312,6 +321,8 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
     pacts: pactRows.map((p) => ({ id: p.id, kind: p.kind as "nap" | "ceasefire" | "tribute", aPlayerId: p.aPlayerId, bPlayerId: p.bPlayerId, status: p.status, until: p.until?.toISOString() ?? null, terms: (p.terms ?? {}) as Record<string, unknown> })),
     mercenaries: mercRows.map((o) => ({ id: o.id, company: o.company, unitId: o.unitId, qty: o.qty, iron: o.iron, expiresAt: o.expiresAt.toISOString() })),
     lastStand: { eligible: lastStandEligible, used: !!me.lastStandAt },
+    objective,
+    bounties: bountyRows.map((b) => ({ id: b.id, kind: b.kind as "region" | "player", regionId: b.regionId, playerId: b.playerId, amount: b.amount, reason: b.reason, expiresAt: b.expiresAt?.toISOString() ?? null })),
     routes: routeRows.map((r) => ({
       id: r.id,
       fromRegionId: r.fromRegionId,

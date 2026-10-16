@@ -87,6 +87,8 @@ export const userMatchResults = pgTable(
     won: boolean("won").notNull().default(false),
     /** Only tournament results count toward the hall of fame. */
     ranked: boolean("ranked").notNull().default(false),
+    /** How the match ended (hold, wonder, survival, score), for titles. */
+    winKind: text("win_kind"),
     recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.userId, t.matchId] })],
@@ -673,4 +675,40 @@ export const events = pgTable(
     payload: jsonb("payload").notNull().default({}),
   },
   (t) => [index("events_match_idx").on(t.matchId, t.at)],
+);
+
+/** One objective per match day; the best player at the day's end takes the daily bonus. */
+export const dailyObjectives = pgTable(
+  "daily_objectives",
+  {
+    matchId: uuid("match_id")
+      .notNull()
+      .references(() => matches.id, { onDelete: "cascade" }),
+    day: integer("day").notNull(),
+    key: text("key").notNull(),
+    winnerPlayerId: uuid("winner_player_id"),
+    value: integer("value"),
+  },
+  (t) => [primaryKey({ columns: [t.matchId, t.day] })],
+);
+
+/** Prices on regions and heads, paid to whoever wins a battle against them. */
+export const bounties = pgTable(
+  "bounties",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    matchId: uuid("match_id")
+      .notNull()
+      .references(() => matches.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    regionId: text("region_id"),
+    playerId: uuid("player_id"),
+    amount: jsonb("amount").$type<Record<string, number>>().notNull(),
+    reason: text("reason").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    claimedBy: uuid("claimed_by"),
+    claimedAt: timestamp("claimed_at", { withTimezone: true }),
+  },
+  (t) => [index("bounties_match_idx").on(t.matchId, t.claimedBy)],
 );

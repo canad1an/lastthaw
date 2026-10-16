@@ -1,4 +1,5 @@
 import { and, eq, inArray, isNotNull, isNull, sql, gt } from "drizzle-orm";
+import { pickObjective, placeBounty, resolveObjective } from "./objectives.js";
 import { allRegions, balance, distanceKm, effectsOf, applyTechEffects, iceLatitudeOnDay, regionById, armySpeed, travelSeconds, findRoute, type UnitCounts, unitById } from "@lastthaw/shared";
 import { armies, events, jobs, matchRegions, mercenaryOffers, players } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
@@ -22,6 +23,8 @@ export async function hordePlayer(tx: Tx, matchId: string): Promise<{ id: string
  * Called from the tick when the day number has moved on since the last tick.
  */
 export async function runDailyEvents(tx: Tx, m: MatchRow, now: Date, day: number, rng: () => number, publisher: Publisher, after: After): Promise<void> {
+  if (day >= 1) await resolveObjective(tx, m, day - 1, now);
+  await pickObjective(tx, m, day, rng);
   await offerMercenaries(tx, m, now, day, rng);
   await scheduleBlizzard(tx, m, now, day, rng);
   await spreadPlague(tx, m, now, day, rng);
@@ -270,6 +273,7 @@ async function raiseHorde(tx: Tx, m: MatchRow, now: Date, day: number, rng: () =
     await notify(tx, m.id, owner, "scout", `${horde.name} is on the march near your border, heading for ${targetName}.`, { regionId: best.target.regionId, horde: true });
   }
   await tx.insert(events).values({ matchId: m.id, at: now, kind: "horde.sighted", payload: { camp: best.camp, regionId: best.target.regionId, playerId: best.target.ownerPlayerId, size, day } });
+  await placeBounty(tx, m, { kind: "region", regionId: best.camp, amount: balance.events.bounty.hordeCamp, reason: `the camp of ${horde.name}` }, now);
   const targetOwner = best.target.ownerPlayerId!;
   const targetId = best.target.regionId;
   after(() => publisher.toPlayer(m.id, targetOwner, "army.incoming", { targetRegionId: targetId, arrivesAt: arrivesAt.toISOString() }));

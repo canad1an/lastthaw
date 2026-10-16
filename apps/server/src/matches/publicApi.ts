@@ -2,7 +2,36 @@ import type { FastifyInstance } from "fastify";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { AGES, allRegions, balance, iceLatitudeOnDay } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
-import { matchRegions, matches, players, userMatchResults, users } from "../db/schema.js";
+import { matchRegions, matches, players, userMatchResults, users, events } from "../db/schema.js";
+
+/**
+ * Titles earned across ranked matches: Survivor (survival wins), Conqueror (hold wins),
+ * Builder (wonder wins), Explorer (five or more expeditions returned). Each carries a count.
+ */
+export async function titlesOf(db: Db, userIds: string[]): Promise<Map<string, Array<{ title: string; n: number }>>> {
+  const out = new Map<string, Array<{ title: string; n: number }>>();
+  if (userIds.length === 0) return out;
+  const wins = await db
+    .select({ userId: userMatchResults.userId, kind: userMatchResults.winKind, n: sql<number>`count(*)::int` })
+    .from(userMatchResults)
+    .where(and(inArray(userMatchResults.userId, userIds), eq(userMatchResults.won, true), eq(userMatchResults.ranked, true)))
+    .groupBy(userMatchResults.userId, userMatchResults.winKind);
+  const names: Record<string, string> = { survival: "Survivor", hold: "Conqueror", wonder: "Builder" };
+  for (const w of wins) {
+    const title = names[w.kind ?? ""];
+    if (!title) continue;
+    out.set(w.userId, [...(out.get(w.userId) ?? []), { title, n: w.n }]);
+  }
+  const trips = await db
+    .select({ userId: players.userId, n: sql<number>`count(*)::int` })
+    .from(events)
+    .innerJoin(players, sql`${players.id} = (${events.payload}->>'playerId')::uuid`)
+    .innerJoin(userMatchResults, and(eq(userMatchResults.playerId, players.id), eq(userMatchResults.ranked, true)))
+    .where(and(eq(events.kind, "expedition.returned"), inArray(players.userId, userIds)))
+    .groupBy(players.userId);
+  for (const t of trips) if (t.userId && t.n >= 5) out.set(t.userId, [...(out.get(t.userId) ?? []), { title: "Explorer", n: t.n }]);
+  return out;
+}
 import { matchNow } from "../sim/clock.js";
 
 /** Public, login-free views for the home page: matches in play, top players, past winners. */
@@ -101,13 +130,14 @@ export async function publicRoutes(app: FastifyInstance, opts: { db: Db }) {
     }
     // Most wins by account.
     const champions = await db
-      .select({ name: users.displayName, wins: sql<number>`count(*) filter (where ${userMatchResults.won})::int`, played: sql<number>`count(*)::int`, best: sql<number>`min(${userMatchResults.finalRank})::int` })
+      .select({ userId: users.id, name: users.displayName, wins: sql<number>`count(*) filter (where ${userMatchResults.won})::int`, played: sql<number>`count(*)::int`, best: sql<number>`min(${userMatchResults.finalRank})::int`, score: sql<number>`coalesce(sum(${userMatchResults.score}), 0)::int` })
       .from(userMatchResults)
       .innerJoin(users, eq(users.id, userMatchResults.userId))
       .where(eq(userMatchResults.ranked, true))
       .groupBy(users.id, users.displayName)
-      .orderBy(desc(sql`count(*) filter (where ${userMatchResults.won})`), desc(sql`count(*)`))
+      .orderBy(desc(sql`count(*) filter (where ${userMatchResults.won})`), desc(sql`coalesce(sum(${userMatchResults.score}), 0)`))
       .limit(20);
-    return { matches: out, champions };
+    const titles = await titlesOf(db, champions.map((c) => c.userId));
+    return { matches: out, champions: champions.map(({ userId, ...c }) => ({ ...c, titles: titles.get(userId) ?? [] })) };
   });
 }

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type ReactNode } from "react";
-import { TECHS, type MatchStateView } from "@lastthaw/shared";
+import { TECHS, regionById, type MatchStateView } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { MessagesList, isImportant, messageIcon, useMessageToast } from "./Messages.js";
 import { AlliancePanel } from "./AlliancePanel.js";
@@ -192,6 +192,30 @@ export function TopMenu({
                 </label>
               ))}
               <p className="pt-1 text-xs text-slate-500">{OVERLAY_HINT}</p>
+            </div>
+          )}
+          {open === "players" && (state.objective || state.bounties.length > 0) && (
+            <div className="space-y-1 border-b border-slate-800 px-3 py-2 text-xs text-slate-300">
+              {state.objective && (
+                <p>
+                  🎯 <b className="text-slate-200">Day {state.objective.day}:</b> {state.objective.label} <span className="text-emerald-300">+100</span>
+                  {state.objective.yesterday && (
+                    <span className="text-slate-500">
+                      {" "}
+                      · yesterday: {state.objective.yesterday.playerId ? (state.players.find((p) => p.id === state.objective?.yesterday?.playerId)?.name ?? "someone") : "nobody"}
+                    </span>
+                  )}
+                </p>
+              )}
+              {state.bounties.map((b) => (
+                <p key={b.id}>
+                  💰 <b className="text-amber-200">{b.regionId ? (regionById(b.regionId)?.name ?? b.regionId) : (state.players.find((p) => p.id === b.playerId)?.name ?? "a player")}</b>: {b.reason}. Pays{" "}
+                  {Object.entries(b.amount)
+                    .map(([k, v]) => `${Math.round(v)} ${k}`)
+                    .join(", ")}{" "}
+                  to whoever wins a battle there.
+                </p>
+              ))}
             </div>
           )}
           {open === "players" && (

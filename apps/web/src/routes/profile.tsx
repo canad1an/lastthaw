@@ -11,6 +11,7 @@ interface History {
   active: Array<{ matchId: string; name: string; status: string }>;
   wins: number;
   played: number;
+  titles?: Array<{ title: string; n: number }>;
 }
 
 /** Profile and account settings: who you are to other players, the account basics, and the password. */
@@ -46,6 +47,16 @@ export function ProfilePage() {
             {u.location && <span>{u.location} · </span>}
             {joined && <span>Playing since {joined}</span>}
           </p>
+          {q.data?.titles && q.data.titles.length > 0 && (
+            <p className="mt-2 flex flex-wrap gap-1">
+              {q.data.titles.map((t) => (
+                <span key={t.title} className="rounded bg-amber-500/15 px-2 py-0.5 text-xs text-amber-200">
+                  {t.title}
+                  {t.n > 1 ? ` ×${t.n}` : ""}
+                </span>
+              ))}
+            </p>
+          )}
         </div>
         <dl className="grid grid-cols-2 gap-3 text-center">
           <Stat n={q.data ? String(q.data.played) : "–"} label="matches" />

@@ -111,7 +111,7 @@ export function ReplayPage() {
             {playing ? "Pause" : i >= last ? "Replay" : "Play"}
           </Button>
           <Link to="/match/$matchId/report" params={{ matchId }}>
-            <Button variant="ghost">Report</Button>
+            <Button variant="ghost">Review</Button>
           </Link>
         </div>
       </div>

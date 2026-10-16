@@ -3,7 +3,23 @@ import { parseProfile } from "../sim/ai.js";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { AGES, allRegions, balance, buildingById, iceLatitudeOnDay, regionById } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
-import { allianceMembers, alliances, jobs, matchMilestones, matchRegions, matches, players, userMatchResults, users, battles, scoreHistory, ownershipFrames } from "../db/schema.js";
+import { allianceMembers, alliances, jobs, matchMilestones, matchRegions, matches, players, userMatchResults, users, battles, scoreHistory, ownershipFrames, dailyObjectives } from "../db/schema.js";
+import { OBJECTIVES } from "../sim/objectives.js";
+import { titlesOf } from "./publicApi.js";
+
+/** Today's objective and yesterday's winner, for the leaderboard. */
+async function objectiveOf(db: Db, m: { id: string; startsAt: Date; speed: number; finishedAt: Date | null }) {
+  const at = m.finishedAt ?? new Date();
+  const dayIdx = Math.max(0, Math.min(29, Math.floor(((at.getTime() - m.startsAt.getTime()) / 86400_000) * m.speed)));
+  const rows = await db
+    .select({ o: dailyObjectives, name: players.name })
+    .from(dailyObjectives)
+    .leftJoin(players, eq(players.id, dailyObjectives.winnerPlayerId))
+    .where(and(eq(dailyObjectives.matchId, m.id), inArray(dailyObjectives.day, [dayIdx, dayIdx - 1])));
+  const today = rows.find((r) => r.o.day === dayIdx);
+  const yday = rows.find((r) => r.o.day === dayIdx - 1);
+  return today ? { day: today.o.day, label: OBJECTIVES[today.o.key] ?? today.o.key, yesterday: yday ? { label: OBJECTIVES[yday.o.key] ?? yday.o.key, winnerName: yday.name, value: yday.o.value ?? 0 } : null } : null;
+}
 import { milestoneLabel, milestonePoints } from "../sim/endgame.js";
 import { requireUser } from "../auth/session.js";
 import { httpError } from "../sim/commands.js";
@@ -65,6 +81,7 @@ export async function leaderboardRoutes(app: FastifyInstance, opts: { db: Db }) 
     return {
       match: { id: m.id, name: m.name, status: m.status, speed: m.speed, day, iceLatitude: iceLatitudeOnDay(day), totalRegions: total, winnerPlayerId: m.winnerPlayerId, survival: balance.win.survival, wonderName: buildingById.get(balance.win.wonderBuilding)?.name ?? "wonder" },
       milestones,
+      objective: await objectiveOf(db, m),
       wonders,
       players: ps.map((p, i) => ({
         rank: i + 1,
@@ -144,6 +161,7 @@ export async function leaderboardRoutes(app: FastifyInstance, opts: { db: Db }) 
       me: { playerId: me?.id ?? "", rank: me ? (standings.find((s) => s.id === me.id)?.rank ?? null) : null },
       standings,
       milestones,
+      objective: await objectiveOf(db, m),
       history,
       totals: { battles: bt?.n ?? 0, regionsHeld: standings.reduce((a, p) => a + p.regions, 0), agesReached: Math.max(0, ...ps.map((p) => p.age + 1)), players: ps.length, humans: ps.filter((p) => !p.isAi).length },
     };
@@ -236,6 +254,7 @@ export async function leaderboardRoutes(app: FastifyInstance, opts: { db: Db }) 
       active: active.map((a) => ({ matchId: a.matchId, name: a.name, status: a.status })),
       wins: rows.filter((x) => x.r.won).length,
       played: rows.length,
+      titles: (await titlesOf(db, [user.id])).get(user.id) ?? [],
     };
   });
 

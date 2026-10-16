@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
 import { Card, fmt } from "../components/ui.js";
+import { useFeed } from "../components/Ticker.js";
 
 interface Row {
   rank: number;
@@ -19,6 +20,7 @@ interface Board {
   players: Row[];
   milestones: { key: string; label: string; playerId: string; playerName: string; points: number; at: string }[];
   wonders: { playerId: string | null; playerName: string; regionId: string | null; regionName: string; endsAt: string; waiting: boolean }[];
+  objective?: { day: number; label: string; yesterday: { label: string; winnerName: string | null; value: number } | null } | null;
 }
 
 /** Live standings table, used by the top menu dropdown and the full page. */
@@ -29,7 +31,7 @@ export function LeaderboardTable({ matchId, compact = false }: { matchId: string
     refetchInterval: 30_000,
   });
   if (!q.data?.players) return <p className="p-3 text-sm text-slate-400">Loading leaderboard...</p>;
-  const { match, players, milestones = [], wonders = [] } = q.data;
+  const { match, players, milestones = [], wonders = [], objective = null } = q.data;
   const winner = players.find((p) => p.id === match.winnerPlayerId);
   return (
     <div className={compact ? "" : "space-y-4"}>
@@ -55,6 +57,19 @@ export function LeaderboardTable({ matchId, compact = false }: { matchId: string
           <li>Finish the {match.wonderName} in your capital.</li>
           {match.survival ? <li>Day 30, the Last Thaw: the most people alive in unfrozen land wins. Score ranks the rest.</li> : <li>Highest score on day 30.</li>}
         </ul>
+        {objective && (
+          <>
+            <p className="mb-1 mt-2 font-semibold text-slate-200">Today's objective</p>
+            <p>
+              🎯 Day {objective.day}: {objective.label} <span className="text-emerald-300">+100</span>
+            </p>
+            {objective.yesterday && (
+              <p className="text-slate-400">
+                Yesterday ({objective.yesterday.label}): {objective.yesterday.winnerName ? `${objective.yesterday.winnerName} with ${fmt(objective.yesterday.value)}` : "nobody qualified"}
+              </p>
+            )}
+          </>
+        )}
         {milestones.length > 0 && (
           <>
             <p className="mb-1 mt-2 font-semibold text-slate-200">Firsts</p>
@@ -127,6 +142,28 @@ export function LeaderboardPage() {
       <Card className="overflow-x-auto p-0">
         <LeaderboardTable matchId={matchId} />
       </Card>
+      <Timeline matchId={matchId} />
     </main>
+  );
+}
+
+/** The public feed as a timeline: the last forty things that happened in this match. */
+function Timeline({ matchId }: { matchId: string }) {
+  const items = useFeed(matchId, null);
+  if (items.length === 0) return null;
+  return (
+    <Card>
+      <h2 className="display mb-2 text-lg font-semibold text-white">What has happened</h2>
+      <ol className="space-y-1 text-sm">
+        {[...items].reverse().map((it, i) => (
+          <li key={`${it.at}-${i}`} className="flex gap-3 border-t border-slate-800/60 pt-1 first:border-0">
+            <time className="shrink-0 tabular-nums text-xs text-slate-500" dateTime={it.at}>
+              {new Date(it.at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+            </time>
+            <span className="text-slate-300">{it.text}</span>
+          </li>
+        ))}
+      </ol>
+    </Card>
   );
 }

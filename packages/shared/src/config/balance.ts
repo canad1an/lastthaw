@@ -9,6 +9,10 @@
  */
 export const balance = {
   match: {
+    /** Fastest a player-made game may run: 180x is the whole 30 days in about four hours. */
+    maxGameSpeed: 180,
+    /** Most AI tribes a game may be filled with. */
+    maxAiTribes: 20,
     /** Real matches run at 1x; the friends test runs at 10x. Immutable after a match starts. */
     defaultSpeed: 1,
     testSpeed: 10,
@@ -305,6 +309,8 @@ export const balance = {
     mercenaries: { chance: 0.5, offerHours: 12, hours: 48, ironPerUnit: { sellsword: 12, free_company: 30 } },
     /** The last stand: once, when the ice is a day from the capital, everything marches south at double speed. */
     lastStand: { withinDays: 1, speedMult: 2 },
+    /** Bounties: a rebel region is worth `rebelPerValue` x its value in each of food, wood and stone; a horde camp pays `hordeCamp`; a refused tribute puts `tributeShare` of the refuser's capital stock on their head for `tributeHours`. */
+    bounty: { rebelPerValue: 10, hordeCamp: { food: 300, wood: 200, stone: 150 } as Record<string, number>, tributeShare: 0.05, tributeHours: 24 },
   },
   win: {
     regionShareForEarlyWin: 0.6,
@@ -314,7 +320,7 @@ export const balance = {
     /** Day 30, the ice stops: the player with the most people alive in unfrozen land wins. Rank below the winner is by score. */
     survival: true,
     /** Bonus score for being first in the match to reach a checkpoint. Keys: age_<n>, harbor, train, temple, wonder. */
-    milestones: { age: 200, harbor: 100, train: 150, temple: 100, wonder: 300 } as Record<string, number>,
+    milestones: { age: 200, harbor: 100, train: 150, temple: 100, wonder: 300, daily: 100 } as Record<string, number>,
     /** Finishing this building wins the match outright. */
     wonderBuilding: "great_hearth",
   },

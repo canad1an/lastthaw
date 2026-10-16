@@ -11,7 +11,7 @@ interface Fame {
     winner: { name: string; isAi: boolean; age: string; score: number; regions: number } | null;
     top: Array<{ name: string; score: number; isAi: boolean; age: string }>;
   }>;
-  champions: Array<{ name: string; wins: number; played: number; best: number }>;
+  champions: Array<{ name: string; wins: number; played: number; best: number; score: number; titles: Array<{ title: string; n: number }> }>;
 }
 
 export function HallOfFamePage() {
@@ -35,6 +35,7 @@ export function HallOfFamePage() {
               <thead className="text-left text-xs uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-3 py-2">Player</th>
+                  <th className="px-3 py-2">Titles</th>
                   <th className="px-3 py-2 text-right">Wins</th>
                   <th className="px-3 py-2 text-right">Played</th>
                   <th className="px-3 py-2 text-right">Best finish</th>
@@ -44,6 +45,14 @@ export function HallOfFamePage() {
                 {q.data.champions.map((c) => (
                   <tr key={c.name} className="border-t border-slate-800">
                     <td className="px-3 py-1.5">{c.name}</td>
+                    <td className="px-3 py-1.5">
+                      {c.titles.map((t) => (
+                        <span key={t.title} className="mr-1 rounded bg-amber-500/15 px-1.5 py-0.5 text-xs text-amber-200" title={`${t.n}x`}>
+                          {t.title}
+                          {t.n > 1 ? ` ×${t.n}` : ""}
+                        </span>
+                      ))}
+                    </td>
                     <td className="px-3 py-1.5 text-right tabular-nums">{c.wins}</td>
                     <td className="px-3 py-1.5 text-right tabular-nums">{c.played}</td>
                     <td className="px-3 py-1.5 text-right tabular-nums">#{c.best}</td>

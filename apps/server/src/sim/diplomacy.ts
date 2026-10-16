@@ -1,4 +1,5 @@
 import { and, eq, gt, inArray, isNull, lt, or } from "drizzle-orm";
+import { placeBounty } from "./objectives.js";
 import { balance, regionById } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { events, matchRegions, pacts, players, transfers } from "../db/schema.js";
@@ -163,6 +164,16 @@ export async function expirePacts(tx: Tx, m: MatchRow, now: Date): Promise<void>
       const [from] = await tx.select({ name: players.name }).from(players).where(eq(players.id, p.bPlayerId)).limit(1);
       await notify(tx, m.id, p.aPlayerId, "alliance", `${from?.name ?? "They"} refused your tribute. For ${d.causeForWarHours} hours your raids on them carry double loot.`, { pactId: p.id, diplomacy: true, until: window.toISOString() });
       await tx.insert(events).values({ matchId: m.id, at: now, kind: "tribute.refused", payload: { from: p.bPlayerId, to: p.aPlayerId } });
+      const [refuser] = await tx.select({ capital: players.capitalRegionId, name: players.name }).from(players).where(eq(players.id, p.bPlayerId)).limit(1);
+      if (refuser?.capital) {
+        const [cap] = await tx.select().from(matchRegions).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, refuser.capital))).limit(1);
+        if (cap) {
+          const b = balance.events.bounty;
+          const amount: Record<string, number> = {};
+          for (const [k, v] of Object.entries(stockOf(cap))) if (v * b.tributeShare >= 1) amount[k] = Math.floor(v * b.tributeShare);
+          await placeBounty(tx, m, { kind: "player", playerId: p.bPlayerId, amount, reason: `${refuser.name} refused tribute`, hours: b.tributeHours }, now);
+        }
+      }
     } else if (p.kind === "tribute") {
       await tx.update(pacts).set({ status: "ended" }).where(eq(pacts.id, p.id));
     } else {

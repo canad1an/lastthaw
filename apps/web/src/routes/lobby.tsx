@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { formatCountdown, type MatchSummary } from "@lastthaw/shared";
+import { balance, formatCountdown, type MatchSummary } from "@lastthaw/shared";
 import { useMe } from "../api/auth.js";
 import { api, keys } from "../api/client.js";
 import { Button, Card, ErrorText, Field, Input } from "../components/ui.js";
@@ -119,7 +119,7 @@ function PastMatches() {
                 <Button variant="ghost">▶ Replay</Button>
               </Link>
               <Link to="/match/$matchId/report" params={{ matchId: m.id }}>
-                <Button variant="ghost">Report</Button>
+                <Button variant="ghost">Review</Button>
               </Link>
             </div>
           </Card>
@@ -275,13 +275,15 @@ function CreateMatch({ admin }: { admin: boolean }) {
         <Field label="Name">
           <div className="flex gap-1">
             <Input value={name} onChange={(e) => setName(e.target.value)} />
-            <Button type="button" variant="ghost" className="shrink-0 px-2" onClick={() => suggest.mutate()} title="A war-or-winter name nobody has used">
-              Suggest
+            <Button type="button" variant="ghost" className="shrink-0 px-2" onClick={() => suggest.mutate()} disabled={suggest.isPending} title="A war-or-winter name nobody has used">
+              {suggest.isPending ? "…" : "Suggest"}
             </Button>
           </div>
+          {suggest.error && <ErrorText>{suggest.error.message}</ErrorText>}
         </Field>
         <Field label="Speed">
-          <Input type="number" min={1} max={admin ? 1000 : 50} value={speed} onChange={(e) => setSpeed(Number(e.target.value))} />
+          <Input type="number" min={1} max={admin ? 1000 : balance.match.maxGameSpeed} value={speed} onChange={(e) => setSpeed(Number(e.target.value))} />
+          <p className="mt-1 text-xs text-slate-500">1x is a real month; {balance.match.maxGameSpeed}x is the whole match in about four hours.</p>
         </Field>
         <Field label="Starts at (your time)">
           <Input type="datetime-local" value={startsAt} onChange={(e) => setStartsAt(e.target.value)} />
@@ -299,7 +301,7 @@ function CreateMatch({ admin }: { admin: boolean }) {
           </select>
         </Field>
         <Field label="AI tribes up to">
-          <Input type="number" min={0} max={100} value={aiFillTo} onChange={(e) => setAiFillTo(Number(e.target.value))} />
+          <Input type="number" min={0} max={balance.match.maxAiTribes} value={aiFillTo} onChange={(e) => setAiFillTo(Number(e.target.value))} />
         </Field>
         <Field label="AI difficulty">
           <select value={aiDifficulty} onChange={(e) => setAiDifficulty(e.target.value as typeof aiDifficulty)} className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100">

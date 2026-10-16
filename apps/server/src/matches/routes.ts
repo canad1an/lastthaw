@@ -98,7 +98,7 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
     const kind = body.kind ?? "public";
     if (kind === "tournament" && !devTools && !user.isAdmin) throw httpError(403, "only admins create tournaments");
     if (!user.isAdmin && !user.approved) throw httpError(403, "Last Thaw is in private beta: ask Matt for access before creating a game");
-    if (!user.isAdmin && body.speed > 50) throw httpError(400, "games run at 50x at most; tournaments are 1x");
+    if (!user.isAdmin && body.speed > balance.match.maxGameSpeed) throw httpError(400, `games run at ${balance.match.maxGameSpeed}x at most (about four hours); tournaments are 1x`);
     if (!user.isAdmin) {
       const [open] = await db.select({ n: sql<number>`count(*)::int` }).from(matches).where(and(inArray(matches.status, ["lobby", "running"]), sql`${matches.settings}->>'createdBy' = ${user.id}`));
       if ((open?.n ?? 0) >= 2) throw httpError(409, "you already have two games open; let one finish first");
@@ -129,10 +129,10 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
     return reply.code(201).send({ id: m!.id, inviteCode: inviteCode ?? null });
   });
 
-  /** A war-or-winter name no match has used, for the admin's create form. */
+  /** A war-or-winter name no match has used, for the create form. */
   app.get("/api/matches/name-suggestion", async (req) => {
     const user = requireUser(req);
-    if (!devTools && !user.isAdmin) throw httpError(403, "admins only");
+    if (!devTools && !user.isAdmin && !user.approved) throw httpError(403, "Last Thaw is in private beta: ask Matt for access first");
     const taken = new Set((await db.select({ name: matches.name }).from(matches)).map((r) => r.name.toLowerCase()));
     return { name: pickMatchName(taken, randomBytes(8).toString("hex")) };
   });

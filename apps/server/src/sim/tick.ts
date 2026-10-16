@@ -1,4 +1,5 @@
 import { and, asc, eq, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
+import { placeBounty } from "./objectives.js";
 import type pino from "pino";
 import { balance, distanceKm, effectsOf, regionById, seededRng, applyTechEffects, type TechEffects } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
@@ -153,6 +154,8 @@ async function loyaltyAndRebellion(tx: Tx, m: MatchRow, now: Date, hours: number
       const name = regionById(row.regionId)?.name ?? row.regionId;
       await notify(tx, m.id, owner, "battle", `${name} has rebelled and thrown out your occupiers`, { regionId: row.regionId });
       await handleRegionLost(tx, m, owner, row.regionId, now);
+      const worth = Math.round((regionById(row.regionId)?.value ?? 5) * balance.events.bounty.rebelPerValue);
+      await placeBounty(tx, m, { kind: "region", regionId: row.regionId, amount: { food: worth, wood: worth, stone: worth }, reason: `${name} rose in rebellion` }, now);
       after(() => publisher.toPlayer(m.id, owner, "region.conquered", { regionId: row.regionId }));
       continue;
     }

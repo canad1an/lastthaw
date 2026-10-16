@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { balance } from "../config/balance.js";
 
 /** Every API response carries the server time so clients can compute countdowns from an offset. */
 export const healthResponse = z.object({
@@ -106,7 +107,7 @@ export const createMatchBody = z.object({
   /** Tournament (admins only; the ranked, scheduled kind), public (anyone may join) or private (joiners need the invite code). */
   kind: z.enum(["tournament", "public", "private"]).optional(),
   /** AI tribes are added until this many players exist. Default from balance. */
-  aiFillTo: z.number().int().min(0).max(100).optional(),
+  aiFillTo: z.number().int().min(0).max(balance.match.maxAiTribes).optional(),
   /** Neutral tribes scattered on the map. Default from balance. */
   neutralTribes: z.number().int().min(0).max(300).optional(),
   /** AI difficulty: a single tier or a mix. */
@@ -371,6 +372,8 @@ export const matchStateView = z.object({
     now: z.string(),
     clockOffsetSeconds: z.number(),
     pausedAt: z.string().nullable().default(null),
+    finishedAt: z.string().nullable().default(null),
+    winnerPlayerId: z.string().nullable().default(null),
   }),
   me: z.object({
     playerId: z.string(),
@@ -405,6 +408,10 @@ export const matchStateView = z.object({
   mercenaries: z.array(mercenaryOfferView).default([]),
   /** The last stand is open: the ice is a day from the capital and it has not been used. */
   lastStand: z.object({ eligible: z.boolean(), used: z.boolean() }).default({ eligible: false, used: false }),
+  /** Today's objective and who took yesterday's. */
+  objective: z.object({ day: z.number(), label: z.string(), yesterday: z.object({ label: z.string(), playerId: z.string().nullable(), value: z.number() }).nullable() }).nullable().default(null),
+  /** Open bounties anyone can claim by winning a battle against the region or player. */
+  bounties: z.array(z.object({ id: z.string(), kind: z.enum(["region", "player"]), regionId: z.string().nullable(), playerId: z.string().nullable(), amount: z.record(z.string(), z.number()), reason: z.string(), expiresAt: z.string().nullable() })).default([]),
   /** My automated caravan routes. */
   routes: z.array(tradeRouteView).default([]),
   /** Player ids of my alliance mates (their regions are always visible). */

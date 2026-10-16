@@ -15,13 +15,14 @@ export function scoreOf(regions: number, population: number, age: number): numbe
 
 /** Points for a milestone key (age_<n>, harbor, train, temple, wonder). */
 export function milestonePoints(key: string): number {
-  const base = key.startsWith("age_") ? "age" : key;
+  const base = key.startsWith("age_") ? "age" : key.startsWith("day_") ? "daily" : key;
   return balance.win.milestones[base] ?? 0;
 }
 
 /** Human label for a milestone key. */
 export function milestoneLabel(key: string): string {
   if (key.startsWith("age_")) return `First to the ${AGES[Number(key.slice(4)) as AgeIndex] ?? "next"} Age`;
+  if (key.startsWith("day_")) return `Day ${key.slice(4)} objective`;
   if (key === "wonder") return `First to begin the ${buildingById.get(balance.win.wonderBuilding)?.name ?? "wonder"}`;
   return `First ${buildingById.get(key)?.name ?? key[0]!.toUpperCase() + key.slice(1)}`;
 }
@@ -30,7 +31,7 @@ export function milestoneLabel(key: string): string {
  * Award a first-in-the-match checkpoint if nobody holds it yet. Everyone hears
  * about it and the holder's score carries the bonus from the next tick on.
  */
-export async function awardMilestone(tx: Tx, m: MatchRow, key: string, playerId: string, at: Date): Promise<boolean> {
+export async function awardMilestone(tx: Tx, m: MatchRow, key: string, playerId: string, at: Date, label?: string): Promise<boolean> {
   const inserted = await tx.insert(matchMilestones).values({ matchId: m.id, key, playerId, at }).onConflictDoNothing().returning({ key: matchMilestones.key });
   if (!inserted.length) return false;
   const [p] = await tx.select({ name: players.name }).from(players).where(eq(players.id, playerId)).limit(1);
@@ -38,7 +39,7 @@ export async function awardMilestone(tx: Tx, m: MatchRow, key: string, playerId:
   await tx.insert(events).values({ matchId: m.id, at, kind: "milestone", payload: { key, playerId, points } });
   const everyone = await tx.select({ id: players.id }).from(players).where(and(eq(players.matchId, m.id), eq(players.isAi, false), eq(players.hidden, false)));
   for (const other of everyone) {
-    await notify(tx, m.id, other.id, "system", other.id === playerId ? `${milestoneLabel(key)}: that was you (+${points} score)` : `${milestoneLabel(key)}: ${p?.name ?? "someone"} (+${points} score)`, { milestone: key, playerId, points });
+    await notify(tx, m.id, other.id, "system", other.id === playerId ? `${label ?? milestoneLabel(key)}: that was you (+${points} score)` : `${label ?? milestoneLabel(key)}: ${p?.name ?? "someone"} (+${points} score)`, { milestone: key, playerId, points });
   }
   return true;
 }
@@ -196,7 +197,7 @@ export async function finishMatch(tx: Tx, m: MatchRow, at: Date, publisher: Publ
     const s = standings.find((x) => x.id === p.id);
     await tx
       .insert(userMatchResults)
-      .values({ userId: p.userId, matchId: m.id, playerId: p.id, finalRank: i + 1, score: s?.score ?? 0, regionsHeld: s?.regions ?? 0, ageReached: p.age, eliminatedAt: p.eliminatedAt, won: p.id === winner, ranked: isRanked })
+      .values({ userId: p.userId, matchId: m.id, playerId: p.id, finalRank: i + 1, score: s?.score ?? 0, regionsHeld: s?.regions ?? 0, ageReached: p.age, eliminatedAt: p.eliminatedAt, won: p.id === winner, ranked: isRanked, winKind })
       .onConflictDoNothing();
     await notify(tx, m.id, p.id, "system", `The match is over. You finished #${i + 1}${p.id === winner ? " and won!" : "."}`, { rank: i + 1, winner });
   }
