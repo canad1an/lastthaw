@@ -24,17 +24,17 @@ const PLAYER_COLORS = ["#38bdf8", "#f472b6", "#a3e635", "#fb923c", "#c084fc", "#
 function wallPaint(wall: string | null | undefined): Partial<RegionPaint> {
   switch (wall) {
     case "palisade":
-      return { stroke: "#f59e0b", strokeScale: 3, dash: [4, 3] };
+      return { stroke: "#f59e0b", strokeScale: 3, dash: [4, 3], wall: { label: "Palisade", colour: "#fbbf24", text: "PALISADE" } };
     case "walls":
-      return { stroke: "#e2e8f0", strokeScale: 3.5 };
+      return { stroke: "#e2e8f0", strokeScale: 3.5, wall: { label: "Stone walls", colour: "#e2e8f0", text: "WALLS" } };
     case "fort":
-      return { stroke: "#e2e8f0", strokeScale: 4, inner: "#0b1a2b" };
+      return { stroke: "#e2e8f0", strokeScale: 4, inner: "#0b1a2b", wall: { label: "Fort", colour: "#e2e8f0", text: "FORT" } };
     case "castle":
-      return { stroke: "#f8fafc", strokeScale: 5, inner: "#0b1a2b" };
+      return { stroke: "#f8fafc", strokeScale: 5, inner: "#0b1a2b", wall: { label: "Castle", colour: "#f8fafc", text: "CASTLE" } };
     case "arsenal":
-      return { stroke: "#fde68a", strokeScale: 5, inner: "#0b1a2b" };
+      return { stroke: "#fde68a", strokeScale: 5, inner: "#0b1a2b", wall: { label: "Arsenal", colour: "#fde68a", text: "ARSENAL" } };
     case "bunker":
-      return { stroke: "#ffffff", strokeScale: 6, inner: "#334155" };
+      return { stroke: "#ffffff", strokeScale: 6, inner: "#334155", wall: { label: "Bunker", colour: "#ffffff", text: "BUNKER" } };
     default:
       return {};
   }
