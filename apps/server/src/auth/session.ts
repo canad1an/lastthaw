@@ -131,6 +131,7 @@ export async function cleanupSessions(db: Db): Promise<{ sessions: number; token
   const now = new Date();
   const idleCutoff = new Date(now.getTime() - IDLE_DAYS * 86400_000);
   const s = await db.delete(sessions).where(or(lt(sessions.expiresAt, now), lt(sessions.lastSeenAt, idleCutoff), sql`${sessions.tokenHash} is null`)).returning({ id: sessions.id });
-  const t = await db.delete(emailTokens).where(or(lt(emailTokens.expiresAt, new Date(now.getTime() - 86400_000)), sql`${emailTokens.usedAt} is not null and ${emailTokens.usedAt} < ${new Date(now.getTime() - 86400_000)}`)).returning({ id: emailTokens.id });
+  const dayAgo = new Date(now.getTime() - 86400_000);
+  const t = await db.delete(emailTokens).where(or(lt(emailTokens.expiresAt, dayAgo), lt(emailTokens.usedAt, dayAgo))).returning({ id: emailTokens.id });
   return { sessions: s.length, tokens: t.length };
 }
