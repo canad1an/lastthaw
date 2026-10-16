@@ -84,7 +84,10 @@ export async function respondPact(db: Db, m: MatchRow, me: PlayerRow, pactId: st
   return db.transaction(async (tx) => {
     const [p] = await tx.select().from(pacts).where(and(eq(pacts.id, pactId), eq(pacts.matchId, m.id), eq(pacts.status, "proposed"))).for("update");
     if (!p || p.bPlayerId !== me.id) throw httpError(404, "no such proposal waiting for you");
-    if (p.kind === "tribute") throw httpError(400, "tribute is paid, not accepted");
+    if (p.kind === "tribute") {
+      if (accept) throw httpError(400, "tribute is paid, not accepted");
+      return refuseTribute(tx, m, p, now);
+    }
     const [row] = await tx
       .update(pacts)
       .set(accept ? { status: "active", until: p.kind === "ceasefire" ? new Date(now.getTime() + hoursMs(m, d.ceasefireHours)) : null, decidedAt: now } : { status: "declined", decidedAt: now })
@@ -149,6 +152,31 @@ export async function payTribute(db: Db, m: MatchRow, me: PlayerRow, pactId: str
   });
 }
 
+/**
+ * A tribute demand is turned down, by the player or by the clock running out. The demander is told, gets cause for war
+ * (double loot on raids for `causeForWarHours`), and a bounty on the refuser's capital stock goes up for everyone.
+ */
+async function refuseTribute(tx: Tx, m: MatchRow, p: PactRow, now: Date, expired = false): Promise<PactRow> {
+  const d = balance.events.diplomacy;
+  const window = new Date(now.getTime() + hoursMs(m, d.causeForWarHours));
+  const [row] = await tx.update(pacts).set({ status: "refused", until: window, decidedAt: now }).where(eq(pacts.id, p.id)).returning();
+  const [refuser] = await tx.select({ capital: players.capitalRegionId, name: players.name }).from(players).where(eq(players.id, p.bPlayerId)).limit(1);
+  const name = refuser?.name ?? "They";
+  const how = expired ? `let your tribute demand lapse` : `rejected your tribute demand`;
+  await notify(tx, m.id, p.aPlayerId, "alliance", `${name} ${how}. For ${d.causeForWarHours} hours your raids on them carry double loot.`, { pactId: p.id, diplomacy: true, until: window.toISOString() });
+  await tx.insert(events).values({ matchId: m.id, at: now, kind: "tribute.refused", payload: { from: p.bPlayerId, to: p.aPlayerId, expired } });
+  if (refuser?.capital) {
+    const [cap] = await tx.select().from(matchRegions).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, refuser.capital))).limit(1);
+    if (cap) {
+      const b = balance.events.bounty;
+      const amount: Record<string, number> = {};
+      for (const [k, v] of Object.entries(stockOf(cap))) if (v * b.tributeShare >= 1) amount[k] = Math.floor(v * b.tributeShare);
+      await placeBounty(tx, m, { kind: "player", playerId: p.bPlayerId, amount, reason: `${name} refused tribute`, hours: b.tributeHours }, now);
+    }
+  }
+  return row!;
+}
+
 /** Run from the tick: expired demands become refusals (cause for war), ended pacts close, ceasefires run out. */
 export async function expirePacts(tx: Tx, m: MatchRow, now: Date): Promise<void> {
   const d = balance.events.diplomacy;
@@ -159,21 +187,7 @@ export async function expirePacts(tx: Tx, m: MatchRow, now: Date): Promise<void>
     .for("update");
   for (const p of due) {
     if (p.kind === "tribute" && p.status === "proposed") {
-      const window = new Date(now.getTime() + hoursMs(m, d.causeForWarHours));
-      await tx.update(pacts).set({ status: "refused", until: window, decidedAt: now }).where(eq(pacts.id, p.id));
-      const [from] = await tx.select({ name: players.name }).from(players).where(eq(players.id, p.bPlayerId)).limit(1);
-      await notify(tx, m.id, p.aPlayerId, "alliance", `${from?.name ?? "They"} refused your tribute. For ${d.causeForWarHours} hours your raids on them carry double loot.`, { pactId: p.id, diplomacy: true, until: window.toISOString() });
-      await tx.insert(events).values({ matchId: m.id, at: now, kind: "tribute.refused", payload: { from: p.bPlayerId, to: p.aPlayerId } });
-      const [refuser] = await tx.select({ capital: players.capitalRegionId, name: players.name }).from(players).where(eq(players.id, p.bPlayerId)).limit(1);
-      if (refuser?.capital) {
-        const [cap] = await tx.select().from(matchRegions).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, refuser.capital))).limit(1);
-        if (cap) {
-          const b = balance.events.bounty;
-          const amount: Record<string, number> = {};
-          for (const [k, v] of Object.entries(stockOf(cap))) if (v * b.tributeShare >= 1) amount[k] = Math.floor(v * b.tributeShare);
-          await placeBounty(tx, m, { kind: "player", playerId: p.bPlayerId, amount, reason: `${refuser.name} refused tribute`, hours: b.tributeHours }, now);
-        }
-      }
+      await refuseTribute(tx, m, p, now, true);
     } else if (p.kind === "tribute") {
       await tx.update(pacts).set({ status: "ended" }).where(eq(pacts.id, p.id));
     } else {

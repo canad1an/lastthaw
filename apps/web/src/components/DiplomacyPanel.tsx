@@ -46,9 +46,20 @@ export function DiplomacyPanel({ matchId, state, clockOffsetMs }: { matchId: str
                   {p.until && <span className="text-xs text-amber-200/70"> · {left(p.until)} left</span>}
                 </span>
                 {p.kind === "tribute" ? (
-                  <Button className="px-2 py-1 text-xs" onClick={() => pay.mutate(p.id)} disabled={pay.isPending}>
-                    Pay from capital
-                  </Button>
+                  <>
+                    <Button className="px-2 py-1 text-xs" onClick={() => pay.mutate(p.id)} disabled={pay.isPending || respond.isPending}>
+                      Pay from capital
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      className="px-2 py-1 text-xs"
+                      onClick={() => respond.mutate({ id: p.id, accept: false })}
+                      disabled={pay.isPending || respond.isPending}
+                      title={`They are told you rejected it, and for ${d.causeForWarHours} hours their raids on you carry double loot.`}
+                    >
+                      Reject
+                    </Button>
+                  </>
                 ) : (
                   <>
                     <Button className="px-2 py-1 text-xs" onClick={() => respond.mutate({ id: p.id, accept: true })} disabled={respond.isPending}>

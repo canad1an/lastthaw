@@ -3,7 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { balance, matchStateView, regionById } from "@lastthaw/shared";
 import { buildApp } from "../src/api/app.js";
 import { createDb, type Db } from "../src/db/client.js";
-import { armies, bounties, dailyObjectives, jobs, matchMilestones, matchRegions, matches, mercenaryOffers, players, refugeeOffers, transfers, users } from "../src/db/schema.js";
+import { armies, bounties, dailyObjectives, jobs, matchMilestones, matchRegions, matches, mercenaryOffers, messages, pacts, players, refugeeOffers, transfers, users } from "../src/db/schema.js";
 import { claimBounties, objectiveWinner, pickObjective, placeBounty, resolveObjective } from "../src/sim/objectives.js";
 import { tributeDemand } from "../src/sim/ai.js";
 import { settleFrozenCapitals } from "../src/sim/ice.js";
@@ -179,6 +179,20 @@ describe("world events", () => {
     const paid = await db.select().from(transfers).where(and(eq(transfers.matchId, matchId), eq(transfers.via, "tribute")));
     expect(paid.length).toBe(1);
     expect(paid[0]!.amount).toBe(500);
+
+    // A second demand can be rejected outright: the demander is told, gets cause for war, and a bounty goes up on our capital.
+    await db.update(pacts).set({ createdAt: new Date(Date.now() - 7 * 86400_000) }).where(eq(pacts.id, demand.id));
+    const demand2 = await proposePact(db, m!, ai!, me.id, "tribute", { resource: "wood", amount: 400 });
+    const rejected = await call("POST", `/api/matches/${matchId}/pacts/${demand2.id}/respond`, { accept: false });
+    expect(rejected.statusCode, JSON.stringify(rejected.json())).toBe(200);
+    expect((rejected.json() as { status: string }).status).toBe("refused");
+    const told = await db.select().from(messages).where(and(eq(messages.matchId, matchId), eq(messages.playerId, ai!.id)));
+    expect(told.some((x) => /rejected your tribute demand/.test(x.subject))).toBe(true);
+    const openBounties = await db.select().from(bounties).where(eq(bounties.matchId, matchId));
+    expect(openBounties.some((x) => /refused tribute/.test(x.reason ?? ""))).toBe(true);
+    expect((await call("POST", `/api/matches/${matchId}/pacts/${demand2.id}/respond`, { accept: true })).statusCode).toBe(404);
+    // Clear the bounty so the objectives test below starts from a clean board.
+    for (const x of openBounties) if (/refused tribute/.test(x.reason ?? "")) await db.delete(bounties).where(eq(bounties.id, x.id));
 
     // Mercenaries: hire a company with iron, then their contract runs out.
     const [offer] = await db.insert(mercenaryOffers).values({ matchId, company: "the Grey Wolves", unitId: "sellsword", qty: 15, iron: 180, expiresAt: new Date(Date.now() + 3600_000) }).returning();
