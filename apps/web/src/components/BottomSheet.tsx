@@ -48,9 +48,24 @@ export function BottomSheet({ stop, onStop, summary, children, className = "" }:
         <div className="mx-auto mb-2 h-1.5 w-12 rounded-full bg-slate-600" aria-hidden />
         <div className="flex min-h-10 items-center justify-between gap-2 text-sm">
           <div className="min-w-0 flex-1 truncate text-slate-200">{summary}</div>
-          <button className="rounded px-2 py-1 text-xs text-slate-400" onClick={() => onStop(stop === "full" ? "half" : stop === "half" ? "full" : "half")} aria-label="Resize panel">
-            {stop === "full" ? "▾" : "▴"}
-          </button>
+          {/* Explicit controls beside the drag handle: the buttons stop the handle's own tap-to-step so a tap never doubles up. */}
+          <span className="flex shrink-0 items-center gap-1" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>
+            {stop !== "peek" && (
+              <button className="rounded border border-slate-700 px-2 py-1 text-xs text-sky-200" onClick={() => onStop("peek")} aria-label="Show the map">
+                Map
+              </button>
+            )}
+            {stop !== "peek" && (
+              <button className="rounded px-2 py-1 text-xs text-slate-400" onClick={() => step(-1)} aria-label="Smaller panel">
+                ▾
+              </button>
+            )}
+            {stop !== "full" && (
+              <button className="rounded px-2 py-1 text-xs text-slate-400" onClick={() => step(1)} aria-label="Bigger panel">
+                ▴
+              </button>
+            )}
+          </span>
         </div>
       </div>
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4 pt-2 lg:pt-4">{children}</div>

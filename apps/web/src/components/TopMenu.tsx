@@ -59,8 +59,12 @@ export function TopMenu({
   const toggle = (m: Menu) => {
     setOpen((o) => (o === m ? null : m));
     clearToast();
-    if (m === "messages" && open !== "messages" && unread) markRead.mutate();
   };
+  // Whatever opened the inbox (the menu, the badge, the toast), reading it clears the unread count.
+  useEffect(() => {
+    if (open === "messages" && (q.data?.messages ?? []).some((m) => !m.readAt) && !markRead.isPending) markRead.mutate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, q.data]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(null);
     window.addEventListener("keydown", onKey);
