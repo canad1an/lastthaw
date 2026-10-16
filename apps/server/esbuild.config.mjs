@@ -8,7 +8,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 // leave every real npm dependency external so native modules keep working.
 await build({
   // Operations scripts ship too: the nightly production game and player invitations run inside the api image.
-  entryPoints: ["src/api/index.ts", "src/worker/index.ts", "src/worker/ai.ts", "src/db/migrate.ts", "src/scripts/nightlySim.ts", "src/scripts/inviteUser.ts"],
+  entryPoints: ["src/api/index.ts", "src/worker/index.ts", "src/worker/ai.ts", "src/db/migrate.ts", "src/scripts/nightlySim.ts", "src/scripts/inviteUser.ts", "src/scripts/previewMail.ts"],
   outdir: "dist",
   outbase: "src",
   bundle: true,

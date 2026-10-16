@@ -64,7 +64,7 @@ export async function registrationRoutes(app: FastifyInstance, opts: { db: Db; r
     const inserted = await db.insert(tournamentRegistrations).values({ matchId, userId: user.id }).onConflictDoNothing().returning({ id: tournamentRegistrations.id });
     if (inserted.length === 0) return { ok: true, registered: true, already: true };
     const mail = registrationMail(user.displayName, m.name, m.startsAt, joinOpensAt(m.startsAt));
-    void sendMail(user.email, mail.subject, mail.text);
+    void sendMail(user.email, mail.subject, mail.text, mail.html);
     return reply.code(201).send({ ok: true, registered: true, already: false });
   });
 
@@ -95,12 +95,12 @@ export async function sendTournamentReminders(db: Db, log: pino.Logger, now = ne
     const hour = r.m.startsAt <= hourAhead;
     if (hour && !r.reg.remindedHourAt) {
       const mail = reminderMail(r.name, r.m.name, r.m.startsAt, "hour");
-      void sendMail(r.email, mail.subject, mail.text);
+      void sendMail(r.email, mail.subject, mail.text, mail.html);
       await db.update(tournamentRegistrations).set({ remindedHourAt: now, remindedDayAt: r.reg.remindedDayAt ?? now }).where(eq(tournamentRegistrations.id, r.reg.id));
       sent += 1;
     } else if (!hour && !r.reg.remindedDayAt) {
       const mail = reminderMail(r.name, r.m.name, r.m.startsAt, "day");
-      void sendMail(r.email, mail.subject, mail.text);
+      void sendMail(r.email, mail.subject, mail.text, mail.html);
       await db.update(tournamentRegistrations).set({ remindedDayAt: now }).where(eq(tournamentRegistrations.id, r.reg.id));
       sent += 1;
     }

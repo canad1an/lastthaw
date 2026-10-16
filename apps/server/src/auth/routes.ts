@@ -72,7 +72,7 @@ export async function authRoutes(app: FastifyInstance, opts: { db: Db; redis: Re
 
     const token = await issueToken(db, u.id, "verify", VERIFY_HOURS);
     const mail = verificationMail(u.displayName, token);
-    void sendMail(u.email, mail.subject, mail.text);
+    void sendMail(u.email, mail.subject, mail.text, mail.html);
 
     await createSession(db, req, reply, u.id);
     return reply.code(201).send(toView(u));
@@ -132,7 +132,7 @@ export async function authRoutes(app: FastifyInstance, opts: { db: Db; redis: Re
     if (!(await mailAllowed("verify", user.email))) return { ok: true };
     const token = await issueToken(db, user.id, "verify", VERIFY_HOURS);
     const mail = verificationMail(user.displayName, token);
-    void sendMail(user.email, mail.subject, mail.text);
+    void sendMail(user.email, mail.subject, mail.text, mail.html);
     return reply.send({ ok: true });
   });
 
@@ -178,7 +178,7 @@ export async function authRoutes(app: FastifyInstance, opts: { db: Db; redis: Re
     if (u && (await mailAllowed("reset", u.email))) {
       const token = await issueToken(db, u.id, "reset", RESET_HOURS);
       const mail = resetMail(u.displayName, token);
-      void sendMail(u.email, mail.subject, mail.text);
+      void sendMail(u.email, mail.subject, mail.text, mail.html);
     }
     // Always succeed so the endpoint cannot be used to probe for accounts.
     return { ok: true };

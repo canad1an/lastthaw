@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useChatAlert } from "./chatAlert.js";
 import { useEffect, useRef, useState } from "react";
 import type { MatchStateView } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
@@ -53,6 +54,12 @@ export function ChatChannel({ matchId, channel, me }: { matchId: string; channel
   const [text, setText] = useState("");
   const listRef = useRef<HTMLUListElement>(null);
   const q = useQuery({ queryKey: keys.chat(matchId, channel), queryFn: () => api.chat(matchId, channel), refetchInterval: 10_000 });
+  // A chime for new messages from others, and a flashing tab title while the player is elsewhere.
+  useChatAlert(
+    q.data?.messages.map((m) => ({ id: m.id, from: m.playerId })),
+    me,
+    channel === "alliance" ? "Alliance chat" : "New chat message",
+  );
   const send = useMutation({
     mutationFn: (body: string) => api.postChat(matchId, channel, body),
     onSuccess: () => {

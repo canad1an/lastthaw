@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
+import { useChatAlert } from "../components/chatAlert.js";
 import { balance, formatCountdown, type MatchSummary } from "@lastthaw/shared";
 import { useMe } from "../api/auth.js";
 import { api, keys } from "../api/client.js";
@@ -42,6 +43,11 @@ function LobbyChat({ meId, approved }: { meId: string; approved: boolean }) {
     const el = listRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [count]);
+  useChatAlert(
+    q.data?.messages.map((m) => ({ id: m.id, from: m.userId })),
+    meId,
+    "Lobby chat",
+  );
   return (
     <Card className="space-y-2">
       <h2 className="display text-lg font-semibold text-white">Lobby chat</h2>

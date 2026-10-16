@@ -57,7 +57,7 @@ if (arg.endsWith("/inviteUser.js") || arg.endsWith("/inviteUser.ts")) {
     game = { name: mm.name, code: code.toUpperCase() };
   }
   const mail = inviteMail(name, r.token, INVITE_DAYS, game);
-  await sendMail(email.trim().toLowerCase(), mail.subject, mail.text);
+  await sendMail(email.trim().toLowerCase(), mail.subject, mail.text, mail.html);
   console.log(JSON.stringify({ id: r.id, created: r.created, mailed: true }));
   await db.close();
 }
