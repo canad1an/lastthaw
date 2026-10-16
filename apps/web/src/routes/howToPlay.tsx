@@ -178,6 +178,65 @@ const ADVANCED: Array<{ title: string; body: React.ReactNode }> = [
       </p>
     ),
   },
+  {
+    title: "World events: what happens to you",
+    body: (
+      <ul className="list-disc space-y-1 pl-5">
+        <li>
+          <b>Blizzards</b>: from day {ev.storm.fromDay}, each day has a {pct(ev.storm.chance)} chance of one. Everyone within {ev.storm.radiusKm} km of its centre gets {ev.storm.warningHours} hours' warning; then production runs at {pct(ev.storm.production)} and travel takes {ev.storm.travel}x as long for {ev.storm.hours} hours.
+        </li>
+        <li>
+          <b>Thaw pockets</b>: between days {ev.thaw.fromDay} and {ev.thaw.toDay}, with a {pct(ev.thaw.chance)} chance per ice step and at most {ev.thaw.max} per match, a valuable region about to freeze stays open {ev.thaw.extraDays} days longer. Everyone hears which.
+        </li>
+        <li>
+          <b>Plague</b>: a region over {pct(ev.plague.crowding)} of its capacity rolls a {pct(ev.plague.chance)} chance each day. For {ev.plague.hours} hours it stops growing and loses {pct(ev.plague.deathPerHour)} of its people an hour. Herbal medicine halves the chance; Vaccination or Sanitation stop it.
+        </li>
+        <li>
+          <b>Migrant columns</b>: when the ice takes a region, {pct(ev.refugees.share)} of its people walk to the nearest empire within {ev.refugees.hops} hops. The owner has {ev.refugees.hours} hours to take them in at {ev.refugees.foodPerPerson} food a head, or they are lost.
+        </li>
+        <li>
+          <b>The Northern Horde</b>: from day {ev.horde.fromDay} a horde comes down out of the ice line with a {pct(ev.horde.chance)} chance each day ({pct(ev.horde.lateChance)} from day {ev.horde.lateDay}): {ev.horde.base} fighters plus {ev.horde.perDay} for every day after day {ev.horde.fromDay}, with siege engines from day {ev.horde.catapultsFromDay}. It raids the nearest held land within {ev.horde.reachKm} km. Walls and a garrison hold it; empty land does not. Its camp carries a bounty.
+        </li>
+        <li>
+          <b>Rich finds</b>: each day a {pct(ev.boom.chance)} chance that one Mine, Quarry or Lumber camp somewhere doubles its output for {ev.boom.hours} hours. The neighbours are told, which makes it a target.
+        </li>
+        <li>
+          <b>Mercenaries</b>: each day a {pct(ev.mercenaries.chance)} chance of one or two companies for hire, paid in iron ({ev.mercenaries.ironPerUnit.sellsword} a Sellsword, {ev.mercenaries.ironPerUnit.free_company} a Free Company man). Offers last {ev.mercenaries.offerHours} hours; the men serve {ev.mercenaries.hours} hours, then move on.
+        </li>
+        <li>
+          <b>Expeditions</b>: at least {ev.expedition.minSoldiers} soldiers sent {ev.expedition.minHops} or more hops into land nobody has scouted. On arrival: {pct(ev.expedition.artifact)} a free tech, {pct(ev.expedition.hoard)} a hoard of iron ({ev.expedition.hoardIronPerAge} per age you have reached), {pct(ev.expedition.tale)} a tale that lifts loyalty by {Math.round(ev.expedition.taleLoyalty * 100)} across your realm for {ev.expedition.taleHours} hours, {pct(ev.expedition.ambush)} an ambush that costs half the party.
+        </li>
+        <li>
+          <b>The last stand</b>: once per match, when the ice is {ev.lastStand.withinDays} day from your capital, everything in it marches at {ev.lastStand.speedMult}x speed to a region of yours nearer the equator, carry limits ignored. The capital moves when the column arrives.
+        </li>
+        <li>
+          <b>Daily objectives</b>: each day has a prize of {balance.win.milestones.daily} score for the best tribe at it (most regions, people, food, coastal land, techs finished or battles won). The match's score leader competes at {pct(ev.objective.leaderHandicap)} of their value, so the prize spreads around.
+        </li>
+        <li>
+          <b>Bounties</b>: a region that rebels is worth {ev.bounty.rebelPerValue}x its value in food, wood and stone; a horde camp pays {ev.bounty.hordeCamp.food} food, {ev.bounty.hordeCamp.wood} wood and {ev.bounty.hordeCamp.stone} stone; a tribe that refuses tribute carries {pct(ev.bounty.tributeShare)} of its capital stock on its head for {ev.bounty.tributeHours} hours. Win a battle against the region or the player and the reward lands in your capital.
+        </li>
+      </ul>
+    ),
+  },
+  {
+    title: "Diplomacy: pacts, ceasefires and tribute",
+    body: (
+      <ul className="list-disc space-y-1 pl-5">
+        <li>
+          <b>Non-aggression pact</b>: proposed from the Players tab, accepted in the Alliance menu. While it holds, neither side can raid, conquer or send expeditions against the other. Ending it takes {ev.diplomacy.napNoticeHours} hours' notice; attacks are refused until the notice runs out, so a pact cannot be broken by surprise.
+        </li>
+        <li>
+          <b>Ceasefire</b>: the same protection for a fixed {ev.diplomacy.ceasefireHours} hours, then it simply ends.
+        </li>
+        <li>
+          <b>Tribute</b>: demand a resource and an amount from another tribe; they have {ev.diplomacy.tributeHours} hours to pay it from their capital, and you may demand from the same tribe once every {ev.diplomacy.tributeCooldownHours} hours. A refusal gives you {ev.diplomacy.causeForWarHours} hours of cause for war, during which your raids on them carry {ev.diplomacy.lootMult}x loot, and puts a bounty on the refuser. AI tribes pay when the demand is under a tenth of their capital stock.
+        </li>
+        <li>
+          <b>Alliances</b> are separate and stronger: shared vision, reinforcing and shipping goods to each other, private chat, and the chance to win together. Hordes respect nobody's pacts.
+        </li>
+      </ul>
+    ),
+  },
 ];
 
 const steps: Array<{ title: string; body: string }> = [
