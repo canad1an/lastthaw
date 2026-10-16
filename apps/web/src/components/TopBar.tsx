@@ -1,6 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useLogout, useMe } from "../api/auth.js";
+import { api, keys } from "../api/client.js";
 import { Button } from "./ui.js";
 import { SOCIAL_LINKS, SocialIcons } from "./social.js";
 
@@ -13,6 +15,33 @@ const NAV = [
   { to: "/about", label: "About" },
 ] as const;
 
+
+/**
+ * The matches you are in, always one click away: a waiting room you have joined
+ * (amber) or a match in progress (green), at the top of every page.
+ */
+function CurrentMatches({ onPick }: { onPick: () => void }) {
+  const me = useMe();
+  const q = useQuery({ queryKey: keys.matches, queryFn: () => api.matches(), enabled: !!me.data, refetchInterval: 30_000 });
+  const mine = (q.data ?? []).filter((m) => m.joined && m.status !== "finished").slice(0, 2);
+  if (mine.length === 0) return null;
+  return (
+    <>
+      {mine.map((m) => (
+        <Link
+          key={m.id}
+          to={m.status === "lobby" ? "/match/$matchId/lobby" : "/match/$matchId"}
+          params={{ matchId: m.id }}
+          onClick={onPick}
+          className={`rounded-md px-2.5 py-1 text-xs font-semibold ${m.status === "lobby" ? "bg-amber-400/90 text-slate-950 hover:bg-amber-300" : "bg-emerald-400/90 text-slate-950 hover:bg-emerald-300"}`}
+          title={m.status === "lobby" ? "Back to the waiting room" : "Back to the match"}
+        >
+          {m.status === "lobby" ? "Lobby" : "Play"} · {m.name}
+        </Link>
+      ))}
+    </>
+  );
+}
 
 /** Thin banner: icon, name and tagline over a slowly shifting aurora; nav links, with a hamburger menu on phones. */
 export function TopBar() {
@@ -37,6 +66,7 @@ export function TopBar() {
 
       {/* Desktop nav */}
       <nav className="relative hidden items-center gap-3 text-sm md:flex">
+        <CurrentMatches onPick={() => setOpen(false)} />
         {NAV.map((n) => (
           <Link key={n.to} to={n.to} className="text-slate-300 hover:text-white">
             {n.label}
@@ -75,7 +105,8 @@ export function TopBar() {
           <nav className="absolute left-0 right-0 top-full z-40 border-b border-slate-800 bg-slate-950/95 p-3 shadow-2xl backdrop-blur md:hidden" onClick={() => setOpen(false)}>
             <p className="mb-2 px-2 text-xs italic text-sky-200/80">{TAGLINE}</p>
             <ul className="space-y-1">
-              {NAV.map((n) => (
+              <CurrentMatches onPick={() => setOpen(false)} />
+        {NAV.map((n) => (
                 <li key={n.to}>
                   <Link to={n.to} className="block rounded px-2 py-2 text-slate-200 hover:bg-slate-800">
                     {n.label}
