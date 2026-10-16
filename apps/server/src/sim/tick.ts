@@ -60,7 +60,8 @@ async function tickMatch(db: Db, publisher: Publisher, matchId: string, log: pin
     // Once per match day: blizzards, plague, rich finds and the hordes.
     const dayNow = Math.floor(((now.getTime() - m.startsAt.getTime()) / 86400_000) * m.speed);
     const dayBefore = Math.floor(((last.getTime() - m.startsAt.getTime()) / 86400_000) * m.speed);
-    if (dayNow > dayBefore && dayNow >= 1) await runDailyEvents(tx, m, now, dayNow, seededRng(`${m.seed}:day:${dayNow}`), publisher, (fn) => after.push(fn));
+    // A fast match (or a long gap between ticks) can cross several day lines at once: every day gets its events.
+    for (let d = Math.max(1, dayBefore + 1); d <= dayNow; d++) await runDailyEvents(tx, m, now, d, seededRng(`${m.seed}:day:${d}`), publisher, (fn) => after.push(fn));
     await expirePacts(tx, m, now);
     const standings = await updateScores(tx, m);
     await recordOwnershipFrame(tx, m, now);

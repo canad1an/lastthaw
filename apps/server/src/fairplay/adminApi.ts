@@ -49,7 +49,8 @@ export async function adminRoutes(app: FastifyInstance, opts: { db: Db; publishe
     const admin = requireAdmin(req);
     const id = idParams.parse(req.params).id;
     const { verdict } = verdictBody.parse(req.body);
-    await db.update(fairplayFlags).set({ reviewedAt: new Date(), reviewedBy: admin.id, verdict }).where(eq(fairplayFlags.id, id));
+    const updated = await db.update(fairplayFlags).set({ reviewedAt: new Date(), reviewedBy: admin.id, verdict }).where(eq(fairplayFlags.id, id)).returning({ id: fairplayFlags.id });
+    if (updated.length === 0) throw Object.assign(new Error("no such flag"), { statusCode: 404 });
     return { ok: true };
   });
 

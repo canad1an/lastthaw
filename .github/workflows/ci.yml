@@ -39,4 +39,5 @@ jobs:
       - run: npm run typecheck
       - run: npm run db:migrate
       - run: npm test
+      - run: npm run test:game -w apps/server
       - run: npm run build

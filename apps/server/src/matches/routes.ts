@@ -249,12 +249,17 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
     const resumed = await db.transaction(async (tx) => {
       const [m] = await tx.select().from(matches).where(eq(matches.id, matchId)).for("no key update");
       if (!m || !m.pausedAt) return null;
-      const gap = sql`(now() - ${m.pausedAt})`;
+      // postgres.js cannot bind a Date inside a raw fragment: pass the ISO text and cast it.
+      const gap = sql`(now() - ${m.pausedAt.toISOString()}::timestamptz)`;
       await tx.execute(sql`update jobs set starts_at = starts_at + ${gap}, ends_at = ends_at + ${gap} where match_id = ${matchId} and completed_at is null and cancelled_at is null`);
       await tx.execute(sql`update armies set departs_at = departs_at + ${gap}, arrives_at = arrives_at + ${gap}, returns_at = returns_at + ${gap} where match_id = ${matchId} and status <> 'done'`);
       await tx.execute(sql`update trade_routes set next_at = next_at + ${gap} where match_id = ${matchId}`);
-      await tx.execute(sql`update players set protection_until = protection_until + ${gap}, next_ai_at = next_ai_at + ${gap} where match_id = ${matchId}`);
-      await tx.execute(sql`update match_regions set settled_at = settled_at + ${gap}, frozen_at = frozen_at + ${gap}, evacuated_at = evacuated_at + ${gap} where match_id = ${matchId}`);
+      await tx.execute(sql`update players set protection_until = protection_until + ${gap}, next_ai_at = next_ai_at + ${gap}, loyalty_boost_until = loyalty_boost_until + ${gap} where match_id = ${matchId}`);
+      await tx.execute(sql`update match_regions set settled_at = settled_at + ${gap}, frozen_at = frozen_at + ${gap}, evacuated_at = evacuated_at + ${gap}, storm_until = storm_until + ${gap}, plague_until = plague_until + ${gap}, thaw_until = thaw_until + ${gap} where match_id = ${matchId}`);
+      await tx.execute(sql`update pacts set "until" = "until" + ${gap} where match_id = ${matchId} and status in ('proposed', 'active', 'ending', 'refused')`);
+      await tx.execute(sql`update refugee_offers set expires_at = expires_at + ${gap} where match_id = ${matchId} and decided_at is null`);
+      await tx.execute(sql`update mercenary_offers set expires_at = expires_at + ${gap} where match_id = ${matchId} and hired_by is null`);
+      await tx.execute(sql`update bounties set expires_at = expires_at + ${gap} where match_id = ${matchId} and claimed_by is null`);
       await tx.execute(sql`update matches set starts_at = starts_at + ${gap}, ends_at = ends_at + ${gap}, last_tick_at = last_tick_at + ${gap}, paused_at = null where id = ${matchId}`);
       return m.pausedAt;
     });
