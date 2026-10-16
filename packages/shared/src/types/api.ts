@@ -14,10 +14,20 @@ export type HealthResponse = z.infer<typeof healthResponse>;
 // Auth
 // ---------------------------------------------------------------------------
 
+/** Letters, digits, spaces, _ and -, starting and ending with a letter or digit; one space at a time. */
+export const DISPLAY_NAME_RE = /^[\p{L}\p{N}](?:[\p{L}\p{N}_-]|[ ](?=[\p{L}\p{N}_-]))*[\p{L}\p{N}]$|^[\p{L}\p{N}]{2}$/u;
+export const RESERVED_NAMES = ["admin", "administrator", "moderator", "mod", "system", "last thaw", "lastthaw", "staff", "support"];
 export const registerBody = z.object({
   email: z.string().email().max(200),
   password: z.string().min(8).max(200),
-  displayName: z.string().trim().min(2).max(24),
+  displayName: z
+    .string()
+    .trim()
+    .min(2)
+    .max(24)
+    .transform((s) => s.normalize("NFKC"))
+    .refine((s) => DISPLAY_NAME_RE.test(s), "use letters, digits, spaces, _ or -, starting and ending with a letter or digit")
+    .refine((s) => !RESERVED_NAMES.includes(s.toLowerCase()), "that name is reserved"),
 });
 export const loginBody = z.object({ email: z.string().email(), password: z.string().min(1) });
 export const verifyBody = z.object({ token: z.string().min(10) });
@@ -30,6 +40,8 @@ export const userView = z.object({
   displayName: z.string(),
   emailVerified: z.boolean(),
   isAdmin: z.boolean().default(false),
+  /** Private beta: approved accounts may join matches. */
+  approved: z.boolean().default(false),
 });
 export type UserView = z.infer<typeof userView>;
 
@@ -419,19 +431,24 @@ export type ChatResponse = z.infer<typeof chatResponse>;
 
 export const tradeResource = z.enum(["food", "wood", "stone", "copper", "tin", "iron", "horses"]);
 export type TradeResource = z.infer<typeof tradeResource>;
+/** Rough worth of one unit of each resource, used only to refuse market orders that are gifts in disguise. */
+export const RESOURCE_WORTH: Record<string, number> = { food: 1, wood: 1, stone: 1.2, copper: 20, tin: 25, iron: 30, horses: 15 };
+/** Offers may be at most this many times more valuable than the ask, or the reverse. */
+export const MARKET_MAX_RATIO = 20;
 export const createOrderBody = z.object({
   regionId: z.string(),
   offerResource: tradeResource,
-  offerAmount: z.number().positive().max(1_000_000),
+  offerAmount: z.number().int().min(1).max(1_000_000),
   askResource: tradeResource,
-  askAmount: z.number().positive().max(1_000_000),
+  askAmount: z.number().int().min(1).max(1_000_000),
 });
 export const acceptOrderBody = z.object({ regionId: z.string() });
 export const marketOrderView = z.object({
   id: z.string(),
   playerId: z.string(),
   playerName: z.string(),
-  regionId: z.string(),
+  /** Only your own orders say which region they sit in. */
+  regionId: z.string().nullable(),
   offerResource: tradeResource,
   offerAmount: z.number(),
   askResource: tradeResource,

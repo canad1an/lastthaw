@@ -251,7 +251,8 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
       fromPlayerId: a.playerId,
       fromPlayerName: nameOf.get(a.playerId) ?? "Unknown",
       arrivesAt: a.arrivesAt.toISOString(),
-      size: Object.values(a.units).reduce((x, y) => x + y, 0),
+      // A band, not the exact count: scouts and walls are what tell you more.
+      size: roundBand(Object.values(a.units).reduce((x, y) => x + y, 0)),
     }));
 
   return {
@@ -301,4 +302,10 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
     })),
     allies,
   };
+}
+
+/** 1-9 as is, then to the nearest 5, 10, 50 and 100 as the number grows. */
+function roundBand(n: number): number {
+  const step = n < 10 ? 1 : n < 50 ? 5 : n < 200 ? 10 : n < 1000 ? 50 : 100;
+  return Math.max(1, Math.round(n / step) * step);
 }

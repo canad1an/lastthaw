@@ -13,7 +13,8 @@ export const balance = {
     defaultSpeed: 1,
     testSpeed: 10,
     lengthDays: 30,
-    maxHumanPlayers: 100,
+    /** Beta: twenty humans a match. */
+    maxHumanPlayers: 20,
     /** Days of beginner protection after a match starts (spec: 3 to 5). */
     protectionDays: 4,
     /** How many candidate starting regions a joining player is offered. */
@@ -214,8 +215,9 @@ export const balance = {
     templeConvertsPerHour: 2,
   },
   schedule: {
-    /** The worker keeps one upcoming weekly lobby open when enabled. */
+    /** The worker keeps this many upcoming weekly lobbies open when enabled, each with a name of its own. */
     enabled: true,
+    upcoming: 6,
     /** 0 = Sunday ... 6 = Saturday. */
     weekday: 1,
     hourUtc: 0,
@@ -243,7 +245,7 @@ export const balance = {
   },
   ai: {
     /** AI tribes are added at match start until this many players exist (spec: up to 100). */
-    fillTo: 24,
+    fillTo: 20,
     /** Neutral tribes scattered on the map at match start. */
     neutralTribes: 60,
     /** Neutral tribes are not placed within this distance of any capital. */

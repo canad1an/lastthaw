@@ -1,7 +1,10 @@
 import type { FastifyInstance } from "fastify";
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { forgotBody, loginBody, registerBody, resetBody, verifyBody, type UserView } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
+import { config } from "../config.js";
+import type { Redis } from "ioredis";
+import type { Publisher } from "../realtime/publish.js";
 import { emailTokens, sessions, users } from "../db/schema.js";
 import { hashPassword, hashToken, newToken, verifyPassword } from "./password.js";
 import { createSession, destroySession, requireUser } from "./session.js";
@@ -10,8 +13,8 @@ import { resetMail, sendMail, verificationMail } from "../mail.js";
 const VERIFY_HOURS = 24;
 const RESET_HOURS = 1;
 
-function toView(u: { id: string; email: string; displayName: string; emailVerifiedAt: Date | null; isAdmin: boolean }): UserView {
-  return { id: u.id, email: u.email, displayName: u.displayName, emailVerified: u.emailVerifiedAt !== null, isAdmin: u.isAdmin };
+function toView(u: { id: string; email: string; displayName: string; emailVerifiedAt: Date | null; isAdmin: boolean; approvedAt?: Date | null }): UserView {
+  return { id: u.id, email: u.email, displayName: u.displayName, emailVerified: u.emailVerifiedAt !== null, isAdmin: u.isAdmin, approved: u.isAdmin || !!u.approvedAt || config().DEV_TOOLS };
 }
 
 async function issueToken(db: Db, userId: string, kind: "verify" | "reset", hours: number): Promise<string> {
@@ -20,14 +23,22 @@ async function issueToken(db: Db, userId: string, kind: "verify" | "reset", hour
   return token;
 }
 
-export async function authRoutes(app: FastifyInstance, opts: { db: Db }) {
-  const { db } = opts;
+/** A real argon2 hash, verified against when the email is unknown, so a missing account takes as long as a wrong password. */
+const DUMMY_HASH_PROMISE = hashPassword("not-a-real-password-" + Math.random());
 
-  app.post("/api/auth/register", async (req, reply) => {
+export async function authRoutes(app: FastifyInstance, opts: { db: Db; redis: Redis; publisher: Publisher }) {
+  const { db, redis, publisher } = opts;
+  const tight = (max: number, timeWindow: string) => ({ config: { rateLimit: { max, timeWindow } } });
+  /** One mail per address per ten minutes for resend and forgot, whatever the caller does. */
+  const mailAllowed = async (kind: string, email: string) => (await redis.set(`lt-mail:${kind}:${email}`, "1", "EX", 600, "NX")) === "OK";
+
+  app.post("/api/auth/register", tight(10, "10 minutes"), async (req, reply) => {
     const body = registerBody.parse(req.body);
     const email = body.email.trim().toLowerCase();
     const existing = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
     if (existing.length) return reply.code(409).send({ error: "an account with that email already exists" });
+    const nameTaken = await db.select({ id: users.id }).from(users).where(sql`lower(${users.displayName}) = ${body.displayName.toLowerCase()}`).limit(1);
+    if (nameTaken.length) return reply.code(409).send({ error: "that tribe name is taken; pick another" });
 
     const [u] = await db
       .insert(users)
@@ -43,20 +54,30 @@ export async function authRoutes(app: FastifyInstance, opts: { db: Db }) {
     return reply.code(201).send(toView(u));
   });
 
-  app.post("/api/auth/login", async (req, reply) => {
+  app.post("/api/auth/login", tight(20, "1 minute"), async (req, reply) => {
     const body = loginBody.parse(req.body);
     const email = body.email.trim().toLowerCase();
+    // Ten wrong passwords in fifteen minutes locks the account for the rest of the window.
+    const failKey = `lt-login-fail:${email}`;
+    const fails = Number((await redis.get(failKey)) ?? 0);
+    if (fails >= 10) return reply.code(429).send({ error: "too many attempts; try again in 15 minutes" });
     const [u] = await db.select().from(users).where(eq(users.email, email)).limit(1);
-    if (!u || !(await verifyPassword(u.passwordHash, body.password))) {
+    const ok = u ? await verifyPassword(u.passwordHash, body.password) : await verifyPassword(await DUMMY_HASH_PROMISE, body.password);
+    if (!u || !ok) {
+      await redis.multi().incr(failKey).expire(failKey, 900).exec();
       return reply.code(401).send({ error: "wrong email or password" });
     }
+    if (u.suspendedAt) return reply.code(403).send({ error: "this account is suspended" });
+    await redis.del(failKey);
     await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, u.id));
     await createSession(db, req, reply, u.id);
     return toView(u);
   });
 
   app.post("/api/auth/logout", async (req, reply) => {
+    const userId = req.user?.id;
     await destroySession(db, req, reply);
+    if (userId) await publisher.sessionsEnded(userId);
     return { ok: true };
   });
 
@@ -65,7 +86,7 @@ export async function authRoutes(app: FastifyInstance, opts: { db: Db }) {
     return req.user;
   });
 
-  app.post("/api/auth/verify", async (req, reply) => {
+  app.post("/api/auth/verify", tight(10, "10 minutes"), async (req, reply) => {
     const { token } = verifyBody.parse(req.body);
     const now = new Date();
     const [row] = await db
@@ -81,19 +102,20 @@ export async function authRoutes(app: FastifyInstance, opts: { db: Db }) {
     return { ok: true };
   });
 
-  app.post("/api/auth/resend-verification", async (req, reply) => {
+  app.post("/api/auth/resend-verification", tight(5, "10 minutes"), async (req, reply) => {
     const user = requireUser(req);
     if (user.emailVerified) return { ok: true };
+    if (!(await mailAllowed("verify", user.email))) return { ok: true };
     const token = await issueToken(db, user.id, "verify", VERIFY_HOURS);
     const mail = verificationMail(user.displayName, token);
     void sendMail(user.email, mail.subject, mail.text);
     return reply.send({ ok: true });
   });
 
-  app.post("/api/auth/forgot", async (req) => {
+  app.post("/api/auth/forgot", tight(5, "10 minutes"), async (req) => {
     const { email } = forgotBody.parse(req.body);
     const [u] = await db.select().from(users).where(eq(users.email, email.trim().toLowerCase())).limit(1);
-    if (u) {
+    if (u && (await mailAllowed("reset", u.email))) {
       const token = await issueToken(db, u.id, "reset", RESET_HOURS);
       const mail = resetMail(u.displayName, token);
       void sendMail(u.email, mail.subject, mail.text);
@@ -102,7 +124,7 @@ export async function authRoutes(app: FastifyInstance, opts: { db: Db }) {
     return { ok: true };
   });
 
-  app.post("/api/auth/reset", async (req, reply) => {
+  app.post("/api/auth/reset", tight(10, "10 minutes"), async (req, reply) => {
     const { token, password } = resetBody.parse(req.body);
     const now = new Date();
     const [row] = await db
@@ -116,6 +138,7 @@ export async function authRoutes(app: FastifyInstance, opts: { db: Db }) {
       await tx.update(users).set({ passwordHash: await hashPassword(password) }).where(eq(users.id, row.userId));
       await tx.delete(sessions).where(eq(sessions.userId, row.userId));
     });
+    await publisher.sessionsEnded(row.userId);
     return { ok: true };
   });
 }

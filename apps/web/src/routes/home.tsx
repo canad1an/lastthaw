@@ -87,7 +87,7 @@ export function HomePage() {
               <Stat n="408" label="real regions" />
               <Stat n="30" label="days per match" />
               <Stat n={String(AGES.length)} label="ages to climb" />
-              <Stat n={playing > 0 ? fmt(playing) : "100"} label={playing > 0 ? "players in the field" : "players per match"} />
+              <Stat n={playing > 0 ? fmt(playing) : "20"} label={playing > 0 ? "players in the field" : "players per match"} />
             </dl>
           </div>
 

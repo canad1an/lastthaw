@@ -54,13 +54,25 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml exec postgres ps
 
 ## Backups
 
-Nightly dump to the home directory (add to `crontab -e` on the server):
+`deploy/backup.sh` runs nightly from cron on the server: `pg_dump`, gzip, AES-256 encryption with the key in
+`~/.backup.key`, upload to the private S3 bucket named by `BACKUP_BUCKET` in `.env` (objects expire after 30 days).
+`deploy/restore-check.sh` runs monthly: it pulls the newest backup, restores it into a scratch database and fails loudly
+if it looks empty. Cron lines on the server:
 
 ```
-15 3 * * * cd ~/lastthaw && docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T postgres pg_dump -U lastthaw lastthaw | gzip > ~/backups/lastthaw-$(date +\%F).sql.gz
+15 3 * * *  cd ~/lastthaw && bash deploy/backup.sh >> ~/backups/backup.log 2>&1
+0 4 1 * *   cd ~/lastthaw && bash deploy/restore-check.sh >> ~/backups/backup.log 2>&1
 ```
 
-Create `~/backups` first. Copy the dumps to a Lightsail bucket or S3 when you want off-box copies.
+Keep a copy of `~/.backup.key` off the server (Matt has one in `~/.ssh/lastthaw-backup.key`). The upload uses the
+`lastthaw-backup` IAM user, which can only write to that bucket.
+
+## Secrets and firewall
+
+`.env` on the server holds `POSTGRES_PASSWORD` and `REDIS_PASSWORD` (random); the compose files read them for Postgres,
+PgBouncer, Redis and every service URL. Rotate with `openssl rand -hex 24`, `alter user lastthaw password '...'` in
+Postgres, then `bash deploy/deploy.sh`. SSH (port 22) is open only to Matt's address in the Lightsail firewall; change it
+with `aws lightsail put-instance-public-ports`. The API container runs as the unprivileged `node` user.
 
 ## Rebuilding from scratch
 

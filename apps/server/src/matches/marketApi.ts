@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import { acceptOrderBody, balance, createOrderBody, effectsOf, storageCaps, type MarketOrderView, type MarketResponse, type TradeResource } from "@lastthaw/shared";
+import { acceptOrderBody, balance, createOrderBody, effectsOf, storageCaps, type MarketOrderView, type MarketResponse, type TradeResource, RESOURCE_WORTH, MARKET_MAX_RATIO } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import type { MatchRow } from "../worker/jobs.js";
 import type { PlayerRow } from "../sim/commands.js";
@@ -10,6 +10,7 @@ import type { Publisher } from "../realtime/publish.js";
 import { matchNow } from "../sim/clock.js";
 import { httpError } from "../sim/commands.js";
 import { applyCost, settleAndLockRegion, stockOf, type MatchRegionRow, type Tx } from "../sim/regions.js";
+import { idParams, orderParams } from "./params.js";
 
 const MAX_OPEN_ORDERS = 10;
 
@@ -73,12 +74,12 @@ export async function marketRoutes(app: FastifyInstance, opts: { db: Db; publish
   }
 
 
-  function toView(o: OrderRow, name: string): MarketOrderView {
+  function toView(o: OrderRow, name: string, viewerPlayerId?: string): MarketOrderView {
     return {
       id: o.id,
       playerId: o.playerId,
       playerName: name,
-      regionId: o.regionId,
+      regionId: viewerPlayerId && o.playerId === viewerPlayerId ? o.regionId : null,
       offerResource: o.offerResource as TradeResource,
       offerAmount: o.offerAmount,
       askResource: o.askResource as TradeResource,
@@ -90,7 +91,7 @@ export async function marketRoutes(app: FastifyInstance, opts: { db: Db; publish
 
   app.get("/api/matches/:id/market", async (req): Promise<MarketResponse> => {
     const user = requireUser(req);
-    const matchId = (req.params as { id: string }).id;
+    const matchId = idParams.parse(req.params).id;
     const { p } = await loadContext(matchId, user.id, false);
     const open = await db
       .select()
@@ -108,15 +109,19 @@ export async function marketRoutes(app: FastifyInstance, opts: { db: Db; publish
     const names = new Map(ids.length ? (await db.select({ id: players.id, name: players.name }).from(players).where(inArray(players.id, ids))).map((r) => [r.id, r.name]) : []);
     return {
       open: open.map((o) => toView(o, names.get(o.playerId) ?? "Unknown")),
-      mine: mine.map((o) => toView(o, names.get(o.playerId) ?? "Unknown")),
+      mine: mine.map((o) => toView(o, names.get(o.playerId) ?? "Unknown", p.id)),
     };
   });
 
   app.post("/api/matches/:id/market", async (req, reply) => {
     const user = requireUser(req);
-    const matchId = (req.params as { id: string }).id;
+    const matchId = idParams.parse(req.params).id;
     const body = createOrderBody.parse(req.body);
     if (body.offerResource === body.askResource) throw httpError(400, "offer and ask must differ");
+    // A gift dressed as a trade is how alts feed a main account: both sides must be within reason of each other.
+    const offerWorth = body.offerAmount * (RESOURCE_WORTH[body.offerResource] ?? 1);
+    const askWorth = body.askAmount * (RESOURCE_WORTH[body.askResource] ?? 1);
+    if (offerWorth > askWorth * MARKET_MAX_RATIO || askWorth > offerWorth * MARKET_MAX_RATIO) throw httpError(400, `that price is too far from fair to be a trade (more than ${MARKET_MAX_RATIO}x either way)`);
     const { m, p } = await loadContext(matchId, user.id);
 
     const order = await db.transaction(async (tx) => {
@@ -148,12 +153,12 @@ export async function marketRoutes(app: FastifyInstance, opts: { db: Db; publish
     });
     await publisher.toPlayer(matchId, p.id, "region.updated", { regionId: body.regionId });
     await publisher.toMatch(matchId, "trade.filled", { orderId: order.id, action: "posted" });
-    return reply.code(201).send(toView(order, p.name));
+    return reply.code(201).send(toView(order, p.name, p.id));
   });
 
   app.post("/api/matches/:id/market/:orderId/cancel", async (req) => {
     const user = requireUser(req);
-    const { id: matchId, orderId } = req.params as { id: string; orderId: string };
+    const { id: matchId, orderId } = orderParams.parse(req.params);
     const { m, p } = await loadContext(matchId, user.id);
     const now = matchNow(m);
 
@@ -181,7 +186,7 @@ export async function marketRoutes(app: FastifyInstance, opts: { db: Db; publish
 
   app.post("/api/matches/:id/market/:orderId/accept", async (req) => {
     const user = requireUser(req);
-    const { id: matchId, orderId } = req.params as { id: string; orderId: string };
+    const { id: matchId, orderId } = orderParams.parse(req.params);
     const body = acceptOrderBody.parse(req.body);
     const { m, p } = await loadContext(matchId, user.id);
     const now = matchNow(m);

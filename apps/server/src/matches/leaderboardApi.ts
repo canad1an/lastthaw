@@ -6,17 +6,27 @@ import type { Db } from "../db/client.js";
 import { allianceMembers, alliances, jobs, matchMilestones, matchRegions, matches, players, userMatchResults, users, battles, scoreHistory, ownershipFrames } from "../db/schema.js";
 import { milestoneLabel, milestonePoints } from "../sim/endgame.js";
 import { requireUser } from "../auth/session.js";
+import { httpError } from "../sim/commands.js";
+import { idParams } from "./params.js";
 import { matchNow } from "../sim/clock.js";
 
 /** Live leaderboard (public within a match), match day/ice status, and per-account history. */
 export async function leaderboardRoutes(app: FastifyInstance, opts: { db: Db }) {
   const { db } = opts;
+  const matchIdParam = (req: { params: unknown }) => idParams.parse(req.params).id;
+  const isMember = async (matchId: string, userId: string) => {
+    const [p] = await db.select({ id: players.id }).from(players).where(and(eq(players.matchId, matchId), eq(players.userId, userId))).limit(1);
+    return !!p;
+  };
 
   app.get("/api/matches/:id/leaderboard", async (req, reply) => {
-    requireUser(req);
-    const matchId = (req.params as { id: string }).id;
+    const user = requireUser(req);
+    const matchId = matchIdParam(req);
     const [m] = await db.select().from(matches).where(eq(matches.id, matchId)).limit(1);
     if (!m) return reply.code(404).send({ error: "match not found" });
+    // Live standings are for the people in the match; everyone can read them once it is over.
+    const member = await isMember(matchId, user.id);
+    if (m.status !== "finished" && !member && !user.isAdmin) throw httpError(403, "only players in this match can see its standings while it runs");
     const ps = await db.select().from(players).where(eq(players.matchId, matchId)).orderBy(desc(players.score));
     const stats = await db
       .select({
@@ -51,7 +61,7 @@ export async function leaderboardRoutes(app: FastifyInstance, opts: { db: Db }) 
         .select()
         .from(jobs)
         .where(and(eq(jobs.matchId, matchId), eq(jobs.kind, "build"), eq(jobs.refId, balance.win.wonderBuilding), isNull(jobs.completedAt), isNull(jobs.cancelledAt)))
-    ).map((j) => ({ playerId: j.playerId, playerName: nameOf.get(j.playerId ?? "") ?? "?", regionId: j.regionId, regionName: regionById(j.regionId ?? "")?.name ?? j.regionId, endsAt: j.endsAt.toISOString(), waiting: !!j.waitingFor }));
+    ).map((j) => ({ playerId: j.playerId, playerName: nameOf.get(j.playerId ?? "") ?? "?", regionId: member ? j.regionId : null, regionName: member ? (regionById(j.regionId ?? "")?.name ?? j.regionId) : "a capital", endsAt: j.endsAt.toISOString(), waiting: !!j.waitingFor }));
     return {
       match: { id: m.id, name: m.name, status: m.status, speed: m.speed, day, iceLatitude: iceLatitudeOnDay(day), totalRegions: total, winnerPlayerId: m.winnerPlayerId, survival: balance.win.survival, wonderName: buildingById.get(balance.win.wonderBuilding)?.name ?? "wonder" },
       milestones,
@@ -75,11 +85,12 @@ export async function leaderboardRoutes(app: FastifyInstance, opts: { db: Db }) 
 
   /** The end-of-match report: how it ended, standings, firsts, growth of every player's score by day, and a few totals. */
   app.get("/api/matches/:id/summary", async (req, reply) => {
-    // Public: the report page lives at its URL forever, for anyone.
+    // Public once the match is over: the report page lives at its URL forever, for anyone.
     const user = req.user ?? null;
-    const matchId = (req.params as { id: string }).id;
+    const matchId = matchIdParam(req);
     const [m] = await db.select().from(matches).where(eq(matches.id, matchId)).limit(1);
     if (!m) return reply.code(404).send({ error: "match not found" });
+    if (m.status !== "finished" && !(user && (user.isAdmin || (await isMember(matchId, user.id))))) throw httpError(403, "the report is published when the match ends");
     const ps = await db.select().from(players).where(eq(players.matchId, matchId)).orderBy(desc(players.score));
     const me = user ? ps.find((p) => p.userId === user.id) : undefined;
     const stats = await db
@@ -140,9 +151,11 @@ export async function leaderboardRoutes(app: FastifyInstance, opts: { db: Db }) 
 
   /** Replay frames for a match: public, like the report. A match recorded before replays existed gets its final positions as one frame. */
   app.get("/api/matches/:id/replay", async (req, reply) => {
-    const matchId = (req.params as { id: string }).id;
+    const matchId = matchIdParam(req);
     const [m] = await db.select().from(matches).where(eq(matches.id, matchId)).limit(1);
     if (!m) return reply.code(404).send({ error: "match not found" });
+    // The whole map, with every owner, is only for finished matches: during play it would be total vision.
+    if (m.status !== "finished" && !req.user?.isAdmin) throw httpError(403, "the replay is published when the match ends");
     const ps = await db.select({ id: players.id, name: players.name, isAi: players.isAi }).from(players).where(eq(players.matchId, matchId)).orderBy(players.createdAt);
     let frames = (await db.select().from(ownershipFrames).where(eq(ownershipFrames.matchId, matchId)).orderBy(ownershipFrames.day)).map((f) => ({ day: f.day, changes: f.changes }));
     if (frames.length === 0 && m.status !== "lobby") {

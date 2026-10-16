@@ -73,7 +73,7 @@ export function MarketPanel({ matchId, state, selectedRegionId }: { matchId: str
                     <span className="flex-1">
                       {fmt(o.offerAmount)} {o.offerResource} for {fmt(o.askAmount)} {o.askResource}
                       <span className="ml-2 text-xs text-slate-500">
-                        {regionName(o.regionId)} · {o.status}
+                        {o.regionId ? regionName(o.regionId) : "your region"} · {o.status}
                       </span>
                     </span>
                     {o.status === "open" && (

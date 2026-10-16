@@ -11,6 +11,7 @@ import { disbandUnits, evacuateRegion } from "../sim/evacuate.js";
 import { applyCost, waySetsFor, settleAndLockRegion, stockOf } from "../sim/regions.js";
 import { alliesOf } from "../sim/alliances.js";
 import { z } from "zod";
+import { idParams, regionParams, armyParams } from "./params.js";
 
 export async function armyRoutes(app: FastifyInstance, opts: { db: Db; publisher: Publisher }) {
   const { db, publisher } = opts;
@@ -33,7 +34,7 @@ export async function armyRoutes(app: FastifyInstance, opts: { db: Db; publisher
   /** Preview travel time without committing anything. */
   app.get("/api/matches/:id/route", async (req) => {
     const user = requireUser(req);
-    const matchId = (req.params as { id: string }).id;
+    const matchId = idParams.parse(req.params).id;
     const q = req.query as { from?: string; to?: string; speed?: string };
     if (!q.from || !q.to) throw httpError(400, "from and to are required");
     const { m, p, techs } = await loadContext(matchId, user.id);
@@ -47,7 +48,7 @@ export async function armyRoutes(app: FastifyInstance, opts: { db: Db; publisher
   /** Evacuate a region: everyone and every unit moves to another of your regions with as much stock as they can carry. */
   app.post("/api/matches/:id/regions/:regionId/evacuate", async (req) => {
     const user = requireUser(req);
-    const { id: matchId, regionId } = req.params as { id: string; regionId: string };
+    const { id: matchId, regionId } = regionParams.parse(req.params);
     const { toRegionId } = z.object({ toRegionId: z.string() }).parse(req.body);
     const ctx = await loadContext(matchId, user.id);
     const r = await evacuateRegion(ctx, regionId, toRegionId);
@@ -62,7 +63,7 @@ export async function armyRoutes(app: FastifyInstance, opts: { db: Db; publisher
    */
   app.post("/api/matches/:id/regions/:regionId/colonize", async (req) => {
     const user = requireUser(req);
-    const { id: matchId, regionId } = req.params as { id: string; regionId: string };
+    const { id: matchId, regionId } = regionParams.parse(req.params);
     const body = colonizeBody.parse(req.body);
     const ctx = await loadContext(matchId, user.id);
     const stock = Object.fromEntries(Object.entries(body.stock ?? {}).filter(([, v]) => v >= 1).map(([k, v]) => [k, Math.floor(v)]));
@@ -101,7 +102,7 @@ export async function armyRoutes(app: FastifyInstance, opts: { db: Db; publisher
    */
   app.post("/api/matches/:id/capital", async (req) => {
     const user = requireUser(req);
-    const matchId = (req.params as { id: string }).id;
+    const matchId = idParams.parse(req.params).id;
     const { regionId } = setCapitalBody.parse(req.body);
     const ctx = await loadContext(matchId, user.id);
     const { m, p, techs } = ctx;
@@ -155,7 +156,7 @@ export async function armyRoutes(app: FastifyInstance, opts: { db: Db; publisher
   /** Upgrade haulers in a region (caravans to wagons, caravans or wagons to trains). */
   app.post("/api/matches/:id/regions/:regionId/convert", async (req) => {
     const user = requireUser(req);
-    const { id: matchId, regionId } = req.params as { id: string; regionId: string };
+    const { id: matchId, regionId } = regionParams.parse(req.params);
     const body = convertBody.parse(req.body);
     const ctx = await loadContext(matchId, user.id);
     const r = await convertUnits(ctx, regionId, body.from, body.to, body.qty);
@@ -166,7 +167,7 @@ export async function armyRoutes(app: FastifyInstance, opts: { db: Db; publisher
   /** Disband stationed units: they rejoin the region's workers. */
   app.post("/api/matches/:id/regions/:regionId/disband", async (req) => {
     const user = requireUser(req);
-    const { id: matchId, regionId } = req.params as { id: string; regionId: string };
+    const { id: matchId, regionId } = regionParams.parse(req.params);
     const { units } = z.object({ units: z.record(z.string(), z.number().int().min(0)) }).parse(req.body);
     const ctx = await loadContext(matchId, user.id);
     const r = await disbandUnits(ctx, regionId, units);
@@ -181,7 +182,7 @@ export async function armyRoutes(app: FastifyInstance, opts: { db: Db; publisher
    */
   app.post("/api/matches/:id/rally", async (req) => {
     const user = requireUser(req);
-    const matchId = (req.params as { id: string }).id;
+    const matchId = idParams.parse(req.params).id;
     const { includeMissions } = rallyBody.parse(req.body ?? {});
     const ctx = await loadContext(matchId, user.id);
     const { m, p } = ctx;
@@ -237,7 +238,7 @@ export async function armyRoutes(app: FastifyInstance, opts: { db: Db; publisher
   /** Turn an outbound army around. It walks home over the time it has already spent travelling. */
   app.post("/api/matches/:id/armies/:armyId/recall", async (req) => {
     const user = requireUser(req);
-    const { id: matchId, armyId } = req.params as { id: string; armyId: string };
+    const { id: matchId, armyId } = armyParams.parse(req.params);
     const { m, p } = await loadContext(matchId, user.id);
     const result = await db.transaction(async (tx) => {
       const [army] = await tx.select().from(armies).where(eq(armies.id, armyId)).for("update");
@@ -261,7 +262,7 @@ export async function armyRoutes(app: FastifyInstance, opts: { db: Db; publisher
 
   app.post("/api/matches/:id/regions/:regionId/send", async (req) => {
     const user = requireUser(req);
-    const { id: matchId, regionId } = req.params as { id: string; regionId: string };
+    const { id: matchId, regionId } = regionParams.parse(req.params);
     const body = sendArmyBody.parse(req.body);
     const ctx = await loadContext(matchId, user.id);
     const { army, targetOwner, route } = await sendArmy(ctx, regionId, body);

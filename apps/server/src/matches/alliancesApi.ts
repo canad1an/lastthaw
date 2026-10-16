@@ -7,6 +7,7 @@ import { requireUser } from "../auth/session.js";
 import type { Publisher } from "../realtime/publish.js";
 import { httpError } from "../sim/commands.js";
 import { countOwnedRegions, type Tx } from "../sim/regions.js";
+import { idParams } from "./params.js";
 
 type PlayerRow = typeof players.$inferSelect;
 
@@ -46,7 +47,7 @@ export async function allianceRoutes(app: FastifyInstance, opts: { db: Db; publi
 
   app.post("/api/matches/:id/alliances", async (req, reply) => {
     const user = requireUser(req);
-    const matchId = (req.params as { id: string }).id;
+    const matchId = idParams.parse(req.params).id;
     const body = createAllianceBody.parse(req.body);
     const p = await myPlayer(matchId, user.id);
 
@@ -70,7 +71,7 @@ export async function allianceRoutes(app: FastifyInstance, opts: { db: Db; publi
 
   app.post("/api/matches/:id/alliances/invite", async (req) => {
     const user = requireUser(req);
-    const matchId = (req.params as { id: string }).id;
+    const matchId = idParams.parse(req.params).id;
     const body = allianceInviteBody.parse(req.body);
     const p = await myPlayer(matchId, user.id);
 
@@ -103,7 +104,7 @@ export async function allianceRoutes(app: FastifyInstance, opts: { db: Db; publi
 
   app.post("/api/matches/:id/alliances/accept", async (req) => {
     const user = requireUser(req);
-    const matchId = (req.params as { id: string }).id;
+    const matchId = idParams.parse(req.params).id;
     const body = allianceIdBody.parse(req.body);
     const p = await myPlayer(matchId, user.id);
 
@@ -129,7 +130,7 @@ export async function allianceRoutes(app: FastifyInstance, opts: { db: Db; publi
 
   app.post("/api/matches/:id/alliances/decline", async (req) => {
     const user = requireUser(req);
-    const matchId = (req.params as { id: string }).id;
+    const matchId = idParams.parse(req.params).id;
     const body = allianceIdBody.parse(req.body);
     const p = await myPlayer(matchId, user.id);
     await db.delete(allianceInvites).where(and(eq(allianceInvites.allianceId, body.allianceId), eq(allianceInvites.playerId, p.id)));
@@ -139,7 +140,7 @@ export async function allianceRoutes(app: FastifyInstance, opts: { db: Db; publi
 
   app.post("/api/matches/:id/alliances/leave", async (req) => {
     const user = requireUser(req);
-    const matchId = (req.params as { id: string }).id;
+    const matchId = idParams.parse(req.params).id;
     const p = await myPlayer(matchId, user.id);
 
     const result = await db.transaction(async (tx) => {
@@ -174,7 +175,7 @@ export async function allianceRoutes(app: FastifyInstance, opts: { db: Db; publi
 
   app.post("/api/matches/:id/alliances/kick", async (req) => {
     const user = requireUser(req);
-    const matchId = (req.params as { id: string }).id;
+    const matchId = idParams.parse(req.params).id;
     const body = allianceKickBody.parse(req.body);
     const p = await myPlayer(matchId, user.id);
 
@@ -196,7 +197,7 @@ export async function allianceRoutes(app: FastifyInstance, opts: { db: Db; publi
 
   app.get("/api/matches/:id/alliances", async (req): Promise<AlliancesResponse> => {
     const user = requireUser(req);
-    const matchId = (req.params as { id: string }).id;
+    const matchId = idParams.parse(req.params).id;
     const p = await myPlayer(matchId, user.id);
 
     const rows = await db.select().from(alliances).where(eq(alliances.matchId, matchId)).orderBy(asc(alliances.createdAt));

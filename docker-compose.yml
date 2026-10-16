@@ -1,9 +1,9 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
     environment:
       POSTGRES_USER: lastthaw
-      POSTGRES_PASSWORD: lastthaw
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lastthaw}
       POSTGRES_DB: lastthaw
     ports:
       - "5432:5432"
@@ -16,11 +16,14 @@ services:
       retries: 10
 
   redis:
-    image: redis:7-alpine
+    image: redis:7-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+    command: ["sh", "-c", "exec redis-server --requirepass \"$${REDIS_PASSWORD:-}\""]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     ports:
       - "6379:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD:-}\" ping | grep -q PONG"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -38,8 +41,8 @@ services:
     command: ["node", "dist/api/index.js"]
     env_file: .env
     environment:
-      DATABASE_URL: postgres://lastthaw:lastthaw@postgres:5432/lastthaw
-      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgres://lastthaw:${POSTGRES_PASSWORD:-lastthaw}@postgres:5432/lastthaw
+      REDIS_URL: redis://:${REDIS_PASSWORD:-}@redis:6379
       SMTP_HOST: mailpit
     depends_on:
       postgres:
@@ -57,8 +60,8 @@ services:
     command: ["node", "dist/worker/ai.js"]
     env_file: .env
     environment:
-      DATABASE_URL: postgres://lastthaw:lastthaw@postgres:5432/lastthaw
-      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgres://lastthaw:${POSTGRES_PASSWORD:-lastthaw}@postgres:5432/lastthaw
+      REDIS_URL: redis://:${REDIS_PASSWORD:-}@redis:6379
       SMTP_HOST: mailpit
     depends_on:
       postgres:
@@ -74,8 +77,8 @@ services:
     command: ["node", "dist/worker/index.js"]
     env_file: .env
     environment:
-      DATABASE_URL: postgres://lastthaw:lastthaw@postgres:5432/lastthaw
-      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgres://lastthaw:${POSTGRES_PASSWORD:-lastthaw}@postgres:5432/lastthaw
+      REDIS_URL: redis://:${REDIS_PASSWORD:-}@redis:6379
       SMTP_HOST: mailpit
     depends_on:
       postgres:

@@ -27,6 +27,13 @@ export function LobbyPage() {
       </section>
 
       {me.data && !me.data.emailVerified && <VerifyBanner />}
+      {me.data && me.data.emailVerified && !me.data.approved && (
+        <Card className="border-sky-500/40 bg-sky-500/10">
+          <p className="text-sm text-sky-100">
+            Last Thaw is in private beta. Your account is ready, but matches are invite-only for now: ask Matt for access and this page will open up as soon as you are approved.
+          </p>
+        </Card>
+      )}
       {!me.data && !me.isLoading && (
         <Card className="glass-strong flex flex-wrap items-center justify-between gap-3">
           <p className="text-slate-200">You need an account to claim a capital. It takes thirty seconds and costs nothing.</p>
@@ -44,7 +51,7 @@ export function LobbyPage() {
       <div className="space-y-3">
         {matches.isLoading && <p className="text-slate-400">Loading matches...</p>}
         {matches.data?.length === 0 && <p className="text-slate-400">No matches are open right now.</p>}
-        {matches.data?.map((m) => <MatchRow key={m.id} m={m} canJoin={!!me.data?.emailVerified} />)}
+        {matches.data?.map((m) => <MatchRow key={m.id} m={m} canJoin={!!me.data?.emailVerified && !!me.data?.approved} />)}
       </div>
 
       {me.data?.emailVerified && (me.data.isAdmin || info.data?.devTools) && <CreateMatch admin={!!me.data.isAdmin} />}
@@ -151,7 +158,7 @@ function MatchRow({ m, canJoin }: { m: MatchSummary; canJoin: boolean }) {
           </Link>
         ) : (
           m.status === "lobby" && (
-            <Button onClick={() => join.mutate()} disabled={!canJoin || join.isPending} title={canJoin ? "" : "Verify your email first"}>
+            <Button onClick={() => join.mutate()} disabled={!canJoin || join.isPending} title={canJoin ? "" : "Verify your email and ask for beta access first"}>
               Join
             </Button>
           )

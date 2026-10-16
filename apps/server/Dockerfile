@@ -1,5 +1,5 @@
 # Builds both the api and worker entrypoints; the compose file picks which one to run.
-FROM node:26-alpine AS build
+FROM node:26-alpine@sha256:6f08a523443ddedf52941874c203475b0ad503e859ad70cb26ab8be9a517dbd5 AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY packages/shared/package.json packages/shared/
@@ -12,7 +12,7 @@ COPY packages/shared packages/shared
 COPY apps/server apps/server
 RUN npm run build --workspace=@lastthaw/server
 
-FROM node:26-alpine
+FROM node:26-alpine@sha256:6f08a523443ddedf52941874c203475b0ad503e859ad70cb26ab8be9a517dbd5
 WORKDIR /app
 ENV NODE_ENV=production
 COPY package.json package-lock.json ./
@@ -26,3 +26,5 @@ COPY apps/server/drizzle apps/server/drizzle
 WORKDIR /app/apps/server
 EXPOSE 3000
 CMD ["node", "dist/api/index.js"]
+# Nothing here needs root.
+USER node

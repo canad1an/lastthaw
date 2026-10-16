@@ -1,6 +1,6 @@
 import { and, eq, gt, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import type { Db } from "../db/client.js";
-import { fairplayFlags, matches, players, sessions, transfers } from "../db/schema.js";
+import { fairplayFlags, matches, players, sessionSightings, sessions, transfers } from "../db/schema.js";
 
 /**
  * Multi-account detection. Flags pairs of accounts in the same match that
@@ -27,6 +27,15 @@ export async function detectMultiAccounts(db: Db): Promise<number> {
         .from(sessions)
         .where(and(inArray(sessions.userId, userIds), isNotNull(col), gt(sessions.createdAt, since)))
         .groupBy(col, sessions.userId);
+      // Addresses seen during play, not only at login.
+      if (kind === "ip") {
+        const seen = await db
+          .select({ key: sessionSightings.ip, userId: sessionSightings.userId })
+          .from(sessionSightings)
+          .where(and(inArray(sessionSightings.userId, userIds), gt(sessionSightings.hour, since)))
+          .groupBy(sessionSightings.ip, sessionSightings.userId);
+        rows.push(...seen);
+      }
       const byKey = new Map<string, Set<string>>();
       for (const r of rows) {
         if (!r.key) continue;

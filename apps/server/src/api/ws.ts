@@ -17,6 +17,8 @@ export async function registerWebsocket(app: FastifyInstance, opts: { db: Db }) 
   const subscriber = createRedis();
   await subscriber.connect();
   const sockets = new Map<string, Set<WebSocket>>(); // channel -> sockets
+  const byUser = new Map<string, Set<WebSocket>>(); // user id -> sockets, so a logout can close them
+  await subscriber.subscribe(channels.auth);
 
   const send = (ws: WebSocket, msg: WsServerMessage) => {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
@@ -43,6 +45,15 @@ export async function registerWebsocket(app: FastifyInstance, opts: { db: Db }) 
   };
 
   subscriber.on("message", (channel: string, raw: string) => {
+    if (channel === channels.auth) {
+      try {
+        const { userId } = JSON.parse(raw) as { userId: string };
+        for (const ws of byUser.get(userId) ?? []) ws.close(4001, "logged out");
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
     const set = sockets.get(channel);
     if (!set) return;
     let ev: PublishedEvent;
@@ -57,9 +68,19 @@ export async function registerWebsocket(app: FastifyInstance, opts: { db: Db }) 
   app.get("/api/ws", { websocket: true }, (socket, req) => {
     const user = req.user;
     const mine = new Set<string>();
+    if (user) (byUser.get(user.id) ?? byUser.set(user.id, new Set()).get(user.id)!).add(socket);
     send(socket, { type: "hello", serverTime: new Date().toISOString() });
 
+    // Ten messages a second is plenty for pings and subscriptions; more is a client gone wrong.
+    let windowStart = Date.now();
+    let inWindow = 0;
     socket.on("message", async (data) => {
+      const t = Date.now();
+      if (t - windowStart > 1000) {
+        windowStart = t;
+        inWindow = 0;
+      }
+      if (++inWindow > 10) return socket.close(4002, "too many messages");
       let msg;
       try {
         msg = wsClientMessage.parse(JSON.parse(String(data)));
@@ -94,6 +115,11 @@ export async function registerWebsocket(app: FastifyInstance, opts: { db: Db }) 
 
     socket.on("close", () => {
       for (const ch of mine) void unsubscribe(socket, ch);
+      if (user) {
+        const set = byUser.get(user.id);
+        set?.delete(socket);
+        if (set && set.size === 0) byUser.delete(user.id);
+      }
     });
     socket.on("error", (err) => logger.warn({ err }, "websocket error"));
   });

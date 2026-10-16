@@ -21,6 +21,7 @@ import { settleAndLockRegion } from "../sim/regions.js";
 import { buildMatchState } from "../view/matchState.js";
 import { startMatch, matchLengthSeconds } from "./start.js";
 import { farEnough, startOptionsFor } from "./startOptions.js";
+import { idParams, regionParams } from "./params.js";
 
 function httpError(status: number, message: string): Error {
   return Object.assign(new Error(message), { statusCode: status });
@@ -114,12 +115,15 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
 
   app.post("/api/matches/:id/join", async (req, reply) => {
     const user = requireVerified(req);
-    const matchId = (req.params as { id: string }).id;
+    const matchId = idParams.parse(req.params).id;
     const [m] = await db.select().from(matches).where(eq(matches.id, matchId)).limit(1);
     if (!m) throw httpError(404, "match not found");
     if (m.status !== "lobby") throw httpError(409, "the match has already started");
+    if (!user.approved) throw httpError(403, "Last Thaw is in private beta: ask Matt for access before joining a match");
     const existing = await myPlayer(matchId, user.id);
     if (existing) return { playerId: existing.id };
+    const [humans] = await db.select({ n: sql`count(*)::int` }).from(players).where(and(eq(players.matchId, matchId), eq(players.isAi, false)));
+    if (Number(humans?.n ?? 0) >= balance.match.maxHumanPlayers) throw httpError(409, "this match is full");
     const [p] = await db.insert(players).values({ matchId, userId: user.id, name: user.displayName }).returning();
     await publisher.toMatch(matchId, "player.joined", { name: user.displayName });
     return reply.code(201).send({ playerId: p!.id });
@@ -127,7 +131,7 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
 
   app.get("/api/matches/:id/start-options", async (req) => {
     const user = requireUser(req);
-    const matchId = (req.params as { id: string }).id;
+    const matchId = idParams.parse(req.params).id;
     const [m] = await db.select().from(matches).where(eq(matches.id, matchId)).limit(1);
     if (!m) throw httpError(404, "match not found");
     const p = await myPlayer(matchId, user.id);
@@ -139,7 +143,7 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
 
   app.post("/api/matches/:id/pick-start", async (req) => {
     const user = requireUser(req);
-    const matchId = (req.params as { id: string }).id;
+    const matchId = idParams.parse(req.params).id;
     const { regionId } = pickStartBody.parse(req.body);
     const [m] = await db.select().from(matches).where(eq(matches.id, matchId)).limit(1);
     if (!m) throw httpError(404, "match not found");
@@ -156,7 +160,7 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
 
   app.get("/api/matches/:id/state", async (req) => {
     const user = requireUser(req);
-    const matchId = (req.params as { id: string }).id;
+    const matchId = idParams.parse(req.params).id;
     const view = await buildMatchState(db, matchId, user.id);
     if (!view) throw httpError(404, "you are not in that match");
     return view;
@@ -164,7 +168,7 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
 
   app.post("/api/matches/:id/regions/:regionId/assign", async (req) => {
     const user = requireUser(req);
-    const { id: matchId, regionId } = req.params as { id: string; regionId: string };
+    const { id: matchId, regionId } = regionParams.parse(req.params);
     const shares = normalizeAssignment(assignBody.parse(req.body));
     const [m] = await db.select().from(matches).where(eq(matches.id, matchId)).limit(1);
     if (!m) throw httpError(404, "match not found");
@@ -193,7 +197,7 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
   app.post("/api/matches/:id/pause", async (req) => {
     const user = requireUser(req);
     if (!devTools && !user.isAdmin) throw httpError(403, "admins only");
-    const matchId = (req.params as { id: string }).id;
+    const matchId = idParams.parse(req.params).id;
     const [m] = await db.update(matches).set({ pausedAt: sql`coalesce(${matches.pausedAt}, now())` }).where(and(eq(matches.id, matchId), eq(matches.status, "running"))).returning({ pausedAt: matches.pausedAt });
     if (!m) throw httpError(404, "no running match with that id");
     await publisher.toMatch(matchId, "match.paused", { pausedAt: m.pausedAt?.toISOString() });
@@ -204,7 +208,7 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
   app.post("/api/matches/:id/resume", async (req) => {
     const user = requireUser(req);
     if (!devTools && !user.isAdmin) throw httpError(403, "admins only");
-    const matchId = (req.params as { id: string }).id;
+    const matchId = idParams.parse(req.params).id;
     const resumed = await db.transaction(async (tx) => {
       const [m] = await tx.select().from(matches).where(eq(matches.id, matchId)).for("no key update");
       if (!m || !m.pausedAt) return null;
@@ -225,7 +229,7 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
   app.post("/api/matches/:id/dev/start", async (req) => {
     const user = requireUser(req);
     if (!devTools && !user.isAdmin) throw httpError(404, "not found");
-    const matchId = (req.params as { id: string }).id;
+    const matchId = idParams.parse(req.params).id;
     const started = await startMatch(db, publisher, matchId);
     return { ok: true, started };
   });
@@ -233,7 +237,7 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
   app.post("/api/matches/:id/dev/time-skip", async (req) => {
     requireUser(req);
     if (!devTools) throw httpError(404, "not found");
-    const matchId = (req.params as { id: string }).id;
+    const matchId = idParams.parse(req.params).id;
     const { seconds } = timeSkipBody.parse(req.body);
     const [m] = await db
       .update(matches)

@@ -9,6 +9,7 @@ import { matchNow } from "../sim/clock.js";
 import { httpError } from "../sim/commands.js";
 import { areAllied } from "../sim/alliances.js";
 import { dispatchRoute } from "../sim/trade.js";
+import { regionParams, routeParams } from "./params.js";
 
 /** Automated caravan routes between a player's regions (or to an ally's). */
 export async function tradeRouteRoutes(app: FastifyInstance, opts: { db: Db; publisher: Publisher }) {
@@ -28,7 +29,7 @@ export async function tradeRouteRoutes(app: FastifyInstance, opts: { db: Db; pub
 
   app.post("/api/matches/:id/regions/:regionId/routes", async (req, reply) => {
     const user = requireUser(req);
-    const { id: matchId, regionId } = req.params as { id: string; regionId: string };
+    const { id: matchId, regionId } = regionParams.parse(req.params);
     const body = createRouteBody.parse(req.body);
     const { m, p } = await ctx(matchId, user.id);
     if (m.status !== "running") throw httpError(409, "the match is not running");
@@ -85,7 +86,7 @@ export async function tradeRouteRoutes(app: FastifyInstance, opts: { db: Db; pub
   /** Edit a route's destination, load, caravans or schedule. */
   app.patch("/api/matches/:id/routes/:routeId", async (req) => {
     const user = requireUser(req);
-    const { id: matchId, routeId } = req.params as { id: string; routeId: string };
+    const { id: matchId, routeId } = routeParams.parse(req.params);
     const body = createRouteBody.parse(req.body);
     const { m, p } = await ctx(matchId, user.id);
     const [r] = await db.select().from(tradeRoutes).where(and(eq(tradeRoutes.id, routeId), eq(tradeRoutes.playerId, p.id))).limit(1);
@@ -119,7 +120,7 @@ export async function tradeRouteRoutes(app: FastifyInstance, opts: { db: Db; pub
 
   app.post("/api/matches/:id/routes/:routeId/toggle", async (req) => {
     const user = requireUser(req);
-    const { id: matchId, routeId } = req.params as { id: string; routeId: string };
+    const { id: matchId, routeId } = routeParams.parse(req.params);
     const { p } = await ctx(matchId, user.id);
     const [r] = await db.select().from(tradeRoutes).where(and(eq(tradeRoutes.id, routeId), eq(tradeRoutes.playerId, p.id))).limit(1);
     if (!r) throw httpError(404, "route not found");
@@ -130,7 +131,7 @@ export async function tradeRouteRoutes(app: FastifyInstance, opts: { db: Db; pub
 
   app.delete("/api/matches/:id/routes/:routeId", async (req) => {
     const user = requireUser(req);
-    const { id: matchId, routeId } = req.params as { id: string; routeId: string };
+    const { id: matchId, routeId } = routeParams.parse(req.params);
     const { p } = await ctx(matchId, user.id);
     const deleted = await db.delete(tradeRoutes).where(and(eq(tradeRoutes.id, routeId), eq(tradeRoutes.playerId, p.id))).returning({ from: tradeRoutes.fromRegionId });
     if (!deleted.length) throw httpError(404, "route not found");
@@ -141,7 +142,7 @@ export async function tradeRouteRoutes(app: FastifyInstance, opts: { db: Db; pub
   /** Dispatch a route right now (also resets its schedule). */
   app.post("/api/matches/:id/routes/:routeId/run", async (req) => {
     const user = requireUser(req);
-    const { id: matchId, routeId } = req.params as { id: string; routeId: string };
+    const { id: matchId, routeId } = routeParams.parse(req.params);
     const { m, p } = await ctx(matchId, user.id);
     if (m.status !== "running") throw httpError(409, "the match is not running");
     if (m.pausedAt) throw httpError(409, "the match is paused");

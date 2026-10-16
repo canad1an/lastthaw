@@ -3,6 +3,7 @@ import cors from "@fastify/cors";
 import cookie from "@fastify/cookie";
 import websocket from "@fastify/websocket";
 import { ZodError } from "zod";
+import rateLimit from "@fastify/rate-limit";
 import type { HealthResponse } from "@lastthaw/shared";
 import { config } from "../config.js";
 import { logger } from "../logger.js";
@@ -51,8 +52,18 @@ export async function buildApp(deps: AppDeps = {}) {
   });
 
   await app.register(cors, { origin: cfg.PUBLIC_URL, credentials: true });
+  // Every client gets 300 requests a minute per address; the auth routes set much lower limits of their own.
+  // Counters live in Redis so both API replicas share them.
+  await app.register(rateLimit, { global: true, max: 300, timeWindow: "1 minute", redis, nameSpace: "lt-rl:", keyGenerator: (req) => req.ip, skipOnError: true });
+  // Cross-site writes are refused outright: browsers always send Origin on cross-site POSTs.
+  const allowedOrigins = new Set([cfg.PUBLIC_URL, cfg.PUBLIC_URL.replace("://", "://www.")]);
+  app.addHook("onRequest", async (req, reply) => {
+    if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") return;
+    const origin = req.headers.origin;
+    if (origin && !allowedOrigins.has(origin)) return reply.code(403).send({ error: "cross-site request refused" });
+  });
   await app.register(cookie, { secret: cfg.SESSION_SECRET });
-  await app.register(websocket);
+  await app.register(websocket, { options: { maxPayload: 16 * 1024 } });
   await app.register(sessionPlugin, { db });
 
   app.get("/api/health", async (): Promise<HealthResponse> => ({
@@ -62,16 +73,16 @@ export async function buildApp(deps: AppDeps = {}) {
     devTools: cfg.DEV_TOOLS,
   }));
 
-  await app.register(authRoutes, { db });
+  await app.register(authRoutes, { db, redis, publisher });
   await app.register(matchRoutes, { db, publisher });
   await app.register(jobRoutes, { db, publisher });
   await app.register(armyRoutes, { db, publisher });
   await app.register(messageRoutes, { db });
   await app.register(allianceRoutes, { db, publisher });
-  await app.register(chatRoutes, { db, publisher });
+  await app.register(chatRoutes, { db, publisher, redis });
   await app.register(marketRoutes, { db, publisher });
   await app.register(leaderboardRoutes, { db });
-  await app.register(adminRoutes, { db });
+  await app.register(adminRoutes, { db, publisher });
   await app.register(publicRoutes, { db });
   await app.register(tradeRouteRoutes, { db, publisher });
   if (deps.realtime !== false) await app.register(registerWebsocket, { db });

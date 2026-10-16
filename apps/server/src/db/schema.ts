@@ -14,10 +14,15 @@ export const users = pgTable(
     passwordHash: text("password_hash").notNull(),
     displayName: text("display_name").notNull(),
     isAdmin: boolean("is_admin").notNull().default(false),
+    /** Private beta: only approved accounts may join matches. Set by an admin. */
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    /** Set by an admin: the account cannot log in and its sessions are gone until cleared. */
+    suspendedAt: timestamp("suspended_at", { withTimezone: true }),
+    suspendReason: text("suspend_reason"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
   },
-  (t) => [uniqueIndex("users_email_idx").on(t.email)],
+  (t) => [uniqueIndex("users_email_idx").on(t.email), uniqueIndex("users_name_idx").on(sql`lower(${t.displayName})`)],
 );
 
 /** Multi-account review queue. Flags are for a human to look at, never auto-bans. */
@@ -48,13 +53,17 @@ export const sessions = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    /** sha256 of the cookie token; the token itself is never stored. */
+    tokenHash: text("token_hash"),
+    /** Last request on this session, kept to a 10-minute grain; idle sessions expire. */
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
     ip: text("ip"),
     userAgent: text("user_agent"),
     /** Client-supplied device fingerprint hash, if any. */
     fingerprint: text("fingerprint"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("sessions_user_idx").on(t.userId), index("sessions_ip_idx").on(t.ip)],
+  (t) => [index("sessions_user_idx").on(t.userId), index("sessions_ip_idx").on(t.ip), uniqueIndex("sessions_token_idx").on(t.tokenHash)],
 );
 
 /** Match history per account: the spec's "keep a history of each player's past matches and finishes". */
@@ -361,6 +370,23 @@ export const ownershipLatest = pgTable("ownership_latest", {
     .references(() => matches.id, { onDelete: "cascade" }),
   owners: jsonb("owners").$type<Record<string, string>>().notNull(),
 });
+
+/** Where a session was seen, one row per session per hour: the fair-play scan compares addresses across accounts. */
+export const sessionSightings = pgTable(
+  "session_sightings",
+  {
+    sessionId: uuid("session_id")
+      .notNull()
+      .references(() => sessions.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    hour: timestamp("hour", { withTimezone: true }).notNull(),
+    ip: text("ip").notNull(),
+    userAgent: text("user_agent"),
+  },
+  (t) => [primaryKey({ columns: [t.sessionId, t.hour] }), index("sightings_ip_idx").on(t.ip, t.userId)],
+);
 
 /** First-in-the-match checkpoints: one row per key, held by whoever got there first. */
 export const matchMilestones = pgTable(

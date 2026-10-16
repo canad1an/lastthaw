@@ -1,6 +1,6 @@
 import nodemailer, { type Transporter } from "nodemailer";
 import { config } from "./config.js";
-import { logger } from "./logger.js";
+import { logger, maskEmail } from "./logger.js";
 
 let transport: Transporter | undefined;
 
@@ -23,7 +23,7 @@ export async function sendMail(to: string, subject: string, text: string): Promi
     await getTransport().sendMail({ from: cfg.MAIL_FROM, to, subject, text });
   } catch (err) {
     // Mail failures must never break gameplay; log and move on.
-    logger.error({ err, to, subject }, "failed to send mail");
+    logger.error({ err, to: maskEmail(to), subject }, "failed to send mail");
   }
 }
 

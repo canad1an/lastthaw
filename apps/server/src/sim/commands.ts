@@ -323,56 +323,11 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
     : findRoute(regionId, body.targetRegionId, techs.has(balance.travel.seaTech), roads, rails, harbors);
   if (!route) throw httpError(400, techs.has(balance.travel.seaTech) ? "no route to that region" : "no land route; research Shipbuilding to cross the sea");
   const now = matchNow(m);
-  // Enemy patrols on the lanes this trip crosses: fight them first, or be turned back.
   const lanes = seaLegsOf(route.path);
-  let shipsAfter: Record<string, number> = { ...ships };
-  if (lanes.length && body.mission !== "patrol") {
-    const allies = await alliesOf(db, m.id, p.id);
-    const patrols = await db
-      .select()
-      .from(armies)
-      .where(and(eq(armies.matchId, m.id), eq(armies.mission, "patrol"), eq(armies.status, "outbound"), inArray(armies.lane, lanes), sql`${armies.playerId} <> ${p.id}`));
-    for (const patrol of patrols) {
-      if (allies.includes(patrol.playerId) || patrol.arrivesAt.getTime() <= now.getTime()) continue;
-      const theirs = splitNaval(patrol.units).ships;
-      if (Object.keys(theirs).length === 0) continue;
-      if (Object.keys(shipsAfter).length === 0) throw httpError(409, `enemy ships patrol the ${laneName(patrol.lane!)} lane; send an escort of your own ships first`);
-      const seed = `${m.seed}:lane:${patrol.id}:${now.getTime()}`;
-      const result = resolveCombat({ units: shipsAfter, bonus: 0 }, { units: theirs, bonus: 0 }, seed);
-      const remainingTheirs: Record<string, number> = { ...patrol.units };
-      for (const [id, lost] of Object.entries(result.defenderLosses)) remainingTheirs[id] = Math.max(0, (remainingTheirs[id] ?? 0) - lost);
-      const theirsLeft = Object.values(splitNaval(remainingTheirs).ships).reduce((a, b) => a + b, 0);
-      await db.update(armies).set({ units: remainingTheirs, ...(theirsLeft === 0 ? { status: "done" as const } : {}) }).where(eq(armies.id, patrol.id));
-      await db.insert(battles).values({ matchId: m.id, regionId, resolvedAt: now, seed, attackerPlayerId: p.id, defenderPlayerId: patrol.playerId, report: { mission: "sea", lane: patrol.lane, attacker: { before: ships, losses: result.attackerLosses }, defender: { before: theirs, losses: result.defenderLosses }, attackerWon: result.attackerWon } });
-      const [other] = await db.select({ name: players.name }).from(players).where(eq(players.id, patrol.playerId)).limit(1);
-      await db.insert(messages).values({ matchId: m.id, playerId: patrol.playerId, kind: "battle", subject: `${p.name} fought your patrol on the ${laneName(patrol.lane!)} lane: ${result.attackerWon ? "your ships were beaten" : "your ships held"}`, payload: { lane: patrol.lane, losses: result.defenderLosses } });
-      await db.insert(messages).values({ matchId: m.id, playerId: p.id, kind: "battle", subject: `Sea battle on the ${laneName(patrol.lane!)} lane against ${other?.name ?? "an enemy"}: ${result.attackerWon ? "lane cleared" : "escort beaten"}`, payload: { lane: patrol.lane, losses: result.attackerLosses } });
-      shipsAfter = result.attackerRemaining;
-      if (!result.attackerWon) {
-        // The escort is sunk; the crossing is called off before it starts, nothing else is lost.
-        await db.transaction(async (tx) => {
-          const row = await settleAndLockRegion(tx, m.id, regionId, now, m.speed);
-          const newUnits = { ...row.units };
-          for (const [id, n] of Object.entries(ships)) newUnits[id] = Math.max(0, (newUnits[id] ?? 0) - (n - (shipsAfter[id] ?? 0)));
-          await tx.update(matchRegions).set({ units: newUnits, popSoldiers: Math.max(0, row.popSoldiers - Object.values(ships).reduce((a, b) => a + b, 0) + Object.values(shipsAfter).reduce((a, b) => a + b, 0)) }).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, regionId)));
-        });
-        throw httpError(409, `your escort was beaten on the ${laneName(patrol.lane!)} lane; the crossing is called off`);
-      }
-    }
-  }
-  if (hasShips) {
-    // Ships sunk clearing the lanes do not sail.
-    for (const id of Object.keys(ships)) units[id] = shipsAfter[id] ?? 0;
-    for (const id of Object.keys(units)) if (units[id]! <= 0) delete units[id];
-    unitCount = Object.values(units).reduce((a, b) => a + b, 0);
-  }
 
-  return db.transaction(async (tx) => {
+  const outcome = await db.transaction(async (tx) => {
     const origin = await settleAndLockRegion(tx, m.id, regionId, now, m.speed);
     if (origin.ownerPlayerId !== p.id) throw httpError(403, "not your region");
-    // Roads are already in the route cost: legs between road regions are shorter.
-    const walking = unitById.get("settler")?.speed ?? 4;
-    const seconds = body.mission === "patrol" ? (balance.naval.patrolHours * 3600) / m.speed : travelSeconds(route, (unitCount ? armySpeed(units) : walking) * (1 + techEffectsOf(techs).travel), m.speed);
 
     const [target] = await tx
       .select()
@@ -408,13 +363,67 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
       if (!(k in stock)) throw httpError(400, `unknown cargo ${k}`);
       if ((stock[k] ?? 0) < v) throw httpError(409, `not enough ${k} here`);
     }
+
+    // Enemy patrols on the lanes this trip crosses: the ships we verifiably own fight them first, or the crossing is turned back.
+    // This runs under the origin lock, after the stock check, so nobody can fight with ships they do not have.
+    let shipsAfter: Record<string, number> = { ...ships };
+    if (lanes.length && body.mission !== "patrol") {
+      const allies = await alliesOf(tx, m.id, p.id);
+      const patrols = await tx
+        .select()
+        .from(armies)
+        .where(and(eq(armies.matchId, m.id), eq(armies.mission, "patrol"), eq(armies.status, "outbound"), inArray(armies.lane, lanes), sql`${armies.playerId} <> ${p.id}`))
+        .orderBy(armies.id)
+        .for("update");
+      for (const patrol of patrols) {
+        if (allies.includes(patrol.playerId) || patrol.arrivesAt.getTime() <= now.getTime()) continue;
+        const theirs = splitNaval(patrol.units).ships;
+        if (Object.keys(theirs).length === 0) continue;
+        if (Object.keys(shipsAfter).length === 0) throw httpError(409, `enemy ships patrol the ${laneName(patrol.lane!)} lane; send an escort of your own ships first`);
+        const seed = `${m.seed}:lane:${patrol.id}:${now.getTime()}`;
+        const result = resolveCombat({ units: shipsAfter, bonus: 0 }, { units: theirs, bonus: 0 }, seed);
+        const remainingTheirs: Record<string, number> = { ...patrol.units };
+        for (const [id, lost] of Object.entries(result.defenderLosses)) remainingTheirs[id] = Math.max(0, (remainingTheirs[id] ?? 0) - lost);
+        const theirsLeft = Object.values(splitNaval(remainingTheirs).ships).reduce((a, b) => a + b, 0);
+        await tx.update(armies).set({ units: remainingTheirs, ...(theirsLeft === 0 ? { status: "done" as const } : {}) }).where(eq(armies.id, patrol.id));
+        await tx.insert(battles).values({ matchId: m.id, regionId, resolvedAt: now, seed, attackerPlayerId: p.id, defenderPlayerId: patrol.playerId, report: { mission: "sea", lane: patrol.lane, attacker: { before: shipsAfter, losses: result.attackerLosses }, defender: { before: theirs, losses: result.defenderLosses }, attackerWon: result.attackerWon } });
+        const [other] = await tx.select({ name: players.name }).from(players).where(eq(players.id, patrol.playerId)).limit(1);
+        await tx.insert(messages).values({ matchId: m.id, playerId: patrol.playerId, kind: "battle", subject: `${p.name} fought your patrol on the ${laneName(patrol.lane!)} lane: ${result.attackerWon ? "your ships were beaten" : "your ships held"}`, payload: { lane: patrol.lane, losses: result.defenderLosses } });
+        await tx.insert(messages).values({ matchId: m.id, playerId: p.id, kind: "battle", subject: `Sea battle on the ${laneName(patrol.lane!)} lane against ${other?.name ?? "an enemy"}: ${result.attackerWon ? "lane cleared" : "escort beaten"}`, payload: { lane: patrol.lane, losses: result.attackerLosses } });
+        shipsAfter = result.attackerRemaining;
+        if (!result.attackerWon) {
+          // The escort is sunk; the crossing is called off before it starts. Only the lost ships leave the region.
+          const sunkUnits = { ...origin.units };
+          let sunk = 0;
+          for (const [id, n] of Object.entries(ships)) {
+            const lost = n - (shipsAfter[id] ?? 0);
+            sunkUnits[id] = Math.max(0, (sunkUnits[id] ?? 0) - lost);
+            sunk += lost;
+          }
+          await tx.update(matchRegions).set({ units: sunkUnits, popSoldiers: Math.max(0, origin.popSoldiers - sunk) }).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, regionId)));
+          return { calledOff: `your escort was beaten on the ${laneName(patrol.lane!)} lane; the crossing is called off` } as const;
+        }
+      }
+    }
+    if (hasShips) {
+      // Ships sunk clearing the lanes do not sail, but they do leave the region.
+      for (const id of Object.keys(ships)) units[id] = shipsAfter[id] ?? 0;
+      for (const id of Object.keys(units)) if (units[id]! <= 0) delete units[id];
+    }
+    const sailing = Object.values(units).reduce((a, b) => a + b, 0);
+    const sunkNow = unitCount - sailing;
+    // Roads are already in the route cost: legs between road regions are shorter.
+    const walking = unitById.get("settler")?.speed ?? 4;
+    const seconds = body.mission === "patrol" ? (balance.naval.patrolHours * 3600) / m.speed : travelSeconds(route, (sailing ? armySpeed(units) : walking) * (1 + techEffectsOf(techs).travel), m.speed);
     const newUnits = { ...origin.units };
     for (const [id, n] of Object.entries(units)) newUnits[id] = (newUnits[id] ?? 0) - n;
+    // Ships sunk on the lane leave the region too.
+    for (const [id, n] of Object.entries(ships)) newUnits[id] = Math.max(0, (newUnits[id] ?? 0) - (n - (shipsAfter[id] ?? 0)));
     await tx
       .update(matchRegions)
-      .set({ units: newUnits, popSoldiers: origin.popSoldiers - unitCount, popWorkers: origin.popWorkers - body.people })
+      .set({ units: newUnits, popSoldiers: Math.max(0, origin.popSoldiers - sailing - sunkNow), popWorkers: origin.popWorkers - body.people })
       .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, regionId)));
-    if (Object.keys(body.cargo).length) await applyCost(tx, { ...origin, popSoldiers: origin.popSoldiers - unitCount }, body.cargo);
+    if (Object.keys(body.cargo).length) await applyCost(tx, { ...origin, popSoldiers: origin.popSoldiers - sailing - sunkNow }, body.cargo);
 
     const arrivesAt = new Date(now.getTime() + seconds * 1000);
     const [a] = await tx
@@ -437,6 +446,9 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
     await tx.insert(jobs).values({ matchId: m.id, playerId: p.id, regionId: body.targetRegionId, kind: "mission", refId: a!.id, startsAt: now, endsAt: arrivesAt });
     return { army: a!, targetOwner, route };
   });
+  // A beaten escort is committed (the ships are gone) and then reported as a refusal.
+  if ("calledOff" in outcome) throw httpError(409, outcome.calledOff);
+  return outcome;
 }
 
 /**

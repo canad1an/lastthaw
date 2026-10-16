@@ -8,6 +8,7 @@ import type { Publisher } from "../realtime/publish.js";
 import { matchNow } from "../sim/clock.js";
 import { applyCost, settleAndLockRegion } from "../sim/regions.js";
 import { httpError, pendingRegionJobs, queueBuild, queueResearch, queueTrain, type CommandContext } from "../sim/commands.js";
+import { idParams, regionParams, jobParams } from "./params.js";
 
 /** Build, train and research endpoints. Resources are paid when a job is queued. */
 export async function jobRoutes(app: FastifyInstance, opts: { db: Db; publisher: Publisher }) {
@@ -30,7 +31,7 @@ export async function jobRoutes(app: FastifyInstance, opts: { db: Db; publisher:
 
   app.post("/api/matches/:id/regions/:regionId/build", async (req) => {
     const user = requireUser(req);
-    const { id: matchId, regionId } = req.params as { id: string; regionId: string };
+    const { id: matchId, regionId } = regionParams.parse(req.params);
     const { buildingId } = buildBody.parse(req.body);
     const ctx = await loadContext(matchId, user.id);
     const job = await queueBuild(ctx, regionId, buildingId);
@@ -40,7 +41,7 @@ export async function jobRoutes(app: FastifyInstance, opts: { db: Db; publisher:
 
   app.post("/api/matches/:id/regions/:regionId/train", async (req) => {
     const user = requireUser(req);
-    const { id: matchId, regionId } = req.params as { id: string; regionId: string };
+    const { id: matchId, regionId } = regionParams.parse(req.params);
     const { unitId, qty } = trainBody.parse(req.body);
     const ctx = await loadContext(matchId, user.id);
     const job = await queueTrain(ctx, regionId, unitId, qty);
@@ -50,7 +51,7 @@ export async function jobRoutes(app: FastifyInstance, opts: { db: Db; publisher:
 
   app.post("/api/matches/:id/research", async (req) => {
     const user = requireUser(req);
-    const matchId = (req.params as { id: string }).id;
+    const matchId = idParams.parse(req.params).id;
     const { techId } = researchBody.parse(req.body);
     const ctx = await loadContext(matchId, user.id);
     const job = await queueResearch(ctx, techId);
@@ -61,7 +62,7 @@ export async function jobRoutes(app: FastifyInstance, opts: { db: Db; publisher:
   /** Cancel a pending job. Full refund if it has not started, partial once started. Later jobs shift earlier. */
   app.post("/api/matches/:id/jobs/:jobId/cancel", async (req) => {
     const user = requireUser(req);
-    const { id: matchId, jobId } = req.params as { id: string; jobId: string };
+    const { id: matchId, jobId } = jobParams.parse(req.params);
     const { m, p } = await loadContext(matchId, user.id);
     await db.transaction(async (tx) => {
       const now = matchNow(m);

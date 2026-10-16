@@ -2,18 +2,19 @@ import type { FastifyInstance } from "fastify";
 import { and, desc, eq } from "drizzle-orm";
 import { chatChannel, chatPostBody, type ChatResponse } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
+import type { Redis } from "ioredis";
 import { allianceMembers, chatMessages, matches, players } from "../db/schema.js";
 import { requireUser } from "../auth/session.js";
 import type { Publisher } from "../realtime/publish.js";
 import { httpError } from "../sim/commands.js";
+import { idParams } from "./params.js";
 
 /** Minimum gap between two chat posts from one player. */
 const RATE_LIMIT_MS = 1000;
 
 /** Global and alliance chat. Messages are stored per match in `chat_messages`. */
-export async function chatRoutes(app: FastifyInstance, opts: { db: Db; publisher: Publisher }) {
+export async function chatRoutes(app: FastifyInstance, opts: { db: Db; publisher: Publisher; redis: Redis }) {
   const { db, publisher } = opts;
-  const lastPostAt = new Map<string, number>();
 
   async function myPlayer(matchId: string, userId: string) {
     const [m] = await db.select({ id: matches.id }).from(matches).where(eq(matches.id, matchId)).limit(1);
@@ -38,7 +39,7 @@ export async function chatRoutes(app: FastifyInstance, opts: { db: Db; publisher
 
   app.get("/api/matches/:id/chat", async (req): Promise<ChatResponse> => {
     const user = requireUser(req);
-    const matchId = (req.params as { id: string }).id;
+    const matchId = idParams.parse(req.params).id;
     const q = req.query as { channel?: string };
     const channel = chatChannel.parse(q.channel ?? "global");
     const p = await myPlayer(matchId, user.id);
@@ -57,15 +58,13 @@ export async function chatRoutes(app: FastifyInstance, opts: { db: Db; publisher
 
   app.post("/api/matches/:id/chat", async (req, reply) => {
     const user = requireUser(req);
-    const matchId = (req.params as { id: string }).id;
+    const matchId = idParams.parse(req.params).id;
     const body = chatPostBody.parse(req.body);
     const p = await myPlayer(matchId, user.id);
     const { stored, members } = await resolveChannel(p.id, body.channel);
 
-    const nowMs = Date.now();
-    const last = lastPostAt.get(p.id) ?? 0;
-    if (nowMs - last < RATE_LIMIT_MS) throw httpError(409, "slow down: one message per second");
-    lastPostAt.set(p.id, nowMs);
+    // One message a second per player, counted in Redis so both API replicas agree.
+    if ((await opts.redis.set(`lt-chat:${p.id}`, "1", "PX", RATE_LIMIT_MS, "NX")) !== "OK") throw httpError(409, "slow down: one message per second");
 
     const [row] = await db.insert(chatMessages).values({ matchId, channel: stored, playerId: p.id, playerName: p.name, body: body.body }).returning();
     if (!row) throw new Error("chat insert failed");

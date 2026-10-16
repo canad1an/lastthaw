@@ -14,7 +14,8 @@ for i in $(seq 1 30); do
   if $COMPOSE exec -T postgres pg_isready -U lastthaw >/dev/null 2>&1; then break; fi
   sleep 2
 done
-$COMPOSE --profile app run --rm --no-deps -e DATABASE_URL_DIRECT=postgres://lastthaw:lastthaw@postgres:5432/lastthaw api node dist/db/migrate.js
+set -a; . ./.env; set +a
+$COMPOSE --profile app run --rm --no-deps -e "DATABASE_URL_DIRECT=postgres://lastthaw:${POSTGRES_PASSWORD}@postgres:5432/lastthaw" api node dist/db/migrate.js
 $COMPOSE --profile app up -d --remove-orphans
 $COMPOSE --profile app ps
 echo "deployed $(git rev-parse --short HEAD) at $(date -u +%FT%TZ)"

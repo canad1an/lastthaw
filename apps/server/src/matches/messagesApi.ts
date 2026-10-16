@@ -3,6 +3,7 @@ import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { messages, players } from "../db/schema.js";
 import { requireUser } from "../auth/session.js";
+import { idParams } from "./params.js";
 
 function httpError(status: number, message: string): Error {
   return Object.assign(new Error(message), { statusCode: status });
@@ -24,7 +25,7 @@ export async function messageRoutes(app: FastifyInstance, opts: { db: Db }) {
 
   app.get("/api/matches/:id/messages", async (req) => {
     const user = requireUser(req);
-    const matchId = (req.params as { id: string }).id;
+    const matchId = idParams.parse(req.params).id;
     const p = await myPlayer(matchId, user.id);
     const rows = await db.select().from(messages).where(eq(messages.playerId, p.id)).orderBy(desc(messages.createdAt)).limit(100);
     const [unread] = await db
@@ -46,7 +47,7 @@ export async function messageRoutes(app: FastifyInstance, opts: { db: Db }) {
 
   app.post("/api/matches/:id/messages/read", async (req) => {
     const user = requireUser(req);
-    const matchId = (req.params as { id: string }).id;
+    const matchId = idParams.parse(req.params).id;
     const p = await myPlayer(matchId, user.id);
     await db.update(messages).set({ readAt: new Date() }).where(and(eq(messages.playerId, p.id), isNull(messages.readAt)));
     return { ok: true };

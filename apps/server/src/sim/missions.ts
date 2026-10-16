@@ -367,6 +367,17 @@ async function deliverUnits(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publis
   await notify(tx, m.id, army.playerId, "system", `${joinAsOccupiers ? `${settlersArriving} settlers joined the occupiers in` : "Troops arrived in"} ${regionById(army.targetRegionId)?.name}`, { regionId: army.targetRegionId, units: army.units });
   if (target.ownerPlayerId && target.ownerPlayerId !== army.playerId) {
     await notify(tx, m.id, target.ownerPlayerId, "alliance", `${await playerName(tx, army.playerId)} reinforced ${regionById(army.targetRegionId)?.name}`, { regionId: army.targetRegionId });
+    // Everything handed to another account is on the ledger the fair-play scan reads: goods as they are, units at what they cost, people at a flat worth.
+    const { transfers } = await import("../db/schema.js");
+    const rows: Array<{ resource: string; amount: number }> = [];
+    for (const [k, v] of Object.entries(army.cargo)) if (k !== "people" && v > 0) rows.push({ resource: k, amount: v });
+    if ((army.cargo.people ?? 0) > 0) rows.push({ resource: "people", amount: (army.cargo.people ?? 0) * 50 });
+    for (const [id, n] of Object.entries(army.units)) {
+      const cost = unitById.get(id)?.cost ?? {};
+      const worth = Object.values(cost).reduce((a, b) => a + (b ?? 0), 0);
+      if (n > 0 && worth > 0) rows.push({ resource: `unit:${id}`, amount: n * worth });
+    }
+    for (const r of rows) await tx.insert(transfers).values({ matchId: m.id, fromPlayerId: army.playerId, toPlayerId: target.ownerPlayerId, resource: r.resource, amount: r.amount, via: "reinforce", at });
   }
   const pid = army.playerId;
   after(() => publisher.toPlayer(m.id, pid, "army.arrived", { armyId: army.id }));

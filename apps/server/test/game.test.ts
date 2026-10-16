@@ -4,7 +4,7 @@ import { allRegions, balance, buildingById,
   buildingCost, iceLatitudeOnDay, matchStateView, regionById } from "@lastthaw/shared";
 import { buildApp } from "../src/api/app.js";
 import { createDb, type Db } from "../src/db/client.js";
-import { battles, jobs, matchRegions, matches, players, transfers, users } from "../src/db/schema.js";
+import { armies, battles, jobs, matchRegions, matches, players, transfers, users } from "../src/db/schema.js";
 import { runAiDecisions, runMatchTicks } from "../src/sim/tick.js";
 import { Publisher } from "../src/realtime/publish.js";
 import { createRedis } from "../src/redis.js";
@@ -30,9 +30,13 @@ class Client {
       ...(body ? { payload: body } : {}),
       headers: { cookie: this.cookie, ...(body ? { "content-type": "application/json" } : {}) },
     });
-    const set = res.headers["set-cookie"];
-    const first = Array.isArray(set) ? set[0] : set;
-    if (first) this.cookie = first.split(";")[0]!;
+    // Keep every cookie the server sets (session and device), newest value per name.
+    const jar = new Map(this.cookie.split("; ").filter(Boolean).map((c) => [c.split("=")[0]!, c]));
+    for (const c of ([] as string[]).concat(res.headers["set-cookie"] ?? [])) {
+      const pair = c.split(";")[0]!;
+      jar.set(pair.split("=")[0]!, pair);
+    }
+    this.cookie = [...jar.values()].join("; ");
     return res;
   }
 }
@@ -402,6 +406,15 @@ describe("milestone 1 flow", () => {
       expect(patrol.statusCode, JSON.stringify(patrol.json())).toBe(200);
       const bView = matchStateView.parse((await b.call("GET", `/api/matches/${matchId}/state`)).json());
       expect(bView.armies.find((x) => x.mission === "patrol")?.lane).toBeTruthy();
+      // Phantom ships: naming galleys you do not have, or sailing from a region you do not own, changes nothing.
+      expect((await a.call("POST", `/api/matches/${matchId}/regions/${port}/send`, { mission: "raid", targetRegionId: far, units: { galley: 40 }, people: 0, cargo: {} })).statusCode).toBe(409);
+      expect((await b.call("POST", `/api/matches/${matchId}/regions/${port}/send`, { mission: "raid", targetRegionId: far, units: { galley: 4 }, people: 0, cargo: {} })).statusCode).toBe(403);
+      const [patrolRow] = await db.select().from(armies).where(and(eq(armies.matchId, matchId), eq(armies.mission, "patrol")));
+      expect(patrolRow?.status).toBe("outbound");
+      expect(patrolRow?.units.galley).toBe(1);
+      expect((await db.select().from(battles).where(and(eq(battles.matchId, matchId), eq(battles.attackerPlayerId, aliceRow!.id)))).filter((f) => (f.report as { mission?: string }).mission === "sea").length).toBe(0);
+      // A malformed id is a 400, not a database error.
+      expect((await a.call("GET", `/api/matches/not-a-uuid/state`)).statusCode).toBe(400);
       // Alice's four galleys crossing the same lane fight the patrol first and win.
       const cross = await a.call("POST", `/api/matches/${matchId}/regions/${port}/send`, { mission: "raid", targetRegionId: far, units: { galley: 4 }, people: 0, cargo: {} });
       expect(cross.statusCode, JSON.stringify(cross.json())).toBe(200);
@@ -554,13 +567,15 @@ describe("milestone 5 social", () => {
     const orderId = posted.json().id as string;
     const aAfterPost = (await stateOf(a)).owned.find((o) => o.regionId === aCapital)!;
     expect(aAfterPost.wood).toBeLessThan(aBefore.wood - 45);
-    expect((await a.call("POST", `/api/matches/${matchId}/market`, { regionId: aCapital, offerResource: "iron", offerAmount: 5, askResource: "stone", askAmount: 1 })).statusCode).toBe(409);
+    expect((await a.call("POST", `/api/matches/${matchId}/market`, { regionId: aCapital, offerResource: "iron", offerAmount: 5, askResource: "stone", askAmount: 120 })).statusCode).toBe(409);
+    // A gift dressed as a trade (iron for a single stone) is refused outright.
+    expect((await a.call("POST", `/api/matches/${matchId}/market`, { regionId: aCapital, offerResource: "wood", offerAmount: 5000, askResource: "stone", askAmount: 1 })).statusCode).toBe(400);
     expect((await b.call("POST", `/api/matches/${matchId}/market`, { regionId: aCapital, offerResource: "wood", offerAmount: 1, askResource: "stone", askAmount: 1 })).statusCode).toBe(403);
     expect((await a.call("POST", `/api/matches/${matchId}/market/${orderId}/accept`, { regionId: aCapital })).statusCode).toBe(400);
 
     const listing = (await b.call("GET", `/api/matches/${matchId}/market`)).json() as { open: { id: string; playerName: string; regionId: string }[]; mine: unknown[] };
     expect(listing.open.map((o) => o.id)).toEqual([orderId]);
-    expect(listing.open[0]).toMatchObject({ playerName: alice.displayName, regionId: aCapital });
+    expect(listing.open[0]).toMatchObject({ playerName: alice.displayName, regionId: null });
     expect(listing.mine).toHaveLength(0);
 
     // Bob accepts from his capital: he pays stone and gets wood; Alice gets stone.
