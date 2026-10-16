@@ -23,6 +23,7 @@ import { leaderboardRoutes } from "../matches/leaderboardApi.js";
 import { feedRoutes } from "../matches/feedApi.js";
 import { eventRoutes, diplomacyRoutes } from "../matches/eventsApi.js";
 import { adminRoutes } from "../fairplay/adminApi.js";
+import { registrationRoutes } from "../matches/registrations.js";
 import { publicRoutes } from "../matches/publicApi.js";
 import { tradeRouteRoutes } from "../matches/tradeApi.js";
 import { registerWebsocket } from "./ws.js";
@@ -85,6 +86,7 @@ export async function buildApp(deps: AppDeps = {}) {
   await app.register(marketRoutes, { db, publisher });
   await app.register(leaderboardRoutes, { db });
   await app.register(adminRoutes, { db, publisher, redis });
+  await app.register(registrationRoutes, { db });
   await app.register(publicRoutes, { db });
   await app.register(tradeRouteRoutes, { db, publisher });
   await app.register(feedRoutes, { db });

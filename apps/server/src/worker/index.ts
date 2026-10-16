@@ -8,6 +8,7 @@ import { startMatch } from "../matches/start.js";
 import { runDueJobs } from "./jobs.js";
 import { runMatchTicks } from "../sim/tick.js";
 import { ensureWeeklyMatch } from "./weekly.js";
+import { sendTournamentReminders } from "../matches/registrations.js";
 import { runTradeRoutes, runOverflow } from "../sim/trade.js";
 import { detectMultiAccounts } from "../fairplay/detect.js";
 import { cleanupSessions } from "../auth/session.js";
@@ -68,6 +69,9 @@ await Promise.all([
   }),
   every(Number(process.env.TICK_MS) || 30_000, "tick", () => runMatchTicks(db, publisher, log)),
   every(60_000, "weekly", () => ensureWeeklyMatch(db, log)),
+  every(60_000, "reminders", async () => {
+    await sendTournamentReminders(db, log);
+  }),
   every(Number(process.env.TICK_MS) || 30_000, "trade", async () => {
     await runTradeRoutes(db, publisher, log);
     await runOverflow(db, publisher, log);

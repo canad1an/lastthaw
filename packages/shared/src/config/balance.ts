@@ -228,6 +228,8 @@ export const balance = {
     /** The worker keeps this many upcoming weekly lobbies open when enabled, each with a name of its own. */
     enabled: true,
     upcoming: 6,
+    /** Tournaments take registrations from the start; joining (and the lobby itself) opens this many hours before the start. */
+    joinOpensHours: 1,
     /** 0 = Sunday ... 6 = Saturday. */
     weekday: 1,
     hourUtc: 0,

@@ -7,6 +7,9 @@ import { emailTokens, matches, players, users } from "../src/db/schema.js";
 import { newToken } from "../src/auth/password.js";
 import { SIM_SPEED, createSimMatch } from "../src/scripts/nightlySim.js";
 import { inviteUser } from "../src/scripts/inviteUser.js";
+import { sendTournamentReminders } from "../src/matches/registrations.js";
+import { tournamentRegistrations } from "../src/db/schema.js";
+import { logger } from "../src/logger.js";
 import { inviteMail } from "../src/mail.js";
 
 process.env.DATABASE_URL ??= "postgres://lastthaw:lastthaw@localhost:5432/lastthaw";
@@ -390,6 +393,42 @@ describe("api routes", () => {
     expect(p?.eliminatedAt).not.toBeNull();
     const state = matchStateView.parse((await Ben.call("GET", `/api/matches/${gameId}/state`)).json());
     expect(state.owned).toEqual([]);
+  });
+
+  it("tournaments take registrations, open to joining an hour before, and remind a day and an hour ahead", async () => {
+    const startsAt = new Date(Date.now() + 3 * 86400_000);
+    const t = await A.call("POST", "/api/matches", { name: `Cup ${suffix}`, speed: 1, startsInMinutes: 0, startsAt: startsAt.toISOString(), kind: "tournament" });
+    expect(t.statusCode, JSON.stringify(t.json())).toBe(201);
+    const cupId = (t.json() as { id: string }).id;
+    created.push(cupId);
+    // Not open yet: joining is refused, registering works once, the listing shows it.
+    expect((await Ann.call("POST", `/api/matches/${cupId}/join`, {})).statusCode).toBe(409);
+    expect((await Out.call("POST", `/api/matches/${cupId}/register`, {})).statusCode).toBe(403);
+    expect((await Ann.call("POST", `/api/matches/${cupId}/register`, {})).statusCode).toBe(201);
+    expect((await Ann.call("POST", `/api/matches/${cupId}/register`, {})).statusCode).toBe(200);
+    expect((await Ann.call("POST", `/api/matches/${gameId}/register`, {})).statusCode).toBe(400);
+    const row = ((await Ann.call("GET", "/api/matches")).json() as Array<{ id: string; registered: boolean; registrations: number; joinOpensAt: string | null }>).find((m) => m.id === cupId)!;
+    expect(row).toMatchObject({ registered: true, registrations: 1 });
+    expect(Date.parse(row.joinOpensAt!)).toBe(startsAt.getTime() - balance.schedule.joinOpensHours * 3600_000);
+    const asBen = ((await Ben.call("GET", "/api/matches")).json() as Array<{ id: string; registered: boolean }>).find((m) => m.id === cupId)!;
+    expect(asBen.registered).toBe(false);
+    // Reminders: nothing three days out; the day-ahead mail inside a day; the lobby-open mail inside an hour; each once.
+    expect(await sendTournamentReminders(db, logger)).toBe(0);
+    await db.update(matches).set({ startsAt: new Date(Date.now() + 20 * 3600_000) }).where(eq(matches.id, cupId));
+    expect(await sendTournamentReminders(db, logger)).toBe(1);
+    expect(await sendTournamentReminders(db, logger)).toBe(0);
+    let [reg] = await db.select().from(tournamentRegistrations).where(eq(tournamentRegistrations.matchId, cupId));
+    expect(reg?.remindedDayAt).not.toBeNull();
+    expect(reg?.remindedHourAt).toBeNull();
+    await db.update(matches).set({ startsAt: new Date(Date.now() + 30 * 60_000) }).where(eq(matches.id, cupId));
+    expect(await sendTournamentReminders(db, logger)).toBe(1);
+    expect(await sendTournamentReminders(db, logger)).toBe(0);
+    [reg] = await db.select().from(tournamentRegistrations).where(eq(tournamentRegistrations.matchId, cupId));
+    expect(reg?.remindedHourAt).not.toBeNull();
+    // The lobby is open now: joining works, withdrawing a registration works too.
+    expect((await Ann.call("POST", `/api/matches/${cupId}/join`, {})).statusCode).toBe(201);
+    expect((await Ann.call("DELETE", `/api/matches/${cupId}/register`)).statusCode).toBe(200);
+    expect(((await Ann.call("GET", "/api/matches")).json() as Array<{ id: string; registered: boolean }>).find((m) => m.id === cupId)!.registered).toBe(false);
   });
 
   it("the nightly simulation is created as an ordinary public game with a war-or-winter name", async () => {

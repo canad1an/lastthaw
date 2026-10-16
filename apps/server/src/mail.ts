@@ -57,6 +57,30 @@ The link is valid for ${days} days. The field manual is at ${config().PUBLIC_URL
   };
 }
 
+const when = (d: Date) => `${d.toUTCString().replace(" GMT", " UTC")}`;
+
+export function registrationMail(displayName: string, matchName: string, startsAt: Date, opensAt: Date) {
+  const url = `${config().PUBLIC_URL}/matches`;
+  return {
+    subject: `Registered: ${matchName}`,
+    text: `Hi ${displayName},\n\nYou are registered for the tournament "${matchName}".\n\nIt starts ${when(startsAt)}. The lobby opens an hour before, at ${when(opensAt)}: that is when you join, pick your capital and meet the others. We will remind you a day ahead and again when the lobby opens.\n\n${url}\n`,
+  };
+}
+
+export function reminderMail(displayName: string, matchName: string, startsAt: Date, kind: "day" | "hour") {
+  const url = `${config().PUBLIC_URL}/matches`;
+  if (kind === "hour") {
+    return {
+      subject: `The lobby is open: ${matchName}`,
+      text: `Hi ${displayName},\n\n"${matchName}" starts in about an hour, at ${when(startsAt)}. The lobby is open now: join, pick your capital and get ready.\n\n${url}\n`,
+    };
+  }
+  return {
+    subject: `Tomorrow: ${matchName}`,
+    text: `Hi ${displayName},\n\n"${matchName}" starts tomorrow, ${when(startsAt)}. The lobby opens an hour before the start; we will mail you again then.\n\n${url}\n`,
+  };
+}
+
 export function resetMail(displayName: string, token: string) {
   const url = `${config().PUBLIC_URL}/reset?token=${encodeURIComponent(token)}`;
   return {

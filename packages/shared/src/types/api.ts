@@ -99,6 +99,10 @@ export const matchSummary = z.object({
   /** The invite code, shown only to the game's creator. */
   inviteCode: z.string().nullable().default(null),
   createdByMe: z.boolean().default(false),
+  /** Tournaments: how many have registered, whether I have, and when joining opens. */
+  registrations: z.number().default(0),
+  registered: z.boolean().default(false),
+  joinOpensAt: z.string().nullable().default(null),
 });
 export const joinMatchBody = z.object({ inviteCode: z.string().trim().max(32).optional() });
 export const joinByCodeBody = z.object({ code: z.string().trim().min(4).max(32) });

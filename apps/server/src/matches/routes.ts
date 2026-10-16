@@ -3,7 +3,8 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import { assignBody, balance, createMatchBody, normalizeAssignment, pickStartBody, regionById, timeSkipBody, type MatchSummary, joinMatchBody, joinByCodeBody } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
-import { matchRegions, matches, players } from "../db/schema.js";
+import { matchRegions, matches, players, tournamentRegistrations } from "../db/schema.js";
+import { isTournament, joinOpensAt } from "./registrations.js";
 import { requireUser, requireVerified } from "../auth/session.js";
 import { config } from "../config.js";
 import type { Publisher } from "../realtime/publish.js";
@@ -54,6 +55,14 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
       : [];
     const countBy = new Map(counts.map((c) => [c.matchId, c.n]));
     const allBy = new Map(counts.map((c) => [c.matchId, c.all]));
+    const regs = ids.length
+      ? await db
+          .select({ matchId: tournamentRegistrations.matchId, n: sql<number>`count(*)::int`, mine: sql<number>`count(*) filter (where ${tournamentRegistrations.userId} = ${user?.id ?? "00000000-0000-0000-0000-000000000000"}::uuid)::int` })
+          .from(tournamentRegistrations)
+          .where(inArray(tournamentRegistrations.matchId, ids))
+          .groupBy(tournamentRegistrations.matchId)
+      : [];
+    const regBy = new Map(regs.map((r) => [r.matchId, r]));
     const mine = user
       ? await db
           .select({ matchId: players.matchId, id: players.id, capital: players.capitalRegionId })
@@ -86,6 +95,9 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
         kind,
         inviteCode: createdByMe ? (s.inviteCode ?? null) : null,
         createdByMe,
+        registrations: regBy.get(m.id)?.n ?? 0,
+        registered: (regBy.get(m.id)?.mine ?? 0) > 0,
+        joinOpensAt: kind === "tournament" ? joinOpensAt(m.startsAt).toISOString() : null,
       });
     }
     return out;
@@ -160,6 +172,8 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
     if (!user.approved) throw httpError(403, "Last Thaw is in private beta: ask Matt for access before joining a match");
     const s = (m.settings ?? {}) as { kind?: string; inviteCode?: string; createdBy?: string };
     if (s.kind === "private" && s.createdBy !== user.id && (inviteCode ?? "").toUpperCase() !== (s.inviteCode ?? "").toUpperCase()) throw httpError(403, "this is a private game: enter its invite code");
+    // Tournaments: register any time, join once the lobby opens an hour before the start (admins may always join).
+    if (isTournament(m.settings) && !user.isAdmin && !devTools && joinOpensAt(m.startsAt) > new Date()) throw httpError(409, `the lobby opens ${balance.schedule.joinOpensHours} hour${balance.schedule.joinOpensHours === 1 ? "" : "s"} before the start; register and we will remind you`);
     const existing = await myPlayer(matchId, user.id);
     if (existing) return { playerId: existing.id };
     const [humans] = await db.select({ n: sql`count(*)::int` }).from(players).where(and(eq(players.matchId, matchId), eq(players.isAi, false)));

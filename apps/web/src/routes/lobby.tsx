@@ -254,8 +254,15 @@ function MatchRow({ m, canJoin }: { m: MatchSummary; canJoin: boolean }) {
     },
     onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matches }),
   });
+  const register = useMutation({
+    mutationFn: () => (m.registered ? api.unregisterTournament(m.id) : api.registerTournament(m.id)),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matches }),
+  });
   const startsIn = (Date.parse(m.startsAt) - now) / 1000;
   const endsIn = (Date.parse(m.endsAt) - now) / 1000;
+  // Tournaments take registrations until the lobby opens an hour before the start; then everyone joins.
+  const opensIn = m.joinOpensAt ? (Date.parse(m.joinOpensAt) - now) / 1000 : 0;
+  const registering = m.kind === "tournament" && m.status === "lobby" && opensIn > 0;
   return (
     <Card className="flex flex-wrap items-center justify-between gap-3">
       <div>
@@ -288,8 +295,11 @@ function MatchRow({ m, canJoin }: { m: MatchSummary; canJoin: boolean }) {
           )}
         </div>
         <p className="text-sm text-slate-400">
-          {m.status === "lobby" ? `${m.humanPlayers} joined, AI tribes fill the rest of ${m.maxPlayers}` : `${m.players}/${m.maxPlayers} players`} ·{" "}
-          {m.status === "lobby" ? (startsIn > 0 ? `starts in ${formatCountdown(startsIn)}` : "starting...") : `ends in ${formatCountdown(endsIn)}`}
+          {registering
+            ? `${m.registrations} registered · lobby opens in ${formatCountdown(opensIn)} · starts in ${formatCountdown(startsIn)}`
+            : m.status === "lobby"
+              ? `${m.humanPlayers} joined, AI tribes fill the rest of ${m.maxPlayers} · ${startsIn > 0 ? `starts in ${formatCountdown(startsIn)}` : "starting..."}`
+              : `${m.players}/${m.maxPlayers} players · ends in ${formatCountdown(endsIn)}`}
         </p>
       </div>
       <div className="flex items-center gap-2">
@@ -297,6 +307,10 @@ function MatchRow({ m, canJoin }: { m: MatchSummary; canJoin: boolean }) {
           <Link to={m.status === "lobby" ? "/match/$matchId/lobby" : "/match/$matchId"} params={{ matchId: m.id }} className="btn-ember rounded-md px-3 py-2 text-sm font-semibold">
             {m.status === "lobby" ? (m.capitalRegionId ? "Lobby" : "Pick your start") : "Play"}
           </Link>
+        ) : registering ? (
+          <Button variant={m.registered ? "ghost" : "primary"} onClick={() => register.mutate()} disabled={!canJoin || register.isPending} title={canJoin ? (m.registered ? "You will get a reminder a day ahead and when the lobby opens" : "We mail you a day ahead and when the lobby opens") : "Verify your email and ask for beta access first"}>
+            {m.registered ? "Registered ✓" : "Register"}
+          </Button>
         ) : (
           m.status === "lobby" && (
             <Button onClick={() => join.mutate()} disabled={!canJoin || join.isPending} title={canJoin ? "" : "Verify your email and ask for beta access first"}>
@@ -304,7 +318,7 @@ function MatchRow({ m, canJoin }: { m: MatchSummary; canJoin: boolean }) {
             </Button>
           )
         )}
-        <ErrorText>{join.error?.message}</ErrorText>
+        <ErrorText>{join.error?.message ?? register.error?.message}</ErrorText>
       </div>
     </Card>
   );

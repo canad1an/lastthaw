@@ -585,6 +585,24 @@ export const chatMessages = pgTable(
   (t) => [index("chat_channel_idx").on(t.matchId, t.channel, t.sentAt)],
 );
 
+/** Who has registered for a tournament ahead of its lobby opening, and which reminders they have had. */
+export const tournamentRegistrations = pgTable(
+  "tournament_registrations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    matchId: uuid("match_id")
+      .notNull()
+      .references(() => matches.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    remindedDayAt: timestamp("reminded_day_at", { withTimezone: true }),
+    remindedHourAt: timestamp("reminded_hour_at", { withTimezone: true }),
+  },
+  (t) => [uniqueIndex("tournament_registrations_unique_idx").on(t.matchId, t.userId)],
+);
+
 /** The lobby chat: one room for the whole site, outside any match. */
 export const lobbyMessages = pgTable(
   "lobby_messages",
