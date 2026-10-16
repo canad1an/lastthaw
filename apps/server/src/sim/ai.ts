@@ -139,7 +139,7 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
     }
 
     // Economy: hard tribes steer workers toward what the next building needs; others use a fixed split.
-    const want = tier.adaptiveEconomy && wanted ? steerToward(economy, rates, wanted) : rates.food < 0 || economy.food < 60 ? { food: 0.7, wood: 0.2, stone: 0.1 } : { food: 0.35, wood: 0.4, stone: 0.25 };
+    const want = tier.adaptiveEconomy && wanted ? steerToward(economy, rates, wanted) : rates.food < 0 || economy.food < 60 ? { food: 0.7, wood: 0.2, stone: 0.1 } : { food: 0.3, wood: 0.4, stone: 0.3 };
     const cur = normalizeAssignment(row.assignment);
     if (Math.abs(cur.food - want.food) > 0.05 || Math.abs(cur.stone - want.stone) > 0.05 || Math.abs(cur.wood - want.wood) > 0.05) {
       await attempt(() =>

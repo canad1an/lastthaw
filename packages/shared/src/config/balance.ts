@@ -29,11 +29,11 @@ export const balance = {
     wood: 200,
     stone: 100,
     /** Default worker split for a fresh capital. Shares sum to 1. */
-    assignment: { food: 0.35, wood: 0.4, stone: 0.25 },
+    assignment: { food: 0.3, wood: 0.4, stone: 0.3 },
   },
   economy: {
     /** Base output per worker per game hour before terrain and resource modifiers. */
-    perWorkerPerHour: { food: 10, wood: 16, stone: 10 },
+    perWorkerPerHour: { food: 10, wood: 16, stone: 12 },
     /** Terrain multipliers on gathering. Missing key means 1.0. */
     terrain: {
       plains: { food: 1.25, wood: 0.8, stone: 0.8 },
@@ -53,8 +53,8 @@ export const balance = {
     } as Record<string, Partial<{ food: number; wood: number; stone: number }>>,
     coastalFoodBonus: 1.1,
     riverFoodBonus: 1.1,
-    /** Food eaten per person per game hour. */
-    foodPerPersonPerHour: 0.4,
+    /** Food eaten per person per game hour. Roughly a third of a worker's food output, so feeding a people is a real share of the work. */
+    foodPerPersonPerHour: 1.2,
     /** Soldiers eat this many times a worker's ration: armies are a real food sink. */
     soldierFoodMultiplier: 3,
     /** Population growth per game hour as a fraction of current population, when fed. */

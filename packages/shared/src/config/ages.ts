@@ -156,7 +156,7 @@ export const BUILDINGS: readonly BuildingDef[] = [
   // Stone
   { id: "huts", category: "growth", name: "Huts", age: 0, description: "Shelter for more families.", maxLevel: 20, cost: { wood: 40, stone: 10 }, baseSeconds: 45, effect: { capacity: 10 } },
   { id: "storehouse", category: "storage", name: "Storehouse", age: 0, description: "Bigger stores, and some stock hidden from raiders.", maxLevel: 20, cost: { wood: 60, stone: 20 }, baseSeconds: 60, effect: { storage: 0.5, protect: 60 } },
-  { id: "hunting_grounds", category: "growth", name: "Hunting grounds", age: 0, description: "Better food from the land.", maxLevel: 15, cost: { wood: 30, food: 20 }, baseSeconds: 40, effect: { yield: { food: 0.2 } } },
+  { id: "hunting_grounds", category: "growth", name: "Hunting grounds", age: 0, description: "Better food from the land. Farms take over once you have them.", maxLevel: 10, cost: { wood: 30, food: 20 }, baseSeconds: 40, effect: { yield: { food: 0.15 } } },
   { id: "lumber_camp", category: "production", name: "Lumber camp", age: 0, description: "Faster wood gathering.", maxLevel: 15, cost: { wood: 30, stone: 10 }, baseSeconds: 40, effect: { yield: { wood: 0.25 } } },
   { id: "quarry", category: "production", name: "Quarry", age: 0, description: "Faster stone gathering.", maxLevel: 15, cost: { wood: 50, food: 30 }, baseSeconds: 50, effect: { yield: { stone: 0.25 } } },
   // Bronze
@@ -164,7 +164,7 @@ export const BUILDINGS: readonly BuildingDef[] = [
   { id: "mine", category: "production", name: "Mine", age: 1, description: "Extracts copper, tin or iron where the region has it.", maxLevel: 10, cost: { wood: 150, stone: 100 }, baseSeconds: 200, effect: { extract: { copper: 1.5, tin: 1.0, iron: 1.2 } }, requires: "mining", needsResource: ["copper", "tin", "iron"] },
   { id: "palisade", category: "defense", name: "Palisade", age: 1, description: "A wooden wall that helps defenders.", maxLevel: 10, cost: { wood: 200, stone: 30 }, baseSeconds: 180, effect: { defense: 0.1 } },
   { id: "stables", category: "production", name: "Stables", age: 1, description: "Breeds horses where wild herds roam.", maxLevel: 10, cost: { wood: 120, food: 150 }, baseSeconds: 160, effect: { extract: { horses: 0.6 } }, requires: "animal_husbandry", needsResource: ["horses"] },
-  { id: "granary", category: "storage", name: "Granary", age: 1, description: "Dry, sealed pits for grain: doubles food storage per level and hides stock from raiders.", maxLevel: 10, cost: { wood: 100, stone: 120 }, baseSeconds: 150, effect: { foodStorage: 1.0, protect: 120 } },
+  { id: "granary", category: "storage", name: "Granary", age: 1, description: "Dry, sealed pits for grain: half again as much food storage per level, and stock hidden from raiders.", maxLevel: 10, cost: { wood: 100, stone: 120 }, baseSeconds: 150, effect: { foodStorage: 0.5, protect: 120 } },
   // Iron
   { id: "forge", category: "training", name: "Forge", age: 2, description: "Works iron faster; speeds up training.", maxLevel: 10, cost: { wood: 200, stone: 200, iron: 20 }, baseSeconds: 400, effect: { trainSpeed: 0.06, extract: { iron: 0.8 } }, requires: "iron_working" },
   { id: "walls", category: "defense", name: "Stone walls", age: 2, description: "Solid walls around the settlement.", maxLevel: 10, cost: { stone: 400, wood: 100 }, baseSeconds: 500, effect: { defense: 0.18 }, requires: "masonry" },
@@ -180,7 +180,7 @@ export const BUILDINGS: readonly BuildingDef[] = [
   { id: "market", category: "storage", name: "Market", age: 3, description: "More goods kept safely in town.", maxLevel: 10, cost: { wood: 400, stone: 400 }, baseSeconds: 800, effect: { storage: 0.6, protect: 200 } },
   // Medieval
   { id: "castle", category: "defense", name: "Castle", age: 4, description: "The strongest defence money can build.", maxLevel: 5, cost: { stone: 1500, wood: 500, iron: 120 }, baseSeconds: 2400, effect: { defense: 0.3, loyalty: 0.1 } },
-  { id: "windmill", category: "growth", name: "Windmill", age: 4, description: "Grinds grain for a growing population.", maxLevel: 10, cost: { wood: 900, stone: 300 }, baseSeconds: 1800, effect: { yield: { food: 0.25 } } },
+  { id: "windmill", category: "growth", name: "Windmill", age: 4, description: "Grinds grain for a growing population.", maxLevel: 10, cost: { wood: 900, stone: 300 }, baseSeconds: 1800, effect: { yield: { food: 0.15 } } },
   { id: "guild_hall", category: "production", name: "Guild hall", age: 4, description: "Organised craftsmen work faster.", maxLevel: 10, cost: { wood: 800, stone: 800 }, baseSeconds: 2000, effect: { yield: { wood: 0.2, stone: 0.2 }, trainSpeed: 0.05 } },
   { id: "cathedral", category: "loyalty", name: "Cathedral", age: 4, description: "A monument that commands loyalty far and wide.", maxLevel: 5, cost: { stone: 2000, wood: 600 }, baseSeconds: 3000, effect: { loyalty: 0.3 } },
   // Industrial
@@ -256,7 +256,7 @@ export const TECHS: readonly TechDef[] = [
   { id: "road_building", name: "Road building", age: 1, description: "Surveyed, drained and paved ways. Lets a region build Roads to all of its neighbours.", cost: { wood: 600, stone: 400 }, baseSeconds: 900, requires: ["the_wheel"] },
   { id: "wagon_building", name: "Wagon building", age: 1, description: "Axles, beds and teams. When it completes, every caravan you have becomes a Wagon: more than twice the load, half again the speed.", cost: { wood: 3000, stone: 1500, food: 1000 }, baseSeconds: 7200, requires: ["the_wheel"] },
   { id: "writing", name: "Writing", age: 1, description: "Records and learning.", cost: { food: 300, wood: 300 }, baseSeconds: 800 },
-  { id: "irrigation", name: "Irrigation", age: 1, description: "Ditches and channels: fields yield more.", cost: { wood: 1200, stone: 600 }, baseSeconds: 1800, requires: ["agriculture"], effect: { yield: { food: 0.2 } } },
+  { id: "irrigation", name: "Irrigation", age: 1, description: "Ditches and channels: fields yield more.", cost: { wood: 1200, stone: 600 }, baseSeconds: 1800, requires: ["agriculture"], effect: { yield: { food: 0.15 } } },
   { id: "pottery", name: "Pottery", age: 1, description: "Sealed jars keep more in store.", cost: { stone: 900, wood: 600 }, baseSeconds: 1500, effect: { storage: 0.25 } },
   { id: "bronze_weapons", name: "Bronze weapons", age: 1, description: "Cast blades and spearheads for every soldier.", cost: { wood: 800, stone: 400, copper: 10 }, baseSeconds: 1800, effect: { attack: 0.1, defense: 0.05 } },
   { id: "herbal_medicine", name: "Herbal medicine", age: 1, description: "Fewer die young: people grow faster.", cost: { food: 1500, wood: 500 }, baseSeconds: 1500, effect: { growth: 0.2 } },
@@ -264,7 +264,7 @@ export const TECHS: readonly TechDef[] = [
   // Iron
   { id: "siegecraft", name: "Siegecraft", age: 2, description: "Engines to break walls.", cost: { wood: 900, iron: 40 }, baseSeconds: 1800 },
   { id: "masonry", name: "Masonry", age: 2, description: "Cut and fitted stone. Unlocks Stone walls and leads to Drill.", cost: { stone: 1000, wood: 400 }, baseSeconds: 1800 },
-  { id: "crop_rotation", name: "Crop rotation", age: 2, description: "Rested fields feed more.", cost: { food: 6000, wood: 3000 }, baseSeconds: 3600, requires: ["irrigation"], effect: { yield: { food: 0.25 } } },
+  { id: "crop_rotation", name: "Crop rotation", age: 2, description: "Rested fields feed more.", cost: { food: 6000, wood: 3000 }, baseSeconds: 3600, requires: ["irrigation"], effect: { yield: { food: 0.15 } } },
   { id: "iron_tools", name: "Iron tools", age: 2, description: "Iron axes and picks for the camps and quarries.", cost: { wood: 4000, stone: 3000, iron: 30 }, baseSeconds: 3600, effect: { yield: { wood: 0.2, stone: 0.2 } } },
   { id: "iron_weapons", name: "Iron weapons", age: 2, description: "Harder edges for every soldier.", cost: { wood: 3000, iron: 60 }, baseSeconds: 4200, requires: ["bronze_weapons"], effect: { attack: 0.15, defense: 0.1 } },
   { id: "mathematics", name: "Mathematics", age: 2, description: "Numbers and records: research goes faster.", cost: { food: 4000, stone: 2500 }, baseSeconds: 3600, requires: ["writing"], effect: { researchSpeed: 0.15 } },
@@ -276,10 +276,10 @@ export const TECHS: readonly TechDef[] = [
   { id: "steel", name: "Steel", age: 3, description: "Forged steel for blades and mail.", cost: { wood: 10000, iron: 150 }, baseSeconds: 9000, requires: ["iron_weapons"], effect: { attack: 0.2, defense: 0.15 } },
   { id: "logistics", name: "Logistics", age: 3, description: "Supply trains and relays: armies and caravans move faster.", cost: { food: 12000, wood: 10000 }, baseSeconds: 7200, requires: ["road_building"], effect: { travel: 0.2 } },
   { id: "civil_service", name: "Civil service", age: 3, description: "Governors and clerks keep distant lands loyal.", cost: { food: 10000, stone: 8000 }, baseSeconds: 7200, requires: ["writing"], effect: { loyalty: 0.1 } },
-  { id: "heavy_plough", name: "Heavy plough", age: 3, description: "Turns heavy soils that hoes never could.", cost: { wood: 15000, iron: 80 }, baseSeconds: 9000, requires: ["crop_rotation"], effect: { yield: { food: 0.3 } } },
+  { id: "heavy_plough", name: "Heavy plough", age: 3, description: "Turns heavy soils that hoes never could.", cost: { wood: 15000, iron: 80 }, baseSeconds: 9000, requires: ["crop_rotation"], effect: { yield: { food: 0.2 } } },
   { id: "chivalry", name: "Chivalry", age: 3, description: "Knights and castles. Enters the Medieval Age.", cost: { food: 150000, wood: 80000, iron: 1500 }, baseSeconds: 28800, requires: ["engineering"], advancesTo: 4, earliestDay: 14 },
   // Medieval
-  { id: "three_field_system", name: "Three-field system", age: 4, description: "A third of the land rests while two thirds feed.", cost: { food: 40000, wood: 25000 }, baseSeconds: 14400, requires: ["heavy_plough"], effect: { yield: { food: 0.3 } } },
+  { id: "three_field_system", name: "Three-field system", age: 4, description: "A third of the land rests while two thirds feed.", cost: { food: 40000, wood: 25000 }, baseSeconds: 14400, requires: ["heavy_plough"], effect: { yield: { food: 0.2 } } },
   { id: "blast_furnace", name: "Blast furnace", age: 4, description: "Far more metal from every mine.", cost: { stone: 30000, iron: 300 }, baseSeconds: 14400, effect: { extract: 0.5 } },
   { id: "plate_armour", name: "Plate armour", age: 4, description: "Full harness for the heavy troops.", cost: { iron: 400, wood: 20000 }, baseSeconds: 18000, requires: ["steel"], effect: { defense: 0.25 } },
   { id: "guilds", name: "Guilds", age: 4, description: "Organised crafts: more wood and stone from every camp.", cost: { food: 30000, stone: 20000 }, baseSeconds: 14400, effect: { yield: { wood: 0.25, stone: 0.25 } } },
@@ -299,7 +299,7 @@ export const TECHS: readonly TechDef[] = [
   { id: "satellites", name: "Satellites", age: 6, description: "Eyes in orbit: the whole map, live.", cost: { iron: 8000, stone: 150000 }, baseSeconds: 21600, requires: ["radar"], effect: { vision: 99 } },
   { id: "combined_arms", name: "Combined arms", age: 6, description: "Infantry, armour and guns fighting as one: unlocks Infantry and the Tank.", cost: { iron: 4000, food: 150000 }, baseSeconds: 18000, effect: { attack: 0.3, defense: 0.2 } },
   { id: "ballistics", name: "Ballistics", age: 6, description: "Fire control for long guns: unlocks Artillery.", cost: { iron: 2000, stone: 40000 }, baseSeconds: 10800, requires: ["combined_arms"] },
-  { id: "synthetic_fertilizer", name: "Synthetic fertilizer", age: 6, description: "Nitrogen from the air: fields yield half as much again.", cost: { iron: 1500, food: 100000 }, baseSeconds: 14400, effect: { yield: { food: 0.5 } } },
+  { id: "synthetic_fertilizer", name: "Synthetic fertilizer", age: 6, description: "Nitrogen from the air: fields yield half as much again.", cost: { iron: 1500, food: 100000 }, baseSeconds: 14400, effect: { yield: { food: 0.3 } } },
 ];
 
 export const buildingById = new Map(BUILDINGS.map((b) => [b.id, b]));
