@@ -12,12 +12,10 @@ instance, database or Caddy config used by boatbuildlog.com.
 | Firewall | TCP 22, 80, 443 |
 | SSH | `ssh -i ~/.ssh/lastthaw-aws ubuntu@44.221.111.218` (Lightsail key pair `lastthaw-aws`) |
 | DNS | Route 53 zone for lastthaw.com: `A @` and `A www` → 44.221.111.218; SES DKIM/SPF/DMARC records |
-| Email | SES domain identity `lastthaw.com` (verified, DKIM ok), custom MAIL FROM `mail.lastthaw.com`, IAM user `lastthaw-smtp` with SMTP credentials in the server's `.env` |
+| Email | Postmark server `Last Thaw` (ID 21125344), sender domain `lastthaw.com` with DKIM (`20261016143914pm._domainkey`) and Return-Path (`pm-bounces` CNAME) verified; the server API token is `SMTP_USER` and `SMTP_PASS` in the box's `.env`, host `smtp.postmarkapp.com:587`. SES identity still exists but is unused. |
 | Code on the box | bare repo `~/lastthaw.git`, working checkout `~/lastthaw`, env file `~/lastthaw/.env` |
 
-SES is still in the **sandbox**: it only delivers to verified addresses (mattadam07@gmail.com is verified).
-Request production access in the SES console (Account dashboard → Request production access) before
-inviting friends, or their verification emails will not arrive.
+Mail moved from SES to Postmark on 2026-10-16 because SES was still in the sandbox and rejected unverified recipients. Postmark's free tier is 100 messages a month, shared with boatbuildlog.com's server on the same account.
 
 ## Deploy a new version
 
