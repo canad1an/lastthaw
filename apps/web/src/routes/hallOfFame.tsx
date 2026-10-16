@@ -19,12 +19,15 @@ export function HallOfFamePage() {
   return (
     <main className="mx-auto max-w-3xl space-y-8 px-4 py-10">
       <header>
-        <h1 className="text-3xl font-semibold tracking-tight">Hall of fame</h1>
-        <p className="mt-2 text-slate-400">Every finished match and who outlasted the ice.</p>
+        <p className="mb-3 shadow-copy text-xs font-medium uppercase tracking-[0.25em] text-sky-300">The survivors</p>
+        <h1 className="display text-4xl font-bold sm:text-5xl">
+          <span className="frost-text">Hall of fame</span>
+        </h1>
+        <p className="shadow-copy mt-3 text-lg text-slate-200">Every finished match and who outlasted the ice.</p>
       </header>
 
       <section>
-        <h2 className="mb-2 text-xl font-semibold text-white">Champions</h2>
+        <h2 className="display mb-2 text-xl font-semibold text-white">Champions</h2>
         {q.data?.champions.length === 0 && <Card>No finished matches yet.</Card>}
         {q.data && q.data.champions.length > 0 && (
           <Card className="overflow-x-auto p-0">
@@ -53,7 +56,7 @@ export function HallOfFamePage() {
       </section>
 
       <section>
-        <h2 className="mb-2 text-xl font-semibold text-white">Past matches</h2>
+        <h2 className="display mb-2 text-xl font-semibold text-white">Past matches</h2>
         <div className="space-y-3">
           {q.data?.matches.map((m) => (
             <Card key={m.id} className="space-y-1">

@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+@theme {
+  --font-display: "Cinzel", "Georgia", serif;
+}
+
 :root {
   color-scheme: dark;
 }
@@ -9,21 +13,55 @@ body {
   min-height: 100dvh;
 }
 
-/* Top banner: deep night sky with a slow aurora drifting across it and a frost line on top. */
-.banner {
-  background: linear-gradient(90deg, #07111f 0%, #0b1a2b 45%, #0f2238 100%);
-}
-.banner-aurora {
+/* Full-page backdrop: the glacier wall and the camps below it, fixed behind every page, plus drifting snow. */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
   background:
-    radial-gradient(60% 140% at 20% 120%, rgba(56, 189, 248, 0.28), transparent 60%),
-    radial-gradient(40% 120% at 60% -20%, rgba(45, 212, 191, 0.22), transparent 60%),
-    radial-gradient(35% 120% at 90% 110%, rgba(167, 139, 250, 0.18), transparent 60%);
-  background-size: 200% 100%;
-  animation: aurora 18s ease-in-out infinite alternate;
-  mix-blend-mode: screen;
+    linear-gradient(180deg, rgba(3, 7, 18, 0.62) 0%, rgba(3, 7, 18, 0.42) 40%, rgba(3, 7, 18, 0.5) 70%, rgba(3, 7, 18, 0.88) 100%),
+    url("/scene.svg") center bottom / cover no-repeat,
+    #07111f;
 }
-.banner-frost {
-  background: linear-gradient(90deg, transparent, rgba(224, 242, 254, 0.7) 30%, rgba(224, 242, 254, 0.9) 50%, rgba(224, 242, 254, 0.7) 70%, transparent);
+.backdrop-aurora {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(55% 40% at 25% 20%, rgba(45, 212, 191, 0.22), transparent 70%),
+    radial-gradient(45% 35% at 65% 10%, rgba(56, 189, 248, 0.2), transparent 70%),
+    radial-gradient(40% 30% at 85% 30%, rgba(167, 139, 250, 0.16), transparent 70%);
+  background-size: 200% 100%;
+  mix-blend-mode: screen;
+  animation: aurora 22s ease-in-out infinite alternate;
+}
+.backdrop-snow {
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(1.5px 1.5px at 10% 15%, rgba(240, 249, 255, 0.9), transparent),
+    radial-gradient(1px 1px at 35% 45%, rgba(240, 249, 255, 0.7), transparent),
+    radial-gradient(2px 2px at 60% 25%, rgba(240, 249, 255, 0.8), transparent),
+    radial-gradient(1.2px 1.2px at 80% 65%, rgba(240, 249, 255, 0.7), transparent),
+    radial-gradient(1.6px 1.6px at 22% 80%, rgba(240, 249, 255, 0.8), transparent),
+    radial-gradient(1px 1px at 48% 90%, rgba(240, 249, 255, 0.6), transparent),
+    radial-gradient(1.8px 1.8px at 70% 5%, rgba(240, 249, 255, 0.8), transparent),
+    radial-gradient(1.2px 1.2px at 92% 40%, rgba(240, 249, 255, 0.7), transparent);
+  background-size: 420px 420px;
+  animation: snow 28s linear infinite;
+  opacity: 0.7;
+}
+.backdrop-snow.far {
+  background-size: 260px 260px;
+  animation-duration: 44s;
+  opacity: 0.4;
+}
+@keyframes snow {
+  from {
+    background-position: 0 -420px;
+  }
+  to {
+    background-position: 60px 420px;
+  }
 }
 @keyframes aurora {
   from {
@@ -33,16 +71,140 @@ body {
     background-position: 100% 50%;
   }
 }
-@media (prefers-reduced-motion: reduce) {
-  .banner-aurora {
-    animation: none;
-  }
+
+/* Top banner: translucent over the scene with a frost line on top. */
+.banner {
+  background: linear-gradient(180deg, rgba(3, 7, 18, 0.85), rgba(3, 7, 18, 0.55));
+  backdrop-filter: blur(10px);
+}
+.banner-frost {
+  background: linear-gradient(90deg, transparent, rgba(224, 242, 254, 0.7) 30%, rgba(224, 242, 254, 0.9) 50%, rgba(224, 242, 254, 0.7) 70%, transparent);
 }
 
-/* Landing hero: night sky fading to ice at the horizon. */
-.hero {
-  background:
-    radial-gradient(70% 80% at 80% 0%, rgba(56, 189, 248, 0.18), transparent 60%),
-    radial-gradient(50% 60% at 10% 100%, rgba(45, 212, 191, 0.12), transparent 60%),
-    linear-gradient(180deg, #0b1a2b 0%, #07111f 100%);
+/* Glass panels for content that sits on the scene. */
+.glass {
+  background: rgba(7, 17, 31, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 20px 60px -30px rgba(0, 0, 0, 0.8);
+}
+.glass-strong {
+  background: rgba(5, 12, 24, 0.88);
+}
+
+/* Display type and the frost sheen on big headlines. */
+.display {
+  font-family: var(--font-display);
+  letter-spacing: 0.02em;
+}
+.frost-text {
+  background: linear-gradient(180deg, #ffffff 0%, #e0f2fe 45%, #7dd3fc 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 2px 2px rgba(3, 7, 18, 0.9)) drop-shadow(0 6px 24px rgba(3, 7, 18, 0.7));
+}
+.ember-text {
+  filter: drop-shadow(0 2px 2px rgba(3, 7, 18, 0.9)) drop-shadow(0 6px 24px rgba(3, 7, 18, 0.6));
+}
+.shadow-copy {
+  text-shadow:
+    0 1px 2px rgba(3, 7, 18, 0.9),
+    0 4px 18px rgba(3, 7, 18, 0.8);
+}
+.ember-text {
+  background: linear-gradient(180deg, #fde68a 0%, #f59e0b 60%, #b45309 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Primary call to action: ember on ice. */
+.btn-ember {
+  background: linear-gradient(180deg, #fbbf24, #f59e0b);
+  color: #1c1004;
+  box-shadow:
+    0 0 0 1px rgba(251, 191, 36, 0.5),
+    0 10px 30px -10px rgba(245, 158, 11, 0.7);
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    filter 0.15s ease;
+}
+.btn-ember:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+  box-shadow:
+    0 0 0 1px rgba(251, 191, 36, 0.7),
+    0 16px 40px -12px rgba(245, 158, 11, 0.9);
+}
+.btn-ember:disabled {
+  filter: grayscale(0.4);
+  transform: none;
+}
+.btn-ice {
+  background: rgba(14, 165, 233, 0.12);
+  border: 1px solid rgba(125, 211, 252, 0.4);
+  color: #e0f2fe;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+.btn-ice:hover {
+  background: rgba(14, 165, 233, 0.22);
+  border-color: rgba(125, 211, 252, 0.7);
+}
+
+/* Hero map: regions are drawn in ice or land colour as the month advances. */
+.region-land {
+  fill: #2f6b3a;
+  stroke: #0b1a2b;
+  stroke-width: 0.8;
+  transition: fill 0.9s ease;
+}
+.region-ice {
+  fill: #dff1fb;
+  stroke: #9fd0ea;
+  stroke-width: 0.8;
+  transition: fill 0.9s ease;
+}
+.region-edge {
+  fill: #8fb9a8;
+  stroke: #0b1a2b;
+  stroke-width: 0.8;
+  transition: fill 0.9s ease;
+}
+
+/* Soft entrance for hero copy. */
+/* Transform only: if animations are paused (background tab) the content still shows. */
+@keyframes rise {
+  from {
+    transform: translateY(14px);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+.rise {
+  animation: rise 0.7s ease both;
+}
+.rise-2 {
+  animation-delay: 0.12s;
+}
+.rise-3 {
+  animation-delay: 0.24s;
+}
+.rise-4 {
+  animation-delay: 0.36s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .backdrop-aurora,
+  .backdrop-snow,
+  .rise {
+    animation: none;
+  }
+  .rise {
+    transform: none;
+  }
 }

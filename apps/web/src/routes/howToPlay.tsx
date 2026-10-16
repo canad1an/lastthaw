@@ -17,16 +17,19 @@ export function HowToPlayPage() {
   return (
     <main className="mx-auto max-w-3xl space-y-8 px-4 py-10">
       <header>
-        <h1 className="text-3xl font-semibold tracking-tight">How to play</h1>
-        <p className="mt-2 text-slate-400">Ten minutes to learn, thirty days to win.</p>
+        <p className="mb-3 shadow-copy text-xs font-medium uppercase tracking-[0.25em] text-sky-300">Field manual</p>
+        <h1 className="display text-4xl font-bold sm:text-5xl">
+          <span className="frost-text">How to play</span>
+        </h1>
+        <p className="shadow-copy mt-3 text-lg text-slate-200">Ten minutes to learn, thirty days to win.</p>
       </header>
 
       <ol className="space-y-4">
         {steps.map((s, i) => (
           <li key={s.title}>
             <Card>
-              <h2 className="font-medium text-white">
-                <span className="mr-2 text-sky-400">{i + 1}.</span>
+              <h2 className="display font-semibold text-white">
+                <span className="mr-2 text-amber-300">{i + 1}.</span>
                 {s.title}
               </h2>
               <p className="mt-1 text-sm text-slate-300">{s.body}</p>
@@ -36,7 +39,7 @@ export function HowToPlayPage() {
       </ol>
 
       <section className="space-y-3">
-        <h2 className="text-xl font-semibold text-white">Winning</h2>
+        <h2 className="display text-xl font-semibold text-white">Winning</h2>
         <Card className="text-sm text-slate-300">
           <p>
             A player or alliance that controls {Math.round(balance.win.regionShareForEarlyWin * 100)}% of all regions and holds that for {balance.win.holdHours} hours wins immediately. Otherwise the match ends on day{" "}
@@ -52,7 +55,7 @@ export function HowToPlayPage() {
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-xl font-semibold text-white">Good to know</h2>
+        <h2 className="display text-xl font-semibold text-white">Good to know</h2>
         <ul className="list-disc space-y-1 pl-5 text-sm text-slate-300">
           <li>Soldiers eat three times what a worker eats. A big standing army is the fastest way to burn a food surplus.</li>
           <li>New players cannot be attacked for the first {balance.match.protectionDays} days (scaled by match speed). Attacking someone ends your own protection.</li>
@@ -64,11 +67,17 @@ export function HowToPlayPage() {
         </ul>
       </section>
 
-      <p className="text-sm text-slate-400">
-        <Link to="/matches" className="text-sky-400 hover:underline">
-          Find a match
-        </Link>
-      </p>
+      <div className="glass glass-strong flex flex-wrap items-center justify-between gap-3 rounded-xl p-5">
+        <p className="text-slate-200">That is everything you need for day one. The rest you learn with the ice at your back.</p>
+        <div className="flex gap-2">
+          <Link to="/register" className="btn-ember display rounded-md px-4 py-2 text-sm font-semibold">
+            Play free
+          </Link>
+          <Link to="/matches" className="btn-ice rounded-md px-4 py-2 text-sm">
+            Find a match
+          </Link>
+        </div>
+      </div>
     </main>
   );
 }

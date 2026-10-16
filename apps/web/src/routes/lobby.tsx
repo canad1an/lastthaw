@@ -16,8 +16,11 @@ export function LobbyPage() {
   return (
     <main className="mx-auto max-w-3xl space-y-6 px-4 py-8">
       <section className="space-y-2">
-        <h1 className="text-3xl font-semibold tracking-tight">Matches</h1>
-        <p className="max-w-prose text-slate-400">
+        <p className="shadow-copy text-xs font-medium uppercase tracking-[0.25em] text-sky-300">The field</p>
+        <h1 className="display text-4xl font-bold">
+          <span className="frost-text">Matches</span>
+        </h1>
+        <p className="shadow-copy max-w-prose text-slate-200">
           Thirty days. One freezing Earth. Grow five families into an empire before the ice reaches you. Join a match before it starts;
           nobody joins mid-match.
         </p>
@@ -25,17 +28,16 @@ export function LobbyPage() {
 
       {me.data && !me.data.emailVerified && <VerifyBanner />}
       {!me.data && !me.isLoading && (
-        <Card>
-          <p className="text-slate-300">
-            <Link to="/register" className="text-sky-400 hover:underline">
-              Create an account
-            </Link>{" "}
-            or{" "}
-            <Link to="/login" className="text-sky-400 hover:underline">
-              log in
-            </Link>{" "}
-            to join a match.
-          </p>
+        <Card className="glass-strong flex flex-wrap items-center justify-between gap-3">
+          <p className="text-slate-200">You need an account to claim a capital. It takes thirty seconds and costs nothing.</p>
+          <div className="flex gap-2">
+            <Link to="/register" className="btn-ember display rounded-md px-4 py-2 text-sm font-semibold">
+              Play free
+            </Link>
+            <Link to="/login" className="btn-ice rounded-md px-4 py-2 text-sm">
+              Log in
+            </Link>
+          </div>
         </Card>
       )}
 
@@ -75,7 +77,7 @@ function PastMatches() {
   const how = (k: string | null) => (k === "hold" ? "held 60% of the world" : k === "wonder" ? "finished the Great Hearth" : k === "survival" ? "outlasted the ice" : k === "score" ? "highest score" : "");
   return (
     <section className="space-y-3">
-      <h2 className="text-xl font-semibold tracking-tight">Past matches</h2>
+      <h2 className="display text-xl font-semibold text-white">Past matches</h2>
       <div className="space-y-2">
         {list.map((m) => (
           <Card key={m.id} className="flex flex-wrap items-center justify-between gap-3">
@@ -131,7 +133,7 @@ function MatchRow({ m, canJoin }: { m: MatchSummary; canJoin: boolean }) {
     <Card className="flex flex-wrap items-center justify-between gap-3">
       <div>
         <div className="flex items-center gap-2">
-          <h2 className="font-medium">{m.name}</h2>
+          <h2 className="display font-semibold text-white">{m.name}</h2>
           <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-300">{m.speed}x</span>
           <span className={`rounded px-1.5 py-0.5 text-xs ${m.status === "running" ? "bg-emerald-500/20 text-emerald-300" : "bg-sky-500/20 text-sky-300"}`}>
             {m.status}
@@ -144,7 +146,7 @@ function MatchRow({ m, canJoin }: { m: MatchSummary; canJoin: boolean }) {
       </div>
       <div className="flex items-center gap-2">
         {m.joined ? (
-          <Link to="/match/$matchId" params={{ matchId: m.id }} className="rounded-md bg-sky-500 px-3 py-2 text-sm font-medium text-slate-950 hover:bg-sky-400">
+          <Link to="/match/$matchId" params={{ matchId: m.id }} className="btn-ember rounded-md px-3 py-2 text-sm font-semibold">
             {m.status === "lobby" ? (m.capitalRegionId ? "Lobby" : "Pick your start") : "Play"}
           </Link>
         ) : (

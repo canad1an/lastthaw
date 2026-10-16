@@ -5,8 +5,11 @@ export function AboutPage() {
   return (
     <main className="mx-auto max-w-3xl space-y-8 px-4 py-10">
       <header>
-        <h1 className="text-3xl font-semibold tracking-tight">About Last Thaw</h1>
-        <p className="mt-2 text-slate-400">A browser strategy game about the last warm month before the ice.</p>
+        <p className="mb-3 shadow-copy text-xs font-medium uppercase tracking-[0.25em] text-sky-300">The game</p>
+        <h1 className="display text-4xl font-bold sm:text-5xl">
+          <span className="frost-text">About Last Thaw</span>
+        </h1>
+        <p className="shadow-copy mt-3 text-lg text-slate-200">A browser strategy game about the last warm month before the ice.</p>
       </header>
 
       <section className="space-y-3 text-slate-300">
@@ -42,7 +45,7 @@ export function AboutPage() {
       </section>
 
       <section className="space-y-2 text-slate-300">
-        <h2 className="text-xl font-semibold text-white">The map</h2>
+        <h2 className="display text-xl font-semibold text-white">The map</h2>
         <p>
           The world is divided into 408 regions of roughly equal value, generated from real borders. Big countries simply contain more regions. Each region has
           a terrain type and one or two special resources such as copper, tin, iron, horses or fertile soil. No region has everything, which is the point: you
@@ -50,17 +53,17 @@ export function AboutPage() {
         </p>
       </section>
 
-      <p className="text-sm text-slate-400">
-        Ready?{" "}
-        <Link to="/how-to-play" className="text-sky-400 hover:underline">
-          Read how to play
-        </Link>{" "}
-        or{" "}
-        <Link to="/matches" className="text-sky-400 hover:underline">
-          find a match
-        </Link>
-        .
-      </p>
+      <div className="glass glass-strong flex flex-wrap items-center justify-between gap-3 rounded-xl p-5">
+        <p className="text-slate-200">Ready to see the ice for yourself?</p>
+        <div className="flex gap-2">
+          <Link to="/register" className="btn-ember display rounded-md px-4 py-2 text-sm font-semibold">
+            Play free
+          </Link>
+          <Link to="/how-to-play" className="btn-ice rounded-md px-4 py-2 text-sm">
+            How to play
+          </Link>
+        </div>
+      </div>
     </main>
   );
 }

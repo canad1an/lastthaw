@@ -2,13 +2,21 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useEffect, useState, type FormEvent } from "react";
 import { api, keys } from "../api/client.js";
-import { Button, Card, ErrorText, Field, Input } from "../components/ui.js";
+import { SignupForm } from "../components/SignupForm.js";
+import { Button, ErrorText, Field, Input } from "../components/ui.js";
 
-function Shell({ title, children }: { title: string; children: React.ReactNode }) {
+/** Auth pages share one layout: a pitch on the left, the form in a glass panel on the right. */
+function Shell({ title, kicker, pitch, children }: { title: string; kicker?: string; pitch?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <main className="mx-auto max-w-sm px-4 py-12">
-      <h1 className="mb-6 text-2xl font-semibold">{title}</h1>
-      <Card>{children}</Card>
+    <main className="mx-auto grid max-w-5xl gap-8 px-4 py-12 sm:py-20 lg:grid-cols-[1fr_minmax(0,26rem)] lg:items-center">
+      <div className="rise">
+        {kicker && <p className="shadow-copy mb-3 text-xs font-medium uppercase tracking-[0.25em] text-sky-300">{kicker}</p>}
+        <h1 className="display text-4xl font-bold sm:text-5xl">
+          <span className="frost-text">{title}</span>
+        </h1>
+        {pitch && <div className="shadow-copy mt-5 max-w-md space-y-3 text-slate-200">{pitch}</div>}
+      </div>
+      <div className="glass glass-strong rise rise-2 rounded-2xl p-6 sm:p-7">{children}</div>
     </main>
   );
 }
@@ -30,7 +38,23 @@ export function LoginPage() {
     m.mutate();
   };
   return (
-    <Shell title="Log in">
+    <Shell
+      kicker="Welcome back"
+      title="The ice kept moving."
+      pitch={
+        <>
+          <p>Your build queues finished, your caravans arrived and the line crept a little further south. Log in and see what the night left you.</p>
+          <p className="text-sm text-slate-400">
+            New here?{" "}
+            <Link to="/register" className="text-sky-300 hover:text-white">
+              Raise a tribe in thirty seconds
+            </Link>
+            .
+          </p>
+        </>
+      }
+    >
+      <h2 className="display mb-4 text-xl font-semibold text-white">Log in</h2>
       <form onSubmit={submit} className="space-y-4">
         <Field label="Email">
           <Input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
@@ -39,8 +63,8 @@ export function LoginPage() {
           <Input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
         </Field>
         <ErrorText>{m.error?.message}</ErrorText>
-        <Button type="submit" className="w-full" disabled={m.isPending}>
-          Log in
+        <Button type="submit" className="display w-full py-3 text-base" disabled={m.isPending}>
+          Return to the field
         </Button>
         <p className="text-center text-sm text-slate-400">
           <Link to="/forgot" className="hover:text-white">
@@ -57,47 +81,24 @@ export function LoginPage() {
 }
 
 export function RegisterPage() {
-  const qc = useQueryClient();
-  const nav = useNavigate();
-  const [email, setEmail] = useState("");
-  const [displayName, setDisplayName] = useState("");
-  const [password, setPassword] = useState("");
-  const m = useMutation({
-    mutationFn: () => api.register({ email, password, displayName }),
-    onSuccess: (u) => {
-      qc.setQueryData(keys.me, u);
-      void nav({ to: "/matches" });
-    },
-  });
   return (
-    <Shell title="Create your account">
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          m.mutate();
-        }}
-        className="space-y-4"
-      >
-        <Field label="Tribe name (shown to other players)">
-          <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} minLength={2} maxLength={24} required />
-        </Field>
-        <Field label="Email">
-          <Input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-        </Field>
-        <Field label="Password (8+ characters)">
-          <Input type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} required />
-        </Field>
-        <ErrorText>{m.error?.message}</ErrorText>
-        <Button type="submit" className="w-full" disabled={m.isPending}>
-          Sign up
-        </Button>
-        <p className="text-center text-sm text-slate-400">
-          Already have an account?{" "}
-          <Link to="/login" className="hover:text-white">
-            Log in
-          </Link>
-        </p>
-      </form>
+    <Shell
+      kicker="Free to play"
+      title="Five families. One month. The whole Earth."
+      pitch={
+        <>
+          <p>Pick a capital on the real map, set your workers, and start building before the frost reaches your latitude. A new match opens every week.</p>
+          <ul className="space-y-1.5 text-sm text-slate-400">
+            <li>· No download. Plays in the browser, on a phone or a desk.</li>
+            <li>· Ten minutes a day keeps an empire going.</li>
+            <li>· Nothing you can buy affects combat or the economy.</li>
+          </ul>
+        </>
+      }
+    >
+      <h2 className="display mb-1 text-xl font-semibold text-white">Raise your tribe</h2>
+      <p className="mb-5 text-sm text-slate-400">Your tribe name is what rivals will see on the map.</p>
+      <SignupForm />
     </Shell>
   );
 }
@@ -114,14 +115,14 @@ export function VerifyPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
   return (
-    <Shell title="Verify email">
+    <Shell kicker="One last step" title="Verify your email">
       {!token && <p className="text-slate-300">Open the link from your verification email.</p>}
       {m.isPending && <p className="text-slate-300">Checking your link...</p>}
       {m.isSuccess && (
         <p className="text-slate-200">
           Your email is verified.{" "}
-          <Link to="/" className="text-sky-400 hover:underline">
-            Go to the lobby
+          <Link to="/matches" className="text-sky-300 hover:underline">
+            Find a match
           </Link>
           .
         </p>
@@ -135,7 +136,7 @@ export function ForgotPage() {
   const [email, setEmail] = useState("");
   const m = useMutation({ mutationFn: () => api.forgot(email) });
   return (
-    <Shell title="Reset password">
+    <Shell kicker="Account" title="Reset your password">
       {m.isSuccess ? (
         <p className="text-slate-200">If that email has an account, a reset link is on its way.</p>
       ) : (
@@ -165,7 +166,7 @@ export function ResetPage() {
   const [password, setPassword] = useState("");
   const m = useMutation({ mutationFn: () => api.reset(token ?? "", password), onSuccess: () => void nav({ to: "/login" }) });
   return (
-    <Shell title="Choose a new password">
+    <Shell kicker="Account" title="Choose a new password">
       <form
         onSubmit={(e) => {
           e.preventDefault();

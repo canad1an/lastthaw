@@ -16,6 +16,11 @@ import { HallOfFamePage } from "./routes/hallOfFame.js";
 const rootRoute = createRootRoute({
   component: () => (
     <div className="min-h-dvh">
+      <div className="backdrop" aria-hidden>
+        <div className="backdrop-aurora" />
+        <div className="backdrop-snow far" />
+        <div className="backdrop-snow" />
+      </div>
       <TopBar />
       <Outlet />
     </div>

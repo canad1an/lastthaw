@@ -95,7 +95,7 @@ function LobbyView({ matchId, state }: { matchId: string; state: MatchStateView 
   const sel = selected ? regionById(selected) : null;
 
   return (
-    <div className="flex h-[calc(100dvh-3rem)] flex-col lg:flex-row">
+    <div className="flex h-[calc(100dvh-3rem)] flex-col bg-slate-950 lg:flex-row">
       <WorldMap paint={paint} selected={selected} onSelect={setSelected} focus={current ?? options.data?.options[0] ?? null} className="h-1/2 w-full lg:h-full lg:flex-1" />
       <aside className="w-full space-y-3 overflow-y-auto border-t border-slate-800 p-4 lg:w-96 lg:border-l lg:border-t-0">
         <h1 className="text-xl font-semibold">{state.match.name}</h1>
@@ -256,7 +256,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
   );
 
   return (
-    <div className="flex h-[calc(100dvh-3rem)] flex-col">
+    <div className="flex h-[calc(100dvh-3rem)] flex-col bg-slate-950">
       <TopMenu matchId={matchId} state={state} selectedRegionId={selected} colorOf={colorOf} overlays={overlays} onToggleOverlay={toggleOverlay} onSelectRegion={setSelected} clockOffsetMs={clockOffsetMs} />
       {finished && <MatchSummary matchId={matchId} open={summaryOpen} onClose={() => setSummaryOpen(false)} colorOf={colorOf} />}
       {!finished && <MatchIntro open={introOpen} onClose={() => setIntroOpen(false)} matchName={state.match.name} speed={state.match.speed} />}

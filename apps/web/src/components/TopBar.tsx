@@ -25,12 +25,11 @@ export function TopBar() {
   }, [open]);
 
   return (
-    <header className="banner relative z-40 flex h-12 items-center justify-between overflow-visible border-b border-sky-900/50 px-3">
-      <div className="banner-aurora pointer-events-none absolute inset-0 overflow-hidden" />
+    <header className="banner sticky top-0 z-40 flex h-12 items-center justify-between overflow-visible border-b border-sky-900/40 px-3">
       <div className="banner-frost pointer-events-none absolute inset-x-0 top-0 h-px" />
       <Link to="/" className="relative flex items-center gap-2.5" onClick={() => setOpen(false)}>
         <img src="/favicon.svg" alt="" className="h-7 w-7 drop-shadow-[0_0_6px_rgba(125,211,252,0.45)]" />
-        <span className="text-lg font-semibold tracking-tight text-white">Last Thaw</span>
+        <span className="display text-lg font-semibold text-white">Last Thaw</span>
         <span className="hidden text-sm italic text-sky-200/80 lg:inline">{TAGLINE}</span>
       </Link>
 
@@ -69,8 +68,8 @@ export function TopBar() {
       </button>
       {open && (
         <>
-          <div className="fixed inset-0 top-12 z-30 bg-slate-950/60 md:hidden" onClick={() => setOpen(false)} />
-          <nav className="absolute left-0 right-0 top-full z-40 border-b border-slate-800 bg-slate-950 p-3 shadow-2xl md:hidden" onClick={() => setOpen(false)}>
+          <div className="fixed inset-0 top-12 z-30 bg-slate-950/70 md:hidden" onClick={() => setOpen(false)} />
+          <nav className="absolute left-0 right-0 top-full z-40 border-b border-slate-800 bg-slate-950/95 p-3 shadow-2xl backdrop-blur md:hidden" onClick={() => setOpen(false)}>
             <p className="mb-2 px-2 text-xs italic text-sky-200/80">{TAGLINE}</p>
             <ul className="space-y-1">
               {NAV.map((n) => (
@@ -98,8 +97,8 @@ function AccountLinks({ me, onLogout, loggingOut }: { me: { displayName: string;
         <Link to="/login" className="text-slate-300 hover:text-white">
           Log in
         </Link>
-        <Link to="/register" className="rounded-md bg-sky-500 px-3 py-1.5 font-medium text-slate-950 hover:bg-sky-400">
-          Sign up
+        <Link to="/register" className="btn-ember rounded-md px-3 py-1.5 font-semibold">
+          Play free
         </Link>
       </>
     );
