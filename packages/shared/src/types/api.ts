@@ -29,6 +29,25 @@ export const registerBody = z.object({
     .refine((s) => DISPLAY_NAME_RE.test(s), "use letters, digits, spaces, _ or -, starting and ending with a letter or digit")
     .refine((s) => !RESERVED_NAMES.includes(s.toLowerCase()), "that name is reserved"),
 });
+const displayNameField = registerBody.shape.displayName;
+const optionalText = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .transform((s) => (s.length ? s : null))
+    .nullable()
+    .optional();
+
+/** Profile settings: every field optional so the client can send only what changed. */
+export const updateProfileBody = z.object({
+  displayName: displayNameField.optional(),
+  tagline: optionalText(80),
+  bio: optionalText(600),
+  location: optionalText(60),
+});
+export const changePasswordBody = z.object({ currentPassword: z.string().min(1), newPassword: z.string().min(8).max(200) });
+
 export const loginBody = z.object({ email: z.string().email(), password: z.string().min(1) });
 export const verifyBody = z.object({ token: z.string().min(10) });
 export const forgotBody = z.object({ email: z.string().email() });
@@ -42,6 +61,11 @@ export const userView = z.object({
   isAdmin: z.boolean().default(false),
   /** Private beta: approved accounts may join matches. */
   approved: z.boolean().default(false),
+  tagline: z.string().nullable().default(null),
+  bio: z.string().nullable().default(null),
+  location: z.string().nullable().default(null),
+  /** ISO date the account was created. */
+  createdAt: z.string().nullable().default(null),
 });
 export type UserView = z.infer<typeof userView>;
 

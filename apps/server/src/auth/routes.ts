@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
-import { forgotBody, loginBody, registerBody, resetBody, verifyBody, type UserView } from "@lastthaw/shared";
+import { changePasswordBody, forgotBody, loginBody, registerBody, resetBody, updateProfileBody, verifyBody, type UserView } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { config } from "../config.js";
 import type { Redis } from "ioredis";
@@ -13,8 +13,30 @@ import { resetMail, sendMail, verificationMail } from "../mail.js";
 const VERIFY_HOURS = 24;
 const RESET_HOURS = 1;
 
-function toView(u: { id: string; email: string; displayName: string; emailVerifiedAt: Date | null; isAdmin: boolean; approvedAt?: Date | null }): UserView {
-  return { id: u.id, email: u.email, displayName: u.displayName, emailVerified: u.emailVerifiedAt !== null, isAdmin: u.isAdmin, approved: u.isAdmin || !!u.approvedAt || config().DEV_TOOLS };
+function toView(u: {
+  id: string;
+  email: string;
+  displayName: string;
+  emailVerifiedAt: Date | null;
+  isAdmin: boolean;
+  approvedAt?: Date | null;
+  tagline?: string | null;
+  bio?: string | null;
+  location?: string | null;
+  createdAt?: Date;
+}): UserView {
+  return {
+    id: u.id,
+    email: u.email,
+    displayName: u.displayName,
+    emailVerified: u.emailVerifiedAt !== null,
+    isAdmin: u.isAdmin,
+    approved: u.isAdmin || !!u.approvedAt || config().DEV_TOOLS,
+    tagline: u.tagline ?? null,
+    bio: u.bio ?? null,
+    location: u.location ?? null,
+    createdAt: u.createdAt?.toISOString() ?? null,
+  };
 }
 
 async function issueToken(db: Db, userId: string, kind: "verify" | "reset", hours: number): Promise<string> {
@@ -110,6 +132,43 @@ export async function authRoutes(app: FastifyInstance, opts: { db: Db; redis: Re
     const mail = verificationMail(user.displayName, token);
     void sendMail(user.email, mail.subject, mail.text);
     return reply.send({ ok: true });
+  });
+
+  /** Profile settings: tribe name and the free-text details a player writes about themselves. */
+  app.patch("/api/me/profile", tight(30, "10 minutes"), async (req, reply) => {
+    const user = requireUser(req);
+    const body = updateProfileBody.parse(req.body);
+    const patch: Partial<typeof users.$inferInsert> = {};
+    if (body.displayName !== undefined && body.displayName !== user.displayName) {
+      const taken = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(and(sql`lower(${users.displayName}) = ${body.displayName.toLowerCase()}`, sql`${users.id} <> ${user.id}`))
+        .limit(1);
+      if (taken.length) return reply.code(409).send({ error: "that tribe name is taken; pick another" });
+      patch.displayName = body.displayName;
+    }
+    if (body.tagline !== undefined) patch.tagline = body.tagline;
+    if (body.bio !== undefined) patch.bio = body.bio;
+    if (body.location !== undefined) patch.location = body.location;
+    const [u] = Object.keys(patch).length
+      ? await db.update(users).set(patch).where(eq(users.id, user.id)).returning()
+      : await db.select().from(users).where(eq(users.id, user.id)).limit(1);
+    if (!u) return reply.code(404).send({ error: "account not found" });
+    return toView(u);
+  });
+
+  /** Change password while logged in. Every other session is ended; this one stays. */
+  app.post("/api/me/password", tight(10, "10 minutes"), async (req, reply) => {
+    const user = requireUser(req);
+    const { currentPassword, newPassword } = changePasswordBody.parse(req.body);
+    const [u] = await db.select().from(users).where(eq(users.id, user.id)).limit(1);
+    if (!u || !(await verifyPassword(u.passwordHash, currentPassword))) return reply.code(400).send({ error: "current password is wrong" });
+    await db.transaction(async (tx) => {
+      await tx.update(users).set({ passwordHash: await hashPassword(newPassword) }).where(eq(users.id, u.id));
+      if (req.sessionId) await tx.delete(sessions).where(and(eq(sessions.userId, u.id), sql`${sessions.id} <> ${req.sessionId}`));
+    });
+    return { ok: true };
   });
 
   app.post("/api/auth/forgot", tight(5, "10 minutes"), async (req) => {

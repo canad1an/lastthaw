@@ -19,6 +19,10 @@ export const users = pgTable(
     /** Set by an admin: the account cannot log in and its sessions are gone until cleared. */
     suspendedAt: timestamp("suspended_at", { withTimezone: true }),
     suspendReason: text("suspend_reason"),
+    /** Profile details the player writes about themselves; all optional. */
+    tagline: text("tagline"),
+    bio: text("bio"),
+    location: text("location"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
   },

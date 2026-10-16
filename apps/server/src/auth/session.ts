@@ -22,6 +22,10 @@ export interface SessionUser {
   isAdmin: boolean;
   /** Private beta: may join matches. */
   approved: boolean;
+  tagline: string | null;
+  bio: string | null;
+  location: string | null;
+  createdAt: string | null;
 }
 
 declare module "fastify" {
@@ -53,6 +57,10 @@ export const sessionPlugin = fp(async (app: FastifyInstance, opts: { db: Db }) =
         emailVerifiedAt: users.emailVerifiedAt,
         isAdmin: users.isAdmin,
         approvedAt: users.approvedAt,
+        tagline: users.tagline,
+        bio: users.bio,
+        location: users.location,
+        createdAt: users.createdAt,
       })
       .from(sessions)
       .innerJoin(users, eq(users.id, sessions.userId))
@@ -71,7 +79,7 @@ export const sessionPlugin = fp(async (app: FastifyInstance, opts: { db: Db }) =
         .catch(() => {});
     }
     req.sessionId = row.sessionId;
-    req.user = { id: row.id, email: row.email, displayName: row.displayName, emailVerified: row.emailVerifiedAt !== null, isAdmin: row.isAdmin, approved: row.isAdmin || row.approvedAt !== null || config().DEV_TOOLS };
+    req.user = { id: row.id, email: row.email, displayName: row.displayName, emailVerified: row.emailVerifiedAt !== null, isAdmin: row.isAdmin, approved: row.isAdmin || row.approvedAt !== null || config().DEV_TOOLS, tagline: row.tagline, bio: row.bio, location: row.location, createdAt: row.createdAt.toISOString() };
   });
 });
 

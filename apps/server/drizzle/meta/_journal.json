@@ -169,6 +169,13 @@
       "when": 1792158852272,
       "tag": "0023_outgoing_lionheart",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1792162040745,
+      "tag": "0024_profile_fields",
+      "breakpoints": true
     }
   ]
 }

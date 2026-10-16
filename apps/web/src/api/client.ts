@@ -52,6 +52,8 @@ export const api = {
   resendVerification: () => request<{ ok: true }>("POST", "/api/auth/resend-verification", {}),
   forgot: (email: string) => request<{ ok: true }>("POST", "/api/auth/forgot", { email }),
   reset: (token: string, password: string) => request<{ ok: true }>("POST", "/api/auth/reset", { token, password }),
+  updateProfile: (b: { displayName?: string; tagline?: string | null; bio?: string | null; location?: string | null }) => request("PATCH", "/api/me/profile", b, userView),
+  changePassword: (b: { currentPassword: string; newPassword: string }) => request<{ ok: true }>("POST", "/api/me/password", b),
 
   matches: () => request("GET", "/api/matches", undefined, matchSummary.array()),
   createMatch: (b: { name: string; speed: number; startsInMinutes: number; aiFillTo?: number; neutralTribes?: number; aiDifficulty?: "mixed" | "easy" | "medium" | "hard" }) => request<{ id: string }>("POST", "/api/matches", b),
