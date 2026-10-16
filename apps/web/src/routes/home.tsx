@@ -193,9 +193,13 @@ export function HomePage() {
           </Link>
         </div>
         {matches.isLoading && <p className="text-slate-400">Loading...</p>}
-        {matches.data?.length === 0 && <div className="glass rounded-xl p-5 text-slate-300">No matches right now. A new one opens every week.</div>}
+        {matches.data && running.length === 0 && (
+          <div className="glass rounded-xl p-5 text-slate-300">
+            Nothing is being played this minute.{next ? ` The next tournament, ${next.name}, starts in ${formatCountdown((Date.parse(next.startsAt) - now) / 1000)}.` : " A new tournament opens every week."}
+          </div>
+        )}
         <div className="grid gap-3 md:grid-cols-2">
-          {[...running, ...lobby].map((m) => (
+          {running.map((m) => (
             <MatchCard key={m.id} m={m} now={now} />
           ))}
         </div>
