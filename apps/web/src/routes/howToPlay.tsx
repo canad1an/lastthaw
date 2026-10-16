@@ -1,9 +1,9 @@
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { usePageMeta } from "../seo.js";
 import { AGES, balance } from "@lastthaw/shared";
 import { Card } from "../components/ui.js";
-import { Reference } from "../components/Reference.js";
+import { BuildingList, TechTree, UnitList } from "../components/Reference.js";
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 const mult = (x: number) => `${x}x`;
@@ -194,10 +194,24 @@ const steps: Array<{ title: string; body: string }> = [
   { title: "Chase the day's prize", body: "Every day has an objective (most regions, most people, biggest larder, most coastal land, most techs or most battles won) worth 100 score to the best player at the day's end. Bounties appear on regions that rebel, on the Horde's camps and on players who refuse tribute; win a battle against them and the reward is delivered to your capital. The Leaderboard shows today's objective, open bounties and a timeline of everything that has happened in the match." },
 ];
 
+type Tab = "basics" | "winning" | "advanced" | "techs" | "buildings" | "units";
+const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
+  { id: "basics", label: "Basics" },
+  { id: "winning", label: "Winning and tips" },
+  { id: "advanced", label: "Advanced" },
+  { id: "techs", label: "Tech tree" },
+  { id: "buildings", label: "Buildings" },
+  { id: "units", label: "Units" },
+];
+
 export function HowToPlayPage() {
+  const [tab, setTab] = useState<Tab>(() => (typeof window !== "undefined" && TABS.some((t) => t.id === window.location.hash.slice(1)) ? (window.location.hash.slice(1) as Tab) : "basics"));
+  useEffect(() => {
+    if (typeof window !== "undefined") window.history.replaceState(null, "", tab === "basics" ? window.location.pathname : `#${tab}`);
+  }, [tab]);
   usePageMeta({ title: "How to play", description: "The Last Thaw field manual: pick a capital, set your workers, build and research, expand and fight, hold your land, trade and ally, and watch the ice. Ten minutes to learn, thirty days to win.", path: "/how-to-play" });
   return (
-    <main className="mx-auto max-w-3xl space-y-8 px-4 py-10">
+    <main className="mx-auto max-w-5xl space-y-6 px-4 py-10">
       <header>
         <p className="mb-3 shadow-copy text-xs font-medium uppercase tracking-[0.25em] text-sky-300">Field manual</p>
         <h1 className="display text-4xl font-bold sm:text-5xl">
@@ -206,6 +220,16 @@ export function HowToPlayPage() {
         <p className="shadow-copy mt-3 text-lg text-slate-200">Ten minutes to learn, thirty days to win.</p>
       </header>
 
+      <div className="flex flex-wrap gap-1 rounded-lg border border-slate-800 bg-slate-900/70 p-1">
+        {TABS.map((t) => (
+          <button key={t.id} onClick={() => setTab(t.id)} className={`rounded px-3 py-1.5 text-sm ${tab === t.id ? "bg-amber-400/20 text-amber-200" : "text-slate-300 hover:text-white"}`}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "basics" && (
+        <>
       <ol className="space-y-4">
         {steps.map((s, i) => (
           <li key={s.title}>
@@ -220,6 +244,10 @@ export function HowToPlayPage() {
         ))}
       </ol>
 
+        </>
+      )}
+      {tab === "winning" && (
+        <>
       <section className="space-y-3">
         <h2 className="display text-xl font-semibold text-white">Winning</h2>
         <Card className="text-sm text-slate-300">
@@ -236,8 +264,6 @@ export function HowToPlayPage() {
         </Card>
       </section>
 
-      <Reference />
-
       <section className="space-y-3">
         <h2 className="display text-xl font-semibold text-white">Good to know</h2>
         <ul className="list-disc space-y-1 pl-5 text-sm text-slate-300">
@@ -252,7 +278,12 @@ export function HowToPlayPage() {
         </ul>
       </section>
 
-      <AdvancedSection />
+        </>
+      )}
+      {tab === "advanced" && <AdvancedSection open />}
+      {tab === "techs" && <TechTree />}
+      {tab === "buildings" && <BuildingList />}
+      {tab === "units" && <UnitList />}
 
       <div className="glass glass-strong flex flex-wrap items-center justify-between gap-3 rounded-xl p-5">
         <p className="text-slate-200">That is everything you need for day one. The rest you learn with the ice at your back.</p>
@@ -270,8 +301,8 @@ export function HowToPlayPage() {
 }
 
 /** Collapsed by default: the numbers behind the rules for players who want to optimise. */
-function AdvancedSection() {
-  const [open, setOpen] = useState(false);
+function AdvancedSection({ open: initial = false }: { open?: boolean }) {
+  const [open, setOpen] = useState(initial);
   return (
     <section className="space-y-3">
       <button

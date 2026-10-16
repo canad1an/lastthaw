@@ -1,8 +1,12 @@
 import { useState } from "react";
 import { AGES, BUILDINGS, BUILDING_CATEGORIES, TECHS, UNITS, buildingById, buildingSeconds, formatCountdown, techById, techSeconds, trainSeconds, type AgeIndex, type BuildingDef, type Cost, type TechDef, type UnitDef } from "@lastthaw/shared";
-import { Card } from "./ui.js";
 
-/** The whole content table of the game, by age: every tech with what it needs and gives, every building, every unit with its numbers. Read from the same data the game runs on. */
+/**
+ * The content tables of the game as cards, by age: every tech with what it
+ * needs and gives, every building, every unit with its numbers. Read from the
+ * same data the game runs on, laid out to fit the screen without scrolling
+ * sideways.
+ */
 
 const RES: Array<{ key: keyof Cost; label: string }> = [
   { key: "food", label: "food" },
@@ -20,6 +24,7 @@ function costText(cost: Cost): string {
 }
 
 const pct = (v: number) => `${v > 0 ? "+" : ""}${Math.round(v * 100)}%`;
+const name = (id: string) => techById.get(id)?.name ?? buildingById.get(id)?.name ?? id;
 
 function buildingEffects(b: BuildingDef): string[] {
   const e = b.effect;
@@ -33,7 +38,7 @@ function buildingEffects(b: BuildingDef): string[] {
   if (e.loyalty) out.push(`+${Math.round(e.loyalty * 100)} loyalty per level`);
   if (e.researchSpeed) out.push(`${pct(e.researchSpeed)} research speed per level`);
   if (e.trainSpeed) out.push(`${pct(e.trainSpeed)} training speed per level`);
-  if (e.protect) out.push(`${e.protect} of each resource hidden from raids per level`);
+  if (e.protect) out.push(`hides ${e.protect} of each resource from raids per level`);
   if (e.harbor) out.push("opens the sea lanes");
   if (b.perNeighbor) out.push("cost is per neighbouring region");
   if (b.capitalOnly) out.push("capital only");
@@ -67,169 +72,128 @@ function techEffects(t: TechDef): string[] {
   return out;
 }
 
-const name = (id: string) => techById.get(id)?.name ?? buildingById.get(id)?.name ?? id;
-
-/** Durations at 1x; faster matches scale them down. */
-const dur = (s: number) => formatCountdown(s);
-
-export function Reference() {
-  const [age, setAge] = useState<AgeIndex>(0);
-  const [kind, setKind] = useState<"techs" | "buildings" | "units">("techs");
-  const techs = TECHS.filter((t) => t.age === age);
-  const buildings = BUILDINGS.filter((b) => b.age === age);
-  const units = UNITS.filter((u) => u.age === age && !u.hidden);
-  const th = "px-2 py-1.5 text-left text-xs font-medium uppercase tracking-wide text-slate-500";
-  const td = "px-2 py-1.5 align-top";
+function AgeTabs({ age, setAge }: { age: AgeIndex; setAge: (a: AgeIndex) => void }) {
   return (
-    <section className="space-y-3" id="reference">
-      <h2 className="display text-xl font-semibold text-white">The ages: techs, buildings and units</h2>
-      <p className="text-sm text-slate-300">
-        Everything in the game, by age, straight from the tables the game runs on. Costs are the base cost; buildings cost more each level and most prices climb with the match day. Times are at 1x, the tournament pace, and shrink at faster speeds.
-      </p>
-      <div className="flex flex-wrap items-center gap-1 rounded-lg border border-slate-800 bg-slate-900/60 p-1">
-        <span className="px-2 text-xs uppercase tracking-wide text-slate-500">Age</span>
-        {AGES.map((a, i) => (
-          <button key={a} onClick={() => setAge(i as AgeIndex)} className={`rounded px-3 py-1 text-sm ${age === i ? "bg-sky-500/20 text-sky-200" : "text-slate-400 hover:text-slate-200"}`}>
-            {a}
-          </button>
+    <div className="flex flex-wrap items-center gap-1 rounded-lg border border-slate-800 bg-slate-900/60 p-1">
+      <span className="px-2 text-xs uppercase tracking-wide text-slate-500">Age</span>
+      {AGES.map((a, i) => (
+        <button key={a} onClick={() => setAge(i as AgeIndex)} className={`rounded px-3 py-1 text-sm ${age === i ? "bg-sky-500/20 text-sky-200" : "text-slate-400 hover:text-slate-200"}`}>
+          {a}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex gap-2 text-sm">
+      <span className="w-14 shrink-0 text-xs uppercase tracking-wide text-slate-500">{label}</span>
+      <span className="text-slate-300">{value}</span>
+    </div>
+  );
+}
+
+function Entry({ title, description, rows, badge }: { title: string; description: string; rows: Array<[string, string]>; badge?: string | undefined }) {
+  return (
+    <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-3">
+      <div className="flex items-start justify-between gap-2">
+        <h3 className="font-medium text-slate-100">{title}</h3>
+        {badge && <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-300">{badge}</span>}
+      </div>
+      <p className="mb-2 text-xs text-slate-400">{description}</p>
+      <div className="space-y-0.5">
+        {rows.map(([l, v]) => (
+          <Row key={l} label={l} value={v} />
         ))}
       </div>
-      <div className="flex flex-wrap items-center gap-1 rounded-lg border border-slate-800 bg-slate-900/60 p-1">
-        <span className="px-2 text-xs uppercase tracking-wide text-slate-500">Show</span>
-        {(
-          [
-            ["techs", `Techs (${techs.length})`],
-            ["buildings", `Buildings (${buildings.length})`],
-            ["units", `Units (${units.length})`],
-          ] as const
-        ).map(([k, label]) => (
-          <button key={k} onClick={() => setKind(k)} className={`rounded px-3 py-1 text-sm ${kind === k ? "bg-amber-400/20 text-amber-200" : "text-slate-400 hover:text-slate-200"}`}>
-            {label}
-          </button>
+    </div>
+  );
+}
+
+const note = "Costs are the base cost; most prices climb with the match day. Times are at 1x, the tournament pace, and shrink at faster speeds.";
+
+export function TechTree() {
+  const [age, setAge] = useState<AgeIndex>(0);
+  const techs = TECHS.filter((t) => t.age === age);
+  return (
+    <section className="space-y-3">
+      <p className="text-sm text-slate-300">Research runs from a queue of its own and draws ore and horses from any region you own. Each age's last tech opens the next age. {note}</p>
+      <AgeTabs age={age} setAge={setAge} />
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {techs.map((t) => (
+          <Entry
+            key={t.id}
+            title={t.name}
+            description={t.description}
+            badge={t.advancesTo !== undefined ? `to ${AGES[t.advancesTo]}` : undefined}
+            rows={[
+              ["needs", (t.requires ?? []).map(name).join(", ") + (t.earliestDay ? ` (from day ${t.earliestDay + 1})` : "") || "nothing"],
+              ["cost", costText(t.cost)],
+              ["time", formatCountdown(techSeconds(t))],
+              ["gives", techEffects(t).join("; ") || "opens the way"],
+            ]}
+          />
         ))}
       </div>
+    </section>
+  );
+}
 
-      {kind === "techs" && (
-      <Card className="overflow-x-auto p-0">
-        <h3 className="display px-3 pt-3 font-semibold text-white">{AGES[age]} Age techs</h3>
-        <table className="w-full min-w-max text-sm">
-          <thead>
-            <tr>
-              <th className={th}>Tech</th>
-              <th className={th}>Needs</th>
-              <th className={th}>Cost</th>
-              <th className={th}>Time</th>
-              <th className={th}>Gives</th>
-            </tr>
-          </thead>
-          <tbody>
-            {techs.map((t) => (
-              <tr key={t.id} className="border-t border-slate-800">
-                <td className={td}>
-                  <span className="font-medium text-slate-100">{t.name}</span>
-                  <p className="text-xs text-slate-400">{t.description}</p>
-                </td>
-                <td className={`${td} text-slate-300`}>
-                  {(t.requires ?? []).map(name).join(", ") || "nothing"}
-                  {t.earliestDay ? <span className="block text-xs text-slate-500">from day {t.earliestDay + 1}</span> : null}
-                </td>
-                <td className={`${td} text-slate-300`}>{costText(t.cost)}</td>
-                <td className={`${td} tabular-nums text-slate-300`}>{dur(techSeconds(t))}</td>
-                <td className={`${td} text-slate-300`}>{techEffects(t).join("; ") || "opens the way"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Card>
-      )}
+export function BuildingList() {
+  const [age, setAge] = useState<AgeIndex>(0);
+  const buildings = BUILDINGS.filter((b) => b.age === age);
+  return (
+    <section className="space-y-3">
+      <p className="text-sm text-slate-300">Each region has a build queue with ten slots. Buildings cost more and take longer each level. {note}</p>
+      <AgeTabs age={age} setAge={setAge} />
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {buildings.map((b) => (
+          <Entry
+            key={b.id}
+            title={b.name}
+            description={b.description}
+            badge={BUILDING_CATEGORIES.find((c) => c.id === b.category)?.name ?? b.category}
+            rows={[
+              ["needs", [b.requires && name(b.requires), b.requiresBuilding && name(b.requiresBuilding)].filter(Boolean).join(", ") || "nothing"],
+              ["cost", `${costText(b.cost)} (level 1)`],
+              ["time", `${formatCountdown(buildingSeconds(b, 1))} (level 1)`],
+              ["levels", String(b.maxLevel)],
+              ["does", buildingEffects(b).join("; ")],
+            ]}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
 
-      {kind === "buildings" && (
-      <Card className="overflow-x-auto p-0">
-        <h3 className="display px-3 pt-3 font-semibold text-white">{AGES[age]} Age buildings</h3>
-        <table className="w-full min-w-max text-sm">
-          <thead>
-            <tr>
-              <th className={th}>Building</th>
-              <th className={th}>Kind</th>
-              <th className={th}>Needs</th>
-              <th className={th}>Cost (level 1)</th>
-              <th className={th}>Time (level 1)</th>
-              <th className={th}>Levels</th>
-              <th className={th}>Does</th>
-            </tr>
-          </thead>
-          <tbody>
-            {buildings.map((b) => (
-              <tr key={b.id} className="border-t border-slate-800">
-                <td className={td}>
-                  <span className="font-medium text-slate-100">{b.name}</span>
-                  <p className="text-xs text-slate-400">{b.description}</p>
-                </td>
-                <td className={`${td} text-slate-300`}>{BUILDING_CATEGORIES.find((c) => c.id === b.category)?.name ?? b.category}</td>
-                <td className={`${td} text-slate-300`}>{[b.requires && name(b.requires), b.requiresBuilding && name(b.requiresBuilding)].filter(Boolean).join(", ") || "nothing"}</td>
-                <td className={`${td} text-slate-300`}>{costText(b.cost)}</td>
-                <td className={`${td} tabular-nums text-slate-300`}>{dur(buildingSeconds(b, 1))}</td>
-                <td className={`${td} tabular-nums text-slate-300`}>{b.maxLevel}</td>
-                <td className={`${td} text-slate-300`}>{buildingEffects(b).join("; ")}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Card>
-      )}
-
-      {kind === "units" && (
-      <Card className="overflow-x-auto p-0">
-        <h3 className="display px-3 pt-3 font-semibold text-white">{AGES[age]} Age units</h3>
-        <table className="w-full min-w-max text-sm">
-          <thead>
-            <tr>
-              <th className={th}>Unit</th>
-              <th className={th}>Needs</th>
-              <th className={th}>Attack</th>
-              <th className={th}>Defence</th>
-              <th className={th}>Speed</th>
-              <th className={th}>Carry</th>
-              <th className={th}>Siege</th>
-              <th className={th}>Cost (each)</th>
-              <th className={th}>Time (one)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {units.map((u) => (
-              <tr key={u.id} className="border-t border-slate-800">
-                <td className={td}>
-                  <span className="font-medium text-slate-100">{u.name}</span>
-                  <p className="text-xs text-slate-400">
-                    {u.description}
-                    {u.civilian ? " Civilian: never fights." : ""}
-                    {u.hauler ? " Hauler: carries goods on trade routes." : ""}
-                    {u.naval ? " Ship: sails the sea lanes." : ""}
-                    {u.minBatch ? ` Trained ${u.minBatch} at a time.` : ""}
-                  </p>
-                </td>
-                <td className={`${td} text-slate-300`}>{[u.requires && name(u.requires), u.needsBuilding && name(u.needsBuilding), u.needsResource && `${u.needsResource} in the region`].filter(Boolean).join(", ") || "nothing"}</td>
-                <td className={`${td} tabular-nums text-slate-300`}>{u.attack}</td>
-                <td className={`${td} tabular-nums text-slate-300`}>{u.defense}</td>
-                <td className={`${td} tabular-nums text-slate-300`}>{u.speed > 0 ? `${u.speed} km/h` : "stays home"}</td>
-                <td className={`${td} tabular-nums text-slate-300`}>{u.carry}</td>
-                <td className={`${td} tabular-nums text-slate-300`}>{u.breach ?? "–"}</td>
-                <td className={`${td} text-slate-300`}>{costText(u.cost)}</td>
-                <td className={`${td} tabular-nums text-slate-300`}>{u.baseSeconds > 0 ? dur(trainSeconds(u, 1)) : "–"}</td>
-              </tr>
-            ))}
-            {units.length === 0 && (
-              <tr>
-                <td className={`${td} text-slate-500`} colSpan={9}>
-                  No new units this age.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </Card>
-      )}
-      <p className="text-xs text-slate-500">Ages: {AGES.join(" → ")}. Each age's advancing tech is in its tech table; research it and the next age's tables open.</p>
+export function UnitList() {
+  const [age, setAge] = useState<AgeIndex>(0);
+  const units = UNITS.filter((u) => u.age === age && !u.hidden);
+  const kind = (u: UnitDef) => (u.civilian ? "civilian" : u.hauler ? "hauler" : u.naval ? "ship" : (u.breach ?? 0) > 0 ? "siege" : "soldier");
+  return (
+    <section className="space-y-3">
+      <p className="text-sm text-slate-300">Soldiers are trained from workers and eat three times as much. An army moves at the pace of its slowest unit. Siege value is how much wall a unit knocks down. {note}</p>
+      <AgeTabs age={age} setAge={setAge} />
+      {units.length === 0 && <p className="text-sm text-slate-500">No new units this age.</p>}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {units.map((u) => (
+          <Entry
+            key={u.id}
+            title={u.name}
+            description={`${u.description}${u.minBatch ? ` Trained ${u.minBatch} at a time.` : ""}`}
+            badge={kind(u)}
+            rows={[
+              ["needs", [u.requires && name(u.requires), u.needsBuilding && name(u.needsBuilding), u.needsResource && `${u.needsResource} in the region`].filter(Boolean).join(", ") || "nothing"],
+              ["fight", `attack ${u.attack}, defence ${u.defense}${u.breach ? `, siege ${u.breach}` : ""}`],
+              ["move", u.speed > 0 ? `${u.speed} km/h, carries ${u.carry}` : "stays home"],
+              ["cost", `${costText(u.cost)} each`],
+              ["time", u.baseSeconds > 0 ? `${formatCountdown(trainSeconds(u, 1))} for one` : "not trained"],
+            ]}
+          />
+        ))}
+      </div>
     </section>
   );
 }
