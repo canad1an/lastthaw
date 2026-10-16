@@ -17,7 +17,7 @@ instance, database or Caddy config used by boatbuildlog.com.
 
 Mailboxes: Migadu (same account as boatbuildlog.com), domain `lastthaw.com` active since 2026-10-16 with MX, three DKIM CNAMEs, SPF `include:spf.migadu.com` and client discovery records in Route 53. Mailbox `admin@lastthaw.com` (alias `postmaster@`): IMAP imap.migadu.com:993 TLS, SMTP smtp.migadu.com:465 TLS, webmail https://webmail.migadu.com, username is the full address. Postmark still sends the app's transactional mail from noreply@.
 
-Community: public Discord server `Last Thaw` (id 1560675090151252082), owned by the Discord account with username `lastthawadmin` (display name Last Thaw, signed up with admin@lastthaw.com). Permanent invite https://discord.gg/5TP8Ju5PA, linked from `apps/web/src/components/social.tsx`. Kept low-key during the beta.
+Community: public Discord server `Last Thaw` (id 1560675090151252082), owned by the Discord account with username `lastthawadmin` (display name Last Thaw, signed up with admin@lastthaw.com). Permanent invite https://discord.gg/5MTKKnh33U, linked from `apps/web/src/components/social.tsx`. Kept low-key during the beta.
 
 Mail moved from SES to Postmark on 2026-10-16 because SES was still in the sandbox and rejected unverified recipients. The Postmark account is on the Basic tier, 10,000 messages a month, shared with boatbuildlog.com's server.
 
