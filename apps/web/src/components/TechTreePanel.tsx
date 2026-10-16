@@ -5,6 +5,7 @@ import { api, keys } from "../api/client.js";
 import { CostLine } from "./Countdown.js";
 import { Button, ErrorText } from "./ui.js";
 import { techPreview } from "./previews.js";
+import { TechTreeGraph } from "./TechTreeGraph.js";
 
 type Status = "done" | "queued" | "available" | "locked";
 
@@ -37,6 +38,9 @@ export function TechTreePanel({ matchId, state, clockOffsetMs }: { matchId: stri
 
   return (
     <div className="p-3 text-sm">
+      <div className="mb-3">
+        <TechTreeGraph progress={{ done, queued, age: state.me.age }} height="52vh" />
+      </div>
       <p className="mb-2 text-xs text-slate-400">
         {doneCount} of {TECHS.length} techs researched · {AGES[state.me.age as AgeIndex] ?? "Unknown"} Age · day {Math.floor(day) + 1}. Ages have an earliest day; everything else needs only its prerequisites and the resources.<span className="sm:hidden"> Swipe sideways for other ages.</span>
       </p>

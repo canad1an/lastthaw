@@ -75,8 +75,24 @@ function wrap(name: string): [string, string | undefined] {
   return [first, words.join(" ") || undefined];
 }
 
-export function TechTreeGraph() {
+export interface TreeProgress {
+  /** Techs researched. */
+  done: ReadonlySet<string>;
+  /** Techs queued for research. */
+  queued: ReadonlySet<string>;
+  /** The player's age; buildings and units of later ages are locked whatever the techs. */
+  age: number;
+}
+
+export function TechTreeGraph({ progress, height: boxHeight = "70vh" }: { progress?: TreeProgress; height?: string }) {
   const { nodes, byId } = useMemo(buildNodes, []);
+  // In a match: what is done, what is on the way, what could be done now, and what is still locked.
+  const status = (n: Node): "done" | "queued" | "available" | "locked" | "plain" => {
+    if (!progress) return "plain";
+    const techsOk = n.parents.filter((p) => byId.get(p)?.kind === "tech").every((p) => progress.done.has(p));
+    if (n.kind === "tech") return progress.done.has(n.id) ? "done" : progress.queued.has(n.id) ? "queued" : techsOk && n.age <= progress.age ? "available" : "locked";
+    return techsOk && n.age <= progress.age ? "done" : "locked";
+  };
   const width = Math.max(...nodes.map((n) => n.x)) + W + 24;
   const height = TOP + AGES.length * ROW_H;
   const [selected, setSelected] = useState<string | null>(null);
@@ -124,7 +140,7 @@ export function TechTreeGraph() {
     zoom(e.deltaY < 0 ? 1.1 : 0.9);
   };
 
-  const dim = (id: string) => (related && !related.has(id) ? 0.18 : 1);
+  const dim = (id: string, st: ReturnType<typeof status>) => (related && !related.has(id) ? 0.18 : st === "locked" ? 0.4 : 1);
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400">
@@ -142,8 +158,11 @@ export function TechTreeGraph() {
           )}
         </span>
       </div>
-      <p className="text-xs text-slate-500">A line runs from each thing to what it opens. Click a node to light up its whole line; hover for its numbers; drag to move, Ctrl and the wheel or the buttons to zoom.</p>
-      <div ref={box} className="relative h-[70vh] cursor-grab touch-none select-none overflow-hidden rounded-lg border border-slate-800 bg-slate-950/70 active:cursor-grabbing" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onWheel={onWheel}>
+      <p className="text-xs text-slate-500">
+        A line runs from each thing to what it opens. Click a node to light up its whole line; hover for its numbers; drag to move, Ctrl and the wheel or the buttons to zoom.
+        {progress ? " Researched techs carry a tick, what you can research now has a white edge, queued ones a dashed edge, and what is still locked is faded." : ""}
+      </p>
+      <div ref={box} style={{ height: boxHeight }} className="relative cursor-grab touch-none select-none overflow-hidden rounded-lg border border-slate-800 bg-slate-950/70 active:cursor-grabbing" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onWheel={onWheel}>
         <svg width={width * view.scale} height={height * view.scale} viewBox={`0 0 ${width} ${height}`} style={{ transform: `translate(${view.x}px, ${view.y}px)` }}>
           {AGES.map((a, i) => (
             <g key={a}>
@@ -173,10 +192,18 @@ export function TechTreeGraph() {
             const [l1, l2] = wrap(n.name);
             const c = COLORS[n.kind];
             const sel = selected === n.id;
+            const st = status(n);
+            const stroke = sel ? "#fbbf24" : st === "queued" ? "#fbbf24" : st === "available" ? "#f8fafc" : c.stroke;
             return (
-              <g key={n.id} transform={`translate(${n.x},${n.y})`} opacity={dim(n.id)} style={{ cursor: "pointer" }} onClick={() => setSelected(sel ? null : n.id)}>
-                <title>{n.tip}</title>
-                <rect width={W} height={H} rx={5} fill={c.fill} stroke={sel ? "#fbbf24" : c.stroke} strokeWidth={sel ? 2.5 : 1} />
+              <g key={n.id} transform={`translate(${n.x},${n.y})`} opacity={dim(n.id, st)} style={{ cursor: "pointer" }} onClick={() => setSelected(sel ? null : n.id)}>
+                <title>{n.tip}{progress ? `
+${st === "done" ? (n.kind === "tech" ? "Researched" : "Available to you") : st === "queued" ? "Queued for research" : st === "available" ? "Can be researched now" : "Locked"}` : ""}</title>
+                <rect width={W} height={H} rx={5} fill={c.fill} stroke={stroke} strokeWidth={sel || st === "available" || st === "queued" ? 2.5 : 1} strokeDasharray={st === "queued" ? "4 3" : undefined} />
+                {progress && st === "done" && n.kind === "tech" && (
+                  <text x={W - 14} y={14} fontSize={11} fill="#86efac">
+                    ✓
+                  </text>
+                )}
                 <text x={8} y={l2 ? 19 : 27} fontSize={12} fill="#ffffff">
                   {c.icon}
                 </text>
