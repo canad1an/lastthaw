@@ -19,7 +19,8 @@ POSTGRES_PASSWORD="$(grep -E '^POSTGRES_PASSWORD=' .env | cut -d= -f2- | tr -d '
 $COMPOSE --profile app run --rm --no-deps -e "DATABASE_URL_DIRECT=postgres://lastthaw:${POSTGRES_PASSWORD}@postgres:5432/lastthaw" api node dist/db/migrate.js
 # Everything but the API is recreated as usual; the API is replaced one replica at a time so Caddy always has a
 # live upstream (the "no upstreams available" 503s came from both replicas restarting at once).
-$COMPOSE --profile app up -d --remove-orphans $($COMPOSE --profile app config --services | grep -vx api)
+# --no-deps: without it compose would also recreate the API (caddy and web depend on it) and take both replicas down at once.
+$COMPOSE --profile app up -d --no-deps --remove-orphans $($COMPOSE --profile app config --services | grep -vx api)
 for c in $($COMPOSE ps -q api); do
   docker rm -f "$c" >/dev/null
   $COMPOSE --profile app up -d --no-deps --no-recreate --scale 2 api >/dev/null 2>&1 || $COMPOSE --profile app up -d --no-deps --no-recreate --scale api=2 api

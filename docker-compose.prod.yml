@@ -139,7 +139,8 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # The whole folder, not the one file: a git pull replaces the file (new inode) and a single-file bind mount kept serving the old one, so reloads never saw changes.
+      - ./deploy:/etc/caddy:ro
       - webdist:/srv/web:ro
       - caddy_data:/data
       - caddy_config:/config
