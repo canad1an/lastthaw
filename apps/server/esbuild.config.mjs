@@ -7,7 +7,8 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 // Bundle our own code (including the @lastthaw/shared TypeScript source) and
 // leave every real npm dependency external so native modules keep working.
 await build({
-  entryPoints: ["src/api/index.ts", "src/worker/index.ts", "src/worker/ai.ts", "src/db/migrate.ts"],
+  // Operations scripts ship too: the nightly production game and player invitations run inside the api image.
+  entryPoints: ["src/api/index.ts", "src/worker/index.ts", "src/worker/ai.ts", "src/db/migrate.ts", "src/scripts/nightlySim.ts", "src/scripts/inviteUser.ts"],
   outdir: "dist",
   outbase: "src",
   bundle: true,
