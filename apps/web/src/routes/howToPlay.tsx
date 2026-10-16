@@ -3,6 +3,7 @@ import { useState } from "react";
 import { usePageMeta } from "../seo.js";
 import { AGES, balance } from "@lastthaw/shared";
 import { Card } from "../components/ui.js";
+import { Reference } from "../components/Reference.js";
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 const mult = (x: number) => `${x}x`;
@@ -234,6 +235,8 @@ export function HowToPlayPage() {
           </p>
         </Card>
       </section>
+
+      <Reference />
 
       <section className="space-y-3">
         <h2 className="display text-xl font-semibold text-white">Good to know</h2>

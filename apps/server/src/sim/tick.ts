@@ -1,5 +1,5 @@
 import { and, asc, eq, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
-import { tribesSpeak } from "./tribeVoice.js";
+import { tribesChat, tribesSpeak } from "./tribeVoice.js";
 import { placeBounty } from "./objectives.js";
 import type pino from "pino";
 import { balance, distanceKm, effectsOf, regionById, seededRng, applyTechEffects, type TechEffects } from "@lastthaw/shared";
@@ -65,6 +65,7 @@ async function tickMatch(db: Db, publisher: Publisher, matchId: string, log: pin
     for (let d = Math.max(1, dayBefore + 1); d <= dayNow; d++) {
       await runDailyEvents(tx, m, now, d, seededRng(`${m.seed}:day:${d}`), publisher, (fn) => after.push(fn));
       await tribesSpeak(tx, m, d, (fn) => after.push(fn));
+      await tribesChat(tx, m, d, now, publisher, (fn) => after.push(fn));
     }
     await expirePacts(tx, m, now);
     const standings = await updateScores(tx, m);

@@ -1,5 +1,6 @@
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { claimBounties } from "./objectives.js";
+import { tribeBattleTalk } from "./tribeVoice.js";
 import { balance, effectsOf, emptySpecial, storageCaps, regionById, resolveCombat, carryCapacity, travelSeconds, findRoute, armySpeed, type UnitCounts, HAULER_IDS, haulerCount, unitById, laneName, applyTechEffects, wallBonusAgainst, breachOf, buildingById, seededRng, availableTechs } from "@lastthaw/shared";
 import { armies, battles, jobs, matchRegions, players, regionSightings, playerTechs, tradeRoutes, events } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
@@ -612,6 +613,9 @@ async function battle(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher: P
   };
   await tx.insert(battles).values({ matchId: m.id, regionId: army.targetRegionId, resolvedAt: at, seed, attackerPlayerId: army.playerId, defenderPlayerId: defenderId, report });
   if (result.attackerWon) await claimBounties(tx, m, army.playerId, army.targetRegionId, defenderId, at);
+  // The tribes talk about it in the match chat when it mattered.
+  const lossesAll = Object.values(result.attackerLosses).reduce((a, b) => a + b, 0) + Object.values(result.defenderLosses).reduce((a, b) => a + b, 0);
+  await tribeBattleTalk(tx, m, { attackerId: army.playerId, defenderId, attackerName, defenderName, region: region.name, attackerWon: result.attackerWon, conquered, losses: lossesAll, seed }, at, publisher, after);
   const verb = army.mission === "raid" ? "Raid on" : "Attack on";
   await notify(tx, m.id, army.playerId, "battle", `${verb} ${region.name}: ${result.attackerWon ? "victory" : "defeat"}${conquered ? ", region conquered" : ""}`, { report });
   if (defenderId) await notify(tx, m.id, defenderId, "battle", `${attackerName} ${army.mission === "raid" ? "raided" : "attacked"} ${region.name}: ${result.attackerWon ? "they won" : "we held"}${conquered ? ", region lost" : ""}`, { report });

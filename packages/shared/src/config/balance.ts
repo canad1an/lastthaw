@@ -225,7 +225,14 @@ export const balance = {
     templeConvertsPerHour: 2,
   },
   /** The AI tribes talk on Discord during tournaments: this many posts each per match, on days fixed by the seed. */
-  discord: { postsPerTribe: { min: 1, max: 10 } },
+  discord: {
+    /** Posts per tribe per match, on Discord during tournaments and in the match chat in every match (separate schedules). */
+    postsPerTribe: { min: 1, max: 10 },
+    /** A battle is worth talking about when a region changed hands or at least this many units died on both sides together. */
+    battleLossesToTalk: 8,
+    /** Chance a tribe comments on a major battle it was in (once a day at most). */
+    battleTalkChance: 0.6,
+  },
   schedule: {
     /** The worker keeps this many upcoming weekly lobbies open when enabled, each with a name of its own. */
     enabled: true,

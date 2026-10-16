@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { and, eq, isNotNull, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { balance, matchStateView } from "@lastthaw/shared";
 import { buildApp } from "../src/api/app.js";
 import { createDb, type Db } from "../src/db/client.js";
-import { dailyObjectives, events, jobs, matches, players, userMatchResults, users } from "../src/db/schema.js";
+import { chatMessages, dailyObjectives, events, jobs, matches, players, userMatchResults, users } from "../src/db/schema.js";
 import { runAiDecisions, runMatchTicks } from "../src/sim/tick.js";
 import { runOverflow, runTradeRoutes } from "../src/sim/trade.js";
 import { Publisher } from "../src/realtime/publish.js";
@@ -182,6 +182,11 @@ describe("a complete match", () => {
     const feed = (await c.call("GET", `/api/matches/${matchId}/feed`)).json() as { items: { kind: string; text: string }[] };
     expect(feed.items.length).toBeGreaterThanOrEqual(20);
     expect(feed.items.every((i) => i.text.length > 0)).toBe(true);
+    // The tribes talked in the match chat: scheduled posts over the month, and some battle reactions.
+    const aiIds = all.filter((p) => p.isAi).map((p) => p.id);
+    const chat = await db.select({ playerId: chatMessages.playerId, body: chatMessages.body }).from(chatMessages).where(and(eq(chatMessages.matchId, matchId), eq(chatMessages.channel, "global"), inArray(chatMessages.playerId, aiIds)));
+    expect(chat.length).toBeGreaterThanOrEqual(aiIds.length);
+    expect(chat.every((c) => c.body.length > 10)).toBe(true);
     const results = await db.select().from(userMatchResults).where(eq(userMatchResults.matchId, matchId));
     expect(results).toHaveLength(1);
     expect(results[0]!.winKind).toBe(m!.winKind);

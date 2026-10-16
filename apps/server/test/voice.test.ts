@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { balance, seededRng } from "@lastthaw/shared";
-import { composePost, postToDiscord, postingDays, type TribeFacts } from "../src/sim/tribeVoice.js";
+import { composeBattleLine, composePost, postToDiscord, postingDays, type TribeFacts } from "../src/sim/tribeVoice.js";
 
 process.env.DATABASE_URL ??= "postgres://lastthaw:lastthaw@localhost:5432/lastthaw";
 process.env.SESSION_SECRET ??= "test-secret-test-secret-test-secret";
@@ -62,6 +62,20 @@ describe("tribe voice", () => {
       expect(p.length).toBeLessThan(1900);
       expect(p).not.toContain("@");
     }
+  });
+
+  it("reacts to a battle from its own side of it", () => {
+    const base = { other: "Ravensholt", region: "Kalahari", temperament: "balanced" as const };
+    expect(composeBattleLine({ ...base, attacker: true, won: true, conquered: true }, seededRng("a"))).toMatch(/Kalahari/);
+    expect(composeBattleLine({ ...base, attacker: false, won: false, conquered: true }, seededRng("b"))).toMatch(/Ravensholt/);
+    const lines = new Set<string>();
+    for (let i = 0; i < 40; i++) lines.add(composeBattleLine({ ...base, attacker: i % 2 === 0, won: i % 3 === 0, conquered: i % 5 === 0, temperament: (["peaceful", "balanced", "raider"] as const)[i % 3]! }, seededRng(`c${i}`)));
+    expect(lines.size).toBeGreaterThan(10);
+    for (const l of lines) expect(l).not.toContain("@");
+    // In the match chat the posts do not name the match.
+    const chat = composePost(facts({ match: "" }), seededRng("d"));
+    expect(chat).not.toContain(" in .");
+    expect(chat.length).toBeGreaterThan(20);
   });
 
   it("stays quiet without a webhook", async () => {

@@ -604,6 +604,23 @@ export const discordPosts = pgTable(
   (t) => [primaryKey({ columns: [t.matchId, t.playerId, t.day] })],
 );
 
+/** What each AI tribe has said in the match chat: one scheduled post per day at most, one battle reaction per day at most. */
+export const tribeChatPosts = pgTable(
+  "tribe_chat_posts",
+  {
+    matchId: uuid("match_id")
+      .notNull()
+      .references(() => matches.id, { onDelete: "cascade" }),
+    playerId: uuid("player_id")
+      .notNull()
+      .references(() => players.id, { onDelete: "cascade" }),
+    day: integer("day").notNull(),
+    kind: text("kind").notNull(),
+    postedAt: timestamp("posted_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.matchId, t.playerId, t.day, t.kind] })],
+);
+
 /** Who has registered for a tournament ahead of its lobby opening, and which reminders they have had. */
 export const tournamentRegistrations = pgTable(
   "tournament_registrations",
