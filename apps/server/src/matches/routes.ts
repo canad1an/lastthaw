@@ -47,12 +47,13 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
     const ids = rows.map((r) => r.id);
     const counts = ids.length
       ? await db
-          .select({ matchId: players.matchId, n: sql<number>`count(*) filter (where not is_ai)::int` })
+          .select({ matchId: players.matchId, n: sql<number>`count(*) filter (where not is_ai)::int`, all: sql<number>`count(*) filter (where not hidden)::int` })
           .from(players)
           .where(inArray(players.matchId, ids))
           .groupBy(players.matchId)
       : [];
     const countBy = new Map(counts.map((c) => [c.matchId, c.n]));
+    const allBy = new Map(counts.map((c) => [c.matchId, c.all]));
     const mine = user
       ? await db
           .select({ matchId: players.matchId, id: players.id, capital: players.capitalRegionId })
@@ -76,6 +77,8 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
         startsAt: m.startsAt.toISOString(),
         endsAt: m.endsAt.toISOString(),
         humanPlayers: countBy.get(m.id) ?? 0,
+        // Every seat is taken once a match runs: humans plus the AI tribes that filled the rest.
+        players: m.status === "lobby" ? (countBy.get(m.id) ?? 0) : (allBy.get(m.id) ?? 0),
         maxPlayers: balance.match.maxHumanPlayers,
         joined: !!mp,
         playerId: mp?.id ?? null,

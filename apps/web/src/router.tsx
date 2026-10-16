@@ -2,7 +2,7 @@ import { createRootRoute, createRoute, createRouter, Outlet } from "@tanstack/re
 import { TopBar } from "./components/TopBar.js";
 import { ForgotPage, LoginPage, RegisterPage, ResetPage, VerifyPage } from "./routes/auth.js";
 import { LobbyPage } from "./routes/lobby.js";
-import { MatchPage } from "./routes/match.js";
+import { MatchLobbyPage, MatchPage } from "./routes/match.js";
 import { LeaderboardPage } from "./routes/leaderboard.js";
 import { ReportPage } from "./components/MatchSummary.js";
 import { ReplayPage } from "./routes/replay.js";
@@ -41,6 +41,7 @@ const routes = [
   createRoute({ getParentRoute: () => rootRoute, path: "/forgot", component: ForgotPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/reset", component: ResetPage, validateSearch: tokenSearch }),
   createRoute({ getParentRoute: () => rootRoute, path: "/match/$matchId", component: MatchPage }),
+  createRoute({ getParentRoute: () => rootRoute, path: "/match/$matchId/lobby", component: MatchLobbyPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/match/$matchId/leaderboard", component: LeaderboardPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/match/$matchId/report", component: ReportPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/match/$matchId/replay", component: ReplayPage }),

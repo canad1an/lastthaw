@@ -87,6 +87,8 @@ export const matchSummary = z.object({
   startsAt: z.string(),
   endsAt: z.string(),
   humanPlayers: z.number(),
+  /** Seats taken: humans in the lobby; humans plus AI tribes once the match runs (always full). */
+  players: z.number().default(0),
   maxPlayers: z.number(),
   joined: z.boolean(),
   /** My player id in this match, if joined. */

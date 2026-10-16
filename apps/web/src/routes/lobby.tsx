@@ -1,12 +1,77 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { balance, formatCountdown, type MatchSummary } from "@lastthaw/shared";
 import { useMe } from "../api/auth.js";
 import { api, keys } from "../api/client.js";
 import { Button, Card, ErrorText, Field, Input } from "../components/ui.js";
 import { useNow } from "../hooks/useNow.js";
 import { useServerInfo } from "../hooks/useServerInfo.js";
+
+interface LobbyMessage {
+  id: string;
+  userId: string;
+  name: string;
+  body: string;
+  sentAt: string;
+}
+
+/** One room for everyone between matches: who is about, who wants a game, trash talk before the ice. */
+function LobbyChat({ meId, approved }: { meId: string; approved: boolean }) {
+  const qc = useQueryClient();
+  const [text, setText] = useState("");
+  const listRef = useRef<HTMLUListElement>(null);
+  const q = useQuery({
+    queryKey: ["chat", "lobby"],
+    queryFn: () => fetch("/api/chat/lobby", { credentials: "include" }).then((r) => (r.ok ? (r.json() as Promise<{ messages: LobbyMessage[] }>) : { messages: [] })),
+    refetchInterval: 8_000,
+  });
+  const send = useMutation({
+    mutationFn: async (body: string) => {
+      const r = await fetch("/api/chat/lobby", { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify({ body }) });
+      if (!r.ok) throw new Error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? `could not send (${r.status})`);
+      return r.json();
+    },
+    onSuccess: () => {
+      setText("");
+      void qc.invalidateQueries({ queryKey: ["chat", "lobby"] });
+    },
+  });
+  const count = q.data?.messages.length ?? 0;
+  useEffect(() => {
+    const el = listRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [count]);
+  return (
+    <Card className="space-y-2">
+      <h2 className="display text-lg font-semibold text-white">Lobby chat</h2>
+      <ul ref={listRef} className="max-h-72 space-y-1 overflow-y-auto text-sm">
+        {count === 0 && <li className="text-slate-500">Nobody has said anything yet. Say hello.</li>}
+        {q.data?.messages.map((m) => (
+          <li key={m.id} className="flex gap-2">
+            <span className="shrink-0 tabular-nums text-xs text-slate-500">{new Date(m.sentAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+            <span>
+              <span className={m.userId === meId ? "font-medium text-sky-300" : "font-medium text-slate-200"}>{m.name}</span> <span className="text-slate-300">{m.body}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+      <form
+        className="flex gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (text.trim()) send.mutate(text.trim());
+        }}
+      >
+        <Input value={text} onChange={(e) => setText(e.target.value)} maxLength={500} placeholder={approved ? "Say something to everyone in the lobby" : "Chat opens once your account is approved"} disabled={!approved} />
+        <Button type="submit" disabled={!approved || !text.trim() || send.isPending}>
+          Send
+        </Button>
+      </form>
+      {send.error && <ErrorText>{send.error.message}</ErrorText>}
+    </Card>
+  );
+}
 
 export function LobbyPage() {
   const me = useMe();
@@ -69,6 +134,7 @@ export function LobbyPage() {
       {me.data?.emailVerified && (me.data.approved || me.data.isAdmin || info.data?.devTools) && <CreateMatch admin={!!me.data.isAdmin} />}
 
       <PastMatches />
+      {me.data && <LobbyChat meId={me.data.id} approved={me.data.approved} />}
     </main>
   );
 }
@@ -222,13 +288,13 @@ function MatchRow({ m, canJoin }: { m: MatchSummary; canJoin: boolean }) {
           )}
         </div>
         <p className="text-sm text-slate-400">
-          {m.humanPlayers}/{m.maxPlayers} players ·{" "}
+          {m.status === "lobby" ? `${m.humanPlayers} joined, AI tribes fill the rest of ${m.maxPlayers}` : `${m.players}/${m.maxPlayers} players`} ·{" "}
           {m.status === "lobby" ? (startsIn > 0 ? `starts in ${formatCountdown(startsIn)}` : "starting...") : `ends in ${formatCountdown(endsIn)}`}
         </p>
       </div>
       <div className="flex items-center gap-2">
         {m.joined ? (
-          <Link to="/match/$matchId" params={{ matchId: m.id }} className="btn-ember rounded-md px-3 py-2 text-sm font-semibold">
+          <Link to={m.status === "lobby" ? "/match/$matchId/lobby" : "/match/$matchId"} params={{ matchId: m.id }} className="btn-ember rounded-md px-3 py-2 text-sm font-semibold">
             {m.status === "lobby" ? (m.capitalRegionId ? "Lobby" : "Pick your start") : "Play"}
           </Link>
         ) : (

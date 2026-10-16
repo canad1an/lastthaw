@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useParams } from "@tanstack/react-router";
+import { Link, Navigate, useParams } from "@tanstack/react-router";
 import { useCallback, useMemo, useState } from "react";
 import { balance, formatCountdown, iceLatitudeOnDay, regionById, type MapRegion, type MatchStateView, loyaltyBand, wallOf, unitById } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
@@ -15,6 +15,7 @@ import { RefugeePanel } from "../components/RefugeePanel.js";
 import { overlayBadges, useOverlays } from "../map/overlays.js";
 import { IncomingWarnings } from "../components/ArmyPanel.js";
 import { ActivityPanel } from "../components/ActivityPanel.js";
+import { ChatChannel } from "../components/Chat.js";
 import { TradeRoutesPanel } from "../components/TradeRoutesPanel.js";
 import { Button, Card, ErrorText, fmt } from "../components/ui.js";
 import { useNow } from "../hooks/useNow.js";
@@ -62,8 +63,27 @@ export function MatchPage() {
     );
   }
   const s = state.data;
-  if (s.match.status === "lobby") return <LobbyView matchId={matchId} state={s} />;
+  if (s.match.status === "lobby") return <Navigate to="/match/$matchId/lobby" params={{ matchId }} replace />;
   return <GameView matchId={matchId} state={s} rtStatus={rt.status} />;
+}
+
+/** The waiting room: the countdown, who has joined, the start pick on the map, and a chat, until the match begins. */
+export function MatchLobbyPage() {
+  const { matchId } = useParams({ from: "/match/$matchId/lobby" });
+  const state = useQuery({ queryKey: keys.matchState(matchId), queryFn: () => api.matchState(matchId), refetchInterval: 10_000 });
+  if (state.isLoading) return <p className="p-6 text-slate-400">Loading lobby...</p>;
+  if (state.error || !state.data) {
+    return (
+      <main className="p-6">
+        <ErrorText>{state.error?.message ?? "Match not found"}</ErrorText>
+        <Link to="/matches" className="text-sky-400 hover:underline">
+          Back to matches
+        </Link>
+      </main>
+    );
+  }
+  if (state.data.match.status !== "lobby") return <Navigate to="/match/$matchId" params={{ matchId }} replace />;
+  return <LobbyView matchId={matchId} state={state.data} />;
 }
 
 /** Before the match starts: pick a capital from the offered options. */
@@ -84,6 +104,9 @@ function LobbyView({ matchId, state }: { matchId: string; state: MatchStateView 
   const optionSet = useMemo(() => new Set(options.data?.options ?? []), [options.data]);
   const current = state.me.capitalRegionId;
   const startsIn = (Date.parse(state.match.startsAt) - now) / 1000;
+  // The lobby listing knows the kind and, for the creator, the invite code.
+  const listing = useQuery({ queryKey: keys.matches, queryFn: () => api.matches() });
+  const mine = listing.data?.find((m) => m.id === matchId);
 
   const paint = useCallback(
     (r: MapRegion): RegionPaint => {
@@ -100,10 +123,23 @@ function LobbyView({ matchId, state }: { matchId: string; state: MatchStateView 
     <div className="flex h-[calc(100dvh-3rem)] flex-col bg-slate-950 lg:flex-row">
       <WorldMap paint={paint} selected={selected} onSelect={setSelected} focus={current ?? options.data?.options[0] ?? null} className="h-1/2 w-full lg:h-full lg:flex-1" />
       <aside className="w-full space-y-3 overflow-y-auto border-t border-slate-800 p-4 lg:w-96 lg:border-l lg:border-t-0">
-        <h1 className="text-xl font-semibold">{state.match.name}</h1>
+        <h1 className="display text-2xl font-semibold text-white">{state.match.name}</h1>
         <p className="text-sm text-slate-400">
-          {state.players.length} players · {state.match.speed}x · {startsIn > 0 ? `starts in ${formatCountdown(startsIn)}` : "starting..."}
+          {mine ? (mine.kind === "tournament" ? "Tournament" : mine.kind === "private" ? "Private game" : "Public game") : "Game"} · {state.match.speed}x
+          {state.match.speed > 1 ? ` (a game day every ${formatCountdown(86400 / state.match.speed)})` : " (real time)"} · {balance.match.lengthDays} days
         </p>
+        <Card className="text-center">
+          <p className="text-xs uppercase tracking-[0.3em] text-sky-300">{startsIn > 0 ? "The ice starts moving in" : "Starting"}</p>
+          <p className="display mt-1 text-4xl font-bold tabular-nums text-white">{startsIn > 0 ? formatCountdown(startsIn) : "..."}</p>
+          <p className="mt-1 text-xs text-slate-500">{new Date(state.match.startsAt).toLocaleString()}</p>
+        </Card>
+        {mine?.inviteCode && (
+          <Card className="text-sm">
+            <p className="text-slate-300">
+              Invite code <span className="font-mono text-amber-200">{mine.inviteCode}</span>: friends enter it on the Matches page to join.
+            </p>
+          </Card>
+        )}
         <Card>
           <p className="text-sm text-slate-300">
             Highlighted regions are your starting options. Click one, then confirm. If you do not choose, one is picked for you when the match starts.
@@ -131,12 +167,24 @@ function LobbyView({ matchId, state }: { matchId: string; state: MatchStateView 
         )}
         {current && <p className="text-sm text-emerald-400">Capital chosen: {regionById(current)?.name}</p>}
         <Card>
-          <h2 className="mb-2 text-sm font-medium">Players</h2>
+          <h2 className="mb-2 text-sm font-medium">
+            Joined so far <span className="text-slate-500">({state.players.length}; AI tribes fill the rest to {balance.match.maxHumanPlayers})</span>
+          </h2>
           <ul className="space-y-1 text-sm text-slate-300">
             {state.players.map((p) => (
-              <li key={p.id}>{p.name}</li>
+              <li key={p.id} className={p.id === state.me.playerId ? "text-sky-300" : ""}>
+                {p.name}
+                {p.id === state.me.playerId ? " (you)" : ""}
+              </li>
             ))}
           </ul>
+        </Card>
+        <Card className="space-y-2">
+          <h2 className="text-sm font-medium">Chat</h2>
+          <ChatChannel matchId={matchId} channel="global" me={state.me.playerId} />
+        </Card>
+        <Card className="text-xs text-slate-400">
+          New here? The <Link to="/how-to-play" className="text-sky-400 hover:underline">field manual</Link> takes ten minutes. Once the match starts you cannot be attacked for the first {balance.match.protectionDays} days.
         </Card>
         <DevTools matchId={matchId} lobby onStart={() => devStart.mutate()} />
       </aside>

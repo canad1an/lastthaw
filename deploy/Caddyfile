@@ -16,10 +16,16 @@ lastthaw.com, www.lastthaw.com {
     handle /api/* {
         reverse_proxy {
             dynamic a api 3000 {
-                refresh 10s
+                refresh 2s
             }
             lb_policy round_robin
+            # A replica being replaced during a deploy is skipped: the request waits for a live one instead of a 503.
+            lb_try_duration 15s
+            lb_try_interval 250ms
             fail_duration 10s
+            health_uri /api/health
+            health_interval 3s
+            health_timeout 2s
         }
     }
 

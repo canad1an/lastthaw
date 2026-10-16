@@ -315,6 +315,14 @@ describe("api routes", () => {
     expect((await Ann.call("POST", `${base}/chat`, { channel: "global", body: "   " })).statusCode).toBe(400);
     expect((await Ann.call("POST", `${base}/chat`, { channel: "global", body: "The ice waits for no one." })).statusCode).toBe(201);
     expect((await Ann.call("POST", `${base}/chat`, { channel: "alliance", body: "secret" })).statusCode).toBeGreaterThanOrEqual(400);
+    // The lobby room: everyone logged in reads, approved players write.
+    expect((await app.inject({ method: "GET", url: "/api/chat/lobby" })).statusCode).toBe(401);
+    expect((await Out.call("POST", "/api/chat/lobby", { body: "let me in" })).statusCode).toBe(403);
+    expect((await Ann.call("POST", "/api/chat/lobby", { body: "   " })).statusCode).toBe(400);
+    expect((await Ann.call("POST", "/api/chat/lobby", { body: `Anyone up for a game? ${suffix}` })).statusCode).toBe(201);
+    expect((await Ann.call("POST", "/api/chat/lobby", { body: "again" })).statusCode).toBe(409);
+    const lobbyChat = (await Out.call("GET", "/api/chat/lobby")).json() as { messages: { name: string; body: string }[] };
+    expect(lobbyChat.messages.some((m) => m.body === `Anyone up for a game? ${suffix}` && m.name === ann.displayName)).toBe(true);
     expect(JSON.stringify((await Ben.call("GET", `${base}/chat`)).json())).toContain("The ice waits for no one.");
     expect((await Out.call("POST", `${base}/chat`, { channel: "global", body: "hi" })).statusCode).toBeGreaterThanOrEqual(403);
 

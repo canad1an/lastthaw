@@ -585,6 +585,21 @@ export const chatMessages = pgTable(
   (t) => [index("chat_channel_idx").on(t.matchId, t.channel, t.sentAt)],
 );
 
+/** The lobby chat: one room for the whole site, outside any match. */
+export const lobbyMessages = pgTable(
+  "lobby_messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    body: text("body").notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("lobby_messages_sent_idx").on(t.sentAt)],
+);
+
 export const marketOrders = pgTable(
   "market_orders",
   {

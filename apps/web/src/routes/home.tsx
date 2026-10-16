@@ -280,7 +280,7 @@ export function MatchCard({ m, now }: { m: PublicMatch; now: number }) {
       ) : (
         <>
           <p className="text-sm text-slate-300">
-            Day {Math.floor(m.day) + 1} of {balance.match.lengthDays} · {m.humans} players + {m.ai} AI · {m.claimedRegions}/{m.totalRegions} regions claimed · ends in{" "}
+            Day {Math.floor(m.day) + 1} of {balance.match.lengthDays} · {m.humans + m.ai}/{balance.match.maxHumanPlayers} players · {m.claimedRegions}/{m.totalRegions} regions claimed · ends in{" "}
             <span className="tabular-nums">{formatCountdown(endsIn)}</span>
           </p>
           <div className="flex items-center gap-2 text-xs text-slate-400">

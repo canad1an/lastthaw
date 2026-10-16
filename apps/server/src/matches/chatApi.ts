@@ -3,7 +3,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { chatChannel, chatPostBody, type ChatResponse } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import type { Redis } from "ioredis";
-import { allianceMembers, chatMessages, matches, players } from "../db/schema.js";
+import { allianceMembers, chatMessages, lobbyMessages, matches, players } from "../db/schema.js";
 import { requireUser } from "../auth/session.js";
 import type { Publisher } from "../realtime/publish.js";
 import { httpError } from "../sim/commands.js";
@@ -36,6 +36,23 @@ export async function chatRoutes(app: FastifyInstance, opts: { db: Db; publisher
     const rows = await db.select({ playerId: allianceMembers.playerId }).from(allianceMembers).where(eq(allianceMembers.allianceId, mine.allianceId));
     return { stored: `alliance:${mine.allianceId}`, members: rows.map((r) => r.playerId) };
   }
+
+  /** The lobby room: anyone logged in reads it, approved players write to it. */
+  app.get("/api/chat/lobby", async (req) => {
+    requireUser(req);
+    const rows = await db.select().from(lobbyMessages).orderBy(desc(lobbyMessages.sentAt)).limit(100);
+    return { messages: rows.reverse().map((r) => ({ id: r.id, userId: r.userId, name: r.name, body: r.body, sentAt: r.sentAt.toISOString() })) };
+  });
+
+  app.post("/api/chat/lobby", async (req, reply) => {
+    const user = requireUser(req);
+    if (!user.approved) throw httpError(403, "Last Thaw is in private beta: ask Matt for access first");
+    const body = chatPostBody.shape.body.parse((req.body as { body?: unknown })?.body);
+    if ((await opts.redis.set(`lt-chat:lobby:${user.id}`, "1", "PX", RATE_LIMIT_MS, "NX")) !== "OK") throw httpError(409, "slow down: one message per second");
+    const [row] = await db.insert(lobbyMessages).values({ userId: user.id, name: user.displayName, body }).returning();
+    if (!row) throw new Error("lobby chat insert failed");
+    return reply.code(201).send({ id: row.id, userId: row.userId, name: row.name, body: row.body, sentAt: row.sentAt.toISOString() });
+  });
 
   app.get("/api/matches/:id/chat", async (req): Promise<ChatResponse> => {
     const user = requireUser(req);
