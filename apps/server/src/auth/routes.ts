@@ -52,7 +52,7 @@ const DUMMY_HASH_PROMISE = hashPassword("not-a-real-password-" + Math.random());
 
 export async function authRoutes(app: FastifyInstance, opts: { db: Db; redis: Redis; publisher: Publisher }) {
   const { db, redis, publisher } = opts;
-  const tight = (max: number, timeWindow: string) => ({ config: { rateLimit: { max, timeWindow } } });
+  const tight = (max: number, timeWindow: string) => ({ config: { rateLimit: { max: config().LOAD_TEST ? 1_000_000 : max, timeWindow } } });
   /** One mail per address per ten minutes for resend and forgot, whatever the caller does. */
   const mailAllowed = async (kind: string, email: string) => (await redis.set(`lt-mail:${kind}:${email}`, "1", "EX", 600, "NX")) === "OK";
 

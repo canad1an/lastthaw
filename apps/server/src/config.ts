@@ -18,6 +18,11 @@ const schema = z.object({
     .optional()
     .transform((v) => (v && v.trim() ? v.trim() : undefined))
     .pipe(z.string().url().optional()),
+  /** Load harness only: no per-address rate limits, since every simulated player comes from one machine. Never set in production. */
+  LOAD_TEST: z
+    .string()
+    .default("false")
+    .transform((v) => v === "true" || v === "1"),
   DEV_TOOLS: z
     .string()
     .default("false")

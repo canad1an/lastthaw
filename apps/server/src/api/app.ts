@@ -67,7 +67,7 @@ export async function buildApp(deps: AppDeps = {}) {
   await app.register(cors, { origin: cfg.PUBLIC_URL, credentials: true });
   // Every client gets 300 requests a minute per address; the auth routes set much lower limits of their own.
   // Counters live in Redis so both API replicas share them.
-  await app.register(rateLimit, { global: true, max: 300, timeWindow: "1 minute", redis, nameSpace: "lt-rl:", keyGenerator: (req) => req.ip, skipOnError: true });
+  await app.register(rateLimit, { global: true, max: cfg.LOAD_TEST ? 1_000_000 : 300, timeWindow: "1 minute", redis, nameSpace: "lt-rl:", keyGenerator: (req) => req.ip, skipOnError: true });
   // Cross-site writes are refused outright: browsers always send Origin on cross-site POSTs.
   const allowedOrigins = new Set([cfg.PUBLIC_URL, cfg.PUBLIC_URL.replace("://", "://www.")]);
   // Match addresses: every /api/matches/:id route takes the UUID or the readable slug; the slug is swapped for the UUID here.
