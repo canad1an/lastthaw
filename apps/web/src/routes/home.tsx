@@ -116,7 +116,7 @@ export function HomePage() {
         <div className="glass overflow-hidden rounded-2xl">
           <div className="flex flex-wrap items-end justify-between gap-3 border-b border-slate-700/50 px-5 py-4">
             <div>
-              <h2 className="display text-xl font-semibold text-white">Watch a month die</h2>
+              <h2 className="display text-xl font-semibold text-white">Watch the ice take the world</h2>
               <p className="text-sm text-slate-400">The real map, the real ice schedule. Everything above the line stops producing and loses people.</p>
             </div>
             <Link to="/how-to-play" className="text-sm text-sky-300 hover:text-white">
