@@ -84,7 +84,7 @@ export async function buildApp(deps: AppDeps = {}) {
   await app.register(chatRoutes, { db, publisher, redis });
   await app.register(marketRoutes, { db, publisher });
   await app.register(leaderboardRoutes, { db });
-  await app.register(adminRoutes, { db, publisher });
+  await app.register(adminRoutes, { db, publisher, redis });
   await app.register(publicRoutes, { db });
   await app.register(tradeRouteRoutes, { db, publisher });
   await app.register(feedRoutes, { db });

@@ -1,8 +1,9 @@
 import type { FastifyInstance } from "fastify";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
+import type { Redis } from "ioredis";
 import { z } from "zod";
 import type { Db } from "../db/client.js";
-import { fairplayFlags, matchRegions, matches, players, sessions, users } from "../db/schema.js";
+import { fairplayFlags, jobs, matchRegions, matches, players, sessions, users } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
 import { eliminatePlayer } from "../sim/missions.js";
 import { matchNow } from "../sim/clock.js";
@@ -15,8 +16,135 @@ const suspendBody = z.object({ reason: z.string().trim().min(2).max(200) });
 const kickParams = z.object({ id: z.string().uuid(), userId: z.string().uuid() });
 
 /** Admin-only review queue for multi-account flags, plus a few match controls. */
-export async function adminRoutes(app: FastifyInstance, opts: { db: Db; publisher: Publisher }) {
-  const { db, publisher } = opts;
+export async function adminRoutes(app: FastifyInstance, opts: { db: Db; publisher: Publisher; redis?: Redis }) {
+  const { db, publisher, redis } = opts;
+
+  /**
+   * Live metrics for the admin page: who is connected right now (from the API
+   * processes' presence keys), who was active in the last quarter hour, the
+   * account funnel, every running match with its humans and worker health,
+   * the job backlog and the last day's activity.
+   */
+  app.get("/api/admin/metrics", async (req) => {
+    requireAdmin(req);
+    const now = new Date();
+    const m15 = new Date(now.getTime() - 15 * 60_000);
+    const h24 = new Date(now.getTime() - 24 * 3600_000);
+    const d7 = new Date(now.getTime() - 7 * 86400_000);
+    const h1 = new Date(now.getTime() - 3600_000);
+
+    // Connected sockets across every API process.
+    const presence = { sockets: 0, anonymous: 0, users: {} as Record<string, string[]>, processes: 0 };
+    if (redis) {
+      const keys = await redis.keys("lt-presence:*").catch(() => [] as string[]);
+      for (const key of keys) {
+        const raw = await redis.get(key).catch(() => null);
+        if (!raw) continue;
+        try {
+          const p = JSON.parse(raw) as { sockets: number; anonymous: number; users: Record<string, string[]> };
+          presence.processes += 1;
+          presence.sockets += p.sockets;
+          presence.anonymous += p.anonymous;
+          for (const [uid, ms] of Object.entries(p.users)) presence.users[uid] = [...new Set([...(presence.users[uid] ?? []), ...ms])];
+        } catch {
+          /* a stale key */
+        }
+      }
+    }
+    const onlineIds = Object.keys(presence.users);
+
+    const [funnel] = await db
+      .select({
+        total: sql<number>`count(*)::int`,
+        verified: sql<number>`count(*) filter (where ${users.emailVerifiedAt} is not null)::int`,
+        approved: sql<number>`count(*) filter (where ${users.approvedAt} is not null)::int`,
+        suspended: sql<number>`count(*) filter (where ${users.suspendedAt} is not null)::int`,
+        new24h: sql<number>`count(*) filter (where ${users.createdAt} > ${h24.toISOString()}::timestamptz)::int`,
+        new7d: sql<number>`count(*) filter (where ${users.createdAt} > ${d7.toISOString()}::timestamptz)::int`,
+        loggedIn24h: sql<number>`count(*) filter (where ${users.lastLoginAt} > ${h24.toISOString()}::timestamptz)::int`,
+        loggedIn7d: sql<number>`count(*) filter (where ${users.lastLoginAt} > ${d7.toISOString()}::timestamptz)::int`,
+      })
+      .from(users);
+    // Active in the last quarter hour: any session touched since then.
+    const active = await db
+      .select({ id: users.id, name: users.displayName, lastSeenAt: sql<string>`max(${sessions.lastSeenAt})` })
+      .from(sessions)
+      .innerJoin(users, eq(users.id, sessions.userId))
+      .where(gt(sessions.lastSeenAt, m15))
+      .groupBy(users.id, users.displayName)
+      .orderBy(desc(sql`max(${sessions.lastSeenAt})`))
+      .limit(100);
+    const onlineRows = onlineIds.length ? await db.select({ id: users.id, name: users.displayName }).from(users).where(inArray(users.id, onlineIds)) : [];
+
+    const matchRows = await db.select().from(matches).where(inArray(matches.status, ["lobby", "running"])).orderBy(desc(matches.startsAt));
+    const matchIds = matchRows.map((m) => m.id);
+    const nameOfMatch = new Map(matchRows.map((m) => [m.id, m.name]));
+    const playerCounts = matchIds.length
+      ? await db
+          .select({ matchId: players.matchId, humans: sql<number>`count(*) filter (where ${players.userId} is not null and ${players.eliminatedAt} is null)::int`, ai: sql<number>`count(*) filter (where ${players.isAi} and not ${players.hidden})::int` })
+          .from(players)
+          .where(inArray(players.matchId, matchIds))
+          .groupBy(players.matchId)
+      : [];
+    const jobCounts = matchIds.length
+      ? await db
+          .select({
+            matchId: jobs.matchId,
+            open: sql<number>`count(*) filter (where ${jobs.completedAt} is null and ${jobs.cancelledAt} is null)::int`,
+            due: sql<number>`count(*) filter (where ${jobs.completedAt} is null and ${jobs.cancelledAt} is null and ${jobs.waitingFor} is null and ${jobs.endsAt} <= now())::int`,
+            parked: sql<number>`count(*) filter (where ${jobs.completedAt} is null and ${jobs.cancelledAt} is null and ${jobs.attempts} >= 5)::int`,
+            doneHour: sql<number>`count(*) filter (where ${jobs.completedAt} > ${h1.toISOString()}::timestamptz)::int`,
+          })
+          .from(jobs)
+          .where(inArray(jobs.matchId, matchIds))
+          .groupBy(jobs.matchId)
+      : [];
+    const pc = new Map(playerCounts.map((r) => [r.matchId, r]));
+    const jc = new Map(jobCounts.map((r) => [r.matchId, r]));
+    const [finished] = await db.select({ n: sql<number>`count(*)::int`, day: sql<number>`count(*) filter (where ${matches.finishedAt} > ${h24.toISOString()}::timestamptz)::int` }).from(matches).where(eq(matches.status, "finished"));
+    const actRows = (await db.execute(
+      sql`select (select count(*) from battles where resolved_at > ${h24.toISOString()}::timestamptz)::int as "battles24h",
+                 (select count(*) from chat_messages where sent_at > ${h24.toISOString()}::timestamptz)::int as "chat24h",
+                 (select count(*) from events where at > ${h24.toISOString()}::timestamptz)::int as "events24h",
+                 (select count(*) from sessions where created_at > ${d7.toISOString()}::timestamptz)::int as "sessions7d"`,
+    )) as unknown as Array<{ battles24h: number; chat24h: number; events24h: number; sessions7d: number }>;
+    const activity = actRows[0];
+
+    return {
+      at: now.toISOString(),
+      online: {
+        users: onlineRows.map((u) => ({ id: u.id, name: u.name, matches: (presence.users[u.id] ?? []).map((id) => nameOfMatch.get(id) ?? "a match") })),
+        sockets: presence.sockets,
+        anonymous: presence.anonymous,
+        processes: presence.processes,
+      },
+      active15m: active.map((a) => ({ id: a.id, name: a.name, lastSeenAt: a.lastSeenAt })),
+      users: funnel,
+      matches: {
+        finished: finished?.n ?? 0,
+        finished24h: finished?.day ?? 0,
+        open: matchRows.map((m) => {
+          const mnow = matchNow(m);
+          const day = m.status === "running" ? Math.round(((mnow.getTime() - m.startsAt.getTime()) / 86400_000) * m.speed * 10) / 10 : 0;
+          return {
+            id: m.id,
+            name: m.name,
+            status: m.status,
+            speed: m.speed,
+            kind: ((m.settings as { kind?: string }).kind ?? "public") as string,
+            day,
+            humans: pc.get(m.id)?.humans ?? 0,
+            ai: pc.get(m.id)?.ai ?? 0,
+            online: onlineIds.filter((uid) => (presence.users[uid] ?? []).includes(m.id)).length,
+            lastTickAgeSeconds: m.lastTickAt ? Math.round((mnow.getTime() - m.lastTickAt.getTime()) / 1000) : null,
+            paused: !!m.pausedAt,
+            jobs: { open: jc.get(m.id)?.open ?? 0, due: jc.get(m.id)?.due ?? 0, parked: jc.get(m.id)?.parked ?? 0, doneHour: jc.get(m.id)?.doneHour ?? 0 },
+          };
+        }),
+      },
+      activity: activity ?? { battles24h: 0, chat24h: 0, events24h: 0, sessions7d: 0 },
+    };
+  });
 
   app.get("/api/admin/fairplay", async (req) => {
     requireAdmin(req);

@@ -25,6 +25,144 @@ interface BetaUser {
   lastLoginAt: string | null;
 }
 
+interface Metrics {
+  at: string;
+  online: { users: Array<{ id: string; name: string; matches: string[] }>; sockets: number; anonymous: number; processes: number };
+  active15m: Array<{ id: string; name: string; lastSeenAt: string }>;
+  users: { total: number; verified: number; approved: number; suspended: number; new24h: number; new7d: number; loggedIn24h: number; loggedIn7d: number };
+  matches: {
+    finished: number;
+    finished24h: number;
+    open: Array<{ id: string; name: string; status: string; speed: number; kind: string; day: number; humans: number; ai: number; online: number; lastTickAgeSeconds: number | null; paused: boolean; jobs: { open: number; due: number; parked: number; doneHour: number } }>;
+  };
+  activity: { battles24h: number; chat24h: number; events24h: number; sessions7d: number };
+}
+
+function Stat({ n, label, tone }: { n: number | string; label: string; tone?: "good" | "warn" | "bad" | undefined }) {
+  const color = tone === "bad" ? "text-rose-300" : tone === "warn" ? "text-amber-200" : tone === "good" ? "text-emerald-300" : "text-white";
+  return (
+    <div className="rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-2">
+      <p className={`text-2xl font-semibold tabular-nums ${color}`}>{n}</p>
+      <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
+    </div>
+  );
+}
+
+/** Who is here and whether the machinery is turning: refreshed every fifteen seconds. */
+function LiveMetrics() {
+  const q = useQuery({
+    queryKey: ["admin", "metrics"],
+    queryFn: () => fetch("/api/admin/metrics", { credentials: "include" }).then((r) => r.json() as Promise<Metrics>),
+    refetchInterval: 15_000,
+  });
+  const d = q.data;
+  if (!d) return <Card>Loading metrics...</Card>;
+  const running = d.matches.open.filter((m) => m.status === "running");
+  const stale = running.filter((m) => !m.paused && (m.lastTickAgeSeconds ?? 0) > 900);
+  const parked = running.reduce((a, m) => a + m.jobs.parked, 0);
+  const due = running.reduce((a, m) => a + m.jobs.due, 0);
+  const age = (s: number | null) => (s === null ? "never" : s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : `${Math.round(s / 3600)}h ago`);
+  return (
+    <section className="space-y-3">
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <h1 className="text-2xl font-semibold">Right now</h1>
+        <p className="text-xs text-slate-500">
+          as of {new Date(d.at).toLocaleTimeString()} ·{" "}
+          <a href="https://stats.lastthaw.com" target="_blank" rel="noreferrer" className="text-sky-400 hover:underline">
+            page views in Matomo
+          </a>
+        </p>
+      </div>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <Stat n={d.online.users.length} label="online now" tone={d.online.users.length > 0 ? "good" : undefined} />
+        <Stat n={d.active15m.length} label="active last 15 min" />
+        <Stat n={running.length} label="matches running" />
+        <Stat n={running.reduce((a, m) => a + m.humans, 0)} label="humans in matches" />
+        <Stat n={d.users.total} label={`accounts (${d.users.approved} approved)`} />
+        <Stat n={d.users.new7d} label={`new this week (${d.users.new24h} today)`} />
+        <Stat n={d.users.loggedIn24h} label="logged in today" />
+        <Stat n={d.activity.battles24h} label="battles today" />
+        <Stat n={due} label="jobs overdue" tone={due > 50 ? "bad" : due > 0 ? "warn" : undefined} />
+        <Stat n={parked} label="jobs parked" tone={parked > 0 ? "bad" : undefined} />
+        <Stat n={stale.length} label="matches not ticking" tone={stale.length > 0 ? "bad" : "good"} />
+        <Stat n={d.online.sockets} label={`sockets on ${d.online.processes} api process${d.online.processes === 1 ? "" : "es"}`} />
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        <Card className="text-sm">
+          <p className="mb-1 font-medium text-slate-200">Online now</p>
+          {d.online.users.length === 0 && <p className="text-slate-500">Nobody has the site open{d.online.anonymous ? ` (${d.online.anonymous} not logged in)` : ""}.</p>}
+          <ul className="space-y-0.5">
+            {d.online.users.map((u) => (
+              <li key={u.id} className="flex justify-between gap-2">
+                <span>{u.name}</span>
+                <span className="text-slate-500">{u.matches.length ? `in ${u.matches.join(", ")}` : "lobby or site"}</span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+        <Card className="text-sm">
+          <p className="mb-1 font-medium text-slate-200">Active in the last 15 minutes</p>
+          {d.active15m.length === 0 && <p className="text-slate-500">Nobody.</p>}
+          <ul className="space-y-0.5">
+            {d.active15m.map((u) => (
+              <li key={u.id} className="flex justify-between gap-2">
+                <span>{u.name}</span>
+                <span className="text-slate-500">{new Date(u.lastSeenAt).toLocaleTimeString()}</span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      </div>
+      <Card className="overflow-x-auto p-0">
+        <table className="w-full min-w-max text-sm">
+          <thead className="text-left text-xs uppercase tracking-wide text-slate-500">
+            <tr>
+              <th className="px-3 py-2">Match</th>
+              <th className="px-3 py-2">Status</th>
+              <th className="px-3 py-2 text-right">Day</th>
+              <th className="px-3 py-2 text-right">Humans</th>
+              <th className="px-3 py-2 text-right">Online</th>
+              <th className="px-3 py-2 text-right">AI</th>
+              <th className="px-3 py-2">Last tick</th>
+              <th className="px-3 py-2 text-right">Jobs open / due / parked</th>
+              <th className="px-3 py-2 text-right">Done last hour</th>
+            </tr>
+          </thead>
+          <tbody>
+            {d.matches.open.map((m) => (
+              <tr key={m.id} className="border-t border-slate-800">
+                <td className="px-3 py-1.5">
+                  {m.name} <span className="text-xs text-slate-500">· {m.kind} · {m.speed}x</span>
+                </td>
+                <td className="px-3 py-1.5">{m.paused ? <span className="text-amber-200">paused</span> : m.status}</td>
+                <td className="px-3 py-1.5 text-right tabular-nums">{m.status === "running" ? m.day.toFixed(1) : "–"}</td>
+                <td className="px-3 py-1.5 text-right tabular-nums">{m.humans}</td>
+                <td className="px-3 py-1.5 text-right tabular-nums">{m.online}</td>
+                <td className="px-3 py-1.5 text-right tabular-nums">{m.ai}</td>
+                <td className={`px-3 py-1.5 ${m.status === "running" && !m.paused && (m.lastTickAgeSeconds ?? 0) > 900 ? "text-rose-300" : "text-slate-400"}`}>{m.status === "running" ? age(m.lastTickAgeSeconds) : "–"}</td>
+                <td className={`px-3 py-1.5 text-right tabular-nums ${m.jobs.parked > 0 ? "text-rose-300" : ""}`}>
+                  {m.jobs.open} / {m.jobs.due} / {m.jobs.parked}
+                </td>
+                <td className="px-3 py-1.5 text-right tabular-nums">{m.jobs.doneHour}</td>
+              </tr>
+            ))}
+            {d.matches.open.length === 0 && (
+              <tr>
+                <td className="px-3 py-2 text-slate-500" colSpan={9}>
+                  No open matches.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </Card>
+      <p className="text-xs text-slate-500">
+        {d.matches.finished} finished matches ({d.matches.finished24h} today) · {d.activity.chat24h} chat messages and {d.activity.events24h} world events in the last day · {d.activity.sessions7d} logins this week
+      </p>
+    </section>
+  );
+}
+
 async function post(url: string, body?: unknown) {
   const r = await fetch(url, { method: "POST", credentials: "include", headers: { "content-type": "application/json" }, body: JSON.stringify(body ?? {}) });
   if (!r.ok) throw new Error(`request failed (${r.status})`);
@@ -78,7 +216,8 @@ export function AdminPage() {
   );
   if (!me.data?.isAdmin) return <p className="p-6 text-slate-400">Not found.</p>;
   return (
-    <main className="mx-auto max-w-3xl space-y-4 px-4 py-6">
+    <main className="mx-auto max-w-4xl space-y-6 px-4 py-6">
+      <LiveMetrics />
       <section className="space-y-2">
         <h1 className="text-2xl font-semibold">Beta access</h1>
         <p className="text-sm text-slate-400">Only approved accounts can join matches. New sign-ups wait here until you approve them.</p>

@@ -357,6 +357,19 @@ describe("api routes", () => {
     const list = await A.call("GET", "/api/admin/matches");
     expect(list.statusCode).toBe(200);
     expect(JSON.stringify(list.json())).toContain(gameId);
+    // Live metrics: who is here, the account funnel, every open match with its worker health.
+    expect((await Ann.call("GET", "/api/admin/metrics")).statusCode).toBe(404);
+    const metrics = await A.call("GET", "/api/admin/metrics");
+    expect(metrics.statusCode).toBe(200);
+    const mt = metrics.json() as { online: { users: unknown[]; sockets: number }; active15m: { id: string }[]; users: { total: number; approved: number }; matches: { open: Array<{ id: string; status: string; humans: number; ai: number; jobs: { open: number } }> }; activity: { battles24h: number } };
+    expect(mt.users.total).toBeGreaterThanOrEqual(4);
+    expect(mt.users.approved).toBeGreaterThanOrEqual(2);
+    const adminId = await idOf(admin.email);
+    expect(mt.active15m.some((u) => u.id === adminId)).toBe(true);
+    const row = mt.matches.open.find((m) => m.id === gameId);
+    expect(row).toMatchObject({ status: "running", humans: 2, ai: 0 });
+    expect(row!.jobs.open).toBeGreaterThanOrEqual(0);
+    expect(typeof mt.online.sockets).toBe("number");
     expect((await A.call("GET", "/api/admin/fairplay")).statusCode).toBe(200);
     expect((await A.call("POST", "/api/admin/fairplay/scan", {})).statusCode).toBe(200);
     expect((await A.call("POST", "/api/admin/fairplay/00000000-0000-0000-0000-000000000000/review", { verdict: "cleared" })).statusCode).toBe(404);

@@ -5,6 +5,7 @@ import { wsClientMessage, type WsServerMessage } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { players } from "../db/schema.js";
 import { channels, type PublishedEvent } from "../realtime/publish.js";
+import { hostname } from "node:os";
 import { createRedis } from "../redis.js";
 import { logger } from "../logger.js";
 
@@ -18,7 +19,27 @@ export async function registerWebsocket(app: FastifyInstance, opts: { db: Db }) 
   await subscriber.connect();
   const sockets = new Map<string, Set<WebSocket>>(); // channel -> sockets
   const byUser = new Map<string, Set<WebSocket>>(); // user id -> sockets, so a logout can close them
+  const presence = new Map<WebSocket, { userId: string | null; mine: Set<string> }>(); // every open socket, for the admin's online view
   await subscriber.subscribe(channels.auth);
+
+  // Presence: each API process writes who is connected (and which match each is watching) to a short-lived
+  // Redis key, so the admin page can add the processes up. Written every 15 seconds, gone 45 seconds after the process.
+  const presenceWriter = createRedis();
+  const presenceKey = `lt-presence:${hostname()}:${process.pid}`;
+  const writePresence = async () => {
+    const users: Record<string, string[]> = {};
+    let anonymous = 0;
+    for (const { userId, mine } of presence.values()) {
+      if (!userId) {
+        anonymous += 1;
+        continue;
+      }
+      const matchIds = [...mine].filter((ch) => ch.startsWith("match:")).map((ch) => ch.slice("match:".length));
+      users[userId] = [...new Set([...(users[userId] ?? []), ...matchIds])];
+    }
+    await presenceWriter.set(presenceKey, JSON.stringify({ at: new Date().toISOString(), sockets: presence.size, anonymous, users }), "EX", 45).catch(() => {});
+  };
+  const presenceTimer = setInterval(() => void writePresence(), 15_000);
 
   const send = (ws: WebSocket, msg: WsServerMessage) => {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
@@ -69,6 +90,7 @@ export async function registerWebsocket(app: FastifyInstance, opts: { db: Db }) 
     const user = req.user;
     const mine = new Set<string>();
     if (user) (byUser.get(user.id) ?? byUser.set(user.id, new Set()).get(user.id)!).add(socket);
+    presence.set(socket, { userId: user?.id ?? null, mine });
     send(socket, { type: "hello", serverTime: new Date().toISOString() });
 
     // Ten messages a second is plenty for pings and subscriptions; more is a client gone wrong.
@@ -114,6 +136,7 @@ export async function registerWebsocket(app: FastifyInstance, opts: { db: Db }) 
     });
 
     socket.on("close", () => {
+      presence.delete(socket);
       for (const ch of mine) void unsubscribe(socket, ch);
       if (user) {
         const set = byUser.get(user.id);
@@ -125,6 +148,9 @@ export async function registerWebsocket(app: FastifyInstance, opts: { db: Db }) 
   });
 
   app.addHook("onClose", async () => {
+    clearInterval(presenceTimer);
+    await presenceWriter.del(presenceKey).catch(() => {});
+    await presenceWriter.quit().catch(() => {});
     await subscriber.quit();
   });
 }

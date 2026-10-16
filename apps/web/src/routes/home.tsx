@@ -234,7 +234,6 @@ export function HomePage() {
           </Link>
           <span className="ml-auto flex items-center gap-4">
             <SocialIcons />
-            <span>Free to play. No purchases affect the game.</span>
           </span>
         </div>
       </footer>
