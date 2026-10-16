@@ -6,7 +6,8 @@ const ORDER: SheetStop[] = ["peek", "half", "full"];
 
 /** Height of each stop on a phone; the panel is a normal side column on large screens. */
 export function sheetHeight(stop: SheetStop): string {
-  return stop === "peek" ? "7.5rem" : stop === "half" ? "50dvh" : "92dvh";
+  // Full stops short of the top bar and menu bar (about 9.5rem together), so the handle and its buttons are always on screen.
+  return stop === "peek" ? "7.5rem" : stop === "half" ? "50dvh" : "calc(100dvh - 9.5rem)";
 }
 
 /**
