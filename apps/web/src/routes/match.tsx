@@ -168,7 +168,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
   const { enabled: overlays, toggle: toggleOverlay } = useOverlays();
   const hideHaulers = overlays.has("hidehaulers");
   const shownArmies = useMemo(
-    () => (hideHaulers ? state.armies.filter((a) => !Object.entries(a.units).every(([id, n]) => n <= 0 || unitById.get(id)?.hauler)) : state.armies),
+    () => (hideHaulers ? state.armies.filter((a) => a.mission === "relocate" || !Object.entries(a.units).every(([id, n]) => n <= 0 || unitById.get(id)?.hauler)) : state.armies),
     [state.armies, hideHaulers],
   );
   const markers = useMemo(() => armyMarkers(shownArmies, state.incoming, now + clockOffsetMs, formatCountdown, state.me.techs), [shownArmies, state.incoming, now, clockOffsetMs]);
