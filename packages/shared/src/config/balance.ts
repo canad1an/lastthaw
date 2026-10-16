@@ -277,6 +277,12 @@ export const balance = {
     holdHours: 48,
     /** Score = regions * territory + population * population + age * age (per player). */
     scoreWeights: { territory: 25, population: 1, age: 150 },
+    /** Day 30, the ice stops: the player with the most people alive in unfrozen land wins. Rank below the winner is by score. */
+    survival: true,
+    /** Bonus score for being first in the match to reach a checkpoint. Keys: age_<n>, harbor, train, temple, wonder. */
+    milestones: { age: 200, harbor: 100, train: 150, temple: 100, wonder: 300 } as Record<string, number>,
+    /** Finishing this building wins the match outright. */
+    wonderBuilding: "great_hearth",
   },
 } as const;
 

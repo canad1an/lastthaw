@@ -40,7 +40,13 @@ export function HowToPlayPage() {
         <Card className="text-sm text-slate-300">
           <p>
             A player or alliance that controls {Math.round(balance.win.regionShareForEarlyWin * 100)}% of all regions and holds that for {balance.win.holdHours} hours wins immediately. Otherwise the match ends on day{" "}
-            {balance.match.lengthDays} and the highest score wins. Score counts regions held, population and the age you reached.
+            {balance.match.lengthDays}, the Last Thaw: the ice stops, and whoever has the most people alive in unfrozen land wins. Plan your migrations south.
+          </p>
+          <p className="mt-2">
+            Or raise the Great Hearth: a wonder only the capital can build, from the Medieval Age with Engineering. It costs the wealth of an empire and takes three days; every rival is told the moment you begin, and taking your capital stops it. Finish it and you win on the spot.
+          </p>
+          <p className="mt-2">
+            Score counts regions held, population and the age you reached, plus bonuses for being first in the match to each age, the first Harbor, Temple and Train, and the first to begin the Great Hearth. The Leaderboard shows who holds each first.
           </p>
         </Card>
       </section>

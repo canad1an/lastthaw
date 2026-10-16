@@ -1,9 +1,10 @@
 import type { FastifyInstance } from "fastify";
 import { parseProfile } from "../sim/ai.js";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
-import { AGES, allRegions, balance, iceLatitudeOnDay } from "@lastthaw/shared";
+import { AGES, allRegions, balance, buildingById, iceLatitudeOnDay, regionById } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
-import { allianceMembers, alliances, matchRegions, matches, players, userMatchResults, users } from "../db/schema.js";
+import { allianceMembers, alliances, jobs, matchMilestones, matchRegions, matches, players, userMatchResults, users } from "../db/schema.js";
+import { milestoneLabel, milestonePoints } from "../sim/endgame.js";
 import { requireUser } from "../auth/session.js";
 import { matchNow } from "../sim/clock.js";
 
@@ -36,8 +37,25 @@ export async function leaderboardRoutes(app: FastifyInstance, opts: { db: Db }) 
     const now = matchNow(m);
     const day = m.status === "lobby" ? 0 : Math.min(balance.match.lengthDays, ((now.getTime() - m.startsAt.getTime()) / 86400_000) * m.speed);
     const total = allRegions().length;
+    const nameOf = new Map(ps.map((p) => [p.id, p.name]));
+    const milestones = (await db.select().from(matchMilestones).where(eq(matchMilestones.matchId, matchId)).orderBy(matchMilestones.at)).map((x) => ({
+      key: x.key,
+      label: milestoneLabel(x.key),
+      playerId: x.playerId,
+      playerName: nameOf.get(x.playerId) ?? "?",
+      points: milestonePoints(x.key),
+      at: x.at.toISOString(),
+    }));
+    const wonders = (
+      await db
+        .select()
+        .from(jobs)
+        .where(and(eq(jobs.matchId, matchId), eq(jobs.kind, "build"), eq(jobs.refId, balance.win.wonderBuilding), isNull(jobs.completedAt), isNull(jobs.cancelledAt)))
+    ).map((j) => ({ playerId: j.playerId, playerName: nameOf.get(j.playerId ?? "") ?? "?", regionId: j.regionId, regionName: regionById(j.regionId ?? "")?.name ?? j.regionId, endsAt: j.endsAt.toISOString(), waiting: !!j.waitingFor }));
     return {
-      match: { id: m.id, name: m.name, status: m.status, speed: m.speed, day, iceLatitude: iceLatitudeOnDay(day), totalRegions: total, winnerPlayerId: m.winnerPlayerId },
+      match: { id: m.id, name: m.name, status: m.status, speed: m.speed, day, iceLatitude: iceLatitudeOnDay(day), totalRegions: total, winnerPlayerId: m.winnerPlayerId, survival: balance.win.survival, wonderName: buildingById.get(balance.win.wonderBuilding)?.name ?? "wonder" },
+      milestones,
+      wonders,
       players: ps.map((p, i) => ({
         rank: i + 1,
         id: p.id,

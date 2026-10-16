@@ -1,6 +1,6 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
-import { allRegions, balance } from "@lastthaw/shared";
-import { allianceMembers, alliances, events, jobs, matchRegions, matches, players, userMatchResults } from "../db/schema.js";
+import { AGES, allRegions, balance, buildingById, regionById, type AgeIndex } from "@lastthaw/shared";
+import { allianceMembers, alliances, events, jobs, matchMilestones, matchRegions, matches, players, userMatchResults } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
 import type { Tx } from "./regions.js";
 import type { JobRow, MatchRow } from "../worker/jobs.js";
@@ -12,8 +12,52 @@ export function scoreOf(regions: number, population: number, age: number): numbe
   return Math.round(regions * w.territory + population * w.population + age * w.age);
 }
 
-/** Recompute every player's score from current state. */
-export async function updateScores(tx: Tx, m: MatchRow): Promise<Array<{ id: string; score: number; regions: number }>> {
+/** Points for a milestone key (age_<n>, harbor, train, temple, wonder). */
+export function milestonePoints(key: string): number {
+  const base = key.startsWith("age_") ? "age" : key;
+  return balance.win.milestones[base] ?? 0;
+}
+
+/** Human label for a milestone key. */
+export function milestoneLabel(key: string): string {
+  if (key.startsWith("age_")) return `First to the ${AGES[Number(key.slice(4)) as AgeIndex] ?? "next"} Age`;
+  if (key === "wonder") return `First to begin the ${buildingById.get(balance.win.wonderBuilding)?.name ?? "wonder"}`;
+  return `First ${buildingById.get(key)?.name ?? key[0]!.toUpperCase() + key.slice(1)}`;
+}
+
+/**
+ * Award a first-in-the-match checkpoint if nobody holds it yet. Everyone hears
+ * about it and the holder's score carries the bonus from the next tick on.
+ */
+export async function awardMilestone(tx: Tx, m: MatchRow, key: string, playerId: string, at: Date): Promise<boolean> {
+  const inserted = await tx.insert(matchMilestones).values({ matchId: m.id, key, playerId, at }).onConflictDoNothing().returning({ key: matchMilestones.key });
+  if (!inserted.length) return false;
+  const [p] = await tx.select({ name: players.name }).from(players).where(eq(players.id, playerId)).limit(1);
+  const points = milestonePoints(key);
+  await tx.insert(events).values({ matchId: m.id, at, kind: "milestone", payload: { key, playerId, points } });
+  const everyone = await tx.select({ id: players.id }).from(players).where(and(eq(players.matchId, m.id), eq(players.isAi, false)));
+  for (const other of everyone) {
+    await notify(tx, m.id, other.id, "system", other.id === playerId ? `${milestoneLabel(key)}: that was you (+${points} score)` : `${milestoneLabel(key)}: ${p?.name ?? "someone"} (+${points} score)`, { milestone: key, playerId, points });
+  }
+  return true;
+}
+
+/** Announce a wonder build to the whole match, and award the first-to-begin checkpoint. */
+export async function wonderStarted(tx: Tx, m: MatchRow, playerId: string, playerName: string, regionId: string, endsAt: Date, waiting: boolean): Promise<void> {
+  const name = buildingById.get(balance.win.wonderBuilding)?.name ?? "the wonder";
+  const where = regionById(regionId)?.name ?? regionId;
+  const at = new Date();
+  await tx.insert(events).values({ matchId: m.id, at, kind: "wonder.started", payload: { playerId, regionId, endsAt, waiting } });
+  const everyone = await tx.select({ id: players.id }).from(players).where(and(eq(players.matchId, m.id), eq(players.isAi, false)));
+  for (const other of everyone) {
+    if (other.id === playerId) continue;
+    await notify(tx, m.id, other.id, "battle", `${playerName} has begun the ${name} in ${where}${waiting ? " and is gathering the materials" : ""}. If it is finished, they win. Take ${where} to stop it.`, { playerId, regionId, endsAt, wonder: true });
+  }
+  await awardMilestone(tx, m, "wonder", playerId, at);
+}
+
+/** Recompute every player's score from current state: territory, people and age, plus milestone bonuses. */
+export async function updateScores(tx: Tx, m: MatchRow): Promise<Array<{ id: string; score: number; regions: number; pop: number }>> {
   const rows = await tx
     .select({
       owner: matchRegions.ownerPlayerId,
@@ -24,13 +68,15 @@ export async function updateScores(tx: Tx, m: MatchRow): Promise<Array<{ id: str
     .where(and(eq(matchRegions.matchId, m.id), sql`${matchRegions.ownerPlayerId} is not null`, isNull(matchRegions.frozenAt)))
     .groupBy(matchRegions.ownerPlayerId);
   const byOwner = new Map(rows.map((r) => [r.owner!, r]));
+  const bonus = new Map<string, number>();
+  for (const ms of await tx.select().from(matchMilestones).where(eq(matchMilestones.matchId, m.id))) bonus.set(ms.playerId, (bonus.get(ms.playerId) ?? 0) + milestonePoints(ms.key));
   const ps = await tx.select({ id: players.id, age: players.age }).from(players).where(eq(players.matchId, m.id));
-  const out: Array<{ id: string; score: number; regions: number }> = [];
+  const out: Array<{ id: string; score: number; regions: number; pop: number }> = [];
   for (const p of ps) {
     const r = byOwner.get(p.id);
-    const score = scoreOf(r?.regions ?? 0, r?.pop ?? 0, p.age);
+    const score = scoreOf(r?.regions ?? 0, r?.pop ?? 0, p.age) + (bonus.get(p.id) ?? 0);
     await tx.update(players).set({ score }).where(eq(players.id, p.id));
-    out.push({ id: p.id, score, regions: r?.regions ?? 0 });
+    out.push({ id: p.id, score, regions: r?.regions ?? 0, pop: r?.pop ?? 0 });
   }
   return out;
 }
@@ -94,8 +140,18 @@ export async function finishMatch(tx: Tx, m: MatchRow, at: Date, publisher: Publ
   if (m.status !== "running") return;
   const standings = await updateScores(tx, m);
   const ps = await tx.select().from(players).where(eq(players.matchId, m.id));
-  const ranked = [...ps].sort((a, b) => (standings.find((s) => s.id === b.id)?.score ?? 0) - (standings.find((s) => s.id === a.id)?.score ?? 0));
-  const winner = winnerPlayerId ?? ranked[0]?.id ?? null;
+  const scoreOfId = (id: string) => standings.find((s) => s.id === id)?.score ?? 0;
+  const ranked = [...ps].sort((a, b) => scoreOfId(b.id) - scoreOfId(a.id));
+  let winner = winnerPlayerId;
+  if (!winner && balance.win.survival) {
+    // The Last Thaw: when the ice stops, whoever has the most people alive in unfrozen land wins; score breaks ties.
+    const alive = ps.filter((p) => !p.eliminatedAt);
+    const popOf = (id: string) => standings.find((s) => s.id === id)?.pop ?? 0;
+    winner = [...alive].sort((a, b) => popOf(b.id) - popOf(a.id) || scoreOfId(b.id) - scoreOfId(a.id))[0]?.id ?? null;
+  }
+  winner ??= ranked[0]?.id ?? null;
+  // The winner is ranked first whatever the score says; everyone else by score.
+  if (winner) ranked.sort((a, b) => Number(b.id === winner) - Number(a.id === winner) || scoreOfId(b.id) - scoreOfId(a.id));
   await tx.update(matches).set({ status: "finished", finishedAt: at, winnerPlayerId: winner }).where(eq(matches.id, m.id));
   // Nothing outlives the match: pending jobs are cancelled so they never clog the due queue.
   await tx.update(jobs).set({ cancelledAt: at }).where(and(eq(jobs.matchId, m.id), isNull(jobs.completedAt), isNull(jobs.cancelledAt)));

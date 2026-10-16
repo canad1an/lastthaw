@@ -294,6 +294,7 @@ const CATEGORY_TONE: Record<BuildingCategory, string> = {
   training: "border-violet-500/60 bg-violet-950/20 [&_h4]:text-violet-300",
   transport: "border-sky-500/60 bg-sky-950/20 [&_h4]:text-sky-300",
   loyalty: "border-fuchsia-500/60 bg-fuchsia-950/20 [&_h4]:text-fuchsia-300",
+  wonder: "border-red-500/80 bg-red-950/30 [&_h4]:text-red-200",
 };
 
 function BuildTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; state: MatchStateView; owned: OwnedRegionView; clockOffsetMs: number }) {
@@ -330,7 +331,7 @@ function BuildTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
           const level = (owned.buildings[b.id] ?? 0) + queued + 1;
           const maxed = level > b.maxLevel;
           const cost = buildingCost(b, level, matchDayOf(state, clockOffsetMs), regionById(owned.regionId)?.neighbors.length ?? 1);
-          const blocked = buildingBlockedBy(b, regionById(owned.regionId)!, owned.buildings);
+          const blocked = buildingBlockedBy(b, regionById(owned.regionId)!, owned.buildings, owned.isCapital);
           const ok = !maxed && !queueFull && !blocked && canAfford(stock, cost);
           const secs = realSeconds(buildingSeconds(b, level), 0, state.match.speed);
           return (

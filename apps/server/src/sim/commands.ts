@@ -9,6 +9,7 @@ import { availableUnits, armySpeed, balance, buildingBlockedBy, carryCapacity, b
 import type { Db } from "../db/client.js";
 import { armies, battles, jobs, matchRegions, messages, players, tradeRoutes } from "../db/schema.js";
 import { matchDayAt, matchNow } from "./clock.js";
+import { wonderStarted } from "./endgame.js";
 import { applyCost, settleAndLockRegion, stockOf, type MatchRegionRow, type Tx, waySetsFor } from "./regions.js";
 import { alliesOf, areAllied } from "./alliances.js";
 import type { MatchRow } from "../worker/jobs.js";
@@ -64,6 +65,7 @@ export async function queueBuild(ctx: CommandContext, regionId: string, building
     const row = locked.get(regionId)!;
     if (row.ownerPlayerId !== p.id) throw httpError(403, "not your region");
     if (row.frozenAt) throw httpError(409, "this region is frozen");
+    if (def.capitalOnly && !row.isCapital) throw httpError(400, `${def.name} can only be raised in your capital`);
     const payers: MatchRegionRow[] = [row];
     if (p.capitalRegionId && p.capitalRegionId !== regionId && locked.has(p.capitalRegionId)) payers.push(locked.get(p.capitalRegionId)!);
     for (const r of [...locked.values()].filter((x) => x.regionId !== regionId && x.regionId !== p.capitalRegionId).sort((a, b) => distanceKm(regionId, a.regionId) - distanceKm(regionId, b.regionId))) payers.push(r);
@@ -103,6 +105,7 @@ export async function queueBuild(ctx: CommandContext, regionId: string, building
         .insert(jobs)
         .values({ matchId: m.id, playerId: p.id, regionId, kind: "build", refId: buildingId, level, slot: pending.length, payload: { cost, paid }, startsAt, endsAt })
         .returning();
+      if (def.wonder) await wonderStarted(tx, m, p.id, p.name, regionId, endsAt, false);
       return j!;
     }
     // Waiting job: parked until the materials are delivered (endsAt is only a placeholder; the job loop skips waiting jobs).
@@ -110,6 +113,7 @@ export async function queueBuild(ctx: CommandContext, regionId: string, building
       .insert(jobs)
       .values({ matchId: m.id, playerId: p.id, regionId, kind: "build", refId: buildingId, level, slot: pending.length, payload: { cost, paid }, startsAt: now, endsAt: m.endsAt ?? new Date(now.getTime() + 365 * 86400_000), waitingFor: owed })
       .returning();
+    if (def.wonder) await wonderStarted(tx, m, p.id, p.name, regionId, j!.endsAt, true);
     // One stock-up route per source region: capital first, then nearest, each sending what it can spare.
     const still: Record<string, number> = { ...owed };
     for (const src of payers.slice(1)) {

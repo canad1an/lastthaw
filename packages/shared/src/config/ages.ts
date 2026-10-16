@@ -41,7 +41,7 @@ export interface BuildingEffect {
 
 }
 
-export type BuildingCategory = "growth" | "production" | "storage" | "defense" | "training" | "transport" | "loyalty";
+export type BuildingCategory = "growth" | "production" | "storage" | "defense" | "training" | "transport" | "loyalty" | "wonder";
 
 /** Build-tab groups, in display order. */
 export const BUILDING_CATEGORIES: ReadonlyArray<{ id: BuildingCategory; name: string; hint: string; icon: string }> = [
@@ -52,6 +52,7 @@ export const BUILDING_CATEGORIES: ReadonlyArray<{ id: BuildingCategory; name: st
   { id: "training", name: "Training & research", hint: "Faster soldiers and faster science.", icon: "📜" },
   { id: "transport", name: "Transport", hint: "Roads, rails and harbours that speed up every trip.", icon: "🛣" },
   { id: "loyalty", name: "Loyalty", hint: "Keep conquered people from rebelling.", icon: "⚜" },
+  { id: "wonder", name: "Wonder", hint: "Finish it first and the match is yours. Everyone is told the moment you begin.", icon: "🔥" },
 ];
 
 export interface BuildingDef {
@@ -75,6 +76,10 @@ export interface BuildingDef {
   needsResource?: SpecialResource[];
   /** The region must be on a coast. */
   needsCoast?: boolean;
+  /** Only the capital may build it. */
+  capitalOnly?: boolean;
+  /** A wonder: priced and timed absolutely (no day multiplier, no build-time cap); finishing it wins the match. */
+  wonder?: boolean;
 }
 
 export interface UnitDef {
@@ -184,6 +189,7 @@ export const BUILDINGS: readonly BuildingDef[] = [
   // Modern
   { id: "power_plant", category: "production", name: "Power plant", age: 6, description: "Electricity for every workshop and field.", maxLevel: 10, cost: { stone: 8000, iron: 400 }, baseSeconds: 4000, effect: { yield: { food: 0.15, wood: 0.15, stone: 0.15 }, capacity: 20 }, requires: "electricity" },
   { id: "bunker", category: "defense", name: "Bunker", age: 6, description: "Concrete and steel: the strongest defence there is.", maxLevel: 5, cost: { stone: 6000, iron: 500 }, baseSeconds: 3600, effect: { defense: 0.5 } },
+  { id: "great_hearth", category: "wonder", name: "Great Hearth", age: 4, description: "A hall of fire and stone where a whole people can wait out the ice. Only the capital can raise it; it takes three days and the wealth of an empire, and every rival hears when the first stone is laid. Finish it and you win.", maxLevel: 1, cost: { wood: 80000, stone: 80000, food: 40000, iron: 6000 }, baseSeconds: 3 * 86400, effect: {}, requires: "engineering", capitalOnly: true, wonder: true },
   { id: "university", category: "training", name: "University", age: 4, description: "The fastest research in the land.", maxLevel: 5, cost: { wood: 1200, stone: 1200 }, baseSeconds: 2600, effect: { researchSpeed: 0.15 } },
 ];
 

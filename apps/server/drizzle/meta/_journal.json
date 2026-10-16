@@ -134,6 +134,13 @@
       "when": 1792107972880,
       "tag": "0018_pale_sister_grimm",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1792110455502,
+      "tag": "0019_conscious_king_cobra",
+      "breakpoints": true
     }
   ]
 }

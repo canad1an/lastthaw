@@ -330,6 +330,22 @@ export const tradeRoutes = pgTable(
   (t) => [index("trade_routes_due_idx").on(t.nextAt), index("trade_routes_from_idx").on(t.matchId, t.fromRegionId)],
 );
 
+/** First-in-the-match checkpoints: one row per key, held by whoever got there first. */
+export const matchMilestones = pgTable(
+  "match_milestones",
+  {
+    matchId: uuid("match_id")
+      .notNull()
+      .references(() => matches.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    playerId: uuid("player_id")
+      .notNull()
+      .references(() => players.id, { onDelete: "cascade" }),
+    at: timestamp("at", { withTimezone: true }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.matchId, t.key] })],
+);
+
 export const playerTechs = pgTable(
   "player_techs",
   {

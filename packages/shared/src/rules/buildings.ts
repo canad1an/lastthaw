@@ -59,7 +59,8 @@ export function storageCaps(effects: Pick<RegionEffects, "storage" | "foodStorag
 }
 
 /** Why a building cannot go in this region, or null if it can. Local-resource and coast rules only. */
-export function buildingBlockedBy(def: BuildingDef, region: { resources: readonly string[]; coastal: boolean; name: string }, buildings?: Record<string, number>): string | null {
+export function buildingBlockedBy(def: BuildingDef, region: { resources: readonly string[]; coastal: boolean; name: string }, buildings?: Record<string, number>, isCapital?: boolean): string | null {
+  if (def.capitalOnly && isCapital === false) return `${def.name} can only be raised in your capital.`;
   if (def.requiresBuilding && buildings && (buildings[def.requiresBuilding] ?? 0) < 1) {
     return `${def.name} needs ${buildingById.get(def.requiresBuilding)?.name ?? def.requiresBuilding} here first.`;
   }

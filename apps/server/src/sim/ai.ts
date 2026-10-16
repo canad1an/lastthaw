@@ -125,7 +125,7 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
     for (const id of order) {
       const def = avail.get(id);
       if (!def) continue;
-      if (buildingBlockedBy(def, region, row.buildings)) continue;
+      if (buildingBlockedBy(def, region, row.buildings, row.isCapital)) continue;
       const level = row.buildings[id] ?? 0;
       if (level >= Math.min(def.maxLevel, tier.buildCap(p.age))) continue;
       const cost = buildingCost(def, level + 1, matchDay, region.neighbors.length);

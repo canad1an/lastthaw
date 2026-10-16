@@ -7,7 +7,7 @@ import type { Publisher } from "../realtime/publish.js";
 import { settleAndLockRegion, type Tx } from "../sim/regions.js";
 import { resolveMission } from "../sim/missions.js";
 import { applyIceStep } from "../sim/ice.js";
-import { finishMatch, winHoldExpired } from "../sim/endgame.js";
+import { awardMilestone, finishMatch, winHoldExpired } from "../sim/endgame.js";
 
 export type JobRow = typeof jobs.$inferSelect;
 export type MatchRow = typeof matches.$inferSelect;
@@ -94,7 +94,16 @@ export async function runDueJobs(db: Db, publisher: Publisher, log: pino.Logger)
     await notify(tx, m.id, job.playerId, "build", `${def.name} level ${level} finished`, { regionId: job.regionId, buildingId: job.refId, level });
     const playerId = job.playerId;
     const regionId = job.regionId;
+    if (level === 1 && (def.id === "harbor" || def.id === "temple")) await awardMilestone(tx, m, def.id, playerId, job.endsAt);
     after(() => publisher.toPlayer(m.id, playerId, "job.completed", { kind: "build", regionId, buildingId: job.refId, level }));
+    if (def.wonder) {
+      // The wonder stands: whoever owns the region at this moment has won the match.
+      const owner = row.ownerPlayerId ?? playerId;
+      const [w] = await tx.select({ name: players.name }).from(players).where(eq(players.id, owner)).limit(1);
+      const everyone = await tx.select({ id: players.id }).from(players).where(and(eq(players.matchId, m.id), eq(players.isAi, false)));
+      for (const other of everyone) await notify(tx, m.id, other.id, "system", `The ${def.name} is finished. ${w?.name ?? "Its builder"} has won the match.`, { regionId, wonder: true });
+      await finishMatch(tx, m, job.endsAt, publisher, after, owner);
+    }
   }
 
   async function completeTrain(tx: Tx, m: MatchRow, job: JobRow, after: (fn: () => Promise<void>) => void) {
@@ -116,6 +125,7 @@ export async function runDueJobs(db: Db, publisher: Publisher, log: pino.Logger)
     await notify(tx, m.id, job.playerId, "build", subject, { regionId: job.regionId, unitId: job.refId, qty: n });
     const playerId = job.playerId;
     const regionId = job.regionId;
+    if (n > 0 && def.id === "train") await awardMilestone(tx, m, "train", playerId, job.endsAt);
     after(() => publisher.toPlayer(m.id, playerId, "job.completed", { kind: "train", regionId, unitId: job.refId, qty: n }));
   }
 
@@ -164,6 +174,7 @@ export async function runDueJobs(db: Db, publisher: Publisher, log: pino.Logger)
         await tx.update(players).set({ age: def.advancesTo }).where(eq(players.id, playerId));
         const ageName = AGES[def.advancesTo];
         await tx.insert(events).values({ matchId: m.id, at: job.endsAt, kind: "age.advanced", payload: { playerId, age: def.advancesTo } });
+        await awardMilestone(tx, m, `age_${def.advancesTo}`, playerId, job.endsAt);
         const everyone = await tx.select({ id: players.id }).from(players).where(and(eq(players.matchId, m.id), eq(players.isAi, false)));
         for (const other of everyone) {
           if (other.id === playerId) continue;
