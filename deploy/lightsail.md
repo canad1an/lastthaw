@@ -15,7 +15,7 @@ instance, database or Caddy config used by boatbuildlog.com.
 | Email | Postmark server `Last Thaw` (ID 21125344), sender domain `lastthaw.com` with DKIM (`20261016143914pm._domainkey`) and Return-Path (`pm-bounces` CNAME) verified; the server API token is `SMTP_USER` and `SMTP_PASS` in the box's `.env`, host `smtp.postmarkapp.com:587`. SES identity still exists but is unused. |
 | Code on the box | bare repo `~/lastthaw.git`, working checkout `~/lastthaw`, env file `~/lastthaw/.env` |
 
-Mail moved from SES to Postmark on 2026-10-16 because SES was still in the sandbox and rejected unverified recipients. Postmark's free tier is 100 messages a month, shared with boatbuildlog.com's server on the same account.
+Mail moved from SES to Postmark on 2026-10-16 because SES was still in the sandbox and rejected unverified recipients. The Postmark account is on the Basic tier, 10,000 messages a month, shared with boatbuildlog.com's server.
 
 ## Deploy a new version
 
