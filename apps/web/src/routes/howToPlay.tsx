@@ -4,6 +4,7 @@ import { usePageMeta } from "../seo.js";
 import { AGES, balance } from "@lastthaw/shared";
 import { Card } from "../components/ui.js";
 import { BuildingList, TechTree, UnitList } from "../components/Reference.js";
+import { TechTreeGraph } from "../components/TechTreeGraph.js";
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 const mult = (x: number) => `${x}x`;
@@ -340,7 +341,17 @@ export function HowToPlayPage() {
         </>
       )}
       {tab === "advanced" && <AdvancedSection open />}
-      {tab === "techs" && <TechTree />}
+      {tab === "techs" && (
+        <>
+          <TechTreeGraph />
+          <details className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
+            <summary className="cursor-pointer text-sm font-medium text-slate-200">Every tech by age, with costs, times and what it gives</summary>
+            <div className="mt-3">
+              <TechTree />
+            </div>
+          </details>
+        </>
+      )}
       {tab === "buildings" && <BuildingList />}
       {tab === "units" && <UnitList />}
 
