@@ -28,7 +28,8 @@ export async function runDueJobs(db: Db, publisher: Publisher, log: pino.Logger)
           and ${jobs.waitingFor} is null and ${matches.pausedAt} is null and ${matches.status} = 'running'
           and ${jobs.endsAt} <= now() + make_interval(secs => ${matches.clockOffsetSeconds})`,
     )
-    .orderBy(jobs.endsAt, jobs.id)
+    // Same instant: the match end and win hold go last, so the final ice step and arrivals of that moment still resolve.
+    .orderBy(jobs.endsAt, sql`case when ${jobs.kind} in ('match_end', 'win_hold') then 1 else 0 end`, jobs.id)
     .limit(500);
 
   let done = 0;

@@ -209,13 +209,20 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
       walk(ageTech.id);
       next = want.find((id) => ids.has(id) && (techById.get(id)?.earliestDay ?? 0) <= matchDay);
     }
-    if (!next) next = RESEARCH_ORDER.find((t) => ids.has(t));
-    if (!next) next = [...avail].sort((a, b) => a.baseSeconds - b.baseSeconds)[0]?.id;
-    if (next) {
-      const def = techById.get(next)!;
-      const capital = owned.find((r) => r.regionId === p.capitalRegionId) ?? owned[0]!;
-      const { economy } = projectRegion(capital, now, m.speed, techFx);
-      if (!tier.hoards || comfortablyAffordable(economy, techCost(def, matchDay))) await attempt(() => queueResearch(ctx, next!));
+    // Research never idles: if the tech on the path cannot be paid for yet, the cheapest other tech is researched meanwhile.
+    const order: string[] = [];
+    if (next) order.push(next);
+    for (const t of RESEARCH_ORDER) if (ids.has(t) && !order.includes(t)) order.push(t);
+    for (const t of [...avail].sort((a, b) => a.baseSeconds - b.baseSeconds)) if (!order.includes(t.id)) order.push(t.id);
+    const capital = owned.find((r) => r.regionId === p.capitalRegionId) ?? owned[0]!;
+    const { economy } = projectRegion(capital, now, m.speed, techFx);
+    let tries = 0;
+    for (const id of order) {
+      if (tries >= 3) break;
+      const def = techById.get(id)!;
+      if (tier.hoards && !comfortablyAffordable(economy, techCost(def, matchDay))) continue;
+      tries += 1;
+      if (await attempt(() => queueResearch(ctx, id))) break;
     }
   }
 
