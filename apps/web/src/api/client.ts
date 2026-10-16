@@ -52,7 +52,7 @@ export const api = {
   resendVerification: () => request<{ ok: true }>("POST", "/api/auth/resend-verification", {}),
   forgot: (email: string) => request<{ ok: true }>("POST", "/api/auth/forgot", { email }),
   reset: (token: string, password: string) => request<{ ok: true }>("POST", "/api/auth/reset", { token, password }),
-  updateProfile: (b: { tagline?: string | null; bio?: string | null; location?: string | null }) => request("PATCH", "/api/me/profile", b, userView),
+  updateProfile: (b: { tagline?: string | null; bio?: string | null; location?: string | null; displayName?: string }) => request("PATCH", "/api/me/profile", b, userView),
   changePassword: (b: { currentPassword: string; newPassword: string }) => request<{ ok: true }>("POST", "/api/me/password", b),
 
   matches: () => request("GET", "/api/matches", undefined, matchSummary.array()),

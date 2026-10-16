@@ -183,7 +183,6 @@ function ReportBody({ matchId, s, colorOf, onClose }: { matchId: string; s: Summ
                             <span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: colorOf(p.id) }} />
                             {p.allianceTag && <span className="mr-1 rounded bg-slate-800 px-1 text-[10px] text-slate-300">[{p.allianceTag}]</span>}
                             {p.name}
-                            {p.isAi && <span className="ml-1 text-[10px] text-slate-500">AI</span>}
                             {p.id === s.me.playerId && <span className="ml-1 text-[10px] text-sky-300">you</span>}
                           </td>
                           <td className="px-2 py-1.5 text-slate-400">{AGES[p.age as AgeIndex]}</td>

@@ -112,14 +112,17 @@ function AboutForm({ user }: { user: UserView }) {
   const [tagline, setTagline] = useState(user.tagline ?? "");
   const [location, setLocation] = useState(user.location ?? "");
   const [bio, setBio] = useState(user.bio ?? "");
+  const [tribe, setTribe] = useState(user.displayName);
   useEffect(() => {
+    setTribe(user.displayName);
     setTagline(user.tagline ?? "");
     setLocation(user.location ?? "");
     setBio(user.bio ?? "");
   }, [user]);
-  const dirty = tagline !== (user.tagline ?? "") || location !== (user.location ?? "") || bio !== (user.bio ?? "");
+  const renaming = user.canRename && tribe.trim() !== user.displayName;
+  const dirty = renaming || tagline !== (user.tagline ?? "") || location !== (user.location ?? "") || bio !== (user.bio ?? "");
   const m = useMutation({
-    mutationFn: () => api.updateProfile({ tagline, location, bio }),
+    mutationFn: () => api.updateProfile({ tagline, location, bio, ...(renaming ? { displayName: tribe.trim() } : {}) }),
     onSuccess: (u) => qc.setQueryData(keys.me, u),
   });
   const submit = (e: FormEvent) => {
@@ -128,8 +131,13 @@ function AboutForm({ user }: { user: UserView }) {
   };
   return (
     <Card className="p-5">
-      <SectionTitle kicker="About you" title="What rivals see" body="Your tribe name is fixed; it is how other players know you across matches. Everything here is yours to change." />
+      <SectionTitle kicker="About you" title="What rivals see" body={user.canRename ? "Pick your tribe name below. You choose it once; it is how other players know you in every match." : "Your tribe name is fixed; it is how other players know you across matches. Everything here is yours to change."} />
       <form onSubmit={submit} className="space-y-4">
+        {user.canRename && (
+          <Field label="Tribe name (one-time pick)">
+            <Input value={tribe} onChange={(e) => setTribe(e.target.value)} maxLength={24} placeholder="Letters, digits, spaces, _ or -" />
+          </Field>
+        )}
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Tagline">
             <Input value={tagline} onChange={(e) => setTagline(e.target.value)} maxLength={80} placeholder="A motto, a boast, a warning" />

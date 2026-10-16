@@ -44,6 +44,8 @@ export const updateProfileBody = z.object({
   tagline: optionalText(80),
   bio: optionalText(600),
   location: optionalText(60),
+  /** The one-time tribe name pick for invited accounts (refused otherwise). */
+  displayName: registerBody.shape.displayName.optional(),
 });
 export const changePasswordBody = z.object({ currentPassword: z.string().min(1), newPassword: z.string().min(8).max(200) });
 
@@ -60,6 +62,8 @@ export const userView = z.object({
   isAdmin: z.boolean().default(false),
   /** Private beta: approved accounts may join matches. */
   approved: z.boolean().default(false),
+  /** May still pick a tribe name (invited accounts, once). */
+  canRename: z.boolean().default(false),
   tagline: z.string().nullable().default(null),
   bio: z.string().nullable().default(null),
   location: z.string().nullable().default(null),

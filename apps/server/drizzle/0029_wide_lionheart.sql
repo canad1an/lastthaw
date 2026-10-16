@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "can_rename" boolean DEFAULT false NOT NULL;

@@ -77,7 +77,7 @@ export function HallOfFamePage() {
               {m.winner ? (
                 <p className="text-sm text-slate-200">
                   🏆 {m.winner.name}
-                  {m.winner.isAi && <span className="ml-1 text-xs text-slate-500">AI</span>} · {m.winner.regions} regions · {m.winner.age} Age · {fmt(m.winner.score)} pts
+                  {" "}· {m.winner.regions} regions · {m.winner.age} Age · {fmt(m.winner.score)} pts
                 </p>
               ) : (
                 <p className="text-sm text-slate-400">No winner recorded.</p>
@@ -85,8 +85,7 @@ export function HallOfFamePage() {
               <ol className="text-xs text-slate-400">
                 {m.top.map((t, i) => (
                   <li key={t.name}>
-                    {i + 1}. {t.name}
-                    {t.isAi ? " (AI)" : ""} · {fmt(t.score)} pts
+                    {i + 1}. {t.name} · {fmt(t.score)} pts
                   </li>
                 ))}
               </ol>

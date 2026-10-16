@@ -4,7 +4,9 @@ import { balance, matchStateView, regionById } from "@lastthaw/shared";
 import { buildApp } from "../src/api/app.js";
 import { createDb, type Db } from "../src/db/client.js";
 import { armies, bounties, dailyObjectives, jobs, matchMilestones, matchRegions, matches, mercenaryOffers, players, refugeeOffers, transfers, users } from "../src/db/schema.js";
-import { claimBounties, pickObjective, placeBounty, resolveObjective } from "../src/sim/objectives.js";
+import { claimBounties, objectiveWinner, pickObjective, placeBounty, resolveObjective } from "../src/sim/objectives.js";
+import { tributeDemand } from "../src/sim/ai.js";
+import { settleFrozenCapitals } from "../src/sim/ice.js";
 import { Publisher } from "../src/realtime/publish.js";
 import { createRedis } from "../src/redis.js";
 import { stormHits, mercenariesLeave } from "../src/sim/worldEvents.js";
@@ -255,5 +257,53 @@ describe("world events", () => {
     const state = matchStateView.parse((await call("GET", `/api/matches/${matchId}/state`)).json());
     expect(state.objective?.day).toBe(0);
     expect(state.bounties.length).toBe(0);
+  });
+
+  it("the leader competes for objectives at a handicap and tribute is sized to the victim", () => {
+    const scores = [
+      { playerId: "leader", value: 100 },
+      { playerId: "second", value: 70 },
+      { playerId: "third", value: 10 },
+    ];
+    expect(objectiveWinner(scores, "leader", 0.6)?.playerId).toBe("second");
+    expect(objectiveWinner(scores, "leader", 1)?.playerId).toBe("leader");
+    expect(objectiveWinner(scores, "second", 0.6)?.playerId).toBe("leader");
+    expect(objectiveWinner([{ playerId: "leader", value: 0 }], "leader", 0.6)).toBeUndefined();
+    const c = balance.ai;
+    expect(tributeDemand({ wood: 10_000 }, "wood")).toBe(Math.floor(10_000 * c.tributeShare));
+    expect(tributeDemand({ wood: 10 }, "wood")).toBe(c.tributeMin);
+    expect(tributeDemand({ wood: 10_000_000 }, "wood")).toBe(c.tributeMax);
+    expect(tributeDemand({}, "wood")).toBe(c.tributeMin);
+    // The AI pays a demand under a tenth of its stock, so a sized demand is payable.
+    expect(tributeDemand({ wood: 5000 }, "wood")).toBeLessThanOrEqual(500);
+  });
+
+  it("a frozen capital moves to the best unfrozen region, and a player with nothing left is out", async () => {
+    const [m] = await db.select().from(matches).where(eq(matches.id, matchId));
+    const [me] = await db.select().from(players).where(and(eq(players.matchId, matchId), eq(players.isAi, false)));
+    const capital = me!.capitalRegionId!;
+    const other = regionById(capital)!.neighbors[0]!;
+    // An earlier case froze this neighbour; thaw it so it can take the capital.
+    await db.update(matchRegions).set({ frozenAt: null, iceFactor: 1, evacuatedAt: null }).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, other)));
+    await db.transaction((tx) => foundCapital(tx, matchId, me!.id, other, new Date()));
+    await db.update(players).set({ capitalRegionId: capital }).where(eq(players.id, me!.id));
+    await db.update(matchRegions).set({ isCapital: false }).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, other)));
+    await db.update(matchRegions).set({ isCapital: true, popWorkers: 40 }).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, capital)));
+    const at = new Date();
+    await db.update(matchRegions).set({ frozenAt: at, popWorkers: 0 }).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, capital)));
+    await db.transaction((tx) => settleFrozenCapitals(tx, m!, at, new Map([[me!.id, [capital]]])));
+    const [moved] = await db.select().from(players).where(eq(players.id, me!.id));
+    expect(moved?.capitalRegionId).toBe(other);
+    expect(moved?.eliminatedAt).toBeNull();
+    const [row] = await db.select().from(matchRegions).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, other)));
+    expect(row?.isCapital).toBe(true);
+    const feed = (await call("GET", `/api/matches/${matchId}/feed`)).json() as { items: { kind: string }[] };
+    expect(feed.items.some((i) => i.kind === "capital.moved")).toBe(true);
+    // Now the last region freezes too: out of the match.
+    await db.update(matchRegions).set({ frozenAt: at }).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, other)));
+    await db.transaction((tx) => settleFrozenCapitals(tx, m!, at, new Map([[me!.id, [other]]])));
+    const [gone] = await db.select().from(players).where(eq(players.id, me!.id));
+    expect(gone?.eliminatedAt).not.toBeNull();
+    expect(gone?.capitalRegionId).toBeNull();
   });
 });

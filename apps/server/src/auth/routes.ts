@@ -5,7 +5,7 @@ import type { Db } from "../db/client.js";
 import { config } from "../config.js";
 import type { Redis } from "ioredis";
 import type { Publisher } from "../realtime/publish.js";
-import { emailTokens, sessions, users } from "../db/schema.js";
+import { emailTokens, sessions, users, players, matches } from "../db/schema.js";
 import { hashPassword, hashToken, newToken, verifyPassword } from "./password.js";
 import { createSession, destroySession, requireUser } from "./session.js";
 import { resetMail, sendMail, verificationMail } from "../mail.js";
@@ -20,6 +20,7 @@ function toView(u: {
   emailVerifiedAt: Date | null;
   isAdmin: boolean;
   approvedAt?: Date | null;
+  canRename?: boolean;
   tagline?: string | null;
   bio?: string | null;
   location?: string | null;
@@ -32,6 +33,7 @@ function toView(u: {
     emailVerified: u.emailVerifiedAt !== null,
     isAdmin: u.isAdmin,
     approved: u.isAdmin || !!u.approvedAt || config().DEV_TOOLS,
+    canRename: u.canRename ?? false,
     tagline: u.tagline ?? null,
     bio: u.bio ?? null,
     location: u.location ?? null,
@@ -39,7 +41,7 @@ function toView(u: {
   };
 }
 
-async function issueToken(db: Db, userId: string, kind: "verify" | "reset", hours: number): Promise<string> {
+export async function issueToken(db: Db, userId: string, kind: "verify" | "reset", hours: number): Promise<string> {
   const { token, hash } = newToken();
   await db.insert(emailTokens).values({ userId, kind, tokenHash: hash, expiresAt: new Date(Date.now() + hours * 3600_000) });
   return token;
@@ -142,10 +144,18 @@ export async function authRoutes(app: FastifyInstance, opts: { db: Db; redis: Re
     if (body.tagline !== undefined) patch.tagline = body.tagline;
     if (body.bio !== undefined) patch.bio = body.bio;
     if (body.location !== undefined) patch.location = body.location;
+    if (body.displayName !== undefined && body.displayName !== user.displayName) {
+      if (!user.canRename) return reply.code(409).send({ error: "your tribe name is fixed" });
+      const [taken] = await db.select({ id: users.id }).from(users).where(sql`lower(${users.displayName}) = ${body.displayName.toLowerCase()}`).limit(1);
+      if (taken) return reply.code(409).send({ error: "that tribe name is taken" });
+      patch.displayName = body.displayName;
+      patch.canRename = false;
+    }
     const [u] = Object.keys(patch).length
       ? await db.update(users).set(patch).where(eq(users.id, user.id)).returning()
       : await db.select().from(users).where(eq(users.id, user.id)).limit(1);
     if (!u) return reply.code(404).send({ error: "account not found" });
+    if (patch.displayName) await db.update(players).set({ name: patch.displayName }).where(and(eq(players.userId, u.id), sql`exists (select 1 from matches mm where mm.id = ${players.matchId} and mm.status <> 'finished')`));
     return toView(u);
   });
 
@@ -185,7 +195,8 @@ export async function authRoutes(app: FastifyInstance, opts: { db: Db; redis: Re
     if (!row) return reply.code(400).send({ error: "that link is invalid or expired" });
     await db.transaction(async (tx) => {
       await tx.update(emailTokens).set({ usedAt: now }).where(eq(emailTokens.id, row.id));
-      await tx.update(users).set({ passwordHash: await hashPassword(password) }).where(eq(users.id, row.userId));
+      // The link reached the inbox, so the address is verified too (invited accounts never saw a verification mail).
+      await tx.update(users).set({ passwordHash: await hashPassword(password), emailVerifiedAt: sql`coalesce(${users.emailVerifiedAt}, ${now.toISOString()}::timestamptz)` }).where(eq(users.id, row.userId));
       await tx.delete(sessions).where(eq(sessions.userId, row.userId));
     });
     await publisher.sessionsEnded(row.userId);

@@ -97,6 +97,10 @@ export const balance = {
     levelGrowth: 1.55,
     /** Each building level multiplies cost by this. */
     costGrowth: 1.65,
+    /** From this level on, cost and time grow faster still, so high levels are the late-game sink instead of an idle queue. */
+    lateLevel: 6,
+    lateCostGrowth: 1.15,
+    lateTimeGrowth: 1.3,
     /** Longest any single action may take, in game seconds (spec: 8 to 12 hours). */
     maxSeconds: 10 * 3600,
     /** Training N units takes baseSeconds * N^batchExponent. */
@@ -246,8 +250,9 @@ export const balance = {
     ],
   },
   tick: {
-    /** Match tick cadence in real minutes (loyalty, AI, score, win check). */
+    /** Match tick cadence in real minutes at 1x (loyalty, AI, score, win check); faster matches tick proportionally more often, never more than once per `minSeconds`. */
     minutes: 5,
+    minSeconds: 10,
   },
   ai: {
     /** AI tribes are added at match start until this many players exist (spec: up to 100). */
@@ -281,6 +286,12 @@ export const balance = {
     conquerChance: { peaceful: 0.1, balanced: 0.2, raider: 0.25 } as Record<string, number>,
     /** AI never attacks players whose army total exceeds this multiple of its own. */
     maxTargetStrengthRatio: 0.8,
+    /** From this day hard raiders prefer weak land held by other players to empty land, and accept slightly stronger defenders. */
+    conquerPlayersFromDay: 15,
+    /** A tribute demand asks for this share of the victim's capital stock (between `tributeMin` and `tributeMax`), which a reasonable tribe pays. */
+    tributeShare: 0.08,
+    tributeMin: 100,
+    tributeMax: 5000,
     names: [
       "Ashfolk", "Brightwater", "Coldspring", "Dunmere", "Elkridge", "Fenwick", "Greyhollow", "Hartland", "Ironvale", "Juniper",
       "Kestrel", "Longmoor", "Marrowgate", "Nightfell", "Oakenshaw", "Pinecrest", "Quillmark", "Ravensholt", "Stonebrook", "Thornfield",
@@ -309,6 +320,8 @@ export const balance = {
     mercenaries: { chance: 0.5, offerHours: 12, hours: 48, ironPerUnit: { sellsword: 12, free_company: 30 } },
     /** The last stand: once, when the ice is a day from the capital, everything marches south at double speed. */
     lastStand: { withinDays: 1, speedMult: 2 },
+    /** Daily objectives: the match's score leader competes at this fraction of their value, so the prize spreads around. */
+    objective: { leaderHandicap: 0.6 },
     /** Bounties: a rebel region is worth `rebelPerValue` x its value in each of food, wood and stone; a horde camp pays `hordeCamp`; a refused tribute puts `tributeShare` of the refuser's capital stock on their head for `tributeHours`. */
     bounty: { rebelPerValue: 10, hordeCamp: { food: 300, wood: 200, stone: 150 } as Record<string, number>, tributeShare: 0.05, tributeHours: 24 },
   },

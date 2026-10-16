@@ -22,6 +22,7 @@ export interface SessionUser {
   isAdmin: boolean;
   /** Private beta: may join matches. */
   approved: boolean;
+  canRename: boolean;
   tagline: string | null;
   bio: string | null;
   location: string | null;
@@ -57,6 +58,7 @@ export const sessionPlugin = fp(async (app: FastifyInstance, opts: { db: Db }) =
         emailVerifiedAt: users.emailVerifiedAt,
         isAdmin: users.isAdmin,
         approvedAt: users.approvedAt,
+        canRename: users.canRename,
         tagline: users.tagline,
         bio: users.bio,
         location: users.location,
@@ -79,7 +81,7 @@ export const sessionPlugin = fp(async (app: FastifyInstance, opts: { db: Db }) =
         .catch(() => {});
     }
     req.sessionId = row.sessionId;
-    req.user = { id: row.id, email: row.email, displayName: row.displayName, emailVerified: row.emailVerifiedAt !== null, isAdmin: row.isAdmin, approved: row.isAdmin || row.approvedAt !== null || config().DEV_TOOLS, tagline: row.tagline, bio: row.bio, location: row.location, createdAt: row.createdAt.toISOString() };
+    req.user = { id: row.id, email: row.email, displayName: row.displayName, emailVerified: row.emailVerifiedAt !== null, isAdmin: row.isAdmin, approved: row.isAdmin || row.approvedAt !== null || config().DEV_TOOLS, canRename: row.canRename, tagline: row.tagline, bio: row.bio, location: row.location, createdAt: row.createdAt.toISOString() };
   });
 });
 

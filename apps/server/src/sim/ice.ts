@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { allRegions, balance, emptySpecial, iceExposure, iceLatitudeOnDay, regionById, seededRng, freezeDayForLatitude } from "@lastthaw/shared";
 import { events, jobs, matchRegions, matches, players, refugeeOffers } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
@@ -85,12 +85,14 @@ export async function applyIceStep(tx: Tx, m: MatchRow, job: JobRow, publisher: 
       .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, r.regionId)));
     if (r.owner) byOwner.set(r.owner, [...(byOwner.get(r.owner) ?? []), r.regionId]);
   }
-  await tx.insert(events).values({ matchId: m.id, at: job.endsAt, kind: "ice.advanced", payload: { day, latitude: lat, frozen: freezing.length, regions: freezing.map((r) => r.regionId).slice(0, 12), spared } });
+  // A step that only tapers factors is not news; the feed hears about the ice when it takes land.
+  if (freezing.length > 0) await tx.insert(events).values({ matchId: m.id, at: job.endsAt, kind: "ice.advanced", payload: { day, latitude: lat, frozen: freezing.length, regions: freezing.map((r) => r.regionId).slice(0, 12), spared } });
   await offerRefugees(tx, m, job.endsAt, columns);
   for (const [owner, regions] of byOwner) {
     const names = regions.map((id) => regionById(id)?.name ?? id).join(", ");
     await notify(tx, m.id, owner, "system", `The ice has taken ${names}. Everything and everyone there is lost.`, { regions, day });
   }
+  await settleFrozenCapitals(tx, m, job.endsAt, byOwner);
   const humans = await tx.select({ id: players.id }).from(players).where(and(eq(players.matchId, m.id), eq(players.isAi, false)));
   if (day % 5 === 0) {
     for (const p of humans) {
@@ -136,5 +138,38 @@ async function offerRefugees(tx: Tx, m: MatchRow, at: Date, columns: Array<{ fro
     await tx.insert(refugeeOffers).values({ matchId: m.id, playerId: owner, regionId: dest, fromRegionId: col.from, people: col.people, expiresAt });
     await notify(tx, m.id, owner, "battle", `${col.people} people fleeing the ice from ${fromName} have reached ${regionById(dest)?.name ?? dest}. Take them in for ${col.people * c.foodPerPerson} food, or turn them away; they wait a day.`, { regionId: dest, fromRegionId: col.from, people: col.people, expiresAt: expiresAt.toISOString(), refugees: true });
     await tx.insert(events).values({ matchId: m.id, at, kind: "refugees.arrived", payload: { fromRegionId: col.from, regionId: dest, playerId: owner, people: col.people } });
+  }
+}
+
+/**
+ * Owners whose capital just froze: the capital moves to their most populous
+ * unfrozen region at once (the wagon would not survive the trip anyway), and a
+ * player with no unfrozen land left is out of the match instead of lingering
+ * on the ice with nothing.
+ */
+export async function settleFrozenCapitals(tx: Tx, m: MatchRow, at: Date, frozenByOwner: Map<string, string[]>): Promise<void> {
+  if (frozenByOwner.size === 0) return;
+  const owners = await tx
+    .select()
+    .from(players)
+    .where(and(eq(players.matchId, m.id), inArray(players.id, [...frozenByOwner.keys()]), isNull(players.eliminatedAt)));
+  for (const p of owners) {
+    if (!p.capitalRegionId || !frozenByOwner.get(p.id)?.includes(p.capitalRegionId)) continue;
+    const left = await tx
+      .select()
+      .from(matchRegions)
+      .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.ownerPlayerId, p.id), isNull(matchRegions.frozenAt)))
+      .orderBy(desc(matchRegions.popWorkers), desc(matchRegions.popSoldiers));
+    const next = left[0];
+    if (!next) {
+      const { eliminatePlayer } = await import("./missions.js");
+      await eliminatePlayer(tx, m, p.id, at, "The ice has taken your last region.");
+      continue;
+    }
+    await tx.update(matchRegions).set({ isCapital: false }).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, p.capitalRegionId)));
+    await tx.update(matchRegions).set({ isCapital: true }).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, next.regionId)));
+    await tx.update(players).set({ capitalRegionId: next.regionId }).where(eq(players.id, p.id));
+    await notify(tx, m.id, p.id, "system", `The ice has taken your capital. ${regionById(next.regionId)?.name ?? next.regionId} is the capital now.`, { regionId: next.regionId, capital: true });
+    await tx.insert(events).values({ matchId: m.id, at, kind: "capital.moved", payload: { playerId: p.id, regionId: next.regionId, from: p.capitalRegionId, ice: true } });
   }
 }

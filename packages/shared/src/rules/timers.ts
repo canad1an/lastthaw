@@ -11,7 +11,7 @@ import { scaledDuration } from "./time.js";
 export function buildingSeconds(def: BuildingDef, level: number): number {
   const t = balance.timers;
   if (def.wonder) return def.baseSeconds;
-  return Math.min(t.maxSeconds, def.baseSeconds * Math.pow(t.levelGrowth, Math.max(0, level - 1)));
+  return Math.min(t.maxSeconds, def.baseSeconds * Math.pow(t.levelGrowth, Math.max(0, level - 1)) * Math.pow(t.lateTimeGrowth, Math.max(0, level - t.lateLevel)));
 }
 
 /** Cost multiplier on a given match day (linear between the points in balance.timers.dayCost). */
@@ -27,7 +27,8 @@ export function dayCostMultiplier(day: number): number {
 }
 
 export function buildingCost(def: BuildingDef, level: number, day = 0, neighbors = 1): Cost {
-  const g = Math.pow(balance.timers.costGrowth, Math.max(0, level - 1));
+  const t = balance.timers;
+  const g = Math.pow(t.costGrowth, Math.max(0, level - 1)) * Math.pow(t.lateCostGrowth, Math.max(0, level - t.lateLevel));
   return scaleCost(def.cost, g * (def.wonder ? 1 : dayCostMultiplier(day)) * (def.perNeighbor ? Math.max(1, neighbors) : 1));
 }
 

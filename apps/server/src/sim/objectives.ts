@@ -1,5 +1,5 @@
-import { and, eq, gte, isNotNull, isNull, lt, sql } from "drizzle-orm";
-import { regionById } from "@lastthaw/shared";
+import { and, eq, gte, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
+import { balance, regionById } from "@lastthaw/shared";
 import { battles, bounties, dailyObjectives, events, matchRegions, playerTechs, players } from "../db/schema.js";
 import { awardMilestone } from "./endgame.js";
 import { settleAndLockRegion, type Tx } from "./regions.js";
@@ -57,7 +57,9 @@ export async function resolveObjective(tx: Tx, m: MatchRow, day: number, now: Da
       .groupBy(battles.attackerPlayerId);
     scores = rows.map((r) => ({ playerId: r.playerId!, value: r.n }));
   }
-  const best = scores.filter((s) => eligible.has(s.playerId) && s.value > 0).sort((a, b) => b.value - a.value)[0];
+  const standings = await tx.select({ id: players.id, score: players.score }).from(players).where(and(eq(players.matchId, m.id), inArray(players.id, [...eligible])));
+  const leaderId = [...standings].sort((a, b) => b.score - a.score)[0]?.id ?? null;
+  const best = objectiveWinner(scores.filter((s) => eligible.has(s.playerId)), leaderId, balance.events.objective.leaderHandicap);
   if (!best) {
     await tx.update(dailyObjectives).set({ value: 0 }).where(and(eq(dailyObjectives.matchId, m.id), eq(dailyObjectives.day, day)));
     return;
@@ -65,6 +67,15 @@ export async function resolveObjective(tx: Tx, m: MatchRow, day: number, now: Da
   await tx.update(dailyObjectives).set({ winnerPlayerId: best.playerId, value: Math.round(best.value) }).where(and(eq(dailyObjectives.matchId, m.id), eq(dailyObjectives.day, day)));
   await awardMilestone(tx, m, `day_${day}`, best.playerId, now, `Day ${day}: ${OBJECTIVES[row.key] ?? row.key}`);
   await tx.insert(events).values({ matchId: m.id, at: now, kind: "objective.won", payload: { day, key: row.key, label: OBJECTIVES[row.key] ?? row.key, playerId: best.playerId, value: Math.round(best.value) } });
+}
+
+/**
+ * The best value takes the day, but the match's score leader competes at a
+ * handicap so the daily prize spreads around instead of snowballing.
+ */
+export function objectiveWinner(scores: Array<{ playerId: string; value: number }>, leaderId: string | null, handicap: number): { playerId: string; value: number } | undefined {
+  const weighted = scores.filter((s) => s.value > 0).map((s) => ({ ...s, weighted: s.playerId === leaderId ? s.value * handicap : s.value }));
+  return weighted.sort((a, b) => b.weighted - a.weighted || b.value - a.value)[0];
 }
 
 // ---------------------------------------------------------------- bounties

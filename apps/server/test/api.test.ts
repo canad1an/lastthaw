@@ -5,6 +5,9 @@ import { buildApp } from "../src/api/app.js";
 import { createDb, type Db } from "../src/db/client.js";
 import { emailTokens, matches, players, users } from "../src/db/schema.js";
 import { newToken } from "../src/auth/password.js";
+import { SIM_SPEED, createSimMatch } from "../src/scripts/nightlySim.js";
+import { inviteUser } from "../src/scripts/inviteUser.js";
+import { inviteMail } from "../src/mail.js";
 
 process.env.DATABASE_URL ??= "postgres://lastthaw:lastthaw@localhost:5432/lastthaw";
 process.env.SESSION_SECRET ??= "test-secret-test-secret-test-secret";
@@ -366,6 +369,47 @@ describe("api routes", () => {
     expect(p?.eliminatedAt).not.toBeNull();
     const state = matchStateView.parse((await Ben.call("GET", `/api/matches/${gameId}/state`)).json());
     expect(state.owned).toEqual([]);
+  });
+
+  it("the nightly simulation is created as an ordinary public game with a war-or-winter name", async () => {
+    const sim = await createSimMatch(db);
+    created.push(sim.id);
+    expect(sim.name).toMatch(/^[A-Z][a-z]+ [A-Z][a-z]+$/);
+    const row = ((await Ann.call("GET", "/api/matches")).json() as Array<{ id: string; kind: string; speed: number; inviteCode: string | null; maxPlayers: number }>).find((m) => m.id === sim.id);
+    expect(row).toMatchObject({ kind: "public", speed: SIM_SPEED, inviteCode: null });
+    const [m] = await db.select().from(matches).where(eq(matches.id, sim.id));
+    expect(m?.status).toBe("lobby");
+    expect(m?.startsAt.getTime()).toBeLessThanOrEqual(Date.now());
+    expect((m?.settings as { aiFillTo?: number }).aiFillTo).toBe(balance.match.maxAiTribes);
+    // Nothing on its public face says it is a simulation.
+    expect(JSON.stringify(row)).not.toContain("simulation");
+  });
+
+  it("an invited account sets its password from the mailed link, is verified and approved, and picks its tribe name once", async () => {
+    const email = `inv-${suffix}@example.test`;
+    const inv = await inviteUser(db, email.toUpperCase(), `Guest${suffix}`);
+    expect(inv.created).toBe(true);
+    const again = await inviteUser(db, email, `Guest${suffix}`);
+    expect(again.created).toBe(false);
+    expect(again.id).toBe(inv.id);
+    const mail = inviteMail(`Guest${suffix}`, inv.token, 7, { name: "Frozen Watch", code: "ABCD1234" });
+    expect(mail.text).toContain(`/reset?token=${encodeURIComponent(inv.token)}`);
+    expect(mail.text).toContain("ABCD1234");
+    expect(mail.text).toContain("Frozen Watch");
+    expect(mail.text).toContain("pick your tribe name");
+    const G = new Client(app);
+    expect((await G.call("POST", "/api/auth/login", { email, password: "anything" })).statusCode).toBe(401);
+    expect((await app.inject({ method: "POST", url: "/api/auth/reset", payload: { token: inv.token, password: "a password of my own" } })).statusCode).toBe(200);
+    expect((await G.call("POST", "/api/auth/login", { email, password: "a password of my own" })).statusCode).toBe(200);
+    expect((await G.call("GET", "/api/auth/me")).json()).toMatchObject({ emailVerified: true, approved: true, canRename: true, displayName: `Guest${suffix}` });
+    expect((await G.call("PATCH", "/api/me/profile", { displayName: ann.displayName })).statusCode).toBe(409);
+    expect((await G.call("PATCH", "/api/me/profile", { displayName: "x" })).statusCode).toBe(400);
+    const renamed = await G.call("PATCH", "/api/me/profile", { displayName: `Icefang ${suffix}` });
+    expect(renamed.statusCode, JSON.stringify(renamed.json())).toBe(200);
+    expect((await G.call("GET", "/api/auth/me")).json()).toMatchObject({ displayName: `Icefang ${suffix}`, canRename: false });
+    expect((await G.call("PATCH", "/api/me/profile", { displayName: `Another ${suffix}` })).statusCode).toBe(409);
+    expect((await G.call("PATCH", "/api/me/profile", { tagline: "still allowed" })).statusCode).toBe(200);
+    await db.delete(users).where(eq(users.email, email));
   });
 
   it("public pages and histories answer without a session", async () => {

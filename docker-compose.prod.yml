@@ -63,6 +63,8 @@ services:
       SMTP_HOST: ${SMTP_HOST}
       DATABASE_URL: postgres://lastthaw:${POSTGRES_PASSWORD}@pgbouncer:6432/lastthaw
       DB_POOL_MAX: "20"
+      # Fast games (the nightly 720x simulation, player games up to 180x) need the tick loop to poll often; the per-match gate scales with speed.
+      TICK_MS: "10000"
     depends_on:
       pgbouncer:
         condition: service_started
@@ -75,6 +77,9 @@ services:
       SMTP_HOST: ${SMTP_HOST}
       DATABASE_URL: postgres://lastthaw:${POSTGRES_PASSWORD}@pgbouncer:6432/lastthaw
       DB_POOL_MAX: "10"
+      # Twenty tribes at 720x come due hundreds of times an hour: short passes with a high limit keep them all acting.
+      AI_PASS_MS: "5000"
+      AI_PASS_LIMIT: "200"
     depends_on:
       pgbouncer:
         condition: service_started

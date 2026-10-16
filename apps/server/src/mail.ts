@@ -35,6 +35,28 @@ export function verificationMail(displayName: string, token: string) {
   };
 }
 
+export function inviteMail(displayName: string, token: string, days: number, game?: { name: string; code: string }) {
+  const url = `${config().PUBLIC_URL}/reset?token=${encodeURIComponent(token)}`;
+  const gameLine = game ? `
+Matt has a private game waiting for you, "${game.name}". In the lobby at ${config().PUBLIC_URL}/matches enter the invite code ${game.code} to join it.
+` : "";
+  return {
+    subject: game ? `You are invited to Last Thaw: ${game.name}` : "You are invited to Last Thaw",
+    text: `Hi ${displayName},
+
+Matt has opened a Last Thaw account for you. Thirty days, a real map, and the ice closing in from the poles.
+
+Set your password here:
+
+${url}
+
+Then log in, open your profile and pick your tribe name. You choose it once; it is how the other players know you in every match.
+${gameLine}
+The link is valid for ${days} days. The field manual is at ${config().PUBLIC_URL}/how-to-play.
+`,
+  };
+}
+
 export function resetMail(displayName: string, token: string) {
   const url = `${config().PUBLIC_URL}/reset?token=${encodeURIComponent(token)}`;
   return {

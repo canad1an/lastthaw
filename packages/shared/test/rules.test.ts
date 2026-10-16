@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { balance } from "../src/config/balance.js";
 import { buildingById, techById, unitById } from "../src/config/ages.js";
-import { formatCountdown, realSecondsToGameHours, scaledDuration } from "../src/rules/time.js";
+import { formatCountdown, realSecondsToGameHours, scaledDuration, tickGapSeconds } from "../src/rules/time.js";
 import { buildingCost, buildingSeconds, canAfford, dayCostMultiplier, missingFor, scaleCost, techCost, trainSeconds, unitCost } from "../src/rules/timers.js";
 import { findRoute, laneKey, missionLabel, seaLegsOf, travelSeconds } from "../src/rules/travel.js";
 import { armySpeed, bestHauler, breachOf, carryCapacity, haulerCount, splitNaval } from "../src/rules/combat.js";
@@ -17,6 +17,12 @@ describe("time", () => {
     expect(formatCountdown(61)).toBe("1m 1s");
     expect(formatCountdown(3600 + 120)).toBe("1h 2m");
     expect(formatCountdown(86400 * 2 + 3600 * 3 + 10)).toBe("2d 3h");
+  });
+  it("ticks more often in faster matches, down to a floor", () => {
+    expect(tickGapSeconds(1)).toBe(balance.tick.minutes * 60);
+    expect(tickGapSeconds(10)).toBe((balance.tick.minutes * 60) / 10);
+    expect(tickGapSeconds(720)).toBe(balance.tick.minSeconds);
+    expect(tickGapSeconds(0)).toBe(balance.tick.minutes * 60);
   });
   it("scales durations by match speed", () => {
     expect(scaledDuration(600, 1)).toBe(600);
@@ -36,6 +42,15 @@ describe("costs and timers", () => {
     const late = buildingCost(huts, 1, 20);
     expect(late.wood!).toBeGreaterThanOrEqual(l1.wood!);
     expect(buildingSeconds(huts, 2)).toBeGreaterThanOrEqual(buildingSeconds(huts, 1));
+  });
+  it("high levels grow steeper than low ones, so late building is the sink", () => {
+    const t = balance.timers;
+    const lowRatio = buildingCost(huts, 3).wood! / buildingCost(huts, 2).wood!;
+    const highRatio = buildingCost(huts, t.lateLevel + 3).wood! / buildingCost(huts, t.lateLevel + 2).wood!;
+    expect(highRatio).toBeGreaterThan(lowRatio);
+    expect(highRatio).toBeCloseTo(t.costGrowth * t.lateCostGrowth, 1);
+    const cheap = buildingById.get("storehouse") ?? huts;
+    expect(buildingSeconds(cheap, t.lateLevel + 1) / buildingSeconds(cheap, t.lateLevel)).toBeCloseTo(Math.min(t.levelGrowth * t.lateTimeGrowth, t.maxSeconds / buildingSeconds(cheap, t.lateLevel)), 1);
   });
   it("units and techs scale the same way", () => {
     const w = unitById.get("warrior")!;

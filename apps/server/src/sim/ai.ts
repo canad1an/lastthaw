@@ -1,7 +1,9 @@
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { availableBuildings, availableTechs, buildingBlockedBy, availableUnits, balance, buildingById, buildingCost, dayCostMultiplier, effectsOf, freezeDayForLatitude, distanceKm, regionById, seededRng, techById, techCost, normalizeAssignment, type Cost, techEffectsOf, haulerCount, unitById, TECHS, breachOf, wallBonusAgainst } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
-import { armies, jobs, marketOrders, matchRegions, playerTechs, players, refugeeOffers, pacts } from "../db/schema.js";
+import { armies, jobs, marketOrders, matchRegions, mercenaryOffers, playerTechs, players, refugeeOffers, pacts } from "../db/schema.js";
+import { hireMercenaries } from "./worldEvents.js";
+import { lastStand } from "./lastStand.js";
 import type { Publisher } from "../realtime/publish.js";
 import { applyCost, projectRegion, settleAndLockRegion, stockOf, type MatchRegionRow } from "./regions.js";
 import { queueBuild, queueResearch, queueTrain, sendArmy, type CommandContext, type PlayerRow } from "./commands.js";
@@ -25,6 +27,12 @@ const RESEARCH_ORDER = [
   "oral_tradition", "trapping", "basketry", "salt_curing", "shelter_building", "tribal_councils", "copper_smelting", "harness", "calendar", "brick_making", "shield_wall", "sailing", "surveying", "quarrying", "carpentry", "fortification", "coinage", "scouting", "cartography", "navigation", "architecture", "concrete", "literature", "metallurgy", "professional_army", "provincial_administration", "currency", "water_mills", "iron_casting", "crossbows", "gunpowder", "trade_fairs", "banking", "compass", "printing_press", "coal_mining", "steel_mills", "textile_mills", "canning", "public_schools", "railway_signalling", "mass_production", "dynamite", "sanitation", "internal_combustion", "radio", "mass_media", "computers", "assembly_line", "refrigeration", "antibiotics", "aviation", "mechanised_agriculture", "nuclear_power",
   "electricity", "combined_arms", "radar", "synthetic_fertilizer", "ballistics", "satellites",
 ];
+
+/** What a tribe demands in tribute: a share of the victim's capital stock, which a reasonable tribe can pay. */
+export function tributeDemand(stock: Record<string, number>, resource: string): number {
+  const c = balance.ai;
+  return Math.max(c.tributeMin, Math.min(c.tributeMax, Math.floor((stock[resource] ?? 0) * c.tributeShare)));
+}
 
 /** What each difficulty is allowed to do. Harder tiers never cheat; they just decide better and more often. */
 const TIER = {
@@ -112,7 +120,10 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
   if (difficulty === "hard" && persona.aggression > 1 && rng() < 0.03) {
     const weaker = (await db.select().from(players).where(and(eq(players.matchId, m.id), eq(players.hidden, false), isNull(players.eliminatedAt)))).filter((o) => o.id !== p.id && o.score < p.score * 0.7 && o.capitalRegionId);
     const victim = weaker[Math.floor(rng() * weaker.length)];
-    if (victim) await attempt(() => proposePact(db, m, p, victim.id, "tribute", { resource: "wood", amount: Math.max(500, Math.round(p.score * 2)) }));
+    if (victim) {
+      const [vc] = victim.capitalRegionId ? await db.select().from(matchRegions).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, victim.capitalRegionId))).limit(1) : [];
+      await attempt(() => proposePact(db, m, p, victim.id, "tribute", { resource: "wood", amount: tributeDemand(vc ? stockOf(vc) : {}, "wood") }));
+    }
   }
   const researchQueued = pendingJobs.filter((j) => j.kind === "research").length;
   const researching = researchQueued >= 3;
@@ -128,6 +139,59 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
       .from(armies)
       .where(and(eq(armies.matchId, m.id), eq(armies.status, "outbound"), inArray(armies.targetRegionId, ownedIds), inArray(armies.mission, ["raid", "conquer"]), sql`${armies.playerId} <> ${p.id}`));
     for (const i of incoming) threatened.add(i.target);
+  }
+
+  // The world's offers (medium and hard): mercenaries when an attack is coming or the iron is idle, a scouting
+  // party into the unknown, peace with a stronger neighbour, and the last stand when the ice is a day from the capital.
+  if (difficulty !== "easy") {
+    const capital = owned.find((r) => r.regionId === p.capitalRegionId);
+    if (capital && rng() < 0.5) {
+      const iron = stockOf(capital).iron ?? 0;
+      const budget = threatened.size > 0 ? iron * 0.8 : iron * 0.3;
+      const offers = await db
+        .select()
+        .from(mercenaryOffers)
+        .where(and(eq(mercenaryOffers.matchId, m.id), isNull(mercenaryOffers.hiredBy), gt(mercenaryOffers.expiresAt, now)))
+        .orderBy(mercenaryOffers.iron);
+      const offer = offers.find((o) => o.iron >= 1 && o.iron <= budget);
+      if (offer && (threatened.size > 0 || iron > 200)) await attempt(() => db.transaction((tx) => hireMercenaries(tx, m, p, offer.id, now)));
+    }
+    if (difficulty === "hard" && rng() < 0.06) {
+      const strongest = [...owned].sort((a, b) => b.popSoldiers - a.popSoldiers)[0];
+      if (strongest && (strongest.units.warrior ?? 0) >= 9) {
+        // Three hops out, somewhere unseen: the command refuses scouted land, so a few tries are cheap.
+        let ring = new Set<string>([strongest.regionId]);
+        const seen = new Set<string>(ring);
+        for (let i = 0; i < 3; i++) {
+          const next = new Set<string>();
+          for (const id of ring) for (const n of regionById(id)!.neighbors) if (!seen.has(n)) { seen.add(n); next.add(n); }
+          ring = next;
+        }
+        const far = [...ring].filter((id) => !ownedIds.includes(id));
+        for (let tries = 0; tries < 3 && far.length; tries++) {
+          const target = far[Math.floor(rng() * far.length)]!;
+          if (await attempt(() => sendArmy(ctx, strongest.regionId, { mission: "expedition", targetRegionId: target, units: { warrior: 3 }, people: 0, cargo: {} }))) break;
+        }
+      }
+    }
+    if (temperament !== "raider" && rng() < 0.05) {
+      const border = [...new Set(owned.flatMap((r) => regionById(r.regionId)!.neighbors))].filter((id) => !ownedIds.includes(id));
+      const rows = border.length ? await db.select({ owner: matchRegions.ownerPlayerId }).from(matchRegions).where(and(eq(matchRegions.matchId, m.id), inArray(matchRegions.regionId, border), isNotNull(matchRegions.ownerPlayerId))) : [];
+      const owners = [...new Set(rows.map((r) => r.owner!))].filter((id) => id !== p.id);
+      const strong = owners.length ? (await db.select().from(players).where(and(inArray(players.id, owners), eq(players.hidden, false), isNull(players.eliminatedAt)))).filter((o) => o.score >= p.score) : [];
+      const other = strong.sort((a, b) => b.score - a.score)[0];
+      if (other && !(await areAllied(db, m.id, p.id, other.id))) await attempt(() => proposePact(db, m, p, other.id, "nap"));
+    }
+    if (!p.lastStandAt && p.capitalRegionId) {
+      const capLat = Math.abs(regionById(p.capitalRegionId)!.lat);
+      const freezeDay = freezeDayForLatitude(capLat) ?? 999;
+      if (freezeDay - matchDay <= balance.events.lastStand.withinDays) {
+        const dest = owned
+          .filter((r) => !r.frozenAt && r.regionId !== p.capitalRegionId && Math.abs(regionById(r.regionId)!.lat) < capLat)
+          .sort((a, b) => Math.abs(regionById(a.regionId)!.lat) - Math.abs(regionById(b.regionId)!.lat))[0];
+        if (dest) await attempt(() => lastStand(db, m, p, dest.regionId));
+      }
+    }
   }
 
   // Ice: regions that freeze soon get evacuated to the safest owned region.
@@ -334,14 +398,16 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
           const wallFaced = r ? wallBonusAgainst(r.buildings, force) : 0;
           const siegeNeed = r ? Object.entries(balance.combat.wallBreach).reduce((acc, [id, need]) => acc + ((r.buildings[id] ?? 0) >= 1 ? need : 0), 0) : 0;
           const defenders = r ? Object.values(r.units).reduce((a, b) => a + b, 0) * (1 + (effects?.defense ?? 0) - wallFull + wallFaced) + (r.popWorkers / 10) * balance.combat.militiaPerTenPeople : 0;
-          const ratio = balance.ai.maxTargetStrengthRatio * persona.boldness * (boldStrike ? 1.8 : 1);
+          // Late on, hard raiders go for the weak land other players hold rather than empty tundra.
+          const playerLand = owner && matchDay >= balance.ai.conquerPlayersFromDay && difficulty === "hard" && temperament === "raider" ? 2.5 : 1;
+          const ratio = balance.ai.maxTargetStrengthRatio * persona.boldness * (boldStrike ? 1.8 : 1) * (playerLand > 1 ? 1.4 : 1);
           if (defenders > soldiers * ratio) continue;
           const loot = r ? Math.max(0, r.food + r.wood + r.stone - 3 * (effects?.protect ?? 0)) : 0;
           const dist = distanceKm(strong.regionId, n);
           // Grudge: the leader's land looks sweeter to tribes that resent being behind.
           const grudge = owner && owner === leaderId && owner !== p.id ? 1 + persona.grudge : 1;
           const human = o && !o.isAi ? 1 + persona.grudge * 0.5 : 1;
-          const score = tier.scoresTargets || boldStrike ? ((wantConquer ? regionById(n)!.value * 1000 : loot) / (defenders + 1) / (1 + dist / 1000)) * grudge * human : -defenders * (2 - grudge * human);
+          const score = tier.scoresTargets || boldStrike ? ((wantConquer ? regionById(n)!.value * 1000 : loot) / (defenders + 1) / (1 + dist / 1000)) * grudge * human * (wantConquer ? playerLand : 1) : -defenders * (2 - grudge * human);
           candidates.push({ id: n, defenders, score, siegeNeed });
         }
         candidates.sort((a, b) => b.score - a.score);

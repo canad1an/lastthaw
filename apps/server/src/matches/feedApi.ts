@@ -12,7 +12,7 @@ import { milestoneLabel } from "../sim/endgame.js";
 export const PUBLIC_KINDS = [
   "match.started", "ice.advanced", "age.advanced", "milestone", "wonder.started", "win.hold.started", "win.hold.cancelled", "match.finished", "player.eliminated",
   "storm.warning", "storm.hit", "thaw.pocket", "plague.outbreak", "refugees.arrived", "refugees.lost", "horde.sighted", "boom.found",
-  "expedition.returned", "pact.made", "pact.ending", "tribute.paid", "tribute.refused", "bounty.placed", "bounty.claimed", "objective.won", "mercenaries.hired", "last.stand",
+  "expedition.returned", "pact.made", "pact.ending", "tribute.paid", "tribute.refused", "bounty.placed", "bounty.claimed", "objective.won", "mercenaries.hired", "last.stand", "capital.moved", "player.eliminated",
 ] as const;
 
 export function feedText(kind: string, p: Record<string, unknown>, nameOf: (id: unknown) => string): string {
@@ -43,6 +43,8 @@ export function feedText(kind: string, p: Record<string, unknown>, nameOf: (id: 
     case "pact.ending": return `${nameOf(p.by)} has given notice: the pact with ${nameOf(p.other)} ends in a day.`;
     case "tribute.paid": return `${nameOf(p.from)} paid tribute to ${nameOf(p.to)}.`;
     case "tribute.refused": return `${nameOf(p.from)} refused tribute to ${nameOf(p.to)}. There is cause for war.`;
+    case "capital.moved": return `${nameOf(p.playerId)} moved their capital to ${region(p.regionId)}${p.ice ? " ahead of the ice" : ""}.`;
+    case "player.eliminated": return `${nameOf(p.playerId)} is out of the match.`;
     case "bounty.placed": return `A bounty is placed on ${p.regionId ? region(p.regionId) : nameOf(p.playerId)}: ${p.reason}.`;
     case "bounty.claimed": return `${nameOf(p.by)} claimed the bounty on ${p.regionId ? region(p.regionId) : nameOf(p.playerId)}.`;
     case "objective.won": return `Day ${p.day}'s objective (${p.label}) goes to ${nameOf(p.playerId)}.`;

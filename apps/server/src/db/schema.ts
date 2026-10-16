@@ -13,6 +13,8 @@ export const users = pgTable(
     emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
     passwordHash: text("password_hash").notNull(),
     displayName: text("display_name").notNull(),
+    /** Invited accounts start with a placeholder name and may pick their tribe name once. */
+    canRename: boolean("can_rename").notNull().default(false),
     isAdmin: boolean("is_admin").notNull().default(false),
     /** Private beta: only approved accounts may join matches. Set by an admin. */
     approvedAt: timestamp("approved_at", { withTimezone: true }),

@@ -29,7 +29,7 @@ export async function runMatchTicks(db: Db, publisher: Publisher, log: pino.Logg
       and(
         eq(matches.status, "running"),
         isNull(matches.pausedAt),
-        or(isNull(matches.lastTickAt), lte(matches.lastTickAt, sql`now() + make_interval(secs => ${matches.clockOffsetSeconds}) - make_interval(mins => ${balance.tick.minutes})`)),
+        or(isNull(matches.lastTickAt), lte(matches.lastTickAt, sql`now() + make_interval(secs => ${matches.clockOffsetSeconds}) - make_interval(secs => greatest(${balance.tick.minSeconds}, ${balance.tick.minutes * 60}::float / greatest(1, ${matches.speed})))`)),
       ),
     );
   for (const { id } of due) {
