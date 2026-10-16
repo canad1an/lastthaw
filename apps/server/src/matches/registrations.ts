@@ -1,9 +1,10 @@
 import type { FastifyInstance } from "fastify";
-import { and, eq, gt, isNull, lte, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, lte, sql } from "drizzle-orm";
 import { balance } from "@lastthaw/shared";
 import type pino from "pino";
 import type { Db } from "../db/client.js";
-import { matches, tournamentRegistrations, users } from "../db/schema.js";
+import type { Redis } from "ioredis";
+import { matches, players, tournamentRegistrations, users } from "../db/schema.js";
 import { requireVerified } from "../auth/session.js";
 import { registrationMail, reminderMail, sendMail } from "../mail.js";
 import { httpError } from "../sim/commands.js";
@@ -25,8 +26,32 @@ export function isTournament(settings: unknown): boolean {
  * Registering sends a confirmation, and the worker mails reminders a day and
  * an hour ahead.
  */
-export async function registrationRoutes(app: FastifyInstance, opts: { db: Db }) {
-  const { db } = opts;
+export async function registrationRoutes(app: FastifyInstance, opts: { db: Db; redis?: Redis }) {
+  const { db, redis } = opts;
+
+  /** Who has this match open right now (connected over the websocket), for the waiting room. Members only. */
+  app.get("/api/matches/:id/presence", async (req) => {
+    const user = requireVerified(req);
+    const matchId = idParams.parse(req.params).id;
+    const [me] = await db.select({ id: players.id }).from(players).where(and(eq(players.matchId, matchId), eq(players.userId, user.id))).limit(1);
+    if (!me && !user.isAdmin) throw httpError(403, "not your match");
+    const online = new Set<string>();
+    if (redis) {
+      const keys = await redis.keys("lt-presence:*").catch(() => [] as string[]);
+      for (const key of keys) {
+        const raw = await redis.get(key).catch(() => null);
+        if (!raw) continue;
+        try {
+          const p = JSON.parse(raw) as { users: Record<string, string[]> };
+          for (const [uid, ms] of Object.entries(p.users)) if (ms.includes(matchId)) online.add(uid);
+        } catch {
+          /* stale */
+        }
+      }
+    }
+    const rows = online.size ? await db.select({ id: players.id }).from(players).where(and(eq(players.matchId, matchId), inArray(players.userId, [...online]))) : [];
+    return { online: rows.map((r) => r.id) };
+  });
 
   app.post("/api/matches/:id/register", async (req, reply) => {
     const user = requireVerified(req);

@@ -82,7 +82,7 @@ function LiveMetrics() {
         <Stat n={d.users.new7d} label={`new this week (${d.users.new24h} today)`} />
         <Stat n={d.users.loggedIn24h} label="logged in today" />
         <Stat n={d.activity.battles24h} label="battles today" />
-        <Stat n={due} label="jobs overdue" tone={due > 50 ? "bad" : due > 0 ? "warn" : undefined} />
+        <Stat n={due} label="jobs late by over a minute" tone={due > 0 ? "bad" : "good"} />
         <Stat n={parked} label="jobs parked" tone={parked > 0 ? "bad" : undefined} />
         <Stat n={stale.length} label="matches not ticking" tone={stale.length > 0 ? "bad" : "good"} />
         <Stat n={d.online.sockets} label={`sockets on ${d.online.processes} api process${d.online.processes === 1 ? "" : "es"}`} />
@@ -124,7 +124,7 @@ function LiveMetrics() {
               <th className="px-3 py-2 text-right">Online</th>
               <th className="px-3 py-2 text-right">AI</th>
               <th className="px-3 py-2">Last tick</th>
-              <th className="px-3 py-2 text-right">Jobs open / due / parked</th>
+              <th className="px-3 py-2 text-right">Jobs open / late / parked</th>
               <th className="px-3 py-2 text-right">Done last hour</th>
             </tr>
           </thead>

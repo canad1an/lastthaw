@@ -340,6 +340,10 @@ describe("api routes", () => {
     expect((await Ann.call("POST", `${base}/alliances/invite`, { playerId: "00000000-0000-0000-0000-000000000000" })).statusCode).toBeGreaterThanOrEqual(400);
     expect((await Ben.call("POST", `${base}/alliances/leave`, {})).statusCode).toBeGreaterThanOrEqual(400);
 
+    const presence = await Ann.call("GET", `${base}/presence`);
+    expect(presence.statusCode).toBe(200);
+    expect(Array.isArray((presence.json() as { online: string[] }).online)).toBe(true);
+    expect((await Out.call("GET", `${base}/presence`)).statusCode).toBe(403);
     const feed = await Ann.call("GET", `${base}/feed`);
     expect(feed.statusCode).toBe(200);
     expect((feed.json() as { items: { kind: string }[] }).items.some((i) => i.kind === "match.started")).toBe(true);

@@ -91,7 +91,7 @@ export async function adminRoutes(app: FastifyInstance, opts: { db: Db; publishe
           .select({
             matchId: jobs.matchId,
             open: sql<number>`count(*) filter (where ${jobs.completedAt} is null and ${jobs.cancelledAt} is null)::int`,
-            due: sql<number>`count(*) filter (where ${jobs.completedAt} is null and ${jobs.cancelledAt} is null and ${jobs.waitingFor} is null and ${jobs.endsAt} <= now())::int`,
+            due: sql<number>`count(*) filter (where ${jobs.completedAt} is null and ${jobs.cancelledAt} is null and ${jobs.waitingFor} is null and ${jobs.endsAt} <= now() - interval '60 seconds')::int`,
             parked: sql<number>`count(*) filter (where ${jobs.completedAt} is null and ${jobs.cancelledAt} is null and ${jobs.attempts} >= 5)::int`,
             doneHour: sql<number>`count(*) filter (where ${jobs.completedAt} > ${h1.toISOString()}::timestamptz)::int`,
           })
