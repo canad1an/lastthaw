@@ -82,19 +82,9 @@ export function useMessageToast(matchId: string, suppressed: boolean) {
 
 function MessageBody({ m }: { m: MessageView }) {
   const p = m.payload as Record<string, unknown>;
+  // The subject line says it all; only a battle carries a report worth showing. Ids and flags stay out of sight.
   if (m.kind === "battle" && p.report) return <BattleReport report={p.report as BattleReportPayload} />;
-  const lines = Object.entries(p).filter(([, v]) => typeof v !== "object");
-  if (!lines.length) return null;
-  return (
-    <dl className="ml-6 grid grid-cols-[auto_1fr] gap-x-3 text-xs text-slate-400">
-      {lines.map(([k, v]) => (
-        <span key={k} className="contents">
-          <dt>{k}</dt>
-          <dd>{String(v)}</dd>
-        </span>
-      ))}
-    </dl>
-  );
+  return null;
 }
 
 export interface BattleReportPayload {
