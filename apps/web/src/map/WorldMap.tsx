@@ -6,6 +6,12 @@ export type RegionPaint = {
   fill?: string;
   stroke?: string;
   opacity?: number;
+  /** Border thickness multiplier (walls). */
+  strokeScale?: number;
+  /** Dash pattern in map units, scaled with zoom (palisades). */
+  dash?: [number, number];
+  /** A second, thinner inner line (castles and bunkers). */
+  inner?: string;
 };
 
 export interface WorldMapProps {
@@ -404,13 +410,19 @@ const Regions = memo(function Regions({ paint, selected, strokeWidth }: { paint:
             fill={p.fill ?? terrainFill(r.terrain)}
             fillOpacity={p.opacity ?? 1}
             stroke={isSel ? "#ffffff" : (p.stroke ?? "#0b1a2b")}
-            strokeWidth={isSel ? strokeWidth * 2.5 : strokeWidth}
+            strokeWidth={isSel ? strokeWidth * 2.5 : strokeWidth * (p.strokeScale ?? 1)}
+            strokeDasharray={p.dash ? `${p.dash[0] * strokeWidth} ${p.dash[1] * strokeWidth}` : undefined}
             strokeLinejoin="round"
             className="cursor-pointer"
           >
             <title>{r.name}</title>
           </path>
         );
+      })}
+      {regions.map((r) => {
+        const p = paint(r);
+        if (!p.inner) return null;
+        return <path key={`${r.id}-inner`} d={r.path} fill="none" stroke={p.inner} strokeWidth={strokeWidth * 0.9} strokeLinejoin="round" pointerEvents="none" />;
       })}
       {selected && <path d={regions.find((r) => r.id === selected)?.path ?? ""} fill="none" stroke="#fff" strokeWidth={strokeWidth * 2.5} pointerEvents="none" />}
     </>

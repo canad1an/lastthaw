@@ -1,5 +1,5 @@
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
-import { balance, effectsOf, emptySpecial, storageCaps, regionById, resolveCombat, carryCapacity, travelSeconds, findRoute, armySpeed, type UnitCounts, HAULER_IDS, haulerCount, unitById, laneName } from "@lastthaw/shared";
+import { balance, effectsOf, emptySpecial, storageCaps, regionById, resolveCombat, carryCapacity, travelSeconds, findRoute, armySpeed, type UnitCounts, HAULER_IDS, haulerCount, unitById, laneName, applyTechEffects } from "@lastthaw/shared";
 import { armies, battles, jobs, matchRegions, players, regionSightings, playerTechs, tradeRoutes } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
 import { settleAndLockRegion, type MatchRegionRow, type Tx, setCapital, ownerTechEffects, waySetsFor, stockOf } from "./regions.js";
@@ -88,6 +88,62 @@ async function relocateCapital(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, pub
  * leaves for the owner's capital, carrying what it can; a frozen region then
  * loses the rest for good, an unfrozen one keeps a stock-up route alive.
  */
+/**
+ * Migration: a region over its capacity sends a share of the surplus, every
+ * tick, to neighbouring regions of the same owner that have room, split by
+ * how much room each has. Workers only; soldiers and occupiers stay.
+ */
+export async function migrateCrowded(tx: Tx, m: MatchRow, now: Date, hours: number): Promise<number> {
+  const share = Math.min(1, balance.economy.migrationPerHour * hours);
+  if (share <= 0) return 0;
+  const rows = await tx
+    .select()
+    .from(matchRegions)
+    .where(and(eq(matchRegions.matchId, m.id), isNotNull(matchRegions.ownerPlayerId), isNull(matchRegions.frozenAt), isNull(matchRegions.evacuatedAt)))
+    .orderBy(matchRegions.regionId);
+  const byId = new Map(rows.map((r) => [r.regionId, r]));
+  const techFx = new Map<string, Awaited<ReturnType<typeof ownerTechEffects>>>();
+  const capacityOf = async (r: MatchRegionRow) => {
+    const fx = techFx.get(r.ownerPlayerId!) ?? techFx.set(r.ownerPlayerId!, await ownerTechEffects(tx, r.ownerPlayerId)).get(r.ownerPlayerId!)!;
+    return balance.economy.baseCapacity + applyTechEffects(effectsOf(r.buildings), fx).capacity;
+  };
+  const popOf = (r: MatchRegionRow) => r.popWorkers + r.popSoldiers + r.popOccupiers;
+  let moved = 0;
+  for (const r of rows) {
+    const cap = await capacityOf(r);
+    const excess = popOf(r) - cap;
+    if (excess < 1) continue;
+    const movers = Math.min(Math.floor(excess * share), Math.max(0, Math.floor(r.popWorkers) - 1));
+    if (movers < 1) continue;
+    // Neighbours of mine with room, weighted by room.
+    const dests: Array<{ row: MatchRegionRow; room: number }> = [];
+    for (const n of regionById(r.regionId)?.neighbors ?? []) {
+      const d = byId.get(n);
+      if (!d || d.ownerPlayerId !== r.ownerPlayerId) continue;
+      const room = (await capacityOf(d)) - popOf(d);
+      if (room >= 1) dests.push({ row: d, room });
+    }
+    if (dests.length === 0) continue;
+    const totalRoom = dests.reduce((a, d) => a + d.room, 0);
+    let left = movers;
+    const src = await settleAndLockRegion(tx, m.id, r.regionId, now, m.speed);
+    for (const d of dests) {
+      const take = Math.min(Math.floor(d.room), Math.max(0, Math.round((movers * d.room) / totalRoom)), left, Math.max(0, Math.floor(src.popWorkers) - 1));
+      if (take < 1) continue;
+      const dst = await settleAndLockRegion(tx, m.id, d.row.regionId, now, m.speed);
+      await tx.update(matchRegions).set({ popWorkers: dst.popWorkers + take }).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, d.row.regionId)));
+      src.popWorkers -= take;
+      d.row.popWorkers += take;
+      left -= take;
+      moved += take;
+      if (left <= 0) break;
+    }
+    if (left < movers) await tx.update(matchRegions).set({ popWorkers: src.popWorkers }).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, r.regionId)));
+    r.popWorkers = src.popWorkers;
+  }
+  return moved;
+}
+
 export async function sweepEvacuated(tx: Tx, m: MatchRow, now: Date): Promise<void> {
   const rows = await tx
     .select()

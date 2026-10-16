@@ -1,5 +1,5 @@
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
-import { availableBuildings, availableTechs, buildingBlockedBy, availableUnits, balance, buildingById, buildingCost, dayCostMultiplier, effectsOf, freezeDayForLatitude, distanceKm, regionById, seededRng, techById, techCost, normalizeAssignment, type Cost, techEffectsOf, haulerCount, unitById } from "@lastthaw/shared";
+import { availableBuildings, availableTechs, buildingBlockedBy, availableUnits, balance, buildingById, buildingCost, dayCostMultiplier, effectsOf, freezeDayForLatitude, distanceKm, regionById, seededRng, techById, techCost, normalizeAssignment, type Cost, techEffectsOf, haulerCount, unitById, TECHS } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { armies, jobs, marketOrders, matchRegions, playerTechs, players } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
@@ -14,6 +14,7 @@ export type Temperament = "peaceful" | "balanced" | "raider";
 
 const BUILD_ORDER = ["huts", "hunting_grounds", "lumber_camp", "storehouse", "quarry", "farm", "palisade", "granary", "mine", "stables", "walls", "barracks", "roads", "railway", "temple", "forge", "market", "aqueduct", "fort", "library", "harbor", "windmill", "castle", "guild_hall", "university", "cathedral", "factory", "arsenal", "power_plant", "bunker"];
 const RESEARCH_ORDER = [
+  "oral_tradition", "trapping", "basketry", "salt_curing", "shelter_building", "tribal_councils", "copper_smelting", "harness", "calendar", "brick_making", "shield_wall", "sailing", "surveying", "quarrying", "carpentry", "fortification", "coinage", "scouting", "cartography", "navigation", "architecture", "concrete", "literature", "metallurgy", "professional_army", "provincial_administration", "currency", "water_mills", "iron_casting", "crossbows", "gunpowder", "trade_fairs", "banking", "compass", "printing_press", "coal_mining", "steel_mills", "textile_mills", "canning", "public_schools", "railway_signalling", "mass_production", "dynamite", "sanitation", "internal_combustion", "radio", "mass_media", "computers", "assembly_line", "refrigeration", "antibiotics", "aviation", "mechanised_agriculture", "nuclear_power",
   "fire_making", "flint_tools", "agriculture", "fishing_nets", "stone_axes", "animal_husbandry", "weaving", "bronze_working",
   "mining", "irrigation", "writing", "the_wheel", "wagon_building", "pottery", "herbal_medicine", "road_building", "bronze_weapons", "iron_working",
   "masonry", "crop_rotation", "iron_tools", "mathematics", "iron_weapons", "siegecraft", "drill",
@@ -187,12 +188,22 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
   // Research: hard tribes jump on age advances; easy tribes only research with a comfortable surplus.
   if (!researching) {
     const avail = availableTechs(p.age, techs);
-    // Every tier goes for the next age as soon as its day has come; the rest of the order fills the time before it.
-    let next = avail.find((t) => t.advancesTo !== undefined && (t.earliestDay ?? 0) <= matchDay)?.id;
-    if (!next) {
-      const ids = new Set(avail.map((t) => t.id));
-      next = RESEARCH_ORDER.find((t) => ids.has(t));
+    const ids = new Set(avail.map((t) => t.id));
+    // Every tier goes for the next age as soon as its day has come, researching whatever the tree needs first; the rest of the order fills the time before it.
+    const ageTech = TECHS.find((t) => t.advancesTo === p.age + 1);
+    let next: string | undefined;
+    if (ageTech && (ageTech.earliestDay ?? 0) <= matchDay + 1) {
+      const want = new Set<string>();
+      const walk = (id: string) => {
+        if (techs.has(id) || want.has(id)) return;
+        want.add(id);
+        for (const r of techById.get(id)?.requires ?? []) walk(r);
+      };
+      walk(ageTech.id);
+      next = [...want].find((id) => ids.has(id) && (techById.get(id)?.earliestDay ?? 0) <= matchDay);
     }
+    if (!next) next = RESEARCH_ORDER.find((t) => ids.has(t));
+    if (!next) next = [...avail].sort((a, b) => a.baseSeconds - b.baseSeconds)[0]?.id;
     if (next) {
       const def = techById.get(next)!;
       const capital = owned.find((r) => r.regionId === p.capitalRegionId) ?? owned[0]!;

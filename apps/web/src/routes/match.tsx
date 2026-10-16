@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
 import { useCallback, useMemo, useState } from "react";
-import { balance, formatCountdown, iceLatitudeOnDay, regionById, type MapRegion, type MatchStateView, loyaltyBand } from "@lastthaw/shared";
+import { balance, formatCountdown, iceLatitudeOnDay, regionById, type MapRegion, type MatchStateView, loyaltyBand, wallOf, unitById } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { useMatchRealtime } from "../api/realtime.js";
 import { RegionPanel, ageName } from "../components/RegionPanel.js";
@@ -19,6 +19,26 @@ import { WorldMap, terrainFill, type RegionPaint } from "../map/WorldMap.js";
 import { armyMarkers } from "../map/armyMarkers.js";
 
 const PLAYER_COLORS = ["#38bdf8", "#f472b6", "#a3e635", "#fb923c", "#c084fc", "#2dd4bf", "#facc15", "#f87171"];
+
+/** How each kind of wall is drawn around a region: thicker, lighter borders as the works get stronger. */
+function wallPaint(wall: string | null | undefined): Partial<RegionPaint> {
+  switch (wall) {
+    case "palisade":
+      return { stroke: "#d97706", strokeScale: 2.2, dash: [3, 2] };
+    case "walls":
+      return { stroke: "#cbd5e1", strokeScale: 2.6 };
+    case "fort":
+      return { stroke: "#cbd5e1", strokeScale: 3, inner: "#0b1a2b" };
+    case "castle":
+      return { stroke: "#f1f5f9", strokeScale: 3.6, inner: "#0b1a2b" };
+    case "arsenal":
+      return { stroke: "#fde68a", strokeScale: 3.6, inner: "#0b1a2b" };
+    case "bunker":
+      return { stroke: "#f8fafc", strokeScale: 4.4, inner: "#334155" };
+    default:
+      return {};
+  }
+}
 
 export function MatchPage() {
   const { matchId } = useParams({ from: "/match/$matchId" });
@@ -145,7 +165,13 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
   const [forecast, setForecast] = useState(false);
   const matchDay = Math.min(balance.match.lengthDays, Math.max(0, ((now + clockOffsetMs - Date.parse(state.match.startsAt)) / 86400_000) * state.match.speed));
   const ice = useMemo(() => ({ latitude: iceLatitudeOnDay(matchDay), forecast, day: matchDay }), [matchDay, forecast]);
-  const markers = useMemo(() => armyMarkers(state.armies, state.incoming, now + clockOffsetMs, formatCountdown, state.me.techs), [state.armies, state.incoming, now, clockOffsetMs]);
+  const { enabled: overlays, toggle: toggleOverlay } = useOverlays();
+  const hideHaulers = overlays.has("hidehaulers");
+  const shownArmies = useMemo(
+    () => (hideHaulers ? state.armies.filter((a) => !Object.entries(a.units).every(([id, n]) => n <= 0 || unitById.get(id)?.hauler)) : state.armies),
+    [state.armies, hideHaulers],
+  );
+  const markers = useMemo(() => armyMarkers(shownArmies, state.incoming, now + clockOffsetMs, formatCountdown, state.me.techs), [shownArmies, state.incoming, now, clockOffsetMs]);
   const finished = state.match.status === "finished";
   const eliminated = state.owned.length === 0 && !finished;
 
@@ -157,7 +183,6 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
   }, [state.players]);
   const ownedSet = useMemo(() => new Set(state.owned.map((o) => o.regionId)), [state.owned]);
   const ownedById = useMemo(() => new Map(state.owned.map((o) => [o.regionId, o])), [state.owned]);
-  const { enabled: overlays, toggle: toggleOverlay } = useOverlays();
   const badges = useMemo(() => overlayBadges(state, overlays, matchDay), [state, overlays, matchDay]);
   const sightedBy = useMemo(() => new Map(state.sighted.map((s) => [s.regionId, s])), [state.sighted]);
 
@@ -184,25 +209,33 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
     return out;
   }, [state.owned, state.sighted, state.me.playerId, colorOf]);
   const frontierSet = useMemo(() => new Set(state.frontier), [state.frontier]);
+  const allySet = useMemo(() => new Set(state.allies), [state.allies]);
   const paint = useCallback(
     (r: MapRegion): RegionPaint => {
       if (r.id === target) return { fill: "#facc15", opacity: 1, stroke: "#fff" };
       if (ownedSet.has(r.id)) {
+        const o = ownedById.get(r.id);
+        const walls = wallPaint(wallOf(o?.buildings));
         if (overlays.has("loyalty")) {
-          const o = ownedById.get(r.id);
           if (o && !o.isCapital) {
             const band = loyaltyBand(o.loyalty);
-            return { fill: band === "secure" ? "#22c55e" : band === "uneasy" ? "#f59e0b" : "#ef4444", opacity: 1, ...(incomingSet.has(r.id) ? { stroke: "#f43f5e" } : {}) };
+            return { fill: band === "secure" ? "#22c55e" : band === "uneasy" ? "#f59e0b" : "#ef4444", opacity: 1, ...walls, ...(incomingSet.has(r.id) ? { stroke: "#f43f5e" } : {}) };
           }
         }
-        return { fill: colorOf(state.me.playerId), opacity: 1, ...(incomingSet.has(r.id) ? { stroke: "#f43f5e" } : {}) };
+        return { fill: colorOf(state.me.playerId), opacity: 1, ...walls, ...(incomingSet.has(r.id) ? { stroke: "#f43f5e" } : {}) };
       }
       const s = sightedBy.get(r.id);
-      if (s) return { fill: s.ownerPlayerId ? colorOf(s.ownerPlayerId) : terrainFill(r.terrain), opacity: 0.8 };
+      if (s) {
+        const walls = wallPaint(s.wall);
+        // An enemy next door is painted red so the front line reads at a glance.
+        const enemy = !!s.ownerPlayerId && s.ownerPlayerId !== state.me.playerId && !allySet.has(s.ownerPlayerId) && frontierSet.has(r.id);
+        if (enemy) return { fill: "#b91c1c", opacity: 0.85, stroke: "#fca5a5", ...walls };
+        return { fill: s.ownerPlayerId ? colorOf(s.ownerPlayerId) : terrainFill(r.terrain), opacity: 0.8, ...walls };
+      }
       if (frontierSet.has(r.id)) return { opacity: 0.6 };
       return { opacity: picking ? 0.5 : 0.3 };
     },
-    [ownedSet, ownedById, overlays, sightedBy, colorOf, state.me.playerId, target, incomingSet, picking, frontierSet],
+    [ownedSet, ownedById, overlays, sightedBy, colorOf, state.me.playerId, target, incomingSet, picking, frontierSet, allySet],
   );
 
   const totals = state.owned.reduce(

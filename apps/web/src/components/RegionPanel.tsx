@@ -98,6 +98,7 @@ function SightedDetails({ s }: { s: SightedRegionView }) {
   return (
     <div className="text-sm text-slate-300">
       <p>Owner: {s.ownerName ?? "nobody"}</p>
+      {s.wall && <p>Defences: {buildingById.get(s.wall)?.name ?? s.wall}</p>}
       <p>Population: {s.population === null ? "unknown" : fmt(s.population)}</p>
       <p className="text-xs text-slate-500">Seen {new Date(s.seenAt).toLocaleString()}</p>
     </div>
@@ -152,7 +153,7 @@ function OwnedDetails({ matchId, state, owned, clockOffsetMs, speed }: { matchId
         <dt className="text-slate-500">of which</dt>
         <dd className="col-span-2 text-xs text-slate-400">
           {fmt(live.e.popWorkers)} workers{live.e.popSoldiers > 0 ? `, ${fmt(live.e.popSoldiers)} in units` : ""}{live.e.popOccupiers > 0 ? `, ${fmt(live.e.popOccupiers)} occupiers` : ""}. Counts only who is here now, not units on the road.
-          {pop > live.e.capacity && <span className="text-amber-300"> Over capacity: growth has stopped until it drops below {fmt(live.e.capacity)}.</span>}
+          {pop > live.e.capacity && <span className="text-amber-300"> Over capacity: growth has stopped, and {Math.round(balance.economy.migrationPerHour * 100)}% of the surplus leaves each hour for neighbouring regions of yours with room.</span>}
         </dd>
         {!owned.isCapital && <LoyaltyRow owned={owned} state={state} />}
         <Row label="Food" value={`${fmt(live.e.food)} / ${fmt(live.e.storage.food)}`} rate={perHour(live.rates.food)} warn={live.rates.starving} />

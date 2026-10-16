@@ -63,6 +63,8 @@ export const balance = {
     arrivalsPerHour: 1.5,
     /** Growth slows to zero as population approaches the region's capacity. */
     baseCapacity: 50,
+    /** Share of the people above capacity who leave for a neighbouring region of yours with room, per game hour. */
+    migrationPerHour: 0.1,
     /** Population lost per game hour as a fraction of current population while starving. */
     starvationPerHour: 0.01,
     /** Population lost per game hour in a frozen region: the ice is not survivable. */

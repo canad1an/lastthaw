@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { parseProfile } from "../sim/ai.js";
-import { emptySpecial, regionById, type ArmyView, type IncomingView, type JobView, type MatchStateView, type OwnedRegionView, type SightedRegionView, techEffectsOf, allRegions } from "@lastthaw/shared";
+import { emptySpecial, regionById, type ArmyView, type IncomingView, type JobView, type MatchStateView, type OwnedRegionView, type SightedRegionView, techEffectsOf, allRegions, wallOf } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { allianceMembers, alliances, armies, jobs, matchRegions, matches, playerTechs, players, regionSightings, tradeRoutes } from "../db/schema.js";
 import { matchNow } from "../sim/clock.js";
@@ -81,6 +81,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
       population: snap.population ?? null,
       seenAt: s.seenAt.toISOString(),
       roads: (snap.buildings?.roads ?? 0) >= 1,
+      wall: wallOf(snap.buildings),
     };
   });
 
@@ -108,6 +109,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
         population: economy.popWorkers + economy.popSoldiers + economy.popOccupiers,
         seenAt: now.toISOString(),
         roads: ((row.buildings as Record<string, number>).roads ?? 0) >= 1,
+        wall: wallOf(row.buildings as Record<string, number>),
       };
       if (seen.has(row.regionId)) {
         const i = sighted.findIndex((s) => s.regionId === row.regionId);
@@ -150,6 +152,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
           population: economy.popWorkers + economy.popSoldiers + economy.popOccupiers,
           seenAt: now.toISOString(),
           roads: ((row.buildings as Record<string, number>).roads ?? 0) >= 1,
+          wall: wallOf(row.buildings as Record<string, number>),
         };
         const i = sighted.findIndex((s) => s.regionId === row.regionId);
         if (i >= 0) sighted[i] = view;
@@ -161,7 +164,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
       // Empty land in view is listed too, so it reads as explored.
       for (const id of visible) {
         if (seen.has(id)) continue;
-        sighted.push({ regionId: id, ownerPlayerId: null, ownerName: null, population: 0, seenAt: now.toISOString(), roads: false });
+        sighted.push({ regionId: id, ownerPlayerId: null, ownerName: null, population: 0, seenAt: now.toISOString(), roads: false, wall: null });
         seen.add(id);
       }
     }

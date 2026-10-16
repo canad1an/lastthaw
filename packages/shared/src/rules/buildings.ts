@@ -72,6 +72,16 @@ export function buildingBlockedBy(def: BuildingDef, region: { resources: readonl
   return null;
 }
 
+/** Defensive works, strongest first. */
+export const WALL_ORDER = ["bunker", "arsenal", "castle", "fort", "walls", "palisade"] as const;
+
+/** The strongest defensive building standing in a region, or null. */
+export function wallOf(buildings: Record<string, number> | undefined | null): string | null {
+  if (!buildings) return null;
+  for (const id of WALL_ORDER) if ((buildings[id] ?? 0) >= 1) return id;
+  return null;
+}
+
 /** Buildings a player of `age` with `techs` may build or upgrade. */
 export function availableBuildings(age: number, techs: ReadonlySet<string>): BuildingDef[] {
   return BUILDINGS.filter((b) => b.age <= age && (!b.requires || techs.has(b.requires)));

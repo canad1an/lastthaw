@@ -30,7 +30,9 @@ export function TechTreePanel({ matchId, state, clockOffsetMs }: { matchId: stri
     onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matchState(matchId) }),
   });
   const statusOf = (t: TechDef): Status => (done.has(t.id) ? "done" : queued.has(t.id) ? "queued" : available.has(t.id) ? "available" : "locked");
-  const byAge = AGES.map((name, i) => ({ name, i, techs: TECHS.filter((t) => t.age === i) }));
+  // Within an age, prerequisites come before what needs them, so a column reads top to bottom.
+  const depthOf = (t: TechDef, seen = new Set<string>()): number => (t.requires ?? []).reduce((d, r) => (seen.has(r) ? d : Math.max(d, 1 + depthOf(techById.get(r)!, new Set([...seen, r])))), 0);
+  const byAge = AGES.map((name, i) => ({ name, i, techs: TECHS.filter((t) => t.age === i).sort((a, b) => depthOf(a) - depthOf(b) || Number(a.advancesTo !== undefined) - Number(b.advancesTo !== undefined)) }));
   const doneCount = TECHS.filter((t) => done.has(t.id)).length;
 
   return (

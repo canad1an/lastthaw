@@ -6,7 +6,7 @@ import { matchRegions, matches, players } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
 import { matchNow } from "./clock.js";
 import { ownerTechEffects, settleAndLockRegion, type Tx } from "./regions.js";
-import { sweepEvacuated } from "./missions.js";
+import { migrateCrowded, sweepEvacuated } from "./missions.js";
 import { repairWaitingBuilds } from "./commands.js";
 import { handleRegionLost } from "./missions.js";
 import { checkEarlyWin, updateScores } from "./endgame.js";
@@ -51,6 +51,7 @@ async function tickMatch(db: Db, publisher: Publisher, matchId: string, log: pin
     // Loyalty first: it locks every owned region in ascending order; the passes below re-lock rows already held.
     await loyaltyAndRebellion(tx, m, now, elapsedGameHours, rng, (fn) => after.push(fn), publisher);
     await sweepEvacuated(tx, m, now);
+    await migrateCrowded(tx, m, now, elapsedGameHours);
     await repairWaitingBuilds(tx, m, now);
     await neutralGrowth(tx, m, now, elapsedGameHours);
     const standings = await updateScores(tx, m);
