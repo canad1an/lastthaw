@@ -1,7 +1,183 @@
 import { Link } from "@tanstack/react-router";
+import { useState } from "react";
 import { usePageMeta } from "../seo.js";
 import { AGES, balance } from "@lastthaw/shared";
 import { Card } from "../components/ui.js";
+
+const pct = (x: number) => `${Math.round(x * 100)}%`;
+const mult = (x: number) => `${x}x`;
+const eco = balance.economy;
+const ev = balance.events;
+
+/** The numbers behind the rules, read straight from the balance config so this page never drifts from the game. */
+const ADVANCED: Array<{ title: string; body: React.ReactNode }> = [
+  {
+    title: "How your people grow",
+    body: (
+      <>
+        <p>
+          Every game hour a fed region gains <b>{pct(eco.growthPerHour)} of its population plus {eco.arrivalsPerHour} newcomers</b>, scaled by how much room is left and by your growth techs. Room is 1 minus
+          population over capacity, so growth slows as the region fills and stops at capacity. Capacity starts at {eco.baseCapacity} and rises with Huts, Farms, Aqueducts and some techs.
+        </p>
+        <p className="mt-2">
+          Growth techs stack: Herbal medicine +20%, Vaccination +40%, Sanitation +20%, Antibiotics +40%. No building speeds growth; buildings only add capacity or food. Only workers grow;
+          soldiers and occupiers are fixed headcounts.
+        </p>
+        <p className="mt-2">
+          A region above capacity sends {pct(eco.migrationPerHour)} of the overflow per hour to a neighbouring region of yours with room. Above {mult(ev.plague.crowding)} capacity it may catch
+          plague: no growth and {pct(ev.plague.deathPerHour)} of its people lost per hour for {ev.plague.hours} hours. Plague resistance from the medicine techs lowers the odds.
+        </p>
+      </>
+    ),
+  },
+  {
+    title: "Food, hunger and death",
+    body: (
+      <>
+        <p>
+          Each person eats <b>{eco.foodPerPersonPerHour} food an hour</b>; a soldier eats {eco.soldierFoodMultiplier} times that. A region with no food in store and a negative balance is starving: no growth, and{" "}
+          {pct(eco.starvationPerHour)} of its people die each hour. A frozen region loses {pct(eco.frozenDeathPerHour)} an hour; nothing survives the ice.
+        </p>
+        <p className="mt-2">
+          Base output per worker per hour is {eco.perWorkerPerHour.food} food, {eco.perWorkerPerHour.wood} wood and {eco.perWorkerPerHour.stone} stone before terrain, so one food worker feeds about{" "}
+          {Math.floor(eco.perWorkerPerHour.food / eco.foodPerPersonPerHour)} people on plain ground. Coastal and river regions add {pct(eco.coastalFoodBonus - 1)} food each.
+        </p>
+      </>
+    ),
+  },
+  {
+    title: "Terrain and special resources",
+    body: (
+      <>
+        <p>Terrain multiplies what a worker gathers, and how long it takes to march into. Pick capitals and colonies for what you lack.</p>
+        <div className="mt-2 overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead className="text-left uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="py-1 pr-3">Terrain</th>
+                <th className="py-1 pr-3">Food</th>
+                <th className="py-1 pr-3">Wood</th>
+                <th className="py-1 pr-3">Stone</th>
+                <th className="py-1">Travel</th>
+              </tr>
+            </thead>
+            <tbody className="tabular-nums">
+              {Object.entries(eco.terrain).map(([t, m]) => (
+                <tr key={t} className="border-t border-slate-800">
+                  <td className="py-1 pr-3 capitalize text-slate-200">{t}</td>
+                  <td className="py-1 pr-3">{mult(m.food)}</td>
+                  <td className="py-1 pr-3">{mult(m.wood)}</td>
+                  <td className="py-1 pr-3">{mult(m.stone)}</td>
+                  <td className="py-1">{mult(balance.travel.terrain[t] ?? 1)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-2">
+          Special resources stack on top: fertile soil {mult(eco.resourceBonus.fertile_soil!.food!)} food, fish {mult(eco.resourceBonus.fish!.food!)} food, timber {mult(eco.resourceBonus.timber!.wood!)} wood, a stone quarry{" "}
+          {mult(eco.resourceBonus.stone_quarry!.stone!)} stone. Copper, tin, iron and horses produce nothing by themselves; a Mine or Stables turns them into stock, capped at {eco.specialStorage} per region.
+        </p>
+      </>
+    ),
+  },
+  {
+    title: "Why everything gets dearer",
+    body: (
+      <>
+        <p>
+          Building and research costs scale with the match day: {mult(balance.timers.dayCost[1]!.mult)} by day {balance.timers.dayCost[1]!.day} and {mult(balance.timers.dayCost[2]!.mult)} by day{" "}
+          {balance.timers.dayCost[2]!.day}. Unit costs rise by the square root of the same curve. Income grows with your empire, so a thing bought early is always the cheapest it will ever be.
+        </p>
+        <p className="mt-2">
+          Each building level costs {mult(balance.timers.costGrowth)} the last and takes {mult(balance.timers.levelGrowth)} as long; from level {balance.timers.lateLevel} both climb faster still. No single job runs longer
+          than {balance.timers.maxSeconds / 3600} game hours. Training a batch of N units takes base time times N to the power {balance.timers.batchExponent}, so big batches are cheaper per unit than many small ones.
+        </p>
+        <p className="mt-2">
+          Storage caps a region at {eco.baseStorage.food} food, {eco.baseStorage.wood} wood and {eco.baseStorage.stone} stone before Storehouses; the capital holds {eco.capitalStorageMult} times that. A full region
+          sends {pct(balance.trade.overflowShare)} of its cap to the capital by caravan on its own.
+        </p>
+      </>
+    ),
+  },
+  {
+    title: "Travel times",
+    body: (
+      <>
+        <p>
+          Distance is real great-circle distance, scaled, at the speed of your slowest unit. Each leg is multiplied by the terrain being entered (table above); entering a coastal or river region is{" "}
+          {mult(balance.travel.waterwayFactor)}. Roads at both ends make a leg {mult(balance.travel.roadBothFactor)}, at one end {mult(balance.travel.roadOneFactor)}; Railways at both ends {mult(balance.travel.railBothFactor)}.
+          Allied roads and rails count as yours.
+        </p>
+        <p className="mt-2">
+          Sea lanes open with Shipbuilding and run at {mult(balance.travel.seaFactor)}, or {mult(balance.travel.harborBothFactor)} with a Harbor at both ends. Every travelling person carries {balance.travel.carryPerPerson} goods. The
+          defender sees your army the moment it leaves, with a countdown.
+        </p>
+      </>
+    ),
+  },
+  {
+    title: "How battles resolve",
+    body: (
+      <>
+        <p>
+          A battle lasts up to {balance.combat.maxRounds} rounds. Each side's strength swings by up to {pct(balance.combat.variance / 2)} either way each round, so a close fight can go either way; a lopsided one cannot.
+          Unarmed people fight back a little: {balance.combat.militiaPerTenPeople} warrior-equivalents per ten people.
+        </p>
+        <p className="mt-2">
+          Terrain favours the defender: hills +{pct(balance.combat.terrainDefense.hills!)}, forest and wetland +{pct(balance.combat.terrainDefense.forest!)}, mountains +{pct(balance.combat.terrainDefense.mountains!)}. Walls are strong against
+          men alone but every siege point an attacker brings (catapults, cannon, artillery) erodes them: a Palisade is breached at {balance.combat.wallBreach.palisade}, Walls at {balance.combat.wallBreach.walls}, a Fort at{" "}
+          {balance.combat.wallBreach.fort}, a Castle at {balance.combat.wallBreach.castle}. Terrain and techs are never breached.
+        </p>
+        <p className="mt-2">A successful raid takes up to {pct(balance.combat.raidShare)} of the unprotected stock. Storehouses and Granaries protect a share of it.</p>
+      </>
+    ),
+  },
+  {
+    title: "Holding conquered land",
+    body: (
+      <>
+        <p>
+          A settled region starts at {pct(balance.settle.startingLoyalty)} loyalty; a conquered one at {pct(balance.conquest.startingLoyalty)}. Loyalty drifts {pct(balance.conquest.loyaltyRate)} an hour toward a target that falls with
+          distance from your capital, reaching zero at {balance.conquest.distanceScaleKm.toLocaleString()} km. Roads, Temples and Forts raise the target, as does keeping {balance.conquest.occupiersPerHundred} occupiers per hundred people
+          there; a Temple converts {balance.conquest.templeConvertsPerHour} workers an hour into occupiers until the need is met.
+        </p>
+        <p className="mt-2">
+          Below {pct(balance.conquest.rebelBelow)} loyalty a region has a {pct(balance.conquest.rebelChancePerTick)} chance every {balance.tick.minutes} minutes to rebel: it goes neutral and expels your people. Moving the capital
+          south also moves the loyalty centre with it.
+        </p>
+      </>
+    ),
+  },
+  {
+    title: "The ice, and what else the world throws at you",
+    body: (
+      <>
+        <p>
+          The ice line sits at {balance.ice.schedule[0]!.latitude}° on day 0 and reaches {balance.ice.schedule[balance.ice.schedule.length - 1]!.latitude}° on day 30, moving about ten degrees a week from both poles. A region
+          starts suffering when the line touches its pole-facing tip: production tapers down to {pct(balance.ice.taperFloor)} by the time the line reaches the region's centre, and then it freezes.
+        </p>
+        <ul className="mt-2 list-disc space-y-1 pl-5">
+          <li>Blizzards from day {ev.storm.fromDay}: a day of warning, then production halves and travel doubles across a wide band for {ev.storm.hours} hours.</li>
+          <li>Thaw pockets between days {ev.thaw.fromDay} and {ev.thaw.toDay}: a region that should freeze stays open {ev.thaw.extraDays} days longer, at most {ev.thaw.max} times a match.</li>
+          <li>Refugees: when a region freezes, {pct(ev.refugees.share)} of its people walk to the nearest empire within {ev.refugees.hops} hops, which has {ev.refugees.hours} hours to take them in.</li>
+          <li>The Northern Horde from day {ev.horde.fromDay}: raids out of the ice line against the richest region in reach, growing by {ev.horde.perDay} warriors a day and bringing siege engines from day {ev.horde.catapultsFromDay}.</li>
+          <li>Rich finds: a mine, quarry or camp doubles its output for {ev.boom.hours} hours, and the neighbours hear about it.</li>
+          <li>Expeditions: send {ev.expedition.minSoldiers} or more soldiers {ev.expedition.minHops} or more hops into unknown land for a chance at an artifact, a hoard or a tale, or an ambush.</li>
+        </ul>
+      </>
+    ),
+  },
+  {
+    title: "How score is counted",
+    body: (
+      <p>
+        Score is regions times {balance.win.scoreWeights.territory}, plus population times {balance.win.scoreWeights.population}, plus age times {balance.win.scoreWeights.age}. Being first in the match to an age is worth {balance.win.milestones.age}, the first
+        Harbor {balance.win.milestones.harbor}, Temple {balance.win.milestones.temple}, Train {balance.win.milestones.train}, and the first to begin the Great Hearth {balance.win.milestones.wonder}. Below the winner, final rank is by score.
+      </p>
+    ),
+  },
+];
 
 const steps: Array<{ title: string; body: string }> = [
   { title: "Join a match and pick a capital", body: "In the lobby you are offered a handful of starting regions, spread far from other players. Pick one, or let the game pick when the match starts. You begin with five families and a small store of food, wood and stone." },
@@ -73,6 +249,8 @@ export function HowToPlayPage() {
         </ul>
       </section>
 
+      <AdvancedSection />
+
       <div className="glass glass-strong flex flex-wrap items-center justify-between gap-3 rounded-xl p-5">
         <p className="text-slate-200">That is everything you need for day one. The rest you learn with the ice at your back.</p>
         <div className="flex gap-2">
@@ -85,5 +263,36 @@ export function HowToPlayPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+/** Collapsed by default: the numbers behind the rules for players who want to optimise. */
+function AdvancedSection() {
+  const [open, setOpen] = useState(false);
+  return (
+    <section className="space-y-3">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between rounded-xl border border-slate-700/50 bg-slate-950/40 px-4 py-3 text-left hover:border-sky-400/40"
+        aria-expanded={open}
+      >
+        <span>
+          <span className="block text-xs font-medium uppercase tracking-[0.25em] text-sky-300">For the optimisers</span>
+          <span className="display text-xl font-semibold text-white">Advanced: the numbers behind the rules</span>
+        </span>
+        <span className="text-slate-400">{open ? "Hide" : "Show"}</span>
+      </button>
+      {open && (
+        <div className="space-y-4">
+          <p className="text-sm text-slate-400">All rates are per game hour. In a faster match everything below happens proportionally faster in real time.</p>
+          {ADVANCED.map((a) => (
+            <Card key={a.title}>
+              <h3 className="display mb-2 font-semibold text-white">{a.title}</h3>
+              <div className="text-sm leading-relaxed text-slate-300">{a.body}</div>
+            </Card>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
