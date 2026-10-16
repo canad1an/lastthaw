@@ -10,7 +10,7 @@ import { ColonizePanel } from "./ColonizePanel.js";
 import { EvacuatePanel } from "./EvacuatePanel.js";
 import { BeforeAfter, Tooltip } from "./Tooltip.js";
 import { buildingPreview, unitPreview } from "./previews.js";
-import { BUILDING_CATEGORIES, type BuildingCategory, type BuildingDef, type UnitDef } from "@lastthaw/shared";
+import { BUILDINGS, BUILDING_CATEGORIES, TECHS, UNITS, type BuildingCategory, type BuildingDef, type UnitDef } from "@lastthaw/shared";
 
 interface Props {
   matchId: string;
@@ -398,6 +398,7 @@ function BuildTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
           </section>
         );
       })}
+      <NextAge age={state.me.age} items={BUILDINGS.filter((b) => b.age === state.me.age + 1 && (!b.requires || techs.has(b.requires))).map((b) => ({ name: b.name, description: b.description }))} />
     </div>
   );
 }
@@ -494,7 +495,34 @@ function TrainTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
           </ul>
         </section>
       ))}
+      <NextAge age={state.me.age} items={UNITS.filter((u) => u.age === state.me.age + 1 && !u.hidden && (!u.requires || techs.has(u.requires))).map((u) => ({ name: u.name, description: u.description }))} />
     </div>
+  );
+}
+
+/** What the next age brings that you already have the tech for: visible now, buildable then, so a researched Farm is never a mystery. */
+function NextAge({ age, items }: { age: number; items: Array<{ name: string; description: string }> }) {
+  if (items.length === 0 || age + 1 >= AGES.length) return null;
+  const next = AGES[(age + 1) as AgeIndex];
+  const advance = TECHS.find((t) => t.age === age && t.advancesTo === age + 1);
+  return (
+    <section className="rounded-lg border-l-4 border-slate-600 bg-slate-900/40 px-3 py-2 opacity-80">
+      <h4 className="flex items-center gap-1.5 text-sm font-semibold text-slate-300">
+        <span aria-hidden>🔒</span>
+        Coming with the {next} Age
+      </h4>
+      <p className="mb-1 text-xs text-slate-400">
+        You have the techs for these; they open when you reach the {next} Age{advance ? ` (research ${advance.name})` : ""}.
+      </p>
+      <ul className="divide-y divide-slate-800/70">
+        {items.map((it) => (
+          <li key={it.name} className="py-1.5 text-sm">
+            <span className="font-medium text-slate-300">{it.name}</span>
+            <p className="truncate text-xs text-slate-500">{it.description}</p>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
