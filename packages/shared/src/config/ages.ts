@@ -48,7 +48,7 @@ export const BUILDING_CATEGORIES: ReadonlyArray<{ id: BuildingCategory; name: st
   { id: "growth", name: "Growth & food", hint: "More people and the food to keep them.", icon: "🌾" },
   { id: "production", name: "Production", hint: "Faster wood, stone, ore and horses.", icon: "⚒" },
   { id: "storage", name: "Storage", hint: "Bigger stores, and stock hidden from raiders.", icon: "🏺" },
-  { id: "defense", name: "Defence", hint: "Walls and garrisons that help defenders.", icon: "🛡" },
+  { id: "defense", name: "Defence", hint: "Built once each. Near-impregnable to soldiers alone; siege engines breach them.", icon: "🛡" },
   { id: "training", name: "Training & research", hint: "Faster soldiers and faster science.", icon: "📜" },
   { id: "transport", name: "Transport", hint: "Roads, rails and harbours that speed up every trip.", icon: "🛣" },
   { id: "loyalty", name: "Loyalty", hint: "Keep conquered people from rebelling.", icon: "⚜" },
@@ -89,6 +89,8 @@ export interface UnitDef {
   description: string;
   attack: number;
   defense: number;
+  /** Siege value: how much wall this unit knocks down. Walls keep their full bonus against armies with no breach at all. */
+  breach?: number;
   /** Travel speed in km per game hour. */
   speed: number;
   /** How much loot one unit can carry on a raid. */
@@ -162,33 +164,33 @@ export const BUILDINGS: readonly BuildingDef[] = [
   // Bronze
   { id: "farm", category: "growth", name: "Farm", age: 1, description: "Cultivated fields feed many more people.", maxLevel: 15, cost: { wood: 120, stone: 40 }, baseSeconds: 150, effect: { yield: { food: 0.2 }, capacity: 15 }, requires: "agriculture" },
   { id: "mine", category: "production", name: "Mine", age: 1, description: "Extracts copper, tin or iron where the region has it.", maxLevel: 10, cost: { wood: 150, stone: 100 }, baseSeconds: 200, effect: { extract: { copper: 1.5, tin: 1.0, iron: 1.2 } }, requires: "mining", needsResource: ["copper", "tin", "iron"] },
-  { id: "palisade", category: "defense", name: "Palisade", age: 1, description: "A stockade of sharpened logs. Built once; the first line of any defence.", maxLevel: 1, cost: { wood: 400, stone: 60 }, baseSeconds: 240, effect: { defense: 0.15 } },
+  { id: "palisade", category: "defense", name: "Palisade", age: 1, description: "A stockade of sharpened logs. Built once; the first line of any defence.", maxLevel: 1, cost: { wood: 400, stone: 60 }, baseSeconds: 240, effect: { defense: 0.6 } },
   { id: "stables", category: "production", name: "Stables", age: 1, description: "Breeds horses where wild herds roam.", maxLevel: 10, cost: { wood: 120, food: 150 }, baseSeconds: 160, effect: { extract: { horses: 0.6 } }, requires: "animal_husbandry", needsResource: ["horses"] },
   { id: "granary", category: "storage", name: "Granary", age: 1, description: "Dry, sealed pits for grain: half again as much food storage per level, and stock hidden from raiders.", maxLevel: 10, cost: { wood: 100, stone: 120 }, baseSeconds: 150, effect: { foodStorage: 0.5, protect: 120 } },
   // Iron
   { id: "forge", category: "training", name: "Forge", age: 2, description: "Works iron faster; speeds up training.", maxLevel: 10, cost: { wood: 200, stone: 200, iron: 20 }, baseSeconds: 400, effect: { trainSpeed: 0.06, extract: { iron: 0.8 } }, requires: "iron_working" },
-  { id: "walls", category: "defense", name: "Stone walls", age: 2, description: "Solid walls around the settlement. Built once, on top of a Palisade.", maxLevel: 1, cost: { stone: 2500, wood: 600 }, baseSeconds: 900, effect: { defense: 0.3 }, requires: "masonry", requiresBuilding: "palisade" },
+  { id: "walls", category: "defense", name: "Stone walls", age: 2, description: "Solid walls around the settlement. Built once, on top of a Palisade.", maxLevel: 1, cost: { stone: 2500, wood: 600 }, baseSeconds: 900, effect: { defense: 1.2 }, requires: "masonry", requiresBuilding: "palisade" },
   { id: "roads", category: "transport", name: "Roads", age: 1, description: "Paved roads to every neighbouring region. Built once; legs between two road regions are much faster, and the region is easier to hold.", maxLevel: 1, cost: { stone: 80, wood: 40 }, perNeighbor: true, baseSeconds: 600, effect: { loyalty: 0.1 }, requires: "road_building" },
   { id: "railway", category: "transport", name: "Railway", age: 4, description: "Rails to every neighbouring region that also has them. Built once on top of Roads; legs between two railway regions are far faster.", maxLevel: 1, cost: { stone: 400, iron: 20 }, perNeighbor: true, baseSeconds: 1800, effect: { loyalty: 0.05 }, requires: "railways", requiresBuilding: "roads" },
   { id: "temple", category: "loyalty", name: "Temple", age: 2, description: "Binds a conquered people to their new rulers. Built once: raises loyalty and keeps turning workers into occupiers until the region has enough, however much it grows.", maxLevel: 1, cost: { stone: 1500, wood: 800, food: 500 }, baseSeconds: 2400, effect: { loyalty: 0.2 } },
   { id: "barracks", category: "training", name: "Barracks", age: 2, description: "Trains soldiers faster.", maxLevel: 10, cost: { wood: 300, stone: 150 }, baseSeconds: 400, effect: { trainSpeed: 0.1 } },
   // Classical
   { id: "aqueduct", category: "growth", name: "Aqueduct", age: 3, description: "Clean water lets the city grow.", maxLevel: 10, cost: { stone: 600, wood: 200 }, baseSeconds: 900, effect: { capacity: 40 } },
-  { id: "fort", category: "defense", name: "Fort", age: 3, description: "A garrison that defends and holds the province. Built once.", maxLevel: 1, cost: { stone: 6000, wood: 2500, iron: 150 }, baseSeconds: 1800, effect: { defense: 0.3, loyalty: 0.15 } },
+  { id: "fort", category: "defense", name: "Fort", age: 3, description: "A garrison that defends and holds the province. Built once.", maxLevel: 1, cost: { stone: 6000, wood: 2500, iron: 150 }, baseSeconds: 1800, effect: { defense: 1.0, loyalty: 0.15 } },
   { id: "library", category: "training", name: "Library", age: 3, description: "Scholars speed up research.", maxLevel: 10, cost: { wood: 500, stone: 400 }, baseSeconds: 900, effect: { researchSpeed: 0.08 }, requires: "writing" },
   { id: "harbor", category: "transport", name: "Harbor", age: 3, description: "Quays and boats. Built once on a coast: sea legs to another harbour of yours are far faster, and faster still than open water at one end.", maxLevel: 1, cost: { wood: 2500, stone: 1500 }, baseSeconds: 1800, effect: { harbor: true }, requires: "shipbuilding", needsCoast: true },
   { id: "market", category: "storage", name: "Market", age: 3, description: "More goods kept safely in town.", maxLevel: 10, cost: { wood: 400, stone: 400 }, baseSeconds: 800, effect: { storage: 0.6, protect: 200 } },
   // Medieval
-  { id: "castle", category: "defense", name: "Castle", age: 4, description: "Keep, towers and curtain wall. Built once, on top of Stone walls.", maxLevel: 1, cost: { stone: 18000, wood: 6000, iron: 600 }, baseSeconds: 3600, effect: { defense: 0.5, loyalty: 0.1 }, requiresBuilding: "walls" },
+  { id: "castle", category: "defense", name: "Castle", age: 4, description: "Keep, towers and curtain wall. Built once, on top of Stone walls.", maxLevel: 1, cost: { stone: 18000, wood: 6000, iron: 600 }, baseSeconds: 3600, effect: { defense: 2.0, loyalty: 0.1 }, requiresBuilding: "walls" },
   { id: "windmill", category: "growth", name: "Windmill", age: 4, description: "Grinds grain for a growing population.", maxLevel: 10, cost: { wood: 900, stone: 300 }, baseSeconds: 1800, effect: { yield: { food: 0.15 } } },
   { id: "guild_hall", category: "production", name: "Guild hall", age: 4, description: "Organised craftsmen work faster.", maxLevel: 10, cost: { wood: 800, stone: 800 }, baseSeconds: 2000, effect: { yield: { wood: 0.2, stone: 0.2 }, trainSpeed: 0.05 } },
   { id: "cathedral", category: "loyalty", name: "Cathedral", age: 4, description: "A monument that commands loyalty far and wide.", maxLevel: 5, cost: { stone: 2000, wood: 600 }, baseSeconds: 3000, effect: { loyalty: 0.3 } },
   // Industrial
   { id: "factory", category: "production", name: "Factory", age: 5, description: "Machines and shifts: trains troops faster and turns out more wood and stone.", maxLevel: 10, cost: { wood: 3000, stone: 2500, iron: 100 }, baseSeconds: 3000, effect: { trainSpeed: 0.1, yield: { wood: 0.1, stone: 0.1 } }, requires: "steam_power" },
-  { id: "arsenal", category: "defense", name: "Arsenal", age: 5, description: "Stores of powder and shot: a hard place to take. Built once.", maxLevel: 1, cost: { stone: 40000, iron: 2000 }, baseSeconds: 5400, effect: { defense: 0.6, protect: 5000 } },
+  { id: "arsenal", category: "defense", name: "Arsenal", age: 5, description: "Stores of powder and shot: a hard place to take. Built once.", maxLevel: 1, cost: { stone: 40000, iron: 2000 }, baseSeconds: 5400, effect: { defense: 2.0, protect: 5000 } },
   // Modern
   { id: "power_plant", category: "production", name: "Power plant", age: 6, description: "Electricity for every workshop and field.", maxLevel: 10, cost: { stone: 8000, iron: 400 }, baseSeconds: 4000, effect: { yield: { food: 0.15, wood: 0.15, stone: 0.15 }, capacity: 20 }, requires: "electricity" },
-  { id: "bunker", category: "defense", name: "Bunker", age: 6, description: "Concrete and steel: the strongest defence there is. Built once, on top of a Castle.", maxLevel: 1, cost: { stone: 80000, iron: 5000 }, baseSeconds: 7200, effect: { defense: 0.9 }, requiresBuilding: "castle" },
+  { id: "bunker", category: "defense", name: "Bunker", age: 6, description: "Concrete and steel: the strongest defence there is. Built once, on top of a Castle.", maxLevel: 1, cost: { stone: 80000, iron: 5000 }, baseSeconds: 7200, effect: { defense: 3.0 }, requiresBuilding: "castle" },
   { id: "great_hearth", category: "wonder", name: "Great Hearth", age: 4, description: "A hall of fire and stone where a whole people can wait out the ice. Only the capital can raise it; it takes three days and the wealth of an empire, and every rival hears when the first stone is laid. Finish it and you win.", maxLevel: 1, cost: { wood: 80000, stone: 80000, food: 40000, iron: 6000 }, baseSeconds: 3 * 86400, effect: {}, requires: "engineering", capitalOnly: true, wonder: true },
   { id: "university", category: "training", name: "University", age: 4, description: "The fastest research in the land.", maxLevel: 5, cost: { wood: 1200, stone: 1200 }, baseSeconds: 2600, effect: { researchSpeed: 0.15 } },
 ];
@@ -213,26 +215,26 @@ export const UNITS: readonly UnitDef[] = [
   // Iron
   { id: "swordsman", name: "Swordsman", age: 2, description: "Iron swords cut through bronze.", attack: 10, defense: 9, speed: 5, carry: 25, cost: { food: 50, iron: 4 }, baseSeconds: 120, requires: "iron_working" },
   { id: "cavalry", name: "Cavalry", age: 2, description: "Mounted raiders.", attack: 12, defense: 6, speed: 14, carry: 60, cost: { food: 80, iron: 3, horses: 1 }, baseSeconds: 180, requires: "iron_working", needsResource: "horses" },
-  { id: "catapult", name: "Catapult", age: 2, description: "Breaks walls.", attack: 18, defense: 2, speed: 3, carry: 0, cost: { wood: 200, iron: 6 }, baseSeconds: 300, requires: "siegecraft" },
+  { id: "catapult", name: "Catapult", age: 2, description: "Breaks walls: a dozen bring down a palisade.", attack: 18, defense: 2, speed: 3, carry: 0, cost: { wood: 200, iron: 6 }, baseSeconds: 300, requires: "siegecraft", breach: 1 },
   // Classical
   { id: "legionary", name: "Legionary", age: 3, description: "Disciplined heavy infantry.", attack: 15, defense: 15, speed: 6, carry: 30, cost: { food: 90, iron: 8 }, baseSeconds: 240, requires: "drill" },
   { id: "cataphract", name: "Cataphract", age: 3, description: "Armoured horse and rider.", attack: 20, defense: 12, speed: 12, carry: 50, cost: { food: 150, iron: 10, horses: 1 }, baseSeconds: 360, requires: "drill", needsResource: "horses" },
-  { id: "ballista", name: "Ballista", age: 3, description: "Precise siege engine.", attack: 28, defense: 4, speed: 3, carry: 0, cost: { wood: 350, iron: 15 }, baseSeconds: 480, requires: "engineering" },
+  { id: "ballista", name: "Ballista", age: 3, description: "Precise siege engine.", attack: 28, defense: 4, speed: 3, carry: 0, cost: { wood: 350, iron: 15 }, baseSeconds: 480, requires: "engineering", breach: 1.5 },
   { id: "galley", name: "Galley", age: 3, description: "Oared warship. Escorts crossings and sinks what it meets on its lane.", attack: 20, defense: 15, speed: 12, carry: 400, cost: { wood: 400, food: 100 }, baseSeconds: 420, requires: "shipbuilding", naval: true, needsBuilding: "harbor" },
   // Medieval
   { id: "train", name: "Train", age: 4, description: "Iron rails and steam: carries eight caravans' worth and moves four times as fast. Needs Railways.", attack: 0, defense: 1, speed: 30, carry: 4000, cost: { wood: 400, iron: 30 }, baseSeconds: 900, requires: "railways", civilian: true, hauler: true },
   { id: "knight", name: "Knight", age: 4, description: "The finest heavy cavalry.", attack: 32, defense: 22, speed: 12, carry: 70, cost: { food: 250, iron: 20, horses: 1 }, baseSeconds: 600, requires: "chivalry", needsResource: "horses" },
   { id: "longbowman", name: "Longbowman", age: 4, description: "Deadly at range.", attack: 24, defense: 10, speed: 6, carry: 30, cost: { food: 120, wood: 80 }, baseSeconds: 420, requires: "chivalry" },
-  { id: "trebuchet", name: "Trebuchet", age: 4, description: "Nothing stands against it for long.", attack: 45, defense: 5, speed: 2, carry: 0, cost: { wood: 700, iron: 30 }, baseSeconds: 900, requires: "siege_engines" },
+  { id: "trebuchet", name: "Trebuchet", age: 4, description: "Nothing stands against it for long.", attack: 45, defense: 5, speed: 2, carry: 0, cost: { wood: 700, iron: 30 }, baseSeconds: 900, requires: "siege_engines", breach: 3 },
   { id: "cog", name: "Cog", age: 4, description: "Broad-beamed merchantman: hauls like three wagons across a sea lane, and can carry settlers to a new shore.", attack: 5, defense: 10, speed: 14, carry: 3000, cost: { wood: 900, iron: 20 }, baseSeconds: 600, requires: "shipbuilding", naval: true, hauler: true, needsBuilding: "harbor" },
   // Industrial
   { id: "rifleman", name: "Rifleman", age: 5, description: "Drilled infantry with rifled muskets.", attack: 40, defense: 35, speed: 6, carry: 40, cost: { food: 150, iron: 25 }, baseSeconds: 300, requires: "rifling" },
-  { id: "cannon", name: "Cannon", age: 5, description: "Field guns that break walls and lines alike.", attack: 70, defense: 8, speed: 4, carry: 0, cost: { wood: 800, iron: 60 }, baseSeconds: 600, requires: "steam_power" },
+  { id: "cannon", name: "Cannon", age: 5, description: "Field guns that break walls and lines alike.", attack: 70, defense: 8, speed: 4, carry: 0, cost: { wood: 800, iron: 60 }, baseSeconds: 600, requires: "steam_power", breach: 5 },
   { id: "ironclad", name: "Ironclad", age: 5, description: "Steam and armour plate: masters any lane it patrols.", attack: 120, defense: 100, speed: 16, carry: 600, cost: { iron: 300, wood: 1500 }, baseSeconds: 1200, requires: "steam_power", naval: true, needsBuilding: "harbor" },
   // Modern
   { id: "infantry", name: "Infantry", age: 6, description: "Modern soldiers with automatic weapons.", attack: 70, defense: 60, speed: 7, carry: 50, cost: { food: 250, iron: 40 }, baseSeconds: 420, requires: "combined_arms" },
-  { id: "tank", name: "Tank", age: 6, description: "Armour and a gun on tracks: fast and nearly unstoppable.", attack: 140, defense: 70, speed: 20, carry: 80, cost: { iron: 150, wood: 500 }, baseSeconds: 900, requires: "combined_arms" },
-  { id: "artillery", name: "Artillery", age: 6, description: "Long guns that flatten anything in range.", attack: 200, defense: 10, speed: 5, carry: 0, cost: { iron: 120, wood: 600 }, baseSeconds: 900, requires: "ballistics" },
+  { id: "tank", name: "Tank", age: 6, description: "Armour and a gun on tracks: fast and nearly unstoppable.", attack: 140, defense: 70, speed: 20, carry: 80, cost: { iron: 150, wood: 500 }, baseSeconds: 900, requires: "combined_arms", breach: 4 },
+  { id: "artillery", name: "Artillery", age: 6, description: "Long guns that flatten anything in range.", attack: 200, defense: 10, speed: 5, carry: 0, cost: { iron: 120, wood: 600 }, baseSeconds: 900, requires: "ballistics", breach: 10 },
   { id: "destroyer", name: "Destroyer", age: 6, description: "Fast, gunned and radar-guided.", attack: 250, defense: 200, speed: 24, carry: 800, cost: { iron: 800, wood: 2000 }, baseSeconds: 1500, requires: "electronics", naval: true, needsBuilding: "harbor" },
 ];
 

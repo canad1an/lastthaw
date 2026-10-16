@@ -1,5 +1,5 @@
 import { balance } from "../config/balance.js";
-import { UNITS, unitById } from "../config/ages.js";
+import { UNITS, unitById, buildingById } from "../config/ages.js";
 import { seededRng } from "./rng.js";
 
 export type UnitCounts = Record<string, number>;
@@ -114,6 +114,30 @@ export function haulerCarry(id: string, techs?: ReadonlySet<string> | readonly s
 /** How much one caravan carries, after the owner's techs. */
 export function caravanCarry(techs?: ReadonlySet<string> | readonly string[]): number {
   return haulerCarry("caravan", techs);
+}
+
+/** Siege points in an army: the sum of every unit's breach value. */
+export function breachOf(units: UnitCounts): number {
+  let b = 0;
+  for (const [id, n] of Object.entries(units)) b += (unitById.get(id)?.breach ?? 0) * Math.max(0, n);
+  return b;
+}
+
+/**
+ * The defence bonus a region's walls give against `attackers`: each wall's bonus,
+ * scaled down by how much of its breach threshold the attacker's siege engines reach.
+ * No siege engines: the walls stand in full. Enough of them: the walls count for nothing.
+ */
+export function wallBonusAgainst(buildings: Record<string, number>, attackers: UnitCounts): number {
+  const siege = breachOf(attackers);
+  let bonus = 0;
+  for (const [id, need] of Object.entries(balance.combat.wallBreach)) {
+    if ((buildings[id] ?? 0) < 1) continue;
+    const def = buildingById.get(id);
+    const full = (def?.effect.defense ?? 0) * (buildings[id] ?? 0);
+    bonus += full * Math.max(0, 1 - siege / need);
+  }
+  return bonus;
 }
 
 /** The best hauler kind stationed in `units`, or null. Ships only count when the trip is a single sea lane. */

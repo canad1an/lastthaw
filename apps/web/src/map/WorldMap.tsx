@@ -410,8 +410,7 @@ const Regions = memo(function Regions({ paint, selected, strokeWidth }: { paint:
             fill={p.fill ?? terrainFill(r.terrain)}
             fillOpacity={p.opacity ?? 1}
             stroke={isSel ? "#ffffff" : (p.stroke ?? "#0b1a2b")}
-            strokeWidth={isSel ? strokeWidth * 2.5 : strokeWidth * (p.strokeScale ?? 1)}
-            strokeDasharray={p.dash ? `${p.dash[0] * strokeWidth} ${p.dash[1] * strokeWidth}` : undefined}
+            strokeWidth={isSel ? strokeWidth * 2.5 : strokeWidth}
             strokeLinejoin="round"
             className="cursor-pointer"
           >
@@ -419,10 +418,16 @@ const Regions = memo(function Regions({ paint, selected, strokeWidth }: { paint:
           </path>
         );
       })}
+      {/* Walls are drawn after every region so no neighbour's border paints over them. */}
       {regions.map((r) => {
         const p = paint(r);
-        if (!p.inner) return null;
-        return <path key={`${r.id}-inner`} d={r.path} fill="none" stroke={p.inner} strokeWidth={strokeWidth * 0.9} strokeLinejoin="round" pointerEvents="none" />;
+        if (!p.strokeScale) return null;
+        return (
+          <g key={`${r.id}-wall`} pointerEvents="none">
+            <path d={r.path} fill="none" stroke={p.stroke ?? "#cbd5e1"} strokeWidth={strokeWidth * p.strokeScale} strokeDasharray={p.dash ? `${p.dash[0] * strokeWidth} ${p.dash[1] * strokeWidth}` : undefined} strokeLinejoin="round" />
+            {p.inner && <path d={r.path} fill="none" stroke={p.inner} strokeWidth={strokeWidth * 0.9} strokeLinejoin="round" />}
+          </g>
+        );
       })}
       {selected && <path d={regions.find((r) => r.id === selected)?.path ?? ""} fill="none" stroke="#fff" strokeWidth={strokeWidth * 2.5} pointerEvents="none" />}
     </>

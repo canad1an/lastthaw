@@ -92,6 +92,7 @@ export function unitPreview(def: UnitDef): { summary: string; rows: Delta[] } {
   const rows: Delta[] = [
     { label: "Attack", before: "", after: String(def.attack) },
     { label: "Defence", before: "", after: String(def.defense) },
+    ...(def.breach ? [{ label: "Siege (breaks walls)", before: "", after: String(def.breach) }] : []),
     { label: "Speed", before: "", after: `${kmh} km per game hour` },
     { label: "Carries", before: "", after: `${def.carry} loot` },
   ];

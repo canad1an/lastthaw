@@ -147,6 +147,11 @@ export const balance = {
     damagePerStrength: 1.0,
     /** +-variance applied to each side's strength per round (0.3 = +-15 %). */
     variance: 0.3,
+    /**
+     * Walls are exceptionally strong against men alone. Every siege point the attacker brings (catapults, cannon, tanks, artillery)
+     * knocks the wall bonus down; at `breach` points the wall counts for nothing. Techs and terrain are never breached.
+     */
+    wallBreach: { palisade: 10, walls: 30, fort: 40, castle: 80, arsenal: 120, bunker: 200 } as Record<string, number>,
     /** Defensive bonus for terrain of the defended region. */
     terrainDefense: { hills: 0.15, mountains: 0.35, forest: 0.1, wetland: 0.1 } as Record<string, number>,
     /** Unarmed population defends a little: this many warrior-equivalents per 10 people. */

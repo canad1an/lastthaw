@@ -1,5 +1,5 @@
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
-import { balance, effectsOf, emptySpecial, storageCaps, regionById, resolveCombat, carryCapacity, travelSeconds, findRoute, armySpeed, type UnitCounts, HAULER_IDS, haulerCount, unitById, laneName, applyTechEffects } from "@lastthaw/shared";
+import { balance, effectsOf, emptySpecial, storageCaps, regionById, resolveCombat, carryCapacity, travelSeconds, findRoute, armySpeed, type UnitCounts, HAULER_IDS, haulerCount, unitById, laneName, applyTechEffects, wallBonusAgainst, breachOf, buildingById } from "@lastthaw/shared";
 import { armies, battles, jobs, matchRegions, players, regionSightings, playerTechs, tradeRoutes } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
 import { settleAndLockRegion, type MatchRegionRow, type Tx, setCapital, ownerTechEffects, waySetsFor, stockOf } from "./regions.js";
@@ -447,10 +447,13 @@ async function battle(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher: P
   const defenderUnits: UnitCounts = militia > 0 ? addUnits(target.units, { militia }) : { ...target.units };
   const attackerTech = await ownerTechEffects(tx, army.playerId);
   const defenderTech = await ownerTechEffects(tx, target.ownerPlayerId);
-  const bonus = effects.defense + defenderTech.defense + (balance.combat.terrainDefense[region.terrain] ?? 0);
   const seed = `${m.seed}:${army.id}:${at.getTime()}`;
   // Settlers travelling with a conquest wait behind the lines; they occupy if the battle is won.
   const { settler: settlersAlong = 0, ...fighting } = army.units;
+  // Walls are near-impregnable to men alone; siege engines bring the wall bonus down. Techs and terrain always count.
+  const wallFull = Object.keys(balance.combat.wallBreach).reduce((a, id) => a + (buildingById.get(id)?.effect.defense ?? 0) * (target.buildings[id] ?? 0), 0);
+  const wallBonus = wallBonusAgainst(target.buildings, fighting);
+  const bonus = effects.defense - wallFull + wallBonus + defenderTech.defense + (balance.combat.terrainDefense[region.terrain] ?? 0);
   const result = resolveCombat({ units: fighting, bonus: attackerTech.attack }, { units: defenderUnits, bonus }, seed);
 
   // Apply defender losses (militia losses cost population).
@@ -519,6 +522,7 @@ async function battle(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher: P
   await tx.update(matchRegions).set(set).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, army.targetRegionId)));
 
   const report = {
+    walls: { bonus: Math.round(wallBonus * 100) / 100, full: Math.round(wallFull * 100) / 100, siege: breachOf(fighting) },
     regionName: region.name,
     regionId: army.targetRegionId,
     mission: army.mission,

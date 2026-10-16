@@ -24,17 +24,17 @@ const PLAYER_COLORS = ["#38bdf8", "#f472b6", "#a3e635", "#fb923c", "#c084fc", "#
 function wallPaint(wall: string | null | undefined): Partial<RegionPaint> {
   switch (wall) {
     case "palisade":
-      return { stroke: "#d97706", strokeScale: 2.2, dash: [3, 2] };
+      return { stroke: "#f59e0b", strokeScale: 3, dash: [4, 3] };
     case "walls":
-      return { stroke: "#cbd5e1", strokeScale: 2.6 };
+      return { stroke: "#e2e8f0", strokeScale: 3.5 };
     case "fort":
-      return { stroke: "#cbd5e1", strokeScale: 3, inner: "#0b1a2b" };
+      return { stroke: "#e2e8f0", strokeScale: 4, inner: "#0b1a2b" };
     case "castle":
-      return { stroke: "#f1f5f9", strokeScale: 3.6, inner: "#0b1a2b" };
+      return { stroke: "#f8fafc", strokeScale: 5, inner: "#0b1a2b" };
     case "arsenal":
-      return { stroke: "#fde68a", strokeScale: 3.6, inner: "#0b1a2b" };
+      return { stroke: "#fde68a", strokeScale: 5, inner: "#0b1a2b" };
     case "bunker":
-      return { stroke: "#f8fafc", strokeScale: 4.4, inner: "#334155" };
+      return { stroke: "#ffffff", strokeScale: 6, inner: "#334155" };
     default:
       return {};
   }
@@ -210,6 +210,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
   }, [state.owned, state.sighted, state.me.playerId, colorOf]);
   const frontierSet = useMemo(() => new Set(state.frontier), [state.frontier]);
   const allySet = useMemo(() => new Set(state.allies), [state.allies]);
+  const borderSet = useMemo(() => new Set(state.owned.flatMap((o) => regionById(o.regionId)?.neighbors ?? [])), [state.owned]);
   const paint = useCallback(
     (r: MapRegion): RegionPaint => {
       if (r.id === target) return { fill: "#facc15", opacity: 1, stroke: "#fff" };
@@ -228,14 +229,14 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
       if (s) {
         const walls = wallPaint(s.wall);
         // An enemy next door is painted red so the front line reads at a glance.
-        const enemy = !!s.ownerPlayerId && s.ownerPlayerId !== state.me.playerId && !allySet.has(s.ownerPlayerId) && frontierSet.has(r.id);
+        const enemy = !!s.ownerPlayerId && s.ownerPlayerId !== state.me.playerId && !allySet.has(s.ownerPlayerId) && borderSet.has(r.id);
         if (enemy) return { fill: "#b91c1c", opacity: 0.85, stroke: "#fca5a5", ...walls };
         return { fill: s.ownerPlayerId ? colorOf(s.ownerPlayerId) : terrainFill(r.terrain), opacity: 0.8, ...walls };
       }
       if (frontierSet.has(r.id)) return { opacity: 0.6 };
       return { opacity: picking ? 0.5 : 0.3 };
     },
-    [ownedSet, ownedById, overlays, sightedBy, colorOf, state.me.playerId, target, incomingSet, picking, frontierSet, allySet],
+    [ownedSet, ownedById, overlays, sightedBy, colorOf, state.me.playerId, target, incomingSet, picking, frontierSet, allySet, borderSet],
   );
 
   const totals = state.owned.reduce(
