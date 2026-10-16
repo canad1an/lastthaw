@@ -15,6 +15,8 @@ instance, database or Caddy config used by boatbuildlog.com.
 | Email | Postmark server `Last Thaw` (ID 21125344), sender domain `lastthaw.com` with DKIM (`20261016143914pm._domainkey`) and Return-Path (`pm-bounces` CNAME) verified; the server API token is `SMTP_USER` and `SMTP_PASS` in the box's `.env`, host `smtp.postmarkapp.com:587`. SES identity still exists but is unused. |
 | Code on the box | bare repo `~/lastthaw.git`, working checkout `~/lastthaw`, env file `~/lastthaw/.env` |
 
+Mailboxes: Migadu (same account as boatbuildlog.com), domain `lastthaw.com` active since 2026-10-16 with MX, three DKIM CNAMEs, SPF `include:spf.migadu.com` and client discovery records in Route 53. Mailbox `admin@lastthaw.com` (alias `postmaster@`): IMAP imap.migadu.com:993 TLS, SMTP smtp.migadu.com:465 TLS, webmail https://webmail.migadu.com, username is the full address. Postmark still sends the app's transactional mail from noreply@.
+
 Mail moved from SES to Postmark on 2026-10-16 because SES was still in the sandbox and rejected unverified recipients. The Postmark account is on the Basic tier, 10,000 messages a month, shared with boatbuildlog.com's server.
 
 ## Deploy a new version
