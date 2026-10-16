@@ -163,8 +163,8 @@ function LobbyRoom({ matchId, state }: { matchId: string; state: MatchStateView 
                 <Button onClick={() => window.confirm(`Start ${state.match.name} now with ${state.players.length} player${state.players.length === 1 ? "" : "s"} and AI tribes in the rest of the seats?`) && startNow.mutate()} disabled={startNow.isPending}>
                   Start now
                 </Button>
-                <Button variant="danger" onClick={() => window.confirm(`Call off ${state.match.name}? Everyone who joined is sent back to the Matches page.`) && cancel.mutate()} disabled={cancel.isPending}>
-                  Call it off
+                <Button variant="danger" onClick={() => window.confirm(`Cancel ${state.match.name}? Everyone who joined is sent back to the Matches page.`) && cancel.mutate()} disabled={cancel.isPending}>
+                  Cancel game
                 </Button>
               </div>
               <ErrorText>{startNow.error?.message ?? cancel.error?.message}</ErrorText>
