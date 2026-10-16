@@ -4,8 +4,8 @@
 # and uploads it to the backups bucket. Keeps the last 7 days locally as well.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-set -a; . ./.env; set +a
-BUCKET="${BACKUP_BUCKET:?set BACKUP_BUCKET in .env}"
+BUCKET="$(grep -E '^BACKUP_BUCKET=' .env | cut -d= -f2- | tr -d '"')"
+[ -n "$BUCKET" ] || { echo "set BACKUP_BUCKET in .env"; exit 1; }
 KEY="$HOME/.backup.key"
 [ -s "$KEY" ] || { echo "missing $KEY"; exit 1; }
 mkdir -p "$HOME/backups"

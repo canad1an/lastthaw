@@ -4,8 +4,8 @@
 # real database has. A backup nobody has restored is a hope, not a backup.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-set -a; . ./.env; set +a
-BUCKET="${BACKUP_BUCKET:?set BACKUP_BUCKET in .env}"
+BUCKET="$(grep -E '^BACKUP_BUCKET=' .env | cut -d= -f2- | tr -d '"')"
+[ -n "$BUCKET" ] || { echo "set BACKUP_BUCKET in .env"; exit 1; }
 KEY="$HOME/.backup.key"
 COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
 LATEST="$(aws s3 ls "s3://$BUCKET/" | awk '{print $4}' | sort | tail -1)"

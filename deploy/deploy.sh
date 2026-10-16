@@ -14,7 +14,7 @@ for i in $(seq 1 30); do
   if $COMPOSE exec -T postgres pg_isready -U lastthaw >/dev/null 2>&1; then break; fi
   sleep 2
 done
-set -a; . ./.env; set +a
+POSTGRES_PASSWORD="$(grep -E '^POSTGRES_PASSWORD=' .env | cut -d= -f2- | tr -d '"')"
 $COMPOSE --profile app run --rm --no-deps -e "DATABASE_URL_DIRECT=postgres://lastthaw:${POSTGRES_PASSWORD}@postgres:5432/lastthaw" api node dist/db/migrate.js
 $COMPOSE --profile app up -d --remove-orphans
 $COMPOSE --profile app ps
