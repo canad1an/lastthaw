@@ -201,7 +201,7 @@ export async function leaderboardRoutes(app: FastifyInstance, opts: { db: Db }) 
     const winners = ids.length ? await db.select({ id: players.id, name: players.name }).from(players).where(inArray(players.id, rows.map((r) => r.winnerPlayerId).filter((x): x is string => !!x))) : [];
     const counts = ids.length
       ? await db
-          .select({ matchId: players.matchId, humans: sql<number>`count(*) filter (where not is_ai)::int`, total: sql<number>`count(*)::int` })
+          .select({ matchId: players.matchId, humans: sql<number>`count(*) filter (where not is_ai)::int`, total: sql<number>`count(*) filter (where not hidden)::int` })
           .from(players)
           .where(inArray(players.matchId, ids))
           .groupBy(players.matchId)
