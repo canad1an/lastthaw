@@ -95,22 +95,20 @@ function Textarea({ className = "", ...rest }: TextareaHTMLAttributes<HTMLTextAr
   );
 }
 
-/** Tribe name plus the free-text details other players can read about you. */
+/** The free-text details other players can read about you. The tribe name itself is fixed at signup. */
 function AboutForm({ user }: { user: UserView }) {
   const qc = useQueryClient();
-  const [displayName, setDisplayName] = useState(user.displayName);
   const [tagline, setTagline] = useState(user.tagline ?? "");
   const [location, setLocation] = useState(user.location ?? "");
   const [bio, setBio] = useState(user.bio ?? "");
   useEffect(() => {
-    setDisplayName(user.displayName);
     setTagline(user.tagline ?? "");
     setLocation(user.location ?? "");
     setBio(user.bio ?? "");
   }, [user]);
-  const dirty = displayName !== user.displayName || tagline !== (user.tagline ?? "") || location !== (user.location ?? "") || bio !== (user.bio ?? "");
+  const dirty = tagline !== (user.tagline ?? "") || location !== (user.location ?? "") || bio !== (user.bio ?? "");
   const m = useMutation({
-    mutationFn: () => api.updateProfile({ displayName, tagline, location, bio }),
+    mutationFn: () => api.updateProfile({ tagline, location, bio }),
     onSuccess: (u) => qc.setQueryData(keys.me, u),
   });
   const submit = (e: FormEvent) => {
@@ -119,11 +117,8 @@ function AboutForm({ user }: { user: UserView }) {
   };
   return (
     <Card className="p-5">
-      <SectionTitle kicker="About you" title="What rivals see" body="Your tribe name shows on the map and the leaderboards. The rest appears on your public profile." />
+      <SectionTitle kicker="About you" title="What rivals see" body="Your tribe name is fixed; it is how other players know you across matches. Everything here is yours to change." />
       <form onSubmit={submit} className="space-y-4">
-        <Field label="Tribe name">
-          <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} minLength={2} maxLength={24} required />
-        </Field>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Tagline">
             <Input value={tagline} onChange={(e) => setTagline(e.target.value)} maxLength={80} placeholder="A motto, a boast, a warning" />
@@ -157,8 +152,9 @@ function AccountCard({ user }: { user: UserView }) {
     <Card className="p-5">
       <SectionTitle kicker="Account" title="The basics" />
       <dl className="divide-y divide-slate-800 text-sm">
-        <Row label="Username">
+        <Row label="Tribe name">
           <span className="text-white">{user.displayName}</span>
+          <p className="mt-0.5 text-xs text-slate-500">Chosen at signup and permanent.</p>
         </Row>
         <Row label="Email">
           <span className="break-all text-white">{user.email}</span>

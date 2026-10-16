@@ -29,7 +29,6 @@ export const registerBody = z.object({
     .refine((s) => DISPLAY_NAME_RE.test(s), "use letters, digits, spaces, _ or -, starting and ending with a letter or digit")
     .refine((s) => !RESERVED_NAMES.includes(s.toLowerCase()), "that name is reserved"),
 });
-const displayNameField = registerBody.shape.displayName;
 const optionalText = (max: number) =>
   z
     .string()
@@ -39,9 +38,8 @@ const optionalText = (max: number) =>
     .nullable()
     .optional();
 
-/** Profile settings: every field optional so the client can send only what changed. */
+/** Profile settings: every field optional so the client can send only what changed. The tribe name is fixed at signup. */
 export const updateProfileBody = z.object({
-  displayName: displayNameField.optional(),
   tagline: optionalText(80),
   bio: optionalText(600),
   location: optionalText(60),

@@ -134,20 +134,11 @@ export async function authRoutes(app: FastifyInstance, opts: { db: Db; redis: Re
     return reply.send({ ok: true });
   });
 
-  /** Profile settings: tribe name and the free-text details a player writes about themselves. */
+  /** Profile settings: the free-text details a player writes about themselves. The tribe name is fixed at signup. */
   app.patch("/api/me/profile", tight(30, "10 minutes"), async (req, reply) => {
     const user = requireUser(req);
     const body = updateProfileBody.parse(req.body);
     const patch: Partial<typeof users.$inferInsert> = {};
-    if (body.displayName !== undefined && body.displayName !== user.displayName) {
-      const taken = await db
-        .select({ id: users.id })
-        .from(users)
-        .where(and(sql`lower(${users.displayName}) = ${body.displayName.toLowerCase()}`, sql`${users.id} <> ${user.id}`))
-        .limit(1);
-      if (taken.length) return reply.code(409).send({ error: "that tribe name is taken; pick another" });
-      patch.displayName = body.displayName;
-    }
     if (body.tagline !== undefined) patch.tagline = body.tagline;
     if (body.bio !== undefined) patch.bio = body.bio;
     if (body.location !== undefined) patch.location = body.location;
