@@ -108,8 +108,12 @@ export function TechTreeGraph() {
     (e.target as Element).setPointerCapture?.(e.pointerId);
   };
   const onPointerMove = (e: ReactPointerEvent) => {
-    if (!drag.current) return;
-    setView((v) => ({ ...v, x: drag.current!.vx + (e.clientX - drag.current!.x), y: drag.current!.vy + (e.clientY - drag.current!.y) }));
+    const d = drag.current;
+    if (!d) return;
+    // Read the drag origin now: the state update runs later, by which time the pointer may have been released.
+    const x = d.vx + (e.clientX - d.x);
+    const y = d.vy + (e.clientY - d.y);
+    setView((v) => ({ ...v, x, y }));
   };
   const onPointerUp = () => {
     drag.current = null;
