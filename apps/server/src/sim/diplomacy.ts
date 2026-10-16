@@ -55,7 +55,7 @@ export async function proposePact(db: Db, m: MatchRow, me: PlayerRow, otherId: s
     .from(pacts)
     .where(and(eq(pacts.matchId, m.id), eq(pacts.kind, kind), eq(pacts.status, "proposed"), or(and(eq(pacts.aPlayerId, me.id), eq(pacts.bPlayerId, otherId)), and(eq(pacts.aPlayerId, otherId), eq(pacts.bPlayerId, me.id)))))
     .limit(1);
-  if (pending) throw httpError(409, "there is already an open proposal between you");
+  if (pending) throw httpError(409, `there is already an open ${kind === "tribute" ? "tribute demand" : kind === "nap" ? "pact proposal" : "ceasefire proposal"} between you and ${other.name}; wait for the answer or for it to run out`);
   if (kind === "tribute") {
     if (!terms || terms.amount < 1) throw httpError(400, "say what you demand");
     const [recent] = await db

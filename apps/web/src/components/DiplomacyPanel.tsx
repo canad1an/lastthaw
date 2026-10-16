@@ -143,9 +143,23 @@ export function DiplomacyPanel({ matchId, state, clockOffsetMs }: { matchId: str
             <div />
           )}
         </div>
-        <Button className="mt-2" onClick={() => propose.mutate()} disabled={!other || propose.isPending}>
-          {kind === "tribute" ? "Send the demand" : "Propose"}
-        </Button>
+        {(() => {
+          // One open proposal of a kind per pair: say so instead of letting a second click bounce off the server.
+          const dup = outgoing.find((p) => p.kind === kind && p.bPlayerId === other) ?? incoming.find((p) => p.kind === kind && p.aPlayerId === other);
+          return (
+            <>
+              {dup && other && (
+                <p className="mt-2 text-xs text-amber-200">
+                  {dup.aPlayerId === me ? `Your ${label(dup).toLowerCase()} to ${nameOf(other)} is still open` : `${nameOf(other)} already has an open ${label(dup).toLowerCase()} with you`}
+                  {dup.until ? ` (${left(dup.until)} left)` : ""}; wait for an answer or for it to run out.
+                </p>
+              )}
+              <Button className="mt-2" onClick={() => propose.mutate()} disabled={!other || propose.isPending || !!dup}>
+                {kind === "tribute" ? "Send the demand" : "Propose"}
+              </Button>
+            </>
+          );
+        })()}
         <ErrorText>{propose.error?.message ?? respond.error?.message ?? end.error?.message ?? pay.error?.message}</ErrorText>
       </section>
     </div>
