@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useLogout, useMe } from "../api/auth.js";
 import { Button } from "./ui.js";
+import { SOCIAL_LINKS, SocialIcons } from "./social.js";
 
 export const TAGLINE = "Build before the ice does.";
 
@@ -11,6 +12,7 @@ const NAV = [
   { to: "/hall-of-fame", label: "Hall of fame" },
   { to: "/about", label: "About" },
 ] as const;
+
 
 /** Thin banner: icon, name and tagline over a slowly shifting aurora; nav links, with a hamburger menu on phones. */
 export function TopBar() {
@@ -40,6 +42,7 @@ export function TopBar() {
             {n.label}
           </Link>
         ))}
+        <SocialIcons />
         <span className="h-5 w-px bg-slate-700" />
         <AccountLinks me={me.data ?? null} onLogout={() => logout.mutate()} loggingOut={logout.isPending} />
       </nav>
@@ -77,6 +80,13 @@ export function TopBar() {
                   <Link to={n.to} className="block rounded px-2 py-2 text-slate-200 hover:bg-slate-800">
                     {n.label}
                   </Link>
+                </li>
+              ))}
+              {SOCIAL_LINKS.map((s) => (
+                <li key={s.name}>
+                  <a href={s.href} target="_blank" rel="noreferrer" className="flex items-center gap-2 rounded px-2 py-2 text-slate-200 hover:bg-slate-800">
+                    {s.icon} {s.name}
+                  </a>
                 </li>
               ))}
             </ul>

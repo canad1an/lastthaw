@@ -6,6 +6,7 @@ import { HeroMap } from "../components/HeroMap.js";
 import { SignupForm } from "../components/SignupForm.js";
 import { fmt } from "../components/ui.js";
 import { useNow } from "../hooks/useNow.js";
+import { SocialIcons } from "../components/social.js";
 
 export interface PublicMatch {
   id: string;
@@ -231,7 +232,10 @@ export function HomePage() {
           <Link to="/matches" className="hover:text-white">
             Matches
           </Link>
-          <span className="ml-auto">Free to play. No purchases affect the game.</span>
+          <span className="ml-auto flex items-center gap-4">
+            <SocialIcons />
+            <span>Free to play. No purchases affect the game.</span>
+          </span>
         </div>
       </footer>
     </main>
