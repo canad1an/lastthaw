@@ -1,4 +1,5 @@
 import nodemailer, { type Transporter } from "nodemailer";
+import { balance } from "@lastthaw/shared";
 import { config } from "./config.js";
 import { logger, maskEmail } from "./logger.js";
 
@@ -133,6 +134,27 @@ export function verificationMail(displayName: string, token: string) {
     paragraphs: ["Your account is ready. Confirm your email and you can join matches: pick a capital on the real map, set your five families to work, and build before the frost reaches your latitude."],
     cta: { label: "Confirm my email", url },
     note: "The link is valid for 24 hours. If you did not sign up, you can ignore this message.",
+  });
+}
+
+export function startedMail(displayName: string, matchName: string, slug: string, speed: number, players: number) {
+  const url = `${config().PUBLIC_URL}/match/${slug}`;
+  const pace = speed > 1 ? `At ${speed}x a game day passes every ${Math.round(1440 / speed)} minutes, so check in often.` : "At real-time pace a game day is a real day: a few minutes each day keeps an empire growing.";
+  return renderMail({
+    subject: `${matchName} has started`,
+    preheader: `The ice is moving. ${players} tribes are on the map; your five families are waiting.`,
+    greeting: `Hi ${displayName}`,
+    paragraphs: [
+      `"${matchName}" has begun. ${players} tribes share the map and the ice is already moving toward the equator.`,
+      `Nobody can attack you for the first ${balance.match.protectionDays} game days: set your workers, raise huts and a storehouse, research Fire making, and get settlers out to the land around you. ${pace}`,
+    ],
+    facts: [
+      { label: "Match", value: matchName },
+      { label: "Pace", value: speed > 1 ? `${speed}x` : "real time" },
+      { label: "Length", value: `${balance.match.lengthDays} game days` },
+    ],
+    cta: { label: "Open the map", url },
+    note: "You get no further mail about this match; the site and the Last Thaw Discord carry the news.",
   });
 }
 

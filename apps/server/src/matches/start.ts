@@ -9,6 +9,25 @@ import { startOptionsFor } from "./startOptions.js";
 import { logger } from "../logger.js";
 import { randomProfile } from "../sim/ai.js";
 import { scheduleIce } from "../sim/ice.js";
+import { sendMail, startedMail } from "../mail.js";
+import { users } from "../db/schema.js";
+
+/** Every human in the match hears that it has begun, with a link to the map. Returns how many mails went out. */
+export async function mailMatchStarted(db: Db, matchId: string): Promise<number> {
+  const [m] = await db.select().from(matches).where(eq(matches.id, matchId)).limit(1);
+  if (!m) return 0;
+  const humans = await db
+    .select({ email: users.email, name: users.displayName })
+    .from(players)
+    .innerJoin(users, eq(users.id, players.userId))
+    .where(and(eq(players.matchId, matchId), eq(players.isAi, false)));
+  const total = (await db.select({ id: players.id }).from(players).where(and(eq(players.matchId, matchId), eq(players.hidden, false)))).length;
+  for (const h of humans) {
+    const mail = startedMail(h.name, m.name, m.slug ?? m.id, m.speed, total);
+    void sendMail(h.email, mail.subject, mail.text, mail.html);
+  }
+  return humans.length;
+}
 
 /** Real-time length of a match in seconds at the given speed. */
 export function matchLengthSeconds(speed: number): number {
@@ -71,7 +90,10 @@ export async function startMatch(db: Db, publisher: Publisher, matchId: string):
     return true;
   });
 
-  if (started) await publisher.toMatch(matchId, "match.started");
+  if (started) {
+    await publisher.toMatch(matchId, "match.started");
+    await mailMatchStarted(db, matchId);
+  }
   return started;
 }
 
