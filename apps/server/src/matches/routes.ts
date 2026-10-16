@@ -183,6 +183,35 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
     return reply.code(201).send({ playerId: p!.id });
   });
 
+  /** The creator of a game (not a tournament) may start it at once or call it off while it is still in the lobby. */
+  async function creatorsLobbyGame(req: Parameters<typeof requireUser>[0]) {
+    const user = requireUser(req);
+    const matchId = idParams.parse(req.params).id;
+    const [m] = await db.select().from(matches).where(eq(matches.id, matchId)).limit(1);
+    if (!m) throw httpError(404, "match not found");
+    const s = (m.settings ?? {}) as { kind?: string; createdBy?: string };
+    if (isTournament(m.settings)) throw httpError(400, "tournaments start on their schedule");
+    if (s.createdBy !== user.id && !user.isAdmin) throw httpError(403, "only the game's creator can do that");
+    if (m.status !== "lobby") throw httpError(409, "the game has already started");
+    return { m, user };
+  }
+
+  app.post("/api/matches/:id/start-now", async (req) => {
+    const { m } = await creatorsLobbyGame(req);
+    // Move the start to now and start it; the scheduler would do the same within seconds.
+    await db.update(matches).set({ startsAt: new Date() }).where(eq(matches.id, m.id));
+    const started = await startMatch(db, publisher, m.id);
+    if (!started) throw httpError(409, "the game could not be started");
+    return { ok: true };
+  });
+
+  app.delete("/api/matches/:id", async (req) => {
+    const { m } = await creatorsLobbyGame(req);
+    await db.delete(matches).where(eq(matches.id, m.id));
+    await publisher.toMatch(m.id, "match.cancelled", { name: m.name });
+    return { ok: true };
+  });
+
   app.get("/api/matches/:id/start-options", async (req) => {
     const user = requireUser(req);
     const matchId = idParams.parse(req.params).id;

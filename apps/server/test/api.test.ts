@@ -435,6 +435,28 @@ describe("api routes", () => {
     expect(((await Ann.call("GET", "/api/matches")).json() as Array<{ id: string; registered: boolean }>).find((m) => m.id === cupId)!.registered).toBe(false);
   });
 
+  it("the creator of a game can start it at once or call it off; tournaments and other people's games are refused", async () => {
+    const second = ((await Ann.call("GET", "/api/matches")).json() as Array<{ id: string; name: string; createdByMe: boolean; status: string }>).find((m) => m.name === `Second ${suffix}`)!;
+    expect(second).toMatchObject({ createdByMe: true, status: "lobby" });
+    expect((await Ben.call("POST", `/api/matches/${second.id}/start-now`, {})).statusCode).toBe(403);
+    expect((await Ben.call("DELETE", `/api/matches/${second.id}`)).statusCode).toBe(403);
+    expect((await Ann.call("DELETE", `/api/matches/${second.id}`)).statusCode).toBe(200);
+    expect(((await Ann.call("GET", "/api/matches")).json() as Array<{ id: string }>).some((m) => m.id === second.id)).toBe(false);
+    const third = await Ann.call("POST", "/api/matches", { name: `Third ${suffix}`, speed: 10, startsInMinutes: 60, kind: "public", aiFillTo: 3 });
+    expect(third.statusCode, JSON.stringify(third.json())).toBe(201);
+    const thirdId = (third.json() as { id: string }).id;
+    created.push(thirdId);
+    expect((await Ann.call("POST", `/api/matches/${thirdId}/join`, {})).statusCode).toBe(201);
+    expect((await Ann.call("POST", `/api/matches/${thirdId}/start-now`, {})).statusCode).toBe(200);
+    const st = matchStateView.parse((await Ann.call("GET", `/api/matches/${thirdId}/state`)).json());
+    expect(st.match.status).toBe("running");
+    expect(st.players.length).toBe(3);
+    expect((await Ann.call("POST", `/api/matches/${thirdId}/start-now`, {})).statusCode).toBe(409);
+    expect((await Ann.call("DELETE", `/api/matches/${thirdId}`)).statusCode).toBe(409);
+    const cup = ((await A.call("GET", "/api/matches")).json() as Array<{ id: string; name: string }>).find((m) => m.name === `Cup ${suffix}`);
+    if (cup) expect((await A.call("POST", `/api/matches/${cup.id}/start-now`, {})).statusCode).toBe(400);
+  });
+
   it("the nightly simulation is created as an ordinary public game with a war-or-winter name", async () => {
     const sim = await createSimMatch(db);
     created.push(sim.id);

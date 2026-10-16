@@ -469,6 +469,7 @@ export const EVENT_KINDS = [
   "region.updated",
   "player.joined",
   "time.skipped",
+  "match.cancelled",
   "job.completed",
   "age.advanced",
   "message.new",

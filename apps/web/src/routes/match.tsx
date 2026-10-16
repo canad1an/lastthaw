@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, Navigate, useParams } from "@tanstack/react-router";
+import { Link, Navigate, useNavigate, useParams } from "@tanstack/react-router";
 import { useCallback, useMemo, useState } from "react";
 import { balance, formatCountdown, iceLatitudeOnDay, regionById, type MapRegion, type MatchStateView, loyaltyBand, wallOf, unitById } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
@@ -102,6 +102,22 @@ function LobbyRoom({ matchId, state }: { matchId: string; state: MatchStateView 
   const mine = listing.data?.find((m) => m.id === matchId);
   const startsIn = (Date.parse(state.match.startsAt) - now) / 1000;
   const capital = state.me.capitalRegionId ? regionById(state.me.capitalRegionId) : null;
+  const qc = useQueryClient();
+  const nav = useNavigate();
+  const startNow = useMutation({
+    mutationFn: () => api.startNow(matchId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.matchState(matchId) });
+      void qc.invalidateQueries({ queryKey: keys.matches });
+    },
+  });
+  const cancel = useMutation({
+    mutationFn: () => api.cancelGame(matchId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.matches });
+      void nav({ to: "/matches" });
+    },
+  });
   if (picking) return <LobbyView matchId={matchId} state={state} onBack={() => setPicking(false)} />;
   const kind = mine ? (mine.kind === "tournament" ? "Tournament" : mine.kind === "private" ? "Private game" : "Public game") : "Game";
   return (
@@ -137,6 +153,21 @@ function LobbyRoom({ matchId, state }: { matchId: string; state: MatchStateView 
           {mine?.inviteCode && (
             <Card className="text-sm text-slate-300">
               Invite code <span className="font-mono text-amber-200">{mine.inviteCode}</span>: friends enter it on the Matches page to join.
+            </Card>
+          )}
+          {mine?.createdByMe && mine.kind !== "tournament" && (
+            <Card className="space-y-2">
+              <h2 className="font-medium text-white">Your game</h2>
+              <p className="text-sm text-slate-400">You made this game, so you decide when it begins. Starting now fills the empty seats with AI tribes at once.</p>
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={() => window.confirm(`Start ${state.match.name} now with ${state.players.length} player${state.players.length === 1 ? "" : "s"} and AI tribes in the rest of the seats?`) && startNow.mutate()} disabled={startNow.isPending}>
+                  Start now
+                </Button>
+                <Button variant="danger" onClick={() => window.confirm(`Call off ${state.match.name}? Everyone who joined is sent back to the Matches page.`) && cancel.mutate()} disabled={cancel.isPending}>
+                  Call it off
+                </Button>
+              </div>
+              <ErrorText>{startNow.error?.message ?? cancel.error?.message}</ErrorText>
             </Card>
           )}
           <Card className="space-y-2">
