@@ -14,13 +14,13 @@ export type Temperament = "peaceful" | "balanced" | "raider";
 
 const BUILD_ORDER = ["huts", "hunting_grounds", "lumber_camp", "storehouse", "quarry", "farm", "palisade", "granary", "mine", "stables", "walls", "barracks", "roads", "railway", "temple", "forge", "market", "aqueduct", "fort", "library", "harbor", "windmill", "castle", "guild_hall", "university", "cathedral", "factory", "arsenal", "power_plant", "bunker"];
 const RESEARCH_ORDER = [
-  "oral_tradition", "trapping", "basketry", "salt_curing", "shelter_building", "tribal_councils", "copper_smelting", "harness", "calendar", "brick_making", "shield_wall", "sailing", "surveying", "quarrying", "carpentry", "fortification", "coinage", "scouting", "cartography", "navigation", "architecture", "concrete", "literature", "metallurgy", "professional_army", "provincial_administration", "currency", "water_mills", "iron_casting", "crossbows", "gunpowder", "trade_fairs", "banking", "compass", "printing_press", "coal_mining", "steel_mills", "textile_mills", "canning", "public_schools", "railway_signalling", "mass_production", "dynamite", "sanitation", "internal_combustion", "radio", "mass_media", "computers", "assembly_line", "refrigeration", "antibiotics", "aviation", "mechanised_agriculture", "nuclear_power",
   "fire_making", "flint_tools", "agriculture", "fishing_nets", "stone_axes", "animal_husbandry", "weaving", "bronze_working",
   "mining", "irrigation", "writing", "the_wheel", "wagon_building", "pottery", "herbal_medicine", "road_building", "bronze_weapons", "iron_working",
   "masonry", "crop_rotation", "iron_tools", "mathematics", "iron_weapons", "siegecraft", "drill",
   "engineering", "heavy_plough", "philosophy", "logistics", "civil_service", "steel", "shipbuilding", "chivalry",
   "three_field_system", "railways", "guilds", "blast_furnace", "plate_armour", "siege_engines", "scholasticism", "industrialisation",
   "steam_power", "telegraph", "rifling", "vaccination", "electronics",
+  "oral_tradition", "trapping", "basketry", "salt_curing", "shelter_building", "tribal_councils", "copper_smelting", "harness", "calendar", "brick_making", "shield_wall", "sailing", "surveying", "quarrying", "carpentry", "fortification", "coinage", "scouting", "cartography", "navigation", "architecture", "concrete", "literature", "metallurgy", "professional_army", "provincial_administration", "currency", "water_mills", "iron_casting", "crossbows", "gunpowder", "trade_fairs", "banking", "compass", "printing_press", "coal_mining", "steel_mills", "textile_mills", "canning", "public_schools", "railway_signalling", "mass_production", "dynamite", "sanitation", "internal_combustion", "radio", "mass_media", "computers", "assembly_line", "refrigeration", "antibiotics", "aviation", "mechanised_agriculture", "nuclear_power",
   "electricity", "combined_arms", "radar", "synthetic_fertilizer", "ballistics", "satellites",
 ];
 
@@ -85,7 +85,8 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
     .select({ regionId: jobs.regionId, kind: jobs.kind, refId: jobs.refId, waitingFor: jobs.waitingFor })
     .from(jobs)
     .where(and(eq(jobs.matchId, m.id), eq(jobs.playerId, p.id), isNull(jobs.completedAt), isNull(jobs.cancelledAt)));
-  const researching = pendingJobs.some((j) => j.kind === "research");
+  const researchQueued = pendingJobs.filter((j) => j.kind === "research").length;
+  const researching = researchQueued >= 3;
   const queueLen = (regionId: string) => pendingJobs.filter((j) => j.regionId === regionId).length;
   const ownedIds = owned.map((r) => r.regionId);
   const matchDay = ((now.getTime() - m.startsAt.getTime()) / 86400_000) * m.speed;
@@ -165,9 +166,13 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
     // The capital is the realm: losing it loses the game, so it keeps twice the usual garrison.
     const share = (balance.ai.soldierShare[temperament] ?? 0.2) * (underThreat ? 2 : 1) * (row.regionId === p.capitalRegionId ? 2 : 1);
     if (queueLen(row.regionId) < balance.queue.slotsPerRegion && economy.popSoldiers < pop * share && economy.popWorkers > 8) {
-      const units = availableUnits(p.age, techs).filter((u) => !u.needsResource || region.resources.includes(u.needsResource));
-      const best = [...units].sort((a, b) => b.attack + b.defense - (a.attack + a.defense))[0];
-      const qty = Math.max(1, Math.min(underThreat ? 20 : 10, Math.floor(economy.popWorkers * (underThreat ? 0.3 : 0.15))));
+      const units = availableUnits(p.age, techs).filter((u) => !u.naval && !u.civilian && (!u.needsResource || region.resources.includes(u.needsResource)));
+      const engine = [...units].filter((u) => (u.breach ?? 0) > 0).sort((a, b) => (b.breach ?? 0) - (a.breach ?? 0))[0];
+      const enginesHere = Object.entries(row.units).reduce((acc, [id, n]) => acc + ((unitById.get(id)?.breach ?? 0) > 0 ? n : 0), 0);
+      // One engine for every eight soldiers, so walls never stop an attack cold.
+      const wantEngines = engine && !underThreat && enginesHere < Math.max(2, Math.floor(economy.popSoldiers / 8)) && difficulty !== "easy";
+      const best = wantEngines ? engine : [...units].filter((u) => !(u.breach ?? 0)).sort((a, b) => b.attack + b.defense - (a.attack + a.defense))[0];
+      const qty = wantEngines ? Math.max(1, Math.min(6, Math.floor(economy.popSoldiers / 8) - enginesHere)) : Math.max(1, Math.min(underThreat ? 20 : 10, Math.floor(economy.popWorkers * (underThreat ? 0.3 : 0.15))));
       if (best) await attempt(() => queueTrain(ctx, row.regionId, best.id, qty));
     }
   }
@@ -187,20 +192,22 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
 
   // Research: hard tribes jump on age advances; easy tribes only research with a comfortable surplus.
   if (!researching) {
-    const avail = availableTechs(p.age, techs);
+    const queuedTechs = new Set(pendingJobs.filter((j) => j.kind === "research").map((j) => j.refId ?? ""));
+    const known = new Set([...techs, ...queuedTechs]);
+    const avail = availableTechs(p.age, known).filter((t) => !queuedTechs.has(t.id));
     const ids = new Set(avail.map((t) => t.id));
-    // Every tier goes for the next age as soon as its day has come, researching whatever the tree needs first; the rest of the order fills the time before it.
+    // Every tier works toward the next age along the tree; the age tech itself waits for its day, its prerequisites do not.
     const ageTech = TECHS.find((t) => t.advancesTo === p.age + 1);
     let next: string | undefined;
-    if (ageTech && (ageTech.earliestDay ?? 0) <= matchDay + 1) {
-      const want = new Set<string>();
+    if (ageTech) {
+      const want: string[] = [];
       const walk = (id: string) => {
-        if (techs.has(id) || want.has(id)) return;
-        want.add(id);
+        if (known.has(id) || want.includes(id)) return;
         for (const r of techById.get(id)?.requires ?? []) walk(r);
+        want.push(id);
       };
       walk(ageTech.id);
-      next = [...want].find((id) => ids.has(id) && (techById.get(id)?.earliestDay ?? 0) <= matchDay);
+      next = want.find((id) => ids.has(id) && (techById.get(id)?.earliestDay ?? 0) <= matchDay);
     }
     if (!next) next = RESEARCH_ORDER.find((t) => ids.has(t));
     if (!next) next = [...avail].sort((a, b) => a.baseSeconds - b.baseSeconds)[0]?.id;
@@ -304,7 +311,7 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
         candidates.sort((a, b) => b.score - a.score);
         let target = candidates[0];
         // Walled target, not enough engines: build siege first (medium and hard), or pick an open target instead.
-        if (target && target.siegeNeed > siegeHave && difficulty !== "easy") {
+        if (target && target.siegeNeed * 0.6 > siegeHave && difficulty !== "easy") {
           const engines = availableUnits(p.age, techs).filter((u) => (u.breach ?? 0) > 0 && !u.naval).sort((a, b) => (b.breach ?? 0) - (a.breach ?? 0));
           const engine = engines[0];
           const canQueue = queueLen(strong.regionId) < balance.queue.slotsPerRegion && !pendingJobs.some((j) => j.regionId === strong.regionId && j.kind === "train" && (unitById.get(j.refId ?? "")?.breach ?? 0) > 0);
@@ -312,7 +319,7 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
             const qty = Math.min(20, Math.max(1, Math.ceil((target.siegeNeed - siegeHave) / (engine.breach ?? 1))));
             await attempt(() => queueTrain(ctx, strong.regionId, engine.id, qty));
           }
-          target = candidates.find((c) => c.siegeNeed <= siegeHave) ?? (boldStrike ? target : undefined);
+          target = candidates.find((c) => c.siegeNeed * 0.6 <= siegeHave) ?? (boldStrike ? target : undefined);
         }
         if (target) {
           const send: Record<string, number> = { ...force };
