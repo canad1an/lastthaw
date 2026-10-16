@@ -21,6 +21,8 @@ export const balance = {
     startOptions: 6,
     /** Minimum great-circle distance between two players' capitals, in km. */
     minCapitalSpacingKm: 900,
+    /** Capitals are offered no further from the equator than this; the ice ends at 28°, so a start beyond 40° is a lost cause. */
+    maxStartLatitude: 40,
   },
   start: {
     families: 5,

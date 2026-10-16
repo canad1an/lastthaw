@@ -1,10 +1,15 @@
 import { createHash } from "node:crypto";
 import { allRegions, balance, distanceKm, regionById, type MapRegion } from "@lastthaw/shared";
 
-/** Regions good enough to start in: temperate-ish, not frozen or barren, with some neighbours. */
+/**
+ * Regions good enough to start in: not frozen or barren, with some neighbours, and no
+ * further than `balance.match.maxStartLatitude` from the equator. Starts beyond that
+ * lost to the ice in every test run; the final ice line is 28°, so 40° leaves a
+ * fortnight to move and somewhere to move to.
+ */
 export function eligibleStarts(): MapRegion[] {
   return allRegions().filter(
-    (r) => r.terrain !== "tundra" && r.terrain !== "desert" && r.neighbors.length >= 2 && Math.abs(r.lat) <= 55 && r.value >= 0.6,
+    (r) => r.terrain !== "tundra" && r.terrain !== "desert" && r.neighbors.length >= 2 && Math.abs(r.lat) <= balance.match.maxStartLatitude && r.value >= 0.6,
   );
 }
 
