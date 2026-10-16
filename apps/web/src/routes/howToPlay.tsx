@@ -343,7 +343,7 @@ export function HowToPlayPage() {
       {tab === "advanced" && <AdvancedSection open />}
       {tab === "techs" && (
         <>
-          <TechTreeGraph />
+          <TechTreeGraph height="none" />
           <details className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
             <summary className="cursor-pointer text-sm font-medium text-slate-200">Every tech by age, with costs, times and what it gives</summary>
             <div className="mt-3">
