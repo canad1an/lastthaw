@@ -13,7 +13,11 @@ const schema = z.object({
   MAIL_FROM: z.string().default("Last Thaw <noreply@lastthaw.com>"),
   PUBLIC_URL: z.string().url().default("http://localhost:5173"),
   /** Discord webhook the AI tribes post through during tournaments; unset means they stay quiet. */
-  DISCORD_WEBHOOK_URL: z.string().url().optional(),
+  DISCORD_WEBHOOK_URL: z
+    .string()
+    .optional()
+    .transform((v) => (v && v.trim() ? v.trim() : undefined))
+    .pipe(z.string().url().optional()),
   DEV_TOOLS: z
     .string()
     .default("false")
