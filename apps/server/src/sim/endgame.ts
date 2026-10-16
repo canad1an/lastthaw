@@ -170,6 +170,8 @@ export async function checkEarlyWin(tx: Tx, m: MatchRow, at: Date, standings: Ar
 export async function finishMatch(tx: Tx, m: MatchRow, at: Date, publisher: Publisher, after: (fn: () => Promise<void>) => void, winnerPlayerId: string | null, kind?: "hold" | "wonder" | "survival" | "score"): Promise<void> {
   if (m.status !== "running") return;
   const winKind = kind ?? (winnerPlayerId ? "hold" : balance.win.survival ? "survival" : "score");
+  const ms = (m.settings ?? {}) as { kind?: string; weekly?: boolean };
+  const isRanked = ms.kind === "tournament" || ms.weekly === true;
   const standings = await updateScores(tx, m);
   await recordOwnershipFrame(tx, m, at);
   const ps = await tx.select().from(players).where(and(eq(players.matchId, m.id), eq(players.hidden, false)));
@@ -194,7 +196,7 @@ export async function finishMatch(tx: Tx, m: MatchRow, at: Date, publisher: Publ
     const s = standings.find((x) => x.id === p.id);
     await tx
       .insert(userMatchResults)
-      .values({ userId: p.userId, matchId: m.id, playerId: p.id, finalRank: i + 1, score: s?.score ?? 0, regionsHeld: s?.regions ?? 0, ageReached: p.age, eliminatedAt: p.eliminatedAt, won: p.id === winner })
+      .values({ userId: p.userId, matchId: m.id, playerId: p.id, finalRank: i + 1, score: s?.score ?? 0, regionsHeld: s?.regions ?? 0, ageReached: p.age, eliminatedAt: p.eliminatedAt, won: p.id === winner, ranked: isRanked })
       .onConflictDoNothing();
     await notify(tx, m.id, p.id, "system", `The match is over. You finished #${i + 1}${p.id === winner ? " and won!" : "."}`, { rank: i + 1, winner });
   }

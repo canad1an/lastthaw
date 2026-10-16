@@ -87,7 +87,14 @@ export const matchSummary = z.object({
   /** My player id in this match, if joined. */
   playerId: z.string().nullable(),
   capitalRegionId: z.string().nullable(),
+  /** Tournaments are scheduled and ranked; public and private games are player-made. */
+  kind: z.enum(["tournament", "public", "private"]).default("public"),
+  /** The invite code, shown only to the game's creator. */
+  inviteCode: z.string().nullable().default(null),
+  createdByMe: z.boolean().default(false),
 });
+export const joinMatchBody = z.object({ inviteCode: z.string().trim().max(32).optional() });
+export const joinByCodeBody = z.object({ code: z.string().trim().min(4).max(32) });
 export type MatchSummary = z.infer<typeof matchSummary>;
 
 export const createMatchBody = z.object({
@@ -96,8 +103,8 @@ export const createMatchBody = z.object({
   startsInMinutes: z.number().int().min(0).max(60 * 24 * 14),
   /** Exact start (ISO); wins over startsInMinutes when given. */
   startsAt: z.string().datetime().optional(),
-  /** Counts toward the six scheduled matches the worker keeps ahead. */
-  weekly: z.boolean().optional(),
+  /** Tournament (admins only; the ranked, scheduled kind), public (anyone may join) or private (joiners need the invite code). */
+  kind: z.enum(["tournament", "public", "private"]).optional(),
   /** AI tribes are added until this many players exist. Default from balance. */
   aiFillTo: z.number().int().min(0).max(100).optional(),
   /** Neutral tribes scattered on the map. Default from balance. */

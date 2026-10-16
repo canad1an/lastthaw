@@ -1,16 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
-import {
-  assignBody,
-  balance,
-  createMatchBody,
-  normalizeAssignment,
-  pickStartBody,
-  regionById,
-  timeSkipBody,
-  type MatchSummary,
-} from "@lastthaw/shared";
+import { assignBody, balance, createMatchBody, normalizeAssignment, pickStartBody, regionById, timeSkipBody, type MatchSummary, joinMatchBody, joinByCodeBody } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { matchRegions, matches, players } from "../db/schema.js";
 import { requireUser, requireVerified } from "../auth/session.js";
@@ -69,9 +60,15 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
           .where(and(eq(players.userId, user.id), ids.length ? inArray(players.matchId, ids) : sql`false`))
       : [];
     const mineBy = new Map(mine.map((p) => [p.matchId, p]));
-    const out: MatchSummary[] = rows.map((m) => {
+    const out: MatchSummary[] = [];
+    for (const m of rows) {
       const mp = mineBy.get(m.id);
-      return {
+      const s = (m.settings ?? {}) as { kind?: "tournament" | "public" | "private"; weekly?: boolean; inviteCode?: string; createdBy?: string };
+      const kind = s.kind ?? (s.weekly ? "tournament" : "public");
+      const createdByMe = !!user && s.createdBy === user.id;
+      // Private games are only listed to their creator and the people already in them.
+      if (kind === "private" && !createdByMe && !mp) continue;
+      out.push({
         id: m.id,
         name: m.name,
         status: m.status,
@@ -83,16 +80,30 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
         joined: !!mp,
         playerId: mp?.id ?? null,
         capitalRegionId: mp?.capital ?? null,
-      };
-    });
+        kind,
+        inviteCode: createdByMe ? (s.inviteCode ?? null) : null,
+        createdByMe,
+      });
+    }
     return out;
   });
 
-  // Hand-made matches: admins in production, anyone verified when dev tools are on.
+  /**
+   * Games: any approved player may create a public or private game (two open at a time);
+   * tournaments, the scheduled ranked kind, are the admin's. Private games get an invite code.
+   */
   app.post("/api/matches", async (req, reply) => {
     const user = requireVerified(req);
-    if (!devTools && !user.isAdmin) throw httpError(403, "only admins can create matches; the weekly match is created automatically");
     const body = createMatchBody.parse(req.body);
+    const kind = body.kind ?? "public";
+    if (kind === "tournament" && !devTools && !user.isAdmin) throw httpError(403, "only admins create tournaments");
+    if (!user.isAdmin && !user.approved) throw httpError(403, "Last Thaw is in private beta: ask Matt for access before creating a game");
+    if (!user.isAdmin && body.speed > 50) throw httpError(400, "games run at 50x at most; tournaments are 1x");
+    if (!user.isAdmin) {
+      const [open] = await db.select({ n: sql<number>`count(*)::int` }).from(matches).where(and(inArray(matches.status, ["lobby", "running"]), sql`${matches.settings}->>'createdBy' = ${user.id}`));
+      if ((open?.n ?? 0) >= 2) throw httpError(409, "you already have two games open; let one finish first");
+    }
+    const inviteCode = kind === "private" ? randomBytes(4).toString("hex").toUpperCase() : undefined;
     const startsAt = body.startsAt ? new Date(body.startsAt) : new Date(Date.now() + body.startsInMinutes * 60_000);
     if (startsAt.getTime() < Date.now() - 60_000) throw httpError(400, "the start time is in the past");
     const endsAt = new Date(startsAt.getTime() + matchLengthSeconds(body.speed) * 1000);
@@ -109,11 +120,13 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
           ...(body.aiFillTo !== undefined ? { aiFillTo: body.aiFillTo } : {}),
           ...(body.neutralTribes !== undefined ? { neutralTribes: body.neutralTribes } : {}),
           ...(body.aiDifficulty ? { aiDifficulty: body.aiDifficulty } : {}),
-          ...(body.weekly ? { weekly: true } : {}),
+          kind,
+          ...(kind === "tournament" ? { weekly: true } : {}),
+          ...(inviteCode ? { inviteCode } : {}),
         },
       })
       .returning();
-    return reply.code(201).send({ id: m!.id });
+    return reply.code(201).send({ id: m!.id, inviteCode: inviteCode ?? null });
   });
 
   /** A war-or-winter name no match has used, for the admin's create form. */
@@ -124,13 +137,26 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
     return { name: pickMatchName(taken, randomBytes(8).toString("hex")) };
   });
 
+  /** Find a private game by its invite code, so the joiner can enter it from the lobby. */
+  app.post("/api/matches/join-code", async (req) => {
+    const user = requireVerified(req);
+    if (!user.approved) throw httpError(403, "Last Thaw is in private beta: ask Matt for access first");
+    const { code } = joinByCodeBody.parse(req.body);
+    const [m] = await db.select({ id: matches.id, name: matches.name }).from(matches).where(and(eq(matches.status, "lobby"), sql`upper(${matches.settings}->>'inviteCode') = ${code.toUpperCase()}`)).limit(1);
+    if (!m) throw httpError(404, "no open game has that invite code");
+    return { id: m.id, name: m.name };
+  });
+
   app.post("/api/matches/:id/join", async (req, reply) => {
     const user = requireVerified(req);
     const matchId = idParams.parse(req.params).id;
+    const { inviteCode } = joinMatchBody.parse(req.body ?? {});
     const [m] = await db.select().from(matches).where(eq(matches.id, matchId)).limit(1);
     if (!m) throw httpError(404, "match not found");
     if (m.status !== "lobby") throw httpError(409, "the match has already started");
     if (!user.approved) throw httpError(403, "Last Thaw is in private beta: ask Matt for access before joining a match");
+    const s = (m.settings ?? {}) as { kind?: string; inviteCode?: string; createdBy?: string };
+    if (s.kind === "private" && s.createdBy !== user.id && (inviteCode ?? "").toUpperCase() !== (s.inviteCode ?? "").toUpperCase()) throw httpError(403, "this is a private game: enter its invite code");
     const existing = await myPlayer(matchId, user.id);
     if (existing) return { playerId: existing.id };
     const [humans] = await db.select({ n: sql`count(*)::int` }).from(players).where(and(eq(players.matchId, matchId), eq(players.isAi, false)));

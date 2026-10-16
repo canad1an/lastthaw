@@ -104,6 +104,7 @@ export async function publicRoutes(app: FastifyInstance, opts: { db: Db }) {
       .select({ name: users.displayName, wins: sql<number>`count(*) filter (where ${userMatchResults.won})::int`, played: sql<number>`count(*)::int`, best: sql<number>`min(${userMatchResults.finalRank})::int` })
       .from(userMatchResults)
       .innerJoin(users, eq(users.id, userMatchResults.userId))
+      .where(eq(userMatchResults.ranked, true))
       .groupBy(users.id, users.displayName)
       .orderBy(desc(sql`count(*) filter (where ${userMatchResults.won})`), desc(sql`count(*)`))
       .limit(20);

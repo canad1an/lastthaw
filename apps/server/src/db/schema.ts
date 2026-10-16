@@ -85,6 +85,8 @@ export const userMatchResults = pgTable(
     ageReached: integer("age_reached").notNull(),
     eliminatedAt: timestamp("eliminated_at", { withTimezone: true }),
     won: boolean("won").notNull().default(false),
+    /** Only tournament results count toward the hall of fame. */
+    ranked: boolean("ranked").notNull().default(false),
     recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.userId, t.matchId] })],

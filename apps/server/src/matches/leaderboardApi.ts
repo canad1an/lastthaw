@@ -199,6 +199,7 @@ export async function leaderboardRoutes(app: FastifyInstance, opts: { db: Db }) 
         finishedAt: m.finishedAt?.toISOString() ?? null,
         winnerName: m.winnerPlayerId ? (winnerBy.get(m.winnerPlayerId) ?? null) : null,
         winKind: m.winKind ?? null,
+        kind: ((m.settings ?? {}) as { kind?: string; weekly?: boolean }).kind ?? (((m.settings ?? {}) as { weekly?: boolean }).weekly ? "tournament" : "public"),
         humans: countBy.get(m.id)?.humans ?? 0,
         players: countBy.get(m.id)?.total ?? 0,
       })),

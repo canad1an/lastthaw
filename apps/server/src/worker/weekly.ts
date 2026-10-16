@@ -42,8 +42,8 @@ export async function ensureWeeklyMatch(db: Db, log: pino.Logger): Promise<void>
     const seed = randomBytes(8).toString("hex");
     const name = pickMatchName(taken, seed);
     taken.add(name.toLowerCase());
-    await db.insert(matches).values({ name, speed: balance.match.defaultSpeed, seed, startsAt, endsAt, settings: { weekly: true } });
-    log.info({ name, startsAt }, "weekly match created");
+    await db.insert(matches).values({ name, speed: balance.match.defaultSpeed, seed, startsAt, endsAt, settings: { weekly: true, kind: "tournament" } });
+    log.info({ name, startsAt }, "tournament scheduled");
     startsAt = nextWeeklyStart(startsAt, s.weekday, s.hourUtc);
   }
   void inArray;

@@ -56,8 +56,9 @@ export const api = {
   changePassword: (b: { currentPassword: string; newPassword: string }) => request<{ ok: true }>("POST", "/api/me/password", b),
 
   matches: () => request("GET", "/api/matches", undefined, matchSummary.array()),
-  createMatch: (b: { name: string; speed: number; startsInMinutes: number; startsAt?: string; weekly?: boolean; aiFillTo?: number; neutralTribes?: number; aiDifficulty?: "mixed" | "easy" | "medium" | "hard" }) => request<{ id: string }>("POST", "/api/matches", b),
-  joinMatch: (id: string) => request<{ playerId: string }>("POST", `/api/matches/${id}/join`, {}),
+  createMatch: (b: { name: string; speed: number; startsInMinutes: number; startsAt?: string; kind?: "tournament" | "public" | "private"; aiFillTo?: number; neutralTribes?: number; aiDifficulty?: "mixed" | "easy" | "medium" | "hard" }) => request<{ id: string; inviteCode: string | null }>("POST", "/api/matches", b),
+  joinByCode: (code: string) => request<{ id: string; name: string }>("POST", "/api/matches/join-code", { code }),
+  joinMatch: (id: string, inviteCode?: string) => request<{ playerId: string }>("POST", `/api/matches/${id}/join`, inviteCode ? { inviteCode } : {}),
   startOptions: (id: string) => request<{ options: string[]; current: string | null }>("GET", `/api/matches/${id}/start-options`),
   pickStart: (id: string, regionId: string) => request<{ ok: true }>("POST", `/api/matches/${id}/pick-start`, { regionId }),
   matchState: (id: string) => request("GET", `/api/matches/${id}/state`, undefined, matchStateView),

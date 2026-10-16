@@ -18,11 +18,11 @@ export function LobbyPage() {
       <section className="space-y-2">
         <p className="shadow-copy text-xs font-medium uppercase tracking-[0.25em] text-sky-300">The field</p>
         <h1 className="display text-4xl font-bold">
-          <span className="frost-text">Matches</span>
+          <span className="frost-text">Tournaments</span>
         </h1>
         <p className="shadow-copy max-w-prose text-slate-200">
-          Thirty days. One freezing Earth. Grow five families into an empire before the ice reaches you. Join a match before it starts;
-          nobody joins mid-match.
+          Thirty days. One freezing Earth. Grow five families into an empire before the ice reaches you. Tournaments start every week and are
+          the only games that count toward the Hall of Fame. Join before the start; nobody joins mid-match.
         </p>
       </section>
 
@@ -49,12 +49,24 @@ export function LobbyPage() {
       )}
 
       <div className="space-y-3">
-        {matches.isLoading && <p className="text-slate-400">Loading matches...</p>}
-        {matches.data?.length === 0 && <p className="text-slate-400">No matches are open right now.</p>}
-        {matches.data?.map((m) => <MatchRow key={m.id} m={m} canJoin={!!me.data?.emailVerified && !!me.data?.approved} />)}
+        {matches.isLoading && <p className="text-slate-400">Loading tournaments...</p>}
+        {matches.data?.filter((m) => m.kind === "tournament").length === 0 && !matches.isLoading && <p className="text-slate-400">No tournament is open right now.</p>}
+        {matches.data?.filter((m) => m.kind === "tournament").map((m) => <MatchRow key={m.id} m={m} canJoin={!!me.data?.emailVerified && !!me.data?.approved} />)}
       </div>
 
-      {me.data?.emailVerified && (me.data.isAdmin || info.data?.devTools) && <CreateMatch admin={!!me.data.isAdmin} />}
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <h2 className="text-xl font-semibold tracking-tight">Games</h2>
+            <p className="text-sm text-slate-400">Player-made matches, public or private. Fun, not ranked.</p>
+          </div>
+          {me.data?.emailVerified && me.data.approved && <JoinByCode />}
+        </div>
+        {matches.data?.filter((m) => m.kind !== "tournament").length === 0 && <p className="text-sm text-slate-500">No games open. Create one below.</p>}
+        {matches.data?.filter((m) => m.kind !== "tournament").map((m) => <MatchRow key={m.id} m={m} canJoin={!!me.data?.emailVerified && !!me.data?.approved} />)}
+      </section>
+
+      {me.data?.emailVerified && (me.data.approved || me.data.isAdmin || info.data?.devTools) && <CreateMatch admin={!!me.data.isAdmin} />}
 
       <PastMatches />
     </main>
@@ -69,6 +81,7 @@ interface PastMatch {
   finishedAt: string | null;
   winnerName: string | null;
   winKind: string | null;
+  kind?: string;
   humans: number;
   players: number;
 }
@@ -90,7 +103,7 @@ function PastMatches() {
           <Card key={m.id} className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
               <p className="font-medium text-slate-100">
-                {m.name} <span className="text-xs text-slate-500">· {m.speed}x · {m.players} players{m.humans ? `, ${m.humans} human` : ""}</span>
+                {m.name} <span className="text-xs text-slate-500">· {m.kind === "tournament" ? "tournament" : "game"} · {m.speed}x · {m.players} players{m.humans ? `, ${m.humans} human` : ""}</span>
               </p>
               <p className="text-sm text-slate-400">
                 {m.finishedAt ? new Date(m.finishedAt).toLocaleDateString() : ""}
@@ -130,10 +143,51 @@ function VerifyBanner() {
   );
 }
 
+/** Enter a private game's invite code: finds the game and joins it. */
+function JoinByCode() {
+  const qc = useQueryClient();
+  const [code, setCode] = useState("");
+  const m = useMutation({
+    mutationFn: async () => {
+      const found = await api.joinByCode(code);
+      await api.joinMatch(found.id, code);
+      return found;
+    },
+    onSuccess: () => {
+      setCode("");
+      void qc.invalidateQueries({ queryKey: keys.matches });
+    },
+  });
+  return (
+    <form
+      className="flex items-end gap-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (code.trim()) m.mutate();
+      }}
+    >
+      <Field label="Invite code">
+        <Input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="e.g. 7F3A9C1B" className="w-40 font-mono" maxLength={16} />
+      </Field>
+      <Button type="submit" variant="ghost" disabled={m.isPending || !code.trim()}>
+        Join private game
+      </Button>
+      {m.error && <ErrorText>{m.error.message}</ErrorText>}
+    </form>
+  );
+}
+
 function MatchRow({ m, canJoin }: { m: MatchSummary; canJoin: boolean }) {
   const qc = useQueryClient();
   const now = useNow(1000);
-  const join = useMutation({ mutationFn: () => api.joinMatch(m.id), onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matches }) });
+  const [copied, setCopied] = useState(false);
+  const join = useMutation({
+    mutationFn: () => {
+      const code = m.kind === "private" && !m.createdByMe ? window.prompt("This is a private game. Enter its invite code:") ?? "" : undefined;
+      return api.joinMatch(m.id, code || undefined);
+    },
+    onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matches }),
+  });
   const startsIn = (Date.parse(m.startsAt) - now) / 1000;
   const endsIn = (Date.parse(m.endsAt) - now) / 1000;
   return (
@@ -145,6 +199,27 @@ function MatchRow({ m, canJoin }: { m: MatchSummary; canJoin: boolean }) {
           <span className={`rounded px-1.5 py-0.5 text-xs ${m.status === "running" ? "bg-emerald-500/20 text-emerald-300" : "bg-sky-500/20 text-sky-300"}`}>
             {m.status}
           </span>
+          {m.kind === "tournament" ? (
+            <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-xs text-amber-200" title="Scheduled and ranked">tournament</span>
+          ) : m.kind === "private" ? (
+            <span className="rounded bg-slate-700 px-1.5 py-0.5 text-xs text-slate-300" title="Needs the invite code">private</span>
+          ) : (
+            <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-400">public game</span>
+          )}
+          {m.inviteCode && (
+            <button
+              className="rounded border border-slate-700 px-1.5 py-0.5 font-mono text-xs text-slate-200 hover:bg-slate-800"
+              title="Invite code: click to copy. Share it with the people you want in."
+              onClick={() => {
+                void navigator.clipboard?.writeText(m.inviteCode!).then(() => {
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 1500);
+                });
+              }}
+            >
+              {copied ? "copied" : `code ${m.inviteCode}`}
+            </button>
+          )}
         </div>
         <p className="text-sm text-slate-400">
           {m.humanPlayers}/{m.maxPlayers} players ·{" "}
@@ -171,23 +246,24 @@ function MatchRow({ m, canJoin }: { m: MatchSummary; canJoin: boolean }) {
 
 function CreateMatch({ admin }: { admin: boolean }) {
   const qc = useQueryClient();
-  const [name, setName] = useState("Test match");
+  const [name, setName] = useState("");
   const [speed, setSpeed] = useState(admin ? 1 : 10);
-  const [startsIn, setStartsIn] = useState(5);
+  const [startsIn, setStartsIn] = useState(30);
   const [startsAt, setStartsAt] = useState("");
-  const [weekly, setWeekly] = useState(admin);
+  const [kind, setKind] = useState<"tournament" | "public" | "private">(admin ? "tournament" : "public");
   const [aiFillTo, setAiFillTo] = useState(20);
   const [aiDifficulty, setAiDifficulty] = useState<"mixed" | "easy" | "medium" | "hard">("mixed");
   const m = useMutation({
-    mutationFn: () => api.createMatch({ name, speed, startsInMinutes: startsIn, ...(startsAt ? { startsAt: new Date(startsAt).toISOString() } : {}), weekly, aiFillTo, aiDifficulty }),
+    mutationFn: () => api.createMatch({ name, speed, startsInMinutes: startsIn, ...(startsAt ? { startsAt: new Date(startsAt).toISOString() } : {}), kind, aiFillTo, aiDifficulty }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matches }),
   });
   const suggest = useMutation({ mutationFn: () => api.nameSuggestion(), onSuccess: (r) => setName(r.name) });
   return (
     <Card>
-      <h2 className="mb-1 font-medium">Create a match {admin ? "(admin)" : "(dev tool)"}</h2>
+      <h2 className="mb-1 font-medium">{admin ? "Create a tournament or game" : "Create a game"}</h2>
       <p className="mb-3 text-xs text-slate-400">
-        Players join in the lobby until the start time. At start, AI tribes are added until the match has N players in total (set N to the number of humans for no AI, 100 for a full map). Speed 10 means a 3-day match.
+        Players join in the lobby until the start time; AI tribes fill the rest up to the number you set. Speed 1 is the thirty-day pace; 10 means a three-day match. Private games get an invite code to share.
+        {admin ? " Tournaments are the scheduled, ranked kind." : " Games are not ranked; tournaments are."}
       </p>
       <form
         onSubmit={(e) => {
@@ -205,7 +281,7 @@ function CreateMatch({ admin }: { admin: boolean }) {
           </div>
         </Field>
         <Field label="Speed">
-          <Input type="number" min={1} max={100} value={speed} onChange={(e) => setSpeed(Number(e.target.value))} />
+          <Input type="number" min={1} max={admin ? 1000 : 50} value={speed} onChange={(e) => setSpeed(Number(e.target.value))} />
         </Field>
         <Field label="Starts at (your time)">
           <Input type="datetime-local" value={startsAt} onChange={(e) => setStartsAt(e.target.value)} />
@@ -215,10 +291,12 @@ function CreateMatch({ admin }: { admin: boolean }) {
             <Input type="number" min={0} value={startsIn} onChange={(e) => setStartsIn(Number(e.target.value))} />
           </Field>
         )}
-        <Field label="Counts toward the weekly schedule">
-          <label className="flex h-10 items-center gap-2 text-sm text-slate-300">
-            <input type="checkbox" checked={weekly} onChange={(e) => setWeekly(e.target.checked)} /> Yes, it is one of the six ahead
-          </label>
+        <Field label="Kind">
+          <select value={kind} onChange={(e) => setKind(e.target.value as typeof kind)} className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100">
+            {admin && <option value="tournament">Tournament (ranked, scheduled)</option>}
+            <option value="public">Public game</option>
+            <option value="private">Private game (invite code)</option>
+          </select>
         </Field>
         <Field label="AI tribes up to">
           <Input type="number" min={0} max={100} value={aiFillTo} onChange={(e) => setAiFillTo(Number(e.target.value))} />
@@ -232,11 +310,16 @@ function CreateMatch({ admin }: { admin: boolean }) {
           </select>
         </Field>
         <div className="flex items-end">
-          <Button type="submit" className="w-full" disabled={m.isPending}>
+          <Button type="submit" className="w-full" disabled={m.isPending || !name.trim()}>
             Create
           </Button>
         </div>
       </form>
+      {m.data?.inviteCode && (
+        <p className="mt-2 text-sm text-emerald-200">
+          Private game created. Invite code: <span className="font-mono">{m.data.inviteCode}</span>. Share it; joiners enter it on this page.
+        </p>
+      )}
       <ErrorText>{m.error?.message}</ErrorText>
     </Card>
   );
