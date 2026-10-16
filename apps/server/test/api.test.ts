@@ -510,6 +510,11 @@ describe("api routes", () => {
       const res = await app.inject({ method: "GET", url });
       expect(res.statusCode, url).toBe(200);
     }
+    const sitemap = await app.inject({ method: "GET", url: "/sitemap.xml" });
+    expect(sitemap.statusCode).toBe(200);
+    expect(sitemap.headers["content-type"]).toContain("application/xml");
+    expect(sitemap.body).toContain("<urlset");
+    expect(sitemap.body).toContain("/how-to-play</loc>");
     expect((await app.inject({ method: "GET", url: "/api/me/history" })).statusCode).toBe(401);
     const h = await Ann.call("GET", "/api/me/history");
     expect(h.statusCode).toBe(200);

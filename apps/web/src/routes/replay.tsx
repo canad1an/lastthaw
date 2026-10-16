@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { usePageMeta, useSlugAddress } from "../seo.js";
 import { Link, useParams } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { balance, iceLatitudeOnDay, type MapRegion } from "@lastthaw/shared";
@@ -11,7 +12,7 @@ interface Frame {
   changes: Record<string, string | null>;
 }
 interface Replay {
-  match: { id: string; name: string; status: string; speed: number; finishedAt: string | null; winnerPlayerId: string | null };
+  match: { id: string; slug?: string; name: string; status: string; speed: number; finishedAt: string | null; winnerPlayerId: string | null };
   players: { id: string; name: string; isAi: boolean }[];
   frames: Frame[];
 }
@@ -30,6 +31,8 @@ export function ReplayPage() {
     queryFn: () => fetch(`/api/matches/${matchId}/replay`, { credentials: "include" }).then((r) => r.json() as Promise<Replay>),
   });
   const data = q.data;
+  useSlugAddress(matchId, data?.match?.slug, "/replay");
+  usePageMeta({ title: data?.match ? `${data.match.name}: replay` : "Replay", description: data?.match ? `Watch ${data.match.name} unfold day by day: every border, every conquest and the ice closing in, in a Last Thaw replay.` : undefined, path: `/match/${data?.match?.slug || matchId}/replay` });
   const frames = data?.frames ?? [];
   // Fold frames once into a full owner map per frame, so scrubbing is instant.
   const states = useMemo(() => {

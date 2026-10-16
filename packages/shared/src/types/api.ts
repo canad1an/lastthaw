@@ -384,6 +384,8 @@ export const matchStateView = z.object({
     now: z.string(),
     clockOffsetSeconds: z.number(),
     pausedAt: z.string().nullable().default(null),
+    /** Readable address of the match, for links and the canonical URL. */
+    slug: z.string().default(""),
     finishedAt: z.string().nullable().default(null),
     winnerPlayerId: z.string().nullable().default(null),
   }),

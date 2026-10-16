@@ -587,6 +587,23 @@ export const chatMessages = pgTable(
   (t) => [index("chat_channel_idx").on(t.matchId, t.channel, t.sentAt)],
 );
 
+/** What each AI tribe has said on Discord, one row per tribe and day, so a post is never repeated. */
+export const discordPosts = pgTable(
+  "discord_posts",
+  {
+    matchId: uuid("match_id")
+      .notNull()
+      .references(() => matches.id, { onDelete: "cascade" }),
+    playerId: uuid("player_id")
+      .notNull()
+      .references(() => players.id, { onDelete: "cascade" }),
+    day: integer("day").notNull(),
+    body: text("body").notNull(),
+    postedAt: timestamp("posted_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.matchId, t.playerId, t.day] })],
+);
+
 /** Who has registered for a tournament ahead of its lobby opening, and which reminders they have had. */
 export const tournamentRegistrations = pgTable(
   "tournament_registrations",

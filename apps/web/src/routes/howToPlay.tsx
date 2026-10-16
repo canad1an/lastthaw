@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import { usePageMeta } from "../seo.js";
 import { AGES, balance } from "@lastthaw/shared";
 import { Card } from "../components/ui.js";
 
@@ -17,6 +18,7 @@ const steps: Array<{ title: string; body: string }> = [
 ];
 
 export function HowToPlayPage() {
+  usePageMeta({ title: "How to play", description: "The Last Thaw field manual: pick a capital, set your workers, build and research, expand and fight, hold your land, trade and ally, and watch the ice. Ten minutes to learn, thirty days to win.", path: "/how-to-play" });
   return (
     <main className="mx-auto max-w-3xl space-y-8 px-4 py-10">
       <header>

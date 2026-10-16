@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { usePageMeta } from "../seo.js";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useChatAlert } from "../components/chatAlert.js";
@@ -80,6 +81,7 @@ function LobbyChat({ meId, approved }: { meId: string; approved: boolean }) {
 }
 
 export function LobbyPage() {
+  usePageMeta({ title: "Tournaments and games", description: "Join the weekly Last Thaw tournament or a player-made game: thirty days on a freezing Earth, twenty tribes, one winner. Register, pick a capital, and build before the ice does.", path: "/matches" });
   const me = useMe();
   const info = useServerInfo();
   const matches = useQuery({ queryKey: keys.matches, queryFn: api.matches, refetchInterval: 15_000 });

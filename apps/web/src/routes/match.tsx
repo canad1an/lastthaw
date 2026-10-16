@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { usePageMeta, useSlugAddress } from "../seo.js";
 import { Link, Navigate, useNavigate, useParams } from "@tanstack/react-router";
 import { useCallback, useMemo, useState } from "react";
 import { balance, formatCountdown, iceLatitudeOnDay, regionById, type MapRegion, type MatchStateView, loyaltyBand, wallOf, unitById } from "@lastthaw/shared";
@@ -51,6 +52,8 @@ export function MatchPage() {
   const state = useQuery({ queryKey: keys.matchState(matchId), queryFn: () => api.matchState(matchId), refetchInterval: 30_000 });
   // The address may be the readable slug; the socket and the match's own links want the id.
   const rt = useMatchRealtime(state.data?.match.id ?? null);
+  useSlugAddress(matchId, state.data?.match.slug, "");
+  usePageMeta({ title: state.data ? `${state.data.match.name}: the map` : "Match", description: state.data ? `${state.data.match.name}: a Last Thaw match in progress. Thirty days on a freezing Earth.` : undefined, path: `/match/${state.data?.match.slug || matchId}`, noindex: true });
 
   if (state.isLoading) return <p className="p-6 text-slate-400">Loading match...</p>;
   if (state.error || !state.data) {
@@ -72,6 +75,8 @@ export function MatchPage() {
 export function MatchLobbyPage() {
   const { matchId } = useParams({ from: "/match/$matchId/lobby" });
   const state = useQuery({ queryKey: keys.matchState(matchId), queryFn: () => api.matchState(matchId), refetchInterval: 10_000 });
+  useSlugAddress(matchId, state.data?.match.slug, "/lobby");
+  usePageMeta({ title: state.data ? `${state.data.match.name}: waiting room` : "Waiting room", path: `/match/${state.data?.match.slug || matchId}/lobby`, noindex: true });
   if (state.isLoading) return <p className="p-6 text-slate-400">Loading lobby...</p>;
   if (state.error || !state.data) {
     return (

@@ -295,6 +295,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
       now: now.toISOString(),
       clockOffsetSeconds: m.clockOffsetSeconds,
       pausedAt: m.pausedAt?.toISOString() ?? null,
+      slug: m.slug ?? m.id,
       finishedAt: m.finishedAt?.toISOString() ?? null,
       winnerPlayerId: m.winnerPlayerId ?? null,
     },

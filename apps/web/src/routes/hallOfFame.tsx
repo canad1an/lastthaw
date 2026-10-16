@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { usePageMeta } from "../seo.js";
 import { Card, fmt } from "../components/ui.js";
 
 interface Fame {
@@ -15,6 +16,7 @@ interface Fame {
 }
 
 export function HallOfFamePage() {
+  usePageMeta({ title: "Hall of fame", description: "Every finished Last Thaw match with its winner, and the champions ranked by tournament wins and titles: Survivor, Conqueror, Builder, Explorer.", path: "/hall-of-fame" });
   const q = useQuery({ queryKey: ["public", "hall-of-fame"], queryFn: () => fetch("/api/public/hall-of-fame").then((r) => r.json() as Promise<Fame>) });
   return (
     <main className="mx-auto max-w-3xl space-y-8 px-4 py-10">

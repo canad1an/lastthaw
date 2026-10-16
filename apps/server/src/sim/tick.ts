@@ -1,4 +1,5 @@
 import { and, asc, eq, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
+import { tribesSpeak } from "./tribeVoice.js";
 import { placeBounty } from "./objectives.js";
 import type pino from "pino";
 import { balance, distanceKm, effectsOf, regionById, seededRng, applyTechEffects, type TechEffects } from "@lastthaw/shared";
@@ -61,7 +62,10 @@ async function tickMatch(db: Db, publisher: Publisher, matchId: string, log: pin
     const dayNow = Math.floor(((now.getTime() - m.startsAt.getTime()) / 86400_000) * m.speed);
     const dayBefore = Math.floor(((last.getTime() - m.startsAt.getTime()) / 86400_000) * m.speed);
     // A fast match (or a long gap between ticks) can cross several day lines at once: every day gets its events.
-    for (let d = Math.max(1, dayBefore + 1); d <= dayNow; d++) await runDailyEvents(tx, m, now, d, seededRng(`${m.seed}:day:${d}`), publisher, (fn) => after.push(fn));
+    for (let d = Math.max(1, dayBefore + 1); d <= dayNow; d++) {
+      await runDailyEvents(tx, m, now, d, seededRng(`${m.seed}:day:${d}`), publisher, (fn) => after.push(fn));
+      await tribesSpeak(tx, m, d, (fn) => after.push(fn));
+    }
     await expirePacts(tx, m, now);
     const standings = await updateScores(tx, m);
     await recordOwnershipFrame(tx, m, now);

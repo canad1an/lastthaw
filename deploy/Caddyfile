@@ -13,6 +13,15 @@ lastthaw.com, www.lastthaw.com {
         -Server
     }
 
+    handle /sitemap.xml {
+        reverse_proxy {
+            dynamic a api 3000 {
+                refresh 2s
+            }
+            lb_try_duration 15s
+        }
+    }
+
     handle /api/* {
         reverse_proxy {
             dynamic a api 3000 {

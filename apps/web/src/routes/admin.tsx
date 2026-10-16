@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { usePageMeta } from "../seo.js";
 import { useMe } from "../api/auth.js";
 import { Button, Card } from "../components/ui.js";
 
@@ -171,6 +172,7 @@ async function post(url: string, body?: unknown) {
 
 /** Fair-play review queue. Flags are advisory: a human decides. */
 export function AdminPage() {
+  usePageMeta({ title: "Admin", noindex: true });
   const me = useMe();
   const qc = useQueryClient();
   const q = useQuery({

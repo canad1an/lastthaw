@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { usePageMeta } from "../seo.js";
 import { Link } from "@tanstack/react-router";
 import { AGES, balance, formatCountdown } from "@lastthaw/shared";
 import { useMe } from "../api/auth.js";
@@ -37,6 +38,7 @@ const ICE_WEEKS = [
 ] as const;
 
 export function HomePage() {
+  usePageMeta({ title: "Last Thaw", path: "/" });
   const me = useMe();
   const matches = usePublicMatches();
   const now = useNow(1000);

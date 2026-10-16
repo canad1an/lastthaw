@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { usePageMeta, useSlugAddress } from "../seo.js";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "@tanstack/react-router";
 import { AGES, balance, type AgeIndex } from "@lastthaw/shared";
@@ -24,7 +25,7 @@ interface Point {
   population: number;
 }
 export interface Summary {
-  match: { id: string; name: string; speed: number; startsAt: string; finishedAt: string | null; winnerPlayerId: string | null; winKind: string | null; wonderName: string };
+  match: { id: string; slug?: string; name: string; speed: number; startsAt: string; finishedAt: string | null; winnerPlayerId: string | null; winKind: string | null; wonderName: string };
   me: { playerId: string; rank: number | null };
   standings: Standing[];
   milestones: { key: string; label: string; playerId: string; playerName: string; points: number; at: string }[];
@@ -97,6 +98,8 @@ export function MatchSummary({ matchId, open, onClose, colorOf }: { matchId: str
 export function ReportPage() {
   const { matchId } = useParams({ from: "/match/$matchId/report" });
   const q = useSummary(matchId);
+  useSlugAddress(matchId, q.data?.match?.slug, "/report");
+  usePageMeta({ title: q.data?.match ? `${q.data.match.name}: final report` : "Match report", description: q.data?.match ? `How ${q.data.match.name} was won: final standings, ages reached, battles fought and the winner's path through thirty days of ice. A Last Thaw match report.` : undefined, path: `/match/${q.data?.match?.slug || matchId}/report` });
   const colorOf = useMemo(() => {
     const ids = q.data?.standings?.map((p) => p.id) ?? [];
     return (id: string) => REPORT_COLORS[Math.max(0, ids.indexOf(id)) % REPORT_COLORS.length]!;

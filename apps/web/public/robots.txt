@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /profile
+Disallow: /verify
+Disallow: /reset
+Disallow: /api/
+
+Sitemap: https://lastthaw.com/sitemap.xml

@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { config } from "../config.js";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { AGES, allRegions, balance, iceLatitudeOnDay } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
@@ -37,6 +38,29 @@ import { matchNow } from "../sim/clock.js";
 /** Public, login-free views for the home page: matches in play, top players, past winners. */
 export async function publicRoutes(app: FastifyInstance, opts: { db: Db }) {
   const { db } = opts;
+
+  /** The sitemap: the public pages plus every finished match's report and replay, by readable address. */
+  app.get("/sitemap.xml", async (_req, reply) => {
+    const site = config().PUBLIC_URL;
+    const finished = await db.select({ slug: matches.slug, id: matches.id, finishedAt: matches.finishedAt }).from(matches).where(eq(matches.status, "finished")).orderBy(desc(matches.finishedAt)).limit(500);
+    const esc = (s: string) => s.replace(/&/g, "&amp;");
+    const urls: Array<{ loc: string; lastmod?: string; priority: string }> = [
+      { loc: `${site}/`, priority: "1.0" },
+      { loc: `${site}/how-to-play`, priority: "0.9" },
+      { loc: `${site}/matches`, priority: "0.8" },
+      { loc: `${site}/hall-of-fame`, priority: "0.7" },
+      { loc: `${site}/about`, priority: "0.5" },
+      { loc: `${site}/register`, priority: "0.6" },
+    ];
+    for (const m of finished) {
+      const ref = m.slug ?? m.id;
+      const lastmod = m.finishedAt?.toISOString().slice(0, 10);
+      urls.push({ loc: `${site}/match/${ref}/report`, priority: "0.5", ...(lastmod ? { lastmod } : {}) });
+      urls.push({ loc: `${site}/match/${ref}/replay`, priority: "0.4", ...(lastmod ? { lastmod } : {}) });
+    }
+    const body = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map((u) => `  <url><loc>${esc(u.loc)}</loc>${u.lastmod ? `<lastmod>${u.lastmod}</lastmod>` : ""}<priority>${u.priority}</priority></url>`).join("\n")}\n</urlset>\n`;
+    return reply.header("content-type", "application/xml; charset=utf-8").header("cache-control", "public, max-age=3600").send(body);
+  });
 
   app.get("/api/public/matches", async () => {
     const rows = await db

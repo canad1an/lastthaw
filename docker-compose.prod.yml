@@ -72,6 +72,8 @@ services:
       DB_POOL_MAX: "20"
       # Fast games (the nightly 720x simulation, player games up to 180x) need the tick loop to poll often; the per-match gate scales with speed.
       TICK_MS: "10000"
+      # The AI tribes post to Discord through this webhook during tournaments (set it in .env; empty keeps them quiet).
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
     depends_on:
       pgbouncer:
         condition: service_started

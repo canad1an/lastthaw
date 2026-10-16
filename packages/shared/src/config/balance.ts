@@ -224,6 +224,8 @@ export const balance = {
     /** A Temple turns this many of the region's workers into occupiers per game hour, until the need is met. */
     templeConvertsPerHour: 2,
   },
+  /** The AI tribes talk on Discord during tournaments: this many posts each per match, on days fixed by the seed. */
+  discord: { postsPerTribe: { min: 1, max: 10 } },
   schedule: {
     /** The worker keeps this many upcoming weekly lobbies open when enabled, each with a name of its own. */
     enabled: true,

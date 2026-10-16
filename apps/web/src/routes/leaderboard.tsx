@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { usePageMeta, useSlugAddress } from "../seo.js";
 import { Link, useParams } from "@tanstack/react-router";
 import { Card, fmt } from "../components/ui.js";
 import { useFeed } from "../components/Ticker.js";
@@ -16,7 +17,7 @@ interface Row {
   eliminated: boolean;
 }
 interface Board {
-  match: { id: string; name: string; status: string; speed: number; day: number; iceLatitude: number; totalRegions: number; winnerPlayerId: string | null; survival: boolean; wonderName: string };
+  match: { id: string; slug?: string; name: string; status: string; speed: number; day: number; iceLatitude: number; totalRegions: number; winnerPlayerId: string | null; survival: boolean; wonderName: string };
   players: Row[];
   milestones: { key: string; label: string; playerId: string; playerName: string; points: number; at: string }[];
   wonders: { playerId: string | null; playerName: string; regionId: string | null; regionName: string; endsAt: string; waiting: boolean }[];
@@ -131,6 +132,9 @@ function WonderClock({ endsAt }: { endsAt: string }) {
 
 export function LeaderboardPage() {
   const { matchId } = useParams({ from: "/match/$matchId/leaderboard" });
+  const board = useQuery({ queryKey: ["leaderboard", matchId], queryFn: () => fetch(`/api/matches/${matchId}/leaderboard`, { credentials: "include" }).then((r) => r.json() as Promise<Board>) });
+  useSlugAddress(matchId, board.data?.match?.slug, "/leaderboard");
+  usePageMeta({ title: board.data?.match ? `${board.data.match.name}: leaderboard` : "Leaderboard", description: board.data?.match ? `Standings, firsts and the day's objective in ${board.data.match.name}, a Last Thaw match.` : undefined, path: `/match/${board.data?.match?.slug || matchId}/leaderboard`, noindex: board.data?.match?.status !== "finished" });
   return (
     <main className="mx-auto max-w-3xl space-y-4 px-4 py-6">
       <div className="flex flex-wrap items-end justify-between gap-2">

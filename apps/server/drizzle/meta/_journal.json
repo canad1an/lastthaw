@@ -232,6 +232,13 @@
       "when": 1792182589081,
       "tag": "0032_clumsy_mole_man",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1792183078597,
+      "tag": "0033_loud_deadpool",
+      "breakpoints": true
     }
   ]
 }

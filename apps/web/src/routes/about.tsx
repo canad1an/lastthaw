@@ -1,7 +1,9 @@
 import { Link } from "@tanstack/react-router";
+import { usePageMeta } from "../seo.js";
 import { Card } from "../components/ui.js";
 
 export function AboutPage() {
+  usePageMeta({ title: "About", description: "What Last Thaw is, who makes it, and why a strategy game needs a real map and a month of real time.", path: "/about" });
   return (
     <main className="mx-auto max-w-3xl space-y-8 px-4 py-10">
       <header>

@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { usePageMeta } from "../seo.js";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useState, type FormEvent, type TextareaHTMLAttributes } from "react";
 import type { UserView } from "@lastthaw/shared";
@@ -16,6 +17,7 @@ interface History {
 
 /** Profile and account settings: who you are to other players, the account basics, and the password. */
 export function ProfilePage() {
+  usePageMeta({ title: "Your tribe", noindex: true });
   const me = useMe();
   const q = useQuery({ queryKey: ["me", "history"], queryFn: () => fetch("/api/me/history", { credentials: "include" }).then((r) => r.json() as Promise<History>), enabled: !!me.data });
   if (me.isLoading) return <p className="p-6 text-slate-400">Loading...</p>;

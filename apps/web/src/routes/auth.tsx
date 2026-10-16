@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { usePageMeta } from "../seo.js";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useEffect, useState, type FormEvent } from "react";
 import { api, keys } from "../api/client.js";
@@ -22,6 +23,7 @@ function Shell({ title, kicker, pitch, children }: { title: string; kicker?: str
 }
 
 export function LoginPage() {
+  usePageMeta({ title: "Log in", description: "Log in to Last Thaw to join a tournament, pick your capital and get back to your empire.", path: "/login" });
   const qc = useQueryClient();
   const nav = useNavigate();
   const [email, setEmail] = useState("");
@@ -81,6 +83,7 @@ export function LoginPage() {
 }
 
 export function RegisterPage() {
+  usePageMeta({ title: "Play free", description: "Create a free Last Thaw account: a 30-day strategy game on a real map of Earth, with weekly tournaments and games you can finish in an afternoon.", path: "/register" });
   return (
     <Shell
       kicker="Free to play"
@@ -104,6 +107,7 @@ export function RegisterPage() {
 }
 
 export function VerifyPage() {
+  usePageMeta({ title: "Verify your email", noindex: true });
   const { token } = useSearch({ from: "/verify" });
   const qc = useQueryClient();
   const m = useMutation({
@@ -133,6 +137,7 @@ export function VerifyPage() {
 }
 
 export function ForgotPage() {
+  usePageMeta({ title: "Forgot password", description: "Reset your Last Thaw password.", path: "/forgot" });
   const [email, setEmail] = useState("");
   const m = useMutation({ mutationFn: () => api.forgot(email) });
   return (
@@ -161,6 +166,7 @@ export function ForgotPage() {
 }
 
 export function ResetPage() {
+  usePageMeta({ title: "Choose a new password", noindex: true });
   const { token } = useSearch({ from: "/reset" });
   const nav = useNavigate();
   const [password, setPassword] = useState("");
