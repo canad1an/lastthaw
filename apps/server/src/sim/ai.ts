@@ -1,5 +1,5 @@
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
-import { availableBuildings, availableTechs, buildingBlockedBy, availableUnits, balance, buildingById, buildingCost, dayCostMultiplier, effectsOf, freezeDayForLatitude, distanceKm, regionById, seededRng, techById, techCost, normalizeAssignment, type Cost, techEffectsOf, haulerCount, unitById, TECHS } from "@lastthaw/shared";
+import { availableBuildings, availableTechs, buildingBlockedBy, availableUnits, balance, buildingById, buildingCost, dayCostMultiplier, effectsOf, freezeDayForLatitude, distanceKm, regionById, seededRng, techById, techCost, normalizeAssignment, type Cost, techEffectsOf, haulerCount, unitById, TECHS, breachOf, wallBonusAgainst } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { armies, jobs, marketOrders, matchRegions, playerTechs, players } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
@@ -271,7 +271,12 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
         const ownerIds = [...new Set(rows.map((r) => r.ownerPlayerId).filter((x): x is string => !!x))];
         const owners = ownerIds.length ? await db.select().from(players).where(inArray(players.id, ownerIds)) : [];
         const ownerById = new Map(owners.map((o) => [o.id, o]));
-        const candidates: Array<{ id: string; defenders: number; score: number }> = [];
+        // What this tribe would send: the wall bonus it faces depends on the siege engines in that force.
+        const sendShare = strong.regionId === p.capitalRegionId ? 0.5 : difficulty === "hard" ? 0.8 : 0.7;
+        const force: Record<string, number> = {};
+        for (const [id, n] of Object.entries(strong.units)) if (!unitById.get(id)?.civilian && !unitById.get(id)?.naval) force[id] = Math.floor(n * sendShare);
+        const siegeHave = breachOf(force);
+        const candidates: Array<{ id: string; defenders: number; score: number; siegeNeed: number }> = [];
         for (const n of candidatesIds) {
           const r = byId.get(n);
           const owner = r?.ownerPlayerId ?? null;
@@ -281,7 +286,11 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
           if (o?.protectionUntil && o.protectionUntil.getTime() > now.getTime()) continue;
           if (wantConquer && owner && !o?.isAi && !tier.conquersHumans) continue;
           const effects = r ? effectsOf(r.buildings) : null;
-          const defenders = r ? Object.values(r.units).reduce((a, b) => a + b, 0) * (1 + (effects?.defense ?? 0)) + (r.popWorkers / 10) * balance.combat.militiaPerTenPeople : 0;
+          // Walls count in full against men alone; the engines in the force bring them down.
+          const wallFull = r ? Object.keys(balance.combat.wallBreach).reduce((acc, id) => acc + (buildingById.get(id)?.effect.defense ?? 0) * (r.buildings[id] ?? 0), 0) : 0;
+          const wallFaced = r ? wallBonusAgainst(r.buildings, force) : 0;
+          const siegeNeed = r ? Object.entries(balance.combat.wallBreach).reduce((acc, [id, need]) => acc + ((r.buildings[id] ?? 0) >= 1 ? need : 0), 0) : 0;
+          const defenders = r ? Object.values(r.units).reduce((a, b) => a + b, 0) * (1 + (effects?.defense ?? 0) - wallFull + wallFaced) + (r.popWorkers / 10) * balance.combat.militiaPerTenPeople : 0;
           const ratio = balance.ai.maxTargetStrengthRatio * persona.boldness * (boldStrike ? 1.8 : 1);
           if (defenders > soldiers * ratio) continue;
           const loot = r ? Math.max(0, r.food + r.wood + r.stone - 3 * (effects?.protect ?? 0)) : 0;
@@ -290,15 +299,23 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
           const grudge = owner && owner === leaderId && owner !== p.id ? 1 + persona.grudge : 1;
           const human = o && !o.isAi ? 1 + persona.grudge * 0.5 : 1;
           const score = tier.scoresTargets || boldStrike ? ((wantConquer ? regionById(n)!.value * 1000 : loot) / (defenders + 1) / (1 + dist / 1000)) * grudge * human : -defenders * (2 - grudge * human);
-          candidates.push({ id: n, defenders, score });
+          candidates.push({ id: n, defenders, score, siegeNeed });
         }
         candidates.sort((a, b) => b.score - a.score);
-        const target = candidates[0];
+        let target = candidates[0];
+        // Walled target, not enough engines: build siege first (medium and hard), or pick an open target instead.
+        if (target && target.siegeNeed > siegeHave && difficulty !== "easy") {
+          const engines = availableUnits(p.age, techs).filter((u) => (u.breach ?? 0) > 0 && !u.naval).sort((a, b) => (b.breach ?? 0) - (a.breach ?? 0));
+          const engine = engines[0];
+          const canQueue = queueLen(strong.regionId) < balance.queue.slotsPerRegion && !pendingJobs.some((j) => j.regionId === strong.regionId && j.kind === "train" && (unitById.get(j.refId ?? "")?.breach ?? 0) > 0);
+          if (engine && canQueue) {
+            const qty = Math.min(20, Math.max(1, Math.ceil((target.siegeNeed - siegeHave) / (engine.breach ?? 1))));
+            await attempt(() => queueTrain(ctx, strong.regionId, engine.id, qty));
+          }
+          target = candidates.find((c) => c.siegeNeed <= siegeHave) ?? (boldStrike ? target : undefined);
+        }
         if (target) {
-          const send: Record<string, number> = {};
-          // Never strip the capital: attacks launched from it take at most half its garrison.
-          const sendShare = strong.regionId === p.capitalRegionId ? 0.5 : difficulty === "hard" ? 0.8 : 0.7;
-          for (const [id, n] of Object.entries(strong.units)) if (!unitById.get(id)?.civilian && !unitById.get(id)?.naval) send[id] = Math.floor(n * sendShare);
+          const send: Record<string, number> = { ...force };
           const need = balance.conquest.occupiersRequired;
           if (wantConquer) {
             if ((strong.units.settler ?? 0) >= need) {
