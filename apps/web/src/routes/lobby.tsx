@@ -175,7 +175,7 @@ function PastMatches() {
           <Card key={m.id} className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
               <p className="font-medium text-slate-100">
-                {m.name} <span className="text-xs text-slate-500">· {m.kind === "tournament" ? "tournament" : "game"} · {m.speed}x · {m.players} players{m.humans ? `, ${m.humans} human` : ""}</span>
+                {m.name} <span className="text-xs text-slate-500">· {m.kind === "tournament" ? "tournament" : "game"} · {m.speed}x · {m.players} players</span>
               </p>
               <p className="text-sm text-slate-400">
                 {m.finishedAt ? new Date(m.finishedAt).toLocaleDateString() : ""}

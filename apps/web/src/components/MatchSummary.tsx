@@ -149,7 +149,7 @@ function ReportBody({ matchId, s, colorOf, onClose }: { matchId: string; s: Summ
           {s && (
             <div className="space-y-6 px-5 pb-6">
               <div className="grid grid-cols-2 gap-2 text-center text-xs sm:grid-cols-5">
-                <Stat label="players" value={`${s.totals.players}`} sub={`${s.totals.humans} human`} />
+                <Stat label="players" value={`${s.totals.players}`} />
                 <Stat label="battles" value={fmt(s.totals.battles)} />
                 <Stat label="regions held" value={fmt(s.totals.regionsHeld)} />
                 <Stat label="ages reached" value={`${s.totals.agesReached}`} sub={AGES[Math.max(0, s.totals.agesReached - 1) as AgeIndex]} />
