@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { regionById, tradeResource, type MatchStateView, type TradeResource } from "@lastthaw/shared";
+import { regionById, tradeResource, type MatchStateView, type TradeResource, unitById, balance } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { Button, Card, ErrorText, Field, Input, fmt } from "./ui.js";
 
@@ -34,6 +34,7 @@ export function MarketPanel({ matchId, state, selectedRegionId }: { matchId: str
   const others = (q.data?.open ?? []).filter((o) => o.playerId !== state.me.playerId);
   const mine = q.data?.mine ?? [];
   const regionName = (id: string) => regionById(id)?.name ?? id;
+  const hire = useMutation({ mutationFn: (offerId: string) => api.hireMercenaries(matchId, offerId), onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matchState(matchId) }) });
 
   return (
     <Card className="space-y-2">
@@ -45,6 +46,24 @@ export function MarketPanel({ matchId, state, selectedRegionId }: { matchId: str
       </button>
       {open && (
         <div className="space-y-3">
+          {state.mercenaries.length > 0 && (
+            <div>
+              <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-400">Mercenaries for hire</h3>
+              <ul className="space-y-1 text-sm">
+                {state.mercenaries.map((o) => (
+                  <li key={o.id} className="flex items-center gap-2 rounded bg-slate-950/60 px-2 py-1 text-slate-300">
+                    <span className="flex-1">
+                      <span className="text-slate-200">{o.company[0]?.toUpperCase()}{o.company.slice(1)}</span>: {o.qty} {unitById.get(o.unitId)?.name ?? o.unitId} for {fmt(o.iron)} iron, paid from your capital. They stay {balance.events.mercenaries.hours} hours.
+                    </span>
+                    <Button className="px-2 py-1 text-xs" onClick={() => hire.mutate(o.id)} disabled={hire.isPending}>
+                      Hire
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+              <ErrorText>{hire.error?.message}</ErrorText>
+            </div>
+          )}
           <div>
             <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-400">Open offers</h3>
             {others.length === 0 && <p className="text-sm text-slate-500">Nobody is selling right now.</p>}

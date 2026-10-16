@@ -1,9 +1,10 @@
 import { and, eq, inArray, isNotNull, isNull, sql, gt } from "drizzle-orm";
-import { allRegions, balance, distanceKm, effectsOf, applyTechEffects, iceLatitudeOnDay, regionById, armySpeed, travelSeconds, findRoute, type UnitCounts } from "@lastthaw/shared";
-import { armies, events, jobs, matchRegions, players } from "../db/schema.js";
+import { allRegions, balance, distanceKm, effectsOf, applyTechEffects, iceLatitudeOnDay, regionById, armySpeed, travelSeconds, findRoute, type UnitCounts, unitById } from "@lastthaw/shared";
+import { armies, events, jobs, matchRegions, mercenaryOffers, players } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
 import { ownerTechEffects, settleAndLockRegion, type MatchRegionRow, type Tx } from "./regions.js";
 import { notify, type JobRow, type MatchRow } from "../worker/jobs.js";
+import { httpError } from "./commands.js";
 
 type After = (fn: () => Promise<void>) => void;
 
@@ -21,6 +22,7 @@ export async function hordePlayer(tx: Tx, matchId: string): Promise<{ id: string
  * Called from the tick when the day number has moved on since the last tick.
  */
 export async function runDailyEvents(tx: Tx, m: MatchRow, now: Date, day: number, rng: () => number, publisher: Publisher, after: After): Promise<void> {
+  await offerMercenaries(tx, m, now, day, rng);
   await scheduleBlizzard(tx, m, now, day, rng);
   await spreadPlague(tx, m, now, day, rng);
   await richFind(tx, m, now, day, rng);
@@ -38,6 +40,72 @@ async function ownedRows(tx: Tx, matchId: string): Promise<MatchRegionRow[]> {
     .from(matchRegions)
     .where(and(eq(matchRegions.matchId, matchId), isNotNull(matchRegions.ownerPlayerId), isNull(matchRegions.frozenAt), isNull(matchRegions.evacuatedAt)))
     .orderBy(matchRegions.regionId);
+}
+
+// ---------------------------------------------------------------- mercenaries
+
+const COMPANIES = ["the Grey Wolves", "the Ashen Blades", "the Northmen of Varr", "the Free Lances", "the Sons of Frost", "the Black Banner", "the Ember Guard", "the Hollow Hill Company", "the Wanderers", "the Iron Hands"];
+
+/** A company or two for hire, for half a day; they fight for whoever pays iron. */
+async function offerMercenaries(tx: Tx, m: MatchRow, now: Date, day: number, rng: () => number): Promise<void> {
+  const c = balance.events.mercenaries;
+  if (rng() >= c.chance) return;
+  const n = rng() < 0.4 ? 2 : 1;
+  for (let i = 0; i < n; i++) {
+    const unitId = day >= 16 && rng() < 0.4 ? "free_company" : "sellsword";
+    const qty = unitId === "free_company" ? 10 + Math.floor(rng() * 10) : 20 + Math.floor(rng() * 30) + day;
+    const iron = Math.round(qty * (c.ironPerUnit[unitId as keyof typeof c.ironPerUnit] ?? 10));
+    const company = COMPANIES[Math.floor(rng() * COMPANIES.length)]!;
+    await tx.insert(mercenaryOffers).values({ matchId: m.id, company, unitId, qty, iron, expiresAt: new Date(now.getTime() + hoursMs(m, c.offerHours)) });
+  }
+}
+
+/** Hire a company: iron from the capital, the men appear there, and a job sends them away after their contract. */
+export async function hireMercenaries(tx: Tx, m: MatchRow, p: { id: string; name: string; capitalRegionId: string | null }, offerId: string, now: Date): Promise<{ unitId: string; qty: number; iron: number; company: string }> {
+  const c = balance.events.mercenaries;
+  if (!p.capitalRegionId) throw httpError(409, "you have no capital for them to report to");
+  const [o] = await tx.select().from(mercenaryOffers).where(and(eq(mercenaryOffers.id, offerId), eq(mercenaryOffers.matchId, m.id))).for("update");
+  if (!o || o.hiredBy) throw httpError(404, "that company is no longer for hire");
+  if (o.expiresAt <= now) throw httpError(409, "that company has moved on");
+  const capital = await settleAndLockRegion(tx, m.id, p.capitalRegionId, now, m.speed);
+  if (capital.ownerPlayerId !== p.id) throw httpError(409, "you have lost your capital");
+  const special = capital.special as Record<string, number>;
+  if ((special.iron ?? 0) < o.iron) throw httpError(409, `the company wants ${o.iron} iron; your capital holds ${Math.floor(special.iron ?? 0)}`);
+  await tx.update(matchRegions).set({ special: { ...special, iron: (special.iron ?? 0) - o.iron }, units: { ...capital.units, [o.unitId]: (capital.units[o.unitId] ?? 0) + o.qty }, popSoldiers: capital.popSoldiers + o.qty }).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, capital.regionId)));
+  await tx.update(mercenaryOffers).set({ hiredBy: p.id, hiredAt: now }).where(eq(mercenaryOffers.id, o.id));
+  const leaves = new Date(now.getTime() + hoursMs(m, c.hours));
+  await tx.insert(jobs).values({ matchId: m.id, playerId: p.id, kind: "merc_expire", refId: o.unitId, payload: { company: o.company, qty: o.qty }, startsAt: now, endsAt: leaves });
+  await notify(tx, m.id, p.id, "system", `${o.company[0]!.toUpperCase()}${o.company.slice(1)} (${o.qty} ${unitById.get(o.unitId)?.name ?? o.unitId}) have reported to your capital. They leave in ${c.hours} hours.`, { regionId: capital.regionId, mercenaries: true, leaves: leaves.toISOString() });
+  await tx.insert(events).values({ matchId: m.id, at: now, kind: "mercenaries.hired", payload: { playerId: p.id, company: o.company, qty: o.qty } });
+  return { unitId: o.unitId, qty: o.qty, iron: o.iron, company: o.company };
+}
+
+/** The contract is up: the company leaves every region and army of the hirer. */
+export async function mercenariesLeave(tx: Tx, m: MatchRow, job: JobRow): Promise<void> {
+  const unitId = job.refId ?? "";
+  if (!job.playerId || !unitId) return;
+  const rows = await tx.select().from(matchRegions).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.ownerPlayerId, job.playerId))).orderBy(matchRegions.regionId);
+  let gone = 0;
+  for (const r of rows) {
+    const n = r.units[unitId] ?? 0;
+    if (n <= 0) continue;
+    const locked = await settleAndLockRegion(tx, m.id, r.regionId, job.endsAt, m.speed);
+    const units = { ...locked.units };
+    delete units[unitId];
+    await tx.update(matchRegions).set({ units, popSoldiers: Math.max(0, locked.popSoldiers - n) }).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, r.regionId)));
+    gone += n;
+  }
+  const moving = await tx.select({ id: armies.id, units: armies.units }).from(armies).where(and(eq(armies.matchId, m.id), eq(armies.playerId, job.playerId), inArray(armies.status, ["outbound", "returning"])));
+  for (const a of moving) {
+    const n = a.units[unitId] ?? 0;
+    if (n <= 0) continue;
+    const units = { ...a.units };
+    delete units[unitId];
+    await tx.update(armies).set({ units }).where(eq(armies.id, a.id));
+    gone += n;
+  }
+  const company = (job.payload as { company?: string }).company ?? "the company";
+  await notify(tx, m.id, job.playerId, "system", `${company[0]!.toUpperCase()}${company.slice(1)} have moved on${gone ? ` (${gone} left your service)` : ""}.`, { mercenaries: true });
 }
 
 // ---------------------------------------------------------------- blizzards

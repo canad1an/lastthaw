@@ -7,10 +7,11 @@
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { availableUnits, armySpeed, balance, buildingBlockedBy, carryCapacity, buildingById, buildingCost, buildingSeconds, canAfford, effectsOf, findRoute, missingFor, realSeconds, regionById, techById, techCost, techSeconds, trainSeconds, travelSeconds, unitById, unitCost, type Cost, type MissionKind, caravanCarry, techEffectsOf, distanceKm, splitNaval, seaLegsOf, laneKey, laneName, resolveCombat } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
-import { armies, battles, jobs, matchRegions, messages, players, tradeRoutes } from "../db/schema.js";
+import { armies, battles, jobs, matchRegions, messages, players, tradeRoutes, regionSightings } from "../db/schema.js";
 import { matchDayAt, matchNow } from "./clock.js";
 import { wonderStarted } from "./endgame.js";
 import { stormFactorFor } from "./worldEvents.js";
+import { peaceBetween } from "./diplomacy.js";
 import { applyCost, settleAndLockRegion, stockOf, type MatchRegionRow, type Tx, waySetsFor } from "./regions.js";
 import { alliesOf, areAllied } from "./alliances.js";
 import type { MatchRow } from "../worker/jobs.js";
@@ -296,6 +297,28 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
   const civilians = Object.keys(units).filter((id) => unitById.get(id)?.civilian && !(body.mission === "conquer" && id === "settler"));
   if ((HOSTILE.has(body.mission) || body.mission === "scout") && civilians.length) throw httpError(400, "caravans cannot raid, conquer or scout; settlers only go along to occupy a conquest");
   if (body.mission === "relocate") throw httpError(400, "move the capital from the region panel");
+  if (body.mission === "expedition") {
+    const x = balance.events.expedition;
+    const soldiers = Object.entries(units).reduce((a, [id, n]) => a + (unitById.get(id)?.civilian || unitById.get(id)?.naval ? 0 : n), 0);
+    if (soldiers < x.minSoldiers) throw httpError(400, `an expedition needs at least ${x.minSoldiers} soldiers`);
+    if (Object.keys(units).some((id) => unitById.get(id)?.civilian || unitById.get(id)?.naval)) throw httpError(400, "soldiers only on an expedition");
+    if (body.people > 0 || Object.keys(body.cargo).length) throw httpError(400, "an expedition travels light: no people, no cargo");
+    // Into the unknown: at least `minHops` away and never sighted.
+    let ring = new Set([regionId]);
+    const seen = new Set(ring);
+    let hops = 0;
+    let found = false;
+    while (ring.size && hops < x.minHops) {
+      const next = new Set<string>();
+      for (const id of ring) for (const n of regionById(id)?.neighbors ?? []) if (!seen.has(n)) { seen.add(n); next.add(n); }
+      hops += 1;
+      if (next.has(body.targetRegionId)) found = true;
+      ring = next;
+    }
+    if (found) throw httpError(400, `an expedition goes at least ${x.minHops} regions out; pick somewhere further`);
+    const [sighting] = await db.select({ regionId: regionSightings.regionId }).from(regionSightings).where(and(eq(regionSightings.matchId, m.id), eq(regionSightings.playerId, p.id), eq(regionSightings.regionId, body.targetRegionId))).limit(1);
+    if (sighting) throw httpError(400, "you have already seen that region; expeditions go into the unknown");
+  }
   const { ships, rest: landUnits } = splitNaval(units);
   const hasShips = Object.keys(ships).length > 0;
   if (body.mission === "patrol") {
@@ -346,9 +369,13 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
         throw httpError(400, "a tribe already lives there; conquer it instead");
       }
     }
-    if (HOSTILE.has(body.mission)) {
-      if (friendly) throw httpError(400, "you cannot attack your own or allied regions");
-      if (targetOwner) {
+    if (HOSTILE.has(body.mission) || body.mission === "expedition") {
+      if (friendly && HOSTILE.has(body.mission)) throw httpError(400, "you cannot attack your own or allied regions");
+      if (targetOwner && targetOwner !== p.id) {
+        const peace = await peaceBetween(tx, m.id, p.id, targetOwner, now);
+        if (peace) throw httpError(400, `you have ${peace.kind === "nap" ? "a pact" : "a ceasefire"} with them${peace.status === "ending" ? "; it ends soon" : ""}`);
+      }
+      if (targetOwner && HOSTILE.has(body.mission)) {
         const [owner] = await tx.select().from(players).where(eq(players.id, targetOwner)).limit(1);
         if (owner?.protectionUntil && owner.protectionUntil.getTime() > now.getTime()) throw httpError(400, `${owner.name} is under beginner protection`);
         if (p.protectionUntil && p.protectionUntil.getTime() > now.getTime()) {

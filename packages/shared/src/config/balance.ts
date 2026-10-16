@@ -297,6 +297,14 @@ export const balance = {
     horde: { fromDay: 14, chance: 0.5, lateDay: 21, lateChance: 0.8, base: 20, perDay: 6, catapultsFromDay: 18, bandDeg: 6, reachKm: 1500, name: "The Northern Horde" },
     /** Rich finds: a mine, quarry or camp doubles its output for `hours`, and the neighbours hear. */
     boom: { chance: 0.4, hours: 48, mult: 2 },
+    /** Expeditions: three or more hops into the unknown with three or more soldiers; outcome odds must sum to 1. */
+    expedition: { minHops: 3, minSoldiers: 3, artifact: 0.4, hoard: 0.3, tale: 0.2, ambush: 0.1, hoardIronPerAge: 300, taleHours: 48, taleLoyalty: 0.15, ambushLoss: 0.5 },
+    /** Pacts stop raids both ways; notice to end one; ceasefires are fixed; tribute has a deadline, refusal opens a window of double loot. */
+    diplomacy: { napNoticeHours: 24, ceasefireHours: 48, tributeHours: 24, tributeCooldownHours: 72, causeForWarHours: 24, lootMult: 2 },
+    /** Mercenary companies: offered now and then, hired for iron, gone again after `hours`. */
+    mercenaries: { chance: 0.5, offerHours: 12, hours: 48, ironPerUnit: { sellsword: 12, free_company: 30 } },
+    /** The last stand: once, when the ice is a day from the capital, everything marches south at double speed. */
+    lastStand: { withinDays: 1, speedMult: 2 },
   },
   win: {
     regionShareForEarlyWin: 0.6,

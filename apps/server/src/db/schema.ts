@@ -157,6 +157,10 @@ export const players = pgTable(
     aiProfile: text("ai_profile"),
     /** System players (the horde) that never appear in lists or standings. */
     hidden: boolean("hidden").notNull().default(false),
+    /** An expedition's inspiring tale: extra loyalty everywhere until then. */
+    loyaltyBoostUntil: timestamp("loyalty_boost_until", { withTimezone: true }),
+    /** The last stand has been called (once per match). */
+    lastStandAt: timestamp("last_stand_at", { withTimezone: true }),
     name: text("name").notNull(),
     capitalRegionId: text("capital_region_id"),
     age: integer("age").notNull().default(0),
@@ -258,7 +262,7 @@ export const jobs = pgTable(
   ],
 );
 
-export const missionKind = pgEnum("mission_kind", ["raid", "conquer", "reinforce", "move", "transport", "scout", "settle", "relocate", "patrol"]);
+export const missionKind = pgEnum("mission_kind", ["raid", "conquer", "reinforce", "move", "transport", "scout", "settle", "relocate", "patrol", "expedition"]);
 export const armyStatus = pgEnum("army_status", ["outbound", "returning", "done"]);
 
 export const armies = pgTable(
@@ -402,6 +406,52 @@ export const sessionSightings = pgTable(
     userAgent: text("user_agent"),
   },
   (t) => [primaryKey({ columns: [t.sessionId, t.hour] }), index("sightings_ip_idx").on(t.ip, t.userId)],
+);
+
+/** Pacts, ceasefires and tribute demands between two players. `a` proposed to `b`. */
+export const pacts = pgTable(
+  "pacts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    matchId: uuid("match_id")
+      .notNull()
+      .references(() => matches.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    aPlayerId: uuid("a_player_id")
+      .notNull()
+      .references(() => players.id, { onDelete: "cascade" }),
+    bPlayerId: uuid("b_player_id")
+      .notNull()
+      .references(() => players.id, { onDelete: "cascade" }),
+    proposedBy: uuid("proposed_by").notNull(),
+    /** proposed, active, ending, ended, declined, paid, refused */
+    status: text("status").notNull(),
+    until: timestamp("until", { withTimezone: true }),
+    terms: jsonb("terms").notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+  },
+  (t) => [index("pacts_match_idx").on(t.matchId, t.status)],
+);
+
+/** Mercenary companies on offer in a match. */
+export const mercenaryOffers = pgTable(
+  "mercenary_offers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    matchId: uuid("match_id")
+      .notNull()
+      .references(() => matches.id, { onDelete: "cascade" }),
+    company: text("company").notNull(),
+    unitId: text("unit_id").notNull(),
+    qty: integer("qty").notNull(),
+    iron: integer("iron").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    hiredBy: uuid("hired_by"),
+    hiredAt: timestamp("hired_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("mercs_match_idx").on(t.matchId, t.expiresAt)],
 );
 
 /** A migrant column at the border: the owner of `regionId` may take them in before `expiresAt`. */

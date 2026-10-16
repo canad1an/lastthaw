@@ -148,6 +148,7 @@ function OwnedDetails({ matchId, state, owned, clockOffsetMs, speed }: { matchId
     <div className="space-y-3">
       {owned.isCapital && <span className="inline-block rounded bg-sky-500/20 px-1.5 py-0.5 text-xs text-sky-300">Capital</span>}
       {owned.isCapital && !owned.frozen && <Rally matchId={matchId} state={state} />}
+      {owned.isCapital && !owned.frozen && state.lastStand.eligible && <LastStand matchId={matchId} state={state} />}
       {owned.frozen && <span className="ml-2 inline-block rounded bg-cyan-200/20 px-1.5 py-0.5 text-xs text-cyan-200">Frozen</span>}
       {owned.evacuated && !owned.frozen && <span className="ml-2 inline-block rounded bg-slate-700 px-1.5 py-0.5 text-xs text-slate-300" title="Nobody lives here: no growth or production until people move back in">Evacuated</span>}
       {owned.stormUntil && <span className="ml-2 inline-block rounded bg-sky-200/20 px-1.5 py-0.5 text-xs text-sky-100" title="Half production and double travel while it blows">Blizzard · {formatCountdown(Math.max(0, (Date.parse(owned.stormUntil) - Date.now() - clockOffsetMs) / 1000))}</span>}
@@ -557,6 +558,46 @@ function ArmyTab({ matchId, owned, state }: { matchId: string; owned: OwnedRegio
 }
 
 /** Call every soldier home: stationed units in all other regions march to the capital; optionally recall armies on missions too. */
+/** The ice is a day from the capital: everything marches south at double speed, once. */
+function LastStand({ matchId, state }: { matchId: string; state: MatchStateView }) {
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [target, setTarget] = useState("");
+  const capLat = Math.abs(regionById(state.me.capitalRegionId ?? "")?.lat ?? 0);
+  const options = state.owned.filter((o) => !o.isCapital && !o.frozen && Math.abs(regionById(o.regionId)?.lat ?? 99) < capLat);
+  const m = useMutation({
+    mutationFn: () => api.lastStand(matchId, target),
+    onSuccess: () => {
+      setOpen(false);
+      void qc.invalidateQueries({ queryKey: keys.matchState(matchId) });
+    },
+  });
+  return (
+    <span className="ml-2 inline-block align-middle">
+      <button className="rounded border border-rose-500/60 bg-rose-950/40 px-2 py-0.5 text-xs text-rose-200 hover:bg-rose-900/40" onClick={() => setOpen((o) => !o)} title="The ice is a day away: send everything south at double speed">
+        🏳 Last stand
+      </button>
+      {open && (
+        <div className="mt-2 space-y-2 rounded-md border border-rose-500/40 bg-slate-950 p-2 text-xs text-slate-300">
+          <p>Every person, unit and store leaves this capital for a region of yours nearer the equator, at double speed. The capital moves when they arrive. Once per match.</p>
+          <select value={target} onChange={(e) => setTarget(e.target.value)} className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-sm text-slate-100">
+            <option value="">Choose a region…</option>
+            {options.map((o) => (
+              <option key={o.regionId} value={o.regionId}>
+                {regionById(o.regionId)?.name}
+              </option>
+            ))}
+          </select>
+          <Button variant="danger" className="px-3 py-1 text-xs" disabled={!target || m.isPending} onClick={() => m.mutate()}>
+            March
+          </Button>
+          <ErrorText>{m.error?.message}</ErrorText>
+        </div>
+      )}
+    </span>
+  );
+}
+
 function Rally({ matchId, state }: { matchId: string; state: MatchStateView }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);

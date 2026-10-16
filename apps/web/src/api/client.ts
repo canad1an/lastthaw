@@ -83,6 +83,12 @@ export const api = {
     request<{ ok: true; armyId: string; arrivesAt: string; routeId: string | null }>("POST", `/api/matches/${id}/regions/${regionId}/colonize`, body),
   setCapital: (id: string, regionId: string) =>
     request<{ ok: true; armyId: string; arrivesAt: string; cargo: Record<string, number>; path: string[] }>("POST", `/api/matches/${id}/capital`, { regionId }),
+  proposePact: (id: string, b: { otherPlayerId: string; kind: "nap" | "ceasefire" | "tribute"; resource?: string; amount?: number }) => request<{ ok: true; id: string }>("POST", `/api/matches/${id}/pacts`, b),
+  respondPact: (id: string, pactId: string, accept: boolean) => request<{ ok: true }>("POST", `/api/matches/${id}/pacts/${pactId}/respond`, { accept }),
+  endPact: (id: string, pactId: string) => request<{ ok: true }>("POST", `/api/matches/${id}/pacts/${pactId}/end`, {}),
+  payTribute: (id: string, pactId: string) => request<{ ok: true }>("POST", `/api/matches/${id}/pacts/${pactId}/pay`, {}),
+  hireMercenaries: (id: string, offerId: string) => request<{ ok: true; qty: number; company: string }>("POST", `/api/matches/${id}/mercenaries/${offerId}/hire`, {}),
+  lastStand: (id: string, targetRegionId: string) => request<{ ok: true; arrivesAt: string }>("POST", `/api/matches/${id}/last-stand`, { targetRegionId }),
   decideRefugees: (id: string, offerId: string, accept: boolean) => request<{ ok: true; accepted: boolean }>("POST", `/api/matches/${id}/refugees/${offerId}`, { accept }),
   nameSuggestion: () => request<{ name: string }>("GET", "/api/matches/name-suggestion"),
   rally: (id: string, includeMissions: boolean) =>

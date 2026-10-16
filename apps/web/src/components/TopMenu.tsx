@@ -13,6 +13,7 @@ import { EmpirePanel } from "./EmpirePanel.js";
 import { LogisticsPanel } from "./LogisticsPanel.js";
 import { TechTreePanel } from "./TechTreePanel.js";
 import { Ticker } from "./Ticker.js";
+import { DiplomacyPanel } from "./DiplomacyPanel.js";
 
 type Menu = "messages" | "alliance" | "chat" | "market" | "players" | "leaderboard" | "view" | "empire" | "logistics" | "tech" | "menu";
 
@@ -47,6 +48,7 @@ export function TopMenu({
   const unread = (q.data?.messages ?? []).filter((m) => !m.readAt && isImportant(m)).length;
   const newest = q.data?.messages[0] ?? null;
   const invites = state.me.allianceId ? 0 : (state as { invites?: unknown[] }).invites?.length ?? 0;
+  const proposals = state.pacts.filter((p) => p.status === "proposed" && p.bPlayerId === state.me.playerId).length;
 
   // Routes waiting on haulers plus builds waiting on materials: the number that needs attention.
   const logisticsBadge =
@@ -79,7 +81,7 @@ export function TopMenu({
 
   const entries: Array<{ id: Menu; label: string; badge?: string | number | undefined; tone?: "alert" | undefined }> = [
     { id: "messages", label: "Messages", badge: unread ? `${unread} new` : undefined, tone: "alert" },
-    { id: "alliance", label: "Alliance", badge: state.me.allianceTag ? `[${state.me.allianceTag}]` : invites ? `${invites} invite` : undefined },
+    { id: "alliance", label: "Alliance", badge: proposals ? `${proposals} to answer` : state.me.allianceTag ? `[${state.me.allianceTag}]` : invites ? `${invites} invite` : undefined, tone: proposals ? "alert" : undefined },
     { id: "chat", label: "Chat" },
     { id: "market", label: "Market", badge: marketOpen || undefined },
     { id: "players", label: "Players", badge: state.players.length },
@@ -89,7 +91,7 @@ export function TopMenu({
     { id: "tech", label: "Tech", badge: `${state.me.techs.length}/${TECHS.length}` },
     { id: "view", label: "View", badge: overlays.size || undefined },
   ];
-  const alerts = (unread ? 1 : 0) + (logisticsBadge ? 1 : 0) + (invites ? 1 : 0);
+  const alerts = (unread ? 1 : 0) + (logisticsBadge ? 1 : 0) + (invites ? 1 : 0) + (proposals ? 1 : 0);
   const latest = toast ? (
     <button className="min-w-0 flex-1 truncate text-left text-sm text-slate-100" onClick={() => toggle("messages")}>
       <span className="mr-2">{messageIcon(toast.kind)}</span>
@@ -135,6 +137,9 @@ export function TopMenu({
           {open === "alliance" && (
             <div className="p-3">
               <AlliancePanel matchId={matchId} state={state} />
+              <div className="mt-4 border-t border-slate-800 pt-3">
+                <DiplomacyPanel matchId={matchId} state={state} clockOffsetMs={clockOffsetMs} />
+              </div>
             </div>
           )}
           {open === "chat" && (

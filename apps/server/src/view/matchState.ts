@@ -1,8 +1,8 @@
 import { and, asc, eq, inArray, isNull, or, sql, gt } from "drizzle-orm";
 import { parseProfile } from "../sim/ai.js";
-import { emptySpecial, regionById, type ArmyView, type IncomingView, type JobView, type MatchStateView, type OwnedRegionView, type SightedRegionView, techEffectsOf, allRegions, wallOf, balance } from "@lastthaw/shared";
+import { emptySpecial, regionById, type ArmyView, type IncomingView, type JobView, type MatchStateView, type OwnedRegionView, type SightedRegionView, techEffectsOf, allRegions, wallOf, balance, freezeDayForLatitude } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
-import { allianceMembers, alliances, armies, jobs, matchRegions, matches, playerTechs, players, regionSightings, tradeRoutes, refugeeOffers } from "../db/schema.js";
+import { allianceMembers, alliances, armies, jobs, matchRegions, matches, playerTechs, players, regionSightings, tradeRoutes, refugeeOffers, pacts, mercenaryOffers } from "../db/schema.js";
 import { matchNow } from "../sim/clock.js";
 import { alliesOf } from "../sim/alliances.js";
 import { countOwnedRegions, projectRegion } from "../sim/regions.js";
@@ -252,6 +252,15 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
   const stormRows = await db.select({ regionId: matchRegions.regionId }).from(matchRegions).where(and(eq(matchRegions.matchId, matchId), gt(matchRegions.stormUntil, now)));
   const thawRows = await db.select({ regionId: matchRegions.regionId, thawUntil: matchRegions.thawUntil }).from(matchRegions).where(and(eq(matchRegions.matchId, matchId), gt(matchRegions.thawUntil, now)));
   const offerRows = await db.select().from(refugeeOffers).where(and(eq(refugeeOffers.playerId, me.id), isNull(refugeeOffers.decidedAt), gt(refugeeOffers.expiresAt, now))).orderBy(asc(refugeeOffers.expiresAt));
+  const pactRows = await db
+    .select()
+    .from(pacts)
+    .where(and(eq(pacts.matchId, matchId), or(eq(pacts.aPlayerId, me.id), eq(pacts.bPlayerId, me.id)), inArray(pacts.status, ["proposed", "active", "ending", "refused"])))
+    .orderBy(asc(pacts.createdAt));
+  const mercRows = await db.select().from(mercenaryOffers).where(and(eq(mercenaryOffers.matchId, matchId), isNull(mercenaryOffers.hiredBy), gt(mercenaryOffers.expiresAt, now))).orderBy(asc(mercenaryOffers.expiresAt));
+  const capLat = me.capitalRegionId ? Math.abs(regionById(me.capitalRegionId)?.lat ?? 0) : 0;
+  const matchDayNow = ((now.getTime() - m.startsAt.getTime()) / 86400_000) * m.speed;
+  const lastStandEligible = !!me.capitalRegionId && !me.lastStandAt && (freezeDayForLatitude(capLat) ?? 999) - matchDayNow <= balance.events.lastStand.withinDays;
   const stormSet = new Set(stormRows.map((r) => r.regionId));
   for (const s of sighted) s.storm = stormSet.has(s.regionId);
 
@@ -300,6 +309,9 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
     storms: stormRows.map((r) => r.regionId),
     thaws: thawRows.map((r) => ({ regionId: r.regionId, until: r.thawUntil!.toISOString() })),
     refugees: offerRows.map((o) => ({ id: o.id, regionId: o.regionId, fromRegionId: o.fromRegionId, people: o.people, food: o.people * balance.events.refugees.foodPerPerson, expiresAt: o.expiresAt.toISOString() })),
+    pacts: pactRows.map((p) => ({ id: p.id, kind: p.kind as "nap" | "ceasefire" | "tribute", aPlayerId: p.aPlayerId, bPlayerId: p.bPlayerId, status: p.status, until: p.until?.toISOString() ?? null, terms: (p.terms ?? {}) as Record<string, unknown> })),
+    mercenaries: mercRows.map((o) => ({ id: o.id, company: o.company, unitId: o.unitId, qty: o.qty, iron: o.iron, expiresAt: o.expiresAt.toISOString() })),
+    lastStand: { eligible: lastStandEligible, used: !!me.lastStandAt },
     routes: routeRows.map((r) => ({
       id: r.id,
       fromRegionId: r.fromRegionId,

@@ -109,6 +109,8 @@ export function missionLabel(mission: string, units?: Record<string, number>): s
       return "Scouts";
     case "patrol":
       return "Patrol";
+    case "expedition":
+      return "Expedition";
     default:
       return mission.charAt(0).toUpperCase() + mission.slice(1);
   }

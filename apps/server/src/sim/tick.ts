@@ -13,6 +13,7 @@ import { checkEarlyWin, recordOwnershipFrame, updateScores } from "./endgame.js"
 import { notify, type MatchRow } from "../worker/jobs.js";
 import { runAiPlayer } from "./ai.js";
 import { runDailyEvents } from "./worldEvents.js";
+import { expirePacts } from "./diplomacy.js";
 
 /**
  * Periodic per-match tick: loyalty drift and rebellions on occupied regions,
@@ -59,6 +60,7 @@ async function tickMatch(db: Db, publisher: Publisher, matchId: string, log: pin
     const dayNow = Math.floor(((now.getTime() - m.startsAt.getTime()) / 86400_000) * m.speed);
     const dayBefore = Math.floor(((last.getTime() - m.startsAt.getTime()) / 86400_000) * m.speed);
     if (dayNow > dayBefore && dayNow >= 1) await runDailyEvents(tx, m, now, dayNow, seededRng(`${m.seed}:day:${dayNow}`), publisher, (fn) => after.push(fn));
+    await expirePacts(tx, m, now);
     const standings = await updateScores(tx, m);
     await recordOwnershipFrame(tx, m, now);
     await checkEarlyWin(tx, m, now, standings, publisher, (fn) => after.push(fn));
@@ -106,9 +108,9 @@ async function loyaltyAndRebellion(tx: Tx, m: MatchRow, now: Date, hours: number
     .orderBy(asc(matchRegions.regionId))
     .for("update");
   const techFxByOwner = new Map<string, TechEffects>();
-  const capitals = new Map(
-    (await tx.select({ id: players.id, capital: players.capitalRegionId }).from(players).where(eq(players.matchId, m.id))).map((p) => [p.id, p.capital]),
-  );
+  const prow = await tx.select({ id: players.id, capital: players.capitalRegionId, boost: players.loyaltyBoostUntil }).from(players).where(eq(players.matchId, m.id));
+  const capitals = new Map(prow.map((p) => [p.id, p.capital]));
+  const boosted = new Set(prow.filter((p) => p.boost && p.boost > now).map((p) => p.id));
   for (const row of owned) {
     const owner = row.ownerPlayerId!;
     const capital = capitals.get(owner);
@@ -135,7 +137,8 @@ async function loyaltyAndRebellion(tx: Tx, m: MatchRow, now: Date, hours: number
       }
     }
     const occupierFactor = occupierNeed > 0 ? Math.min(1, occupiers / occupierNeed) : 1;
-    const target = Math.max(0, Math.min(1, 1 - km / c.distanceScaleKm + effects.loyalty)) * (0.5 + 0.5 * occupierFactor);
+    const tale = boosted.has(owner) ? balance.events.expedition.taleLoyalty : 0;
+    const target = Math.max(0, Math.min(1, 1 - km / c.distanceScaleKm + effects.loyalty + tale)) * (0.5 + 0.5 * occupierFactor);
     const loyalty = row.loyalty + (target - row.loyalty) * Math.min(1, c.loyaltyRate * hours);
 
     if (loyalty < c.rebelBelow && rng() < c.rebelChancePerTick) {

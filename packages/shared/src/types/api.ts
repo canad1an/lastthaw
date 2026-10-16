@@ -197,7 +197,7 @@ export const jobView = z.object({
 });
 export type JobView = z.infer<typeof jobView>;
 
-export const missionKind = z.enum(["raid", "conquer", "reinforce", "move", "transport", "scout", "settle", "relocate", "patrol"]);
+export const missionKind = z.enum(["raid", "conquer", "reinforce", "move", "transport", "scout", "settle", "relocate", "patrol", "expedition"]);
 export type MissionKind = z.infer<typeof missionKind>;
 
 export const sendArmyBody = z.object({
@@ -309,6 +309,34 @@ export const sightedRegionView = z.object({
   storm: z.boolean().default(false),
 });
 
+export const pactView = z.object({
+  id: z.string(),
+  kind: z.enum(["nap", "ceasefire", "tribute"]),
+  aPlayerId: z.string(),
+  bPlayerId: z.string(),
+  status: z.string(),
+  until: z.string().nullable(),
+  terms: z.record(z.string(), z.unknown()).default({}),
+});
+export type PactView = z.infer<typeof pactView>;
+export const proposePactBody = z.object({
+  otherPlayerId: z.string().uuid(),
+  kind: z.enum(["nap", "ceasefire", "tribute"]),
+  resource: z.string().optional(),
+  amount: z.number().int().min(1).max(1_000_000).optional(),
+});
+export const respondPactBody = z.object({ accept: z.boolean() });
+export const mercenaryOfferView = z.object({
+  id: z.string(),
+  company: z.string(),
+  unitId: z.string(),
+  qty: z.number(),
+  iron: z.number(),
+  expiresAt: z.string(),
+});
+export type MercenaryOfferView = z.infer<typeof mercenaryOfferView>;
+export const lastStandBody = z.object({ targetRegionId: z.string() });
+
 export const refugeeOfferView = z.object({
   id: z.string(),
   regionId: z.string(),
@@ -371,6 +399,12 @@ export const matchStateView = z.object({
   thaws: z.array(z.object({ regionId: z.string(), until: z.string() })).default([]),
   /** Migrant columns waiting at my borders. */
   refugees: z.array(refugeeOfferView).default([]),
+  /** Pacts, ceasefires and tribute demands I am part of (open, in force, or recently refused). */
+  pacts: z.array(pactView).default([]),
+  /** Mercenary companies for hire right now. */
+  mercenaries: z.array(mercenaryOfferView).default([]),
+  /** The last stand is open: the ice is a day from the capital and it has not been used. */
+  lastStand: z.object({ eligible: z.boolean(), used: z.boolean() }).default({ eligible: false, used: false }),
   /** My automated caravan routes. */
   routes: z.array(tradeRouteView).default([]),
   /** Player ids of my alliance mates (their regions are always visible). */

@@ -8,7 +8,7 @@ import { settleAndLockRegion, type Tx } from "../sim/regions.js";
 import { resolveMission } from "../sim/missions.js";
 import { applyIceStep } from "../sim/ice.js";
 import { awardMilestone, finishMatch, winHoldExpired } from "../sim/endgame.js";
-import { stormHits } from "../sim/worldEvents.js";
+import { stormHits, mercenariesLeave } from "../sim/worldEvents.js";
 
 export type JobRow = typeof jobs.$inferSelect;
 export type MatchRow = typeof matches.$inferSelect;
@@ -80,7 +80,7 @@ export async function runDueJobs(db: Db, publisher: Publisher, log: pino.Logger)
       case "storm":
         return stormHits(tx, m, job, publisher, after);
       case "merc_expire":
-        return; // phase 2
+        return mercenariesLeave(tx, m, job);
       default:
         throw new Error(`no handler for job kind ${job.kind}`);
     }

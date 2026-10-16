@@ -1,13 +1,14 @@
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { availableBuildings, availableTechs, buildingBlockedBy, availableUnits, balance, buildingById, buildingCost, dayCostMultiplier, effectsOf, freezeDayForLatitude, distanceKm, regionById, seededRng, techById, techCost, normalizeAssignment, type Cost, techEffectsOf, haulerCount, unitById, TECHS, breachOf, wallBonusAgainst } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
-import { armies, jobs, marketOrders, matchRegions, playerTechs, players, refugeeOffers } from "../db/schema.js";
+import { armies, jobs, marketOrders, matchRegions, playerTechs, players, refugeeOffers, pacts } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
 import { applyCost, projectRegion, settleAndLockRegion, stockOf, type MatchRegionRow } from "./regions.js";
 import { queueBuild, queueResearch, queueTrain, sendArmy, type CommandContext, type PlayerRow } from "./commands.js";
 import { areAllied } from "./alliances.js";
 import { acceptMarketOrder } from "../matches/marketApi.js";
 import { decideRefugees } from "../matches/eventsApi.js";
+import { payTribute, proposePact, respondPact } from "./diplomacy.js";
 import type { MatchRow } from "../worker/jobs.js";
 
 export type Difficulty = "easy" | "medium" | "hard";
@@ -95,6 +96,23 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
     const crowded = economy.popWorkers + economy.popSoldiers + economy.popOccupiers + offer.people > economy.capacity * 1.5;
     const ok = !crowded && economy.food >= offer.people * balance.events.refugees.foodPerPerson * 1.5;
     await attempt(() => decideRefugees(db, m, p, offer.id, ok));
+  }
+  // Diplomacy: answer what is on the table; the hungry demand tribute of a weaker neighbour now and then.
+  const proposals = await db.select().from(pacts).where(and(eq(pacts.matchId, m.id), eq(pacts.bPlayerId, p.id), eq(pacts.status, "proposed")));
+  for (const pr of proposals) {
+    if (pr.kind === "tribute") {
+      const terms = pr.terms as { resource: string; amount: number };
+      const capital = owned.find((r) => r.regionId === p.capitalRegionId);
+      const have = capital ? (stockOf(capital)[terms.resource] ?? 0) : 0;
+      if (have > 0 && terms.amount <= have * 0.1 && persona.aggression < 1.3) await attempt(() => payTribute(db, m, p, pr.id));
+      continue;
+    }
+    await attempt(() => respondPact(db, m, p, pr.id, persona.aggression <= 1.2 || difficulty === "easy"));
+  }
+  if (difficulty === "hard" && persona.aggression > 1 && rng() < 0.03) {
+    const weaker = (await db.select().from(players).where(and(eq(players.matchId, m.id), eq(players.hidden, false), isNull(players.eliminatedAt)))).filter((o) => o.id !== p.id && o.score < p.score * 0.7 && o.capitalRegionId);
+    const victim = weaker[Math.floor(rng() * weaker.length)];
+    if (victim) await attempt(() => proposePact(db, m, p, victim.id, "tribute", { resource: "wood", amount: Math.max(500, Math.round(p.score * 2)) }));
   }
   const researchQueued = pendingJobs.filter((j) => j.kind === "research").length;
   const researching = researchQueued >= 3;

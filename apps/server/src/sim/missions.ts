@@ -1,11 +1,12 @@
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
-import { balance, effectsOf, emptySpecial, storageCaps, regionById, resolveCombat, carryCapacity, travelSeconds, findRoute, armySpeed, type UnitCounts, HAULER_IDS, haulerCount, unitById, laneName, applyTechEffects, wallBonusAgainst, breachOf, buildingById } from "@lastthaw/shared";
-import { armies, battles, jobs, matchRegions, players, regionSightings, playerTechs, tradeRoutes } from "../db/schema.js";
+import { balance, effectsOf, emptySpecial, storageCaps, regionById, resolveCombat, carryCapacity, travelSeconds, findRoute, armySpeed, type UnitCounts, HAULER_IDS, haulerCount, unitById, laneName, applyTechEffects, wallBonusAgainst, breachOf, buildingById, seededRng, availableTechs } from "@lastthaw/shared";
+import { armies, battles, jobs, matchRegions, players, regionSightings, playerTechs, tradeRoutes, events } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
 import { settleAndLockRegion, type MatchRegionRow, type Tx, setCapital, ownerTechEffects, waySetsFor, stockOf } from "./regions.js";
 import { notify, type JobRow, type MatchRow } from "../worker/jobs.js";
 import { areAllied, alliesOf } from "./alliances.js";
 import { receiveMaterials } from "./commands.js";
+import { causeForWar } from "./diplomacy.js";
 
 type ArmyRow = typeof armies.$inferSelect;
 type After = (fn: () => Promise<void>) => void;
@@ -64,7 +65,59 @@ export async function resolveMission(tx: Tx, m: MatchRow, job: JobRow, publisher
     case "patrol":
       await notify(tx, m.id, army.playerId, "system", `Patrol on the ${laneName(army.lane ?? "")} lane is over; the ships are sailing home`, { lane: army.lane });
       return sendHome(tx, m, army, at, army.units, army.cargo);
+    case "expedition":
+      return expedition(tx, m, army, at, publisher, after);
   }
+}
+
+/** An expedition arrives: a find, a hoard, a tale worth telling, or an ambush. Then home. */
+async function expedition(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher: Publisher, after: After): Promise<void> {
+  const x = balance.events.expedition;
+  const rng = seededRng(`${m.seed}:expedition:${army.id}`);
+  const roll = rng();
+  const [p] = await tx.select().from(players).where(eq(players.id, army.playerId)).limit(1);
+  const where = regionById(army.targetRegionId)?.name ?? army.targetRegionId;
+  let units: UnitCounts = { ...army.units };
+  const cargo: Record<string, number> = {};
+  let outcome: string;
+  if (roll < x.artifact) {
+    // A free tech from the current age that is within reach.
+    const known = new Set((await tx.select({ id: playerTechs.techId }).from(playerTechs).where(eq(playerTechs.playerId, army.playerId))).map((r) => r.id));
+    const options = availableTechs(p?.age ?? 0, known).filter((t) => t.advancesTo === undefined);
+    const pick = options[Math.floor(rng() * options.length)];
+    if (pick) {
+      await tx.insert(playerTechs).values({ matchId: m.id, playerId: army.playerId, techId: pick.id, completedAt: at }).onConflictDoNothing();
+      outcome = `found an artifact: ${pick.name} is yours without research`;
+      await tx.insert(events).values({ matchId: m.id, at, kind: "expedition.returned", payload: { playerId: army.playerId, regionId: army.targetRegionId, outcome: `found an artifact (${pick.name})` } });
+    } else {
+      cargo.iron = x.hoardIronPerAge;
+      outcome = `found a cache of ${cargo.iron} iron`;
+      await tx.insert(events).values({ matchId: m.id, at, kind: "expedition.returned", payload: { playerId: army.playerId, regionId: army.targetRegionId, outcome: "found a cache of iron" } });
+    }
+  } else if (roll < x.artifact + x.hoard) {
+    cargo.iron = x.hoardIronPerAge * ((p?.age ?? 0) + 1);
+    outcome = `found a hoard: ${cargo.iron} iron is coming home with them`;
+    await tx.insert(events).values({ matchId: m.id, at, kind: "expedition.returned", payload: { playerId: army.playerId, regionId: army.targetRegionId, outcome: "found a hoard of iron" } });
+  } else if (roll < x.artifact + x.hoard + x.tale) {
+    const until = new Date(at.getTime() + (x.taleHours * 3600_000) / m.speed);
+    await tx.update(players).set({ loyaltyBoostUntil: until }).where(eq(players.id, army.playerId));
+    outcome = `came back with a tale that lifts loyalty across your lands for ${x.taleHours} hours`;
+    await tx.insert(events).values({ matchId: m.id, at, kind: "expedition.returned", payload: { playerId: army.playerId, regionId: army.targetRegionId, outcome: "returned with an inspiring tale" } });
+  } else {
+    const lost: UnitCounts = {};
+    for (const [id, n] of Object.entries(units)) {
+      const l = Math.floor(n * x.ambushLoss);
+      if (l > 0) lost[id] = l;
+      units[id] = n - l;
+    }
+    units = Object.fromEntries(Object.entries(units).filter(([, n]) => n > 0));
+    outcome = `was ambushed in ${where}: ${Object.values(lost).reduce((a, b) => a + b, 0)} did not come back`;
+    await tx.insert(events).values({ matchId: m.id, at, kind: "expedition.returned", payload: { playerId: army.playerId, regionId: army.targetRegionId, outcome: "was ambushed" } });
+  }
+  await notify(tx, m.id, army.playerId, "scout", `Your expedition to ${where} ${outcome}.`, { regionId: army.targetRegionId, expedition: true });
+  const pid = army.playerId;
+  after(() => publisher.toPlayer(m.id, pid, "army.arrived", { armyId: army.id }));
+  return sendHome(tx, m, army, at, units, cargo);
 }
 
 /** The capital wagon arrives: stores are unloaded, the capital moves, and every idle caravan sets off for it. */
@@ -497,9 +550,12 @@ async function battle(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher: P
   if (result.attackerWon && army.mission === "raid") {
     const capacity = carryCapacity(survivors);
     const unprotected: Record<string, number> = {};
-    for (const r of BASE) unprotected[r] = Math.max(0, target[r] - effects.protect) * balance.combat.raidShare;
+    // Refused tribute is cause for war: double loot for a day.
+    const war = defenderId ? await causeForWar(tx, m.id, army.playerId, defenderId, at) : false;
+    const share = Math.min(1, balance.combat.raidShare * (war ? balance.events.diplomacy.lootMult : 1));
+    for (const r of BASE) unprotected[r] = Math.max(0, target[r] - effects.protect) * share;
     const special: Record<string, number> = { ...emptySpecial(), ...(target.special as Record<string, number>) };
-    for (const s of SPECIAL) unprotected[s] = (special[s] ?? 0) * balance.combat.raidShare;
+    for (const s of SPECIAL) unprotected[s] = (special[s] ?? 0) * share;
     const total = Object.values(unprotected).reduce((a, b) => a + b, 0);
     const take = Math.min(capacity, total);
     if (take > 0) {

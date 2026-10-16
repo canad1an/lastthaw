@@ -110,6 +110,8 @@ export interface UnitDef {
   naval?: boolean;
   /** Region must have this building to train here (ships need a Harbor). */
   needsBuilding?: string;
+  /** Hired, not trained: the company leaves after its contract. */
+  mercenary?: boolean;
   /** Civilians never fight: no raids, conquests or scouting. */
   civilian?: boolean;
 }
@@ -202,6 +204,8 @@ export const BUILDINGS: readonly BuildingDef[] = [
 // ---------------------------------------------------------------------------
 
 export const UNITS: readonly UnitDef[] = [
+  { id: "sellsword", name: "Sellsword", age: 0, description: "Hired blades. They fight for whoever paid, then move on.", attack: 25, defense: 15, speed: 6, carry: 0, cost: {}, baseSeconds: 0, hidden: true, mercenary: true },
+  { id: "free_company", name: "Free company", age: 4, description: "A hardened company of veterans for hire, with their own engines.", attack: 60, defense: 40, speed: 6, carry: 0, cost: {}, baseSeconds: 0, hidden: true, mercenary: true, breach: 1 },
   { id: "militia", name: "Militia", age: 0, description: "Villagers with tools, defending their homes.", attack: 1, defense: 2, speed: 0, carry: 0, cost: {}, baseSeconds: 0, hidden: true },
   // Stone
   { id: "warrior", name: "Warrior", age: 0, description: "Club and courage.", attack: 3, defense: 3, speed: 5, carry: 15, cost: { food: 20, wood: 10 }, baseSeconds: 30 },
