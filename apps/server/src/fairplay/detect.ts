@@ -1,6 +1,7 @@
-import { and, eq, gt, inArray, isNotNull, ne, sql } from "drizzle-orm";
+import { balance } from "@lastthaw/shared";
+import { and, eq, gt, inArray, isNotNull, lt, ne, sql } from "drizzle-orm";
 import type { Db } from "../db/client.js";
-import { fairplayFlags, matches, players, sessionSightings, sessions, transfers } from "../db/schema.js";
+import { fairplayFlags, matches, players, sessionSightings, sessions, transfers, playerActions } from "../db/schema.js";
 
 /**
  * Multi-account detection. Flags pairs of accounts in the same match that
@@ -70,6 +71,65 @@ export async function detectMultiAccounts(db: Db): Promise<number> {
     }
   }
   return created;
+}
+
+/**
+ * Automation: a human whose commands come at a machine's rhythm. Over the last
+ * day, for every player with enough commands to judge: how regular the gaps
+ * between commands are (a hand is bursty, a loop is flat), and in how many of
+ * the day's hours they acted (a hand sleeps). Each signal adds to a score; two
+ * or more raise a flag with the figures as evidence, once per match and day.
+ */
+export async function detectAutomation(db: Db, now = new Date()): Promise<number> {
+  const c = balance.fairplay;
+  const since = new Date(now.getTime() - 24 * 3600_000);
+  const rows = await db
+    .select({ matchId: playerActions.matchId, userId: playerActions.userId, at: playerActions.at })
+    .from(playerActions)
+    .innerJoin(matches, eq(matches.id, playerActions.matchId))
+    .where(and(gt(playerActions.at, since), eq(matches.status, "running")))
+    .orderBy(playerActions.userId, playerActions.matchId, playerActions.at);
+  const groups = new Map<string, { matchId: string; userId: string; ats: number[] }>();
+  for (const r of rows) {
+    const k = `${r.userId}:${r.matchId}`;
+    const g = groups.get(k) ?? { matchId: r.matchId, userId: r.userId, ats: [] };
+    g.ats.push(r.at.getTime());
+    groups.set(k, g);
+  }
+  let flagged = 0;
+  for (const g of groups.values()) {
+    if (g.ats.length < c.automationMinActions) continue;
+    const gaps = g.ats.slice(1).map((t, i) => (t - g.ats[i]!) / 1000).filter((s) => s > 0.5);
+    if (gaps.length < 10) continue;
+    const mean = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+    const sd = Math.sqrt(gaps.reduce((a, b) => a + (b - mean) ** 2, 0) / gaps.length);
+    const cv = mean > 0 ? sd / mean : 0;
+    const hours = new Set(g.ats.map((t) => Math.floor(t / 3600_000))).size;
+    let score = 0;
+    const why: string[] = [];
+    if (cv < c.automationRegularity) {
+      score += 2;
+      why.push(`commands ${Math.round(mean)}s apart with ${Math.round(cv * 100)}% variation`);
+    }
+    if (hours >= c.automationActiveHours) {
+      score += 2;
+      why.push(`active in ${hours} of the last 24 hours`);
+    }
+    if (g.ats.length >= c.automationMinActions * 6) {
+      score += 1;
+      why.push(`${g.ats.length} commands in a day`);
+    }
+    if (score < 2) continue;
+    flagged += await flag(db, g.userId, g.userId, g.matchId, `automation_${now.toISOString().slice(0, 10)}`, score, { actions: g.ats.length, meanGapSeconds: Math.round(mean), variation: Math.round(cv * 100) / 100, activeHours: hours, why });
+  }
+  return flagged;
+}
+
+/** Keep the command log to the scan window. */
+export async function pruneActions(db: Db, now = new Date()): Promise<number> {
+  const cutoff = new Date(now.getTime() - balance.fairplay.actionRetentionDays * 86400_000);
+  const gone = await db.delete(playerActions).where(lt(playerActions.at, cutoff)).returning({ id: playerActions.id });
+  return gone.length;
 }
 
 async function flag(db: Db, userA: string, userB: string, matchId: string, reason: string, score: number, evidence: unknown): Promise<number> {

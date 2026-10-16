@@ -10,7 +10,7 @@ import { runMatchTicks } from "../sim/tick.js";
 import { ensureWeeklyMatch } from "./weekly.js";
 import { sendTournamentReminders } from "../matches/registrations.js";
 import { runTradeRoutes, runOverflow } from "../sim/trade.js";
-import { detectMultiAccounts } from "../fairplay/detect.js";
+import { detectAutomation, detectMultiAccounts, pruneActions } from "../fairplay/detect.js";
 import { cleanupSessions } from "../auth/session.js";
 import { balance } from "@lastthaw/shared";
 
@@ -83,7 +83,9 @@ await Promise.all([
     if (n.sessions || n.tokens) log.info(n, "expired sessions and tokens removed");
   }),
   every(balance.fairplay.scanMinutes * 60_000, "fairplay", async () => {
-    const n = await detectMultiAccounts(db);
+    const n = (await detectMultiAccounts(db)) + (await detectAutomation(db));
     if (n) log.info({ flags: n }, "fairplay flags created");
+    const pruned = await pruneActions(db);
+    if (pruned) log.info({ pruned }, "old command rows removed");
   }),
 ]);

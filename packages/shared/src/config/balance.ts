@@ -244,8 +244,18 @@ export const balance = {
     hourUtc: 0,
   },
   fairplay: {
-    /** How often the worker scans for multi-account signals, in real minutes. */
+    /** How often the worker scans for multi-account and automation signals, in real minutes. */
     scanMinutes: 60,
+    /** Commands (builds, orders, moves, trades) a player may send per minute; no hand gets near it, a loop does. */
+    commandsPerMinute: 40,
+    /** Automation signals need at least this many commands in a day to mean anything. */
+    automationMinActions: 60,
+    /** Intervals between commands this regular (standard deviation over mean) look scripted. */
+    automationRegularity: 0.3,
+    /** Commands in this many distinct hours of one day look like nobody sleeps. */
+    automationActiveHours: 20,
+    /** Command rows are kept this many days for the scan. */
+    actionRetentionDays: 7,
   },
   ice: {
     /** Production multiplier left when the ice line reaches a region's centre (taper from the pole-facing tip). */

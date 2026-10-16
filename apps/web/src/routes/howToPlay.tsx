@@ -333,6 +333,9 @@ export function HowToPlayPage() {
           <li>Metals come from a Mine on a region that has copper, tin or iron, and horses from Stables on a region with horses. Otherwise trade or raid for them.</li>
           <li>The seven ages are {AGES.join(", ")}. Each unlocks about five buildings and three units. Boats arrive with Shipbuilding in the Classical Age: build a Harbor on a coast for Galleys, then Cogs, Ironclads and Destroyers by age. Ships sail one sea lane at a time, patrol it, and fight any enemy ship that tries to cross; a crossing with no escort is turned back by a patrol.</li>
           <li>AI tribes fill empty slots. Easy ones hoard and sleep; hard ones react to your attacks, flee the ice and hunt weak neighbours.</li>
+          <li>
+            <b>House rules.</b> One account per person, and play by hand. Scripts, bots and browser agents that play for you are not allowed: the game logs every command and flags accounts whose play has a machine's rhythm, and those accounts are suspended.
+          </li>
           <li>Tournaments are the scheduled weekly matches at 1x and the only ranked ones: they count toward the Hall of Fame and its titles (Survivor, Conqueror, Builder, Explorer). Anyone approved can create a public or private game at up to {balance.match.maxGameSpeed}x, which is the whole match in about four hours; private games need an invite code to join.</li>
           <li>When day 30 ends the map falls into the winter night for two hours: the ice has stopped, the winner is named, and the final report is one click away.</li>
         </ul>

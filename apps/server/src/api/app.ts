@@ -25,6 +25,14 @@ import { eventRoutes, diplomacyRoutes } from "../matches/eventsApi.js";
 import { adminRoutes } from "../fairplay/adminApi.js";
 import { registrationRoutes } from "../matches/registrations.js";
 import { resolveMatchRef } from "../matches/slug.js";
+import { playerActions } from "../db/schema.js";
+import { balance } from "@lastthaw/shared";
+
+/** The routes that move the game: everything under a match except reading, chat and the inbox. */
+const COMMAND_PATH = /^\/api\/matches\/[^/]+\/(regions\/|research$|armies\/|rally$|capital$|market|routes\/|pacts|refugees\/|mercenaries\/|last-stand$|jobs\/)/;
+function isCommand(method: string, url: string): boolean {
+  return method !== "GET" && method !== "HEAD" && method !== "OPTIONS" && COMMAND_PATH.test(url.split("?")[0]!);
+}
 import { publicRoutes } from "../matches/publicApi.js";
 import { tradeRouteRoutes } from "../matches/tradeApi.js";
 import { registerWebsocket } from "./ws.js";
@@ -52,7 +60,8 @@ export async function buildApp(deps: AppDeps = {}) {
     const e = err as { statusCode?: number; message?: string };
     const status = e.statusCode ?? 500;
     if (status >= 500) app.log.error({ err }, "request failed");
-    return reply.code(status).send({ error: status >= 500 ? "internal error" : (e.message ?? "error") });
+    // With dev tools on (local and test runs) the message rides along; production says only that it failed.
+    return reply.code(status).send({ error: status >= 500 ? "internal error" : (e.message ?? "error"), ...(status >= 500 && cfg.NODE_ENV !== "production" ? { detail: e.message } : {}) });
   });
 
   await app.register(cors, { origin: cfg.PUBLIC_URL, credentials: true });
@@ -74,6 +83,22 @@ export async function buildApp(deps: AppDeps = {}) {
     if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") return;
     const origin = req.headers.origin;
     if (origin && !allowedOrigins.has(origin)) return reply.code(403).send({ error: "cross-site request refused" });
+  });
+  // Game commands: a per-minute cap no hand reaches (a loop does), and a log of every one for the fair-play scan.
+  app.addHook("preHandler", async (req, reply) => {
+    if (!isCommand(req.method, req.url) || !req.user) return;
+    const minute = Math.floor(Date.now() / 60_000);
+    const key = `lt-cmd:${req.user.id}:${minute}`;
+    const n = await redis.incr(key).catch(() => 0);
+    if (n === 1) await redis.expire(key, 90).catch(() => {});
+    if (n > balance.fairplay.commandsPerMinute) return reply.code(429).send({ error: `slow down: more than ${balance.fairplay.commandsPerMinute} commands a minute is not play` });
+  });
+  app.addHook("onResponse", async (req, reply) => {
+    if (reply.statusCode >= 300 || !req.user || !isCommand(req.method, req.url)) return;
+    const matchId = (req.params as { id?: string } | undefined)?.id;
+    if (!matchId) return;
+    const kind = req.url.split("?")[0]!.replace(/^\/api\/matches\/[^/]+\//, "").replace(/[0-9a-f-]{36}/g, ":id").slice(0, 60);
+    await db.insert(playerActions).values({ matchId, userId: req.user.id, kind }).catch(() => {});
   });
   await app.register(cookie, { secret: cfg.SESSION_SECRET });
   await app.register(websocket, { options: { maxPayload: 16 * 1024 } });

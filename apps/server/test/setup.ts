@@ -10,7 +10,7 @@ beforeAll(async () => {
   const { createRedis } = await import("../src/redis.js");
   const redis = createRedis();
   try {
-    const keys = [...(await redis.keys("lt-rl:*")), ...(await redis.keys("lt-login-fail:*")), ...(await redis.keys("lt-mail:*"))];
+    const keys = [...(await redis.keys("lt-rl:*")), ...(await redis.keys("lt-login-fail:*")), ...(await redis.keys("lt-mail:*")), ...(await redis.keys("lt-cmd:*"))];
     if (keys.length) await redis.del(...keys);
   } finally {
     await redis.quit().catch(() => {});

@@ -8,7 +8,7 @@ import type { Publisher } from "../realtime/publish.js";
 import { eliminatePlayer } from "../sim/missions.js";
 import { matchNow } from "../sim/clock.js";
 import { requireAdmin } from "../auth/session.js";
-import { detectMultiAccounts } from "./detect.js";
+import { detectAutomation, detectMultiAccounts } from "./detect.js";
 import { idParams } from "../matches/params.js";
 
 const verdictBody = z.object({ verdict: z.enum(["cleared", "warned", "confirmed"]) });
@@ -163,7 +163,7 @@ export async function adminRoutes(app: FastifyInstance, opts: { db: Db; publishe
       .orderBy(desc(fairplayFlags.score), desc(fairplayFlags.createdAt))
       .limit(200);
     const ids = [...new Set(rows.flatMap((r) => [r.f.userA, r.f.userB]))];
-    const names = ids.length ? await db.select({ id: users.id, email: users.email, displayName: users.displayName, suspendedAt: users.suspendedAt }).from(users).where(sql`${users.id} = any(${ids})`) : [];
+    const names = ids.length ? await db.select({ id: users.id, email: users.email, displayName: users.displayName, suspendedAt: users.suspendedAt }).from(users).where(inArray(users.id, ids)) : [];
     const nameBy = new Map(names.map((n) => [n.id, n]));
     return {
       flags: rows.map((r) => ({
@@ -191,7 +191,7 @@ export async function adminRoutes(app: FastifyInstance, opts: { db: Db; publishe
 
   app.post("/api/admin/fairplay/scan", async (req) => {
     requireAdmin(req);
-    const created = await detectMultiAccounts(db);
+    const created = (await detectMultiAccounts(db)) + (await detectAutomation(db));
     return { ok: true, created };
   });
 

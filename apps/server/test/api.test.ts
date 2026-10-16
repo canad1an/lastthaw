@@ -3,7 +3,9 @@ import { and, eq } from "drizzle-orm";
 import { balance, matchStateView, regionById } from "@lastthaw/shared";
 import { buildApp } from "../src/api/app.js";
 import { createDb, type Db } from "../src/db/client.js";
-import { emailTokens, matches, players, users } from "../src/db/schema.js";
+import { emailTokens, fairplayFlags, matches, playerActions, players, users } from "../src/db/schema.js";
+import { detectAutomation } from "../src/fairplay/detect.js";
+import { createRedis } from "../src/redis.js";
 import { newToken } from "../src/auth/password.js";
 import { SIM_SPEED, createSimMatch } from "../src/scripts/nightlySim.js";
 import { inviteUser } from "../src/scripts/inviteUser.js";
@@ -395,8 +397,10 @@ describe("api routes", () => {
     const procs = (metrics.json() as { processes: { workerBeatSeconds: number | null; aiBeatSeconds: number | null; lobbiesOverdue: number } }).processes;
     expect(procs.lobbiesOverdue).toBeGreaterThanOrEqual(0);
     expect(procs.workerBeatSeconds === null || typeof procs.workerBeatSeconds === "number").toBe(true);
-    expect((await A.call("GET", "/api/admin/fairplay")).statusCode).toBe(200);
-    expect((await A.call("POST", "/api/admin/fairplay/scan", {})).statusCode).toBe(200);
+    const fp = await A.call("GET", "/api/admin/fairplay");
+    expect(fp.statusCode, fp.body).toBe(200);
+    const scan = await A.call("POST", "/api/admin/fairplay/scan", {});
+    expect(scan.statusCode, scan.body).toBe(200);
     expect((await A.call("POST", "/api/admin/fairplay/00000000-0000-0000-0000-000000000000/review", { verdict: "cleared" })).statusCode).toBe(404);
     expect((await A.call("POST", "/api/admin/fairplay/00000000-0000-0000-0000-000000000000/review", { verdict: "guilty" })).statusCode).toBe(400);
     const benId = await idOf(ben.email);
@@ -506,6 +510,52 @@ describe("api routes", () => {
     expect((await G.call("PATCH", "/api/me/profile", { displayName: `Another ${suffix}` })).statusCode).toBe(409);
     expect((await G.call("PATCH", "/api/me/profile", { tagline: "still allowed" })).statusCode).toBe(200);
     await db.delete(users).where(eq(users.email, email));
+  });
+
+  it("commands are logged, capped per minute, and a machine's rhythm raises an automation flag", async () => {
+    const base = `/api/matches/${gameId}`;
+    const annId = await idOf(ann.email);
+    const state = matchStateView.parse((await Ann.call("GET", `${base}/state`)).json());
+    const cap = state.me.capitalRegionId!;
+    // Every command lands in the log with its route.
+    const before = (await db.select().from(playerActions).where(eq(playerActions.userId, annId))).length;
+    expect((await Ann.call("POST", `${base}/regions/${cap}/assign`, { food: 0.4, wood: 0.3, stone: 0.3 })).statusCode).toBe(200);
+    expect((await Ann.call("GET", `${base}/state`)).statusCode).toBe(200);
+    const logged = await db.select().from(playerActions).where(eq(playerActions.userId, annId));
+    expect(logged.length).toBe(before + 1);
+    expect(logged[logged.length - 1]!.kind).toMatch(/^regions\/[a-z0-9-]+\/assign$/);
+    // The cap: more commands in a minute than a hand makes are refused.
+    let refused = 0;
+    for (let i = 0; i < balance.fairplay.commandsPerMinute + 5; i++) {
+      const r = await Ann.call("POST", `${base}/regions/${cap}/assign`, { food: 0.4, wood: 0.3, stone: 0.3 });
+      if (r.statusCode === 429) refused += 1;
+    }
+    expect(refused).toBeGreaterThanOrEqual(1);
+    // The burst above also counts toward the per-address limit every test shares; clear it so the rest of the file is not throttled.
+    const redis = createRedis();
+    const rl = await redis.keys("lt-rl:*");
+    if (rl.length) await redis.del(...rl);
+    await redis.quit().catch(() => {});
+    expect((await Ann.call("GET", `${base}/state`)).statusCode).toBe(200);
+    // The scan: eighty commands exactly a minute apart across twenty-two hours is a loop, not a person.
+    await db.delete(playerActions).where(eq(playerActions.userId, annId));
+    const start = Date.now() - 23 * 3600_000;
+    await db.insert(playerActions).values(Array.from({ length: 80 }, (_, i) => ({ matchId: gameId, userId: annId, at: new Date(start + i * 16.5 * 60_000), kind: "regions/x/assign" })));
+    expect(await detectAutomation(db)).toBeGreaterThanOrEqual(1);
+    const flagsRes = await A.call("GET", "/api/admin/fairplay");
+    expect(flagsRes.statusCode, flagsRes.body).toBe(200);
+    const flags = flagsRes.json() as { flags: Array<{ reason: string; userA: { id: string }; userB: { id: string }; evidence: { why?: string[] } }> };
+    const mine = flags.flags.find((f) => f.reason.startsWith("automation") && f.userA.id === annId);
+    expect(mine).toBeTruthy();
+    expect(mine!.userB.id).toBe(annId);
+    expect(mine!.evidence.why?.length).toBeGreaterThanOrEqual(2);
+    // Scanning again does not flag the same day twice; a bursty human is never flagged.
+    expect(await detectAutomation(db)).toBe(0);
+    await db.delete(playerActions).where(eq(playerActions.userId, annId));
+    const bursty = Array.from({ length: 80 }, (_, i) => new Date(start + 9 * 3600_000 + Math.floor(i / 20) * 3 * 3600_000 + (i % 20) * (5_000 + ((i * 7919) % 90_000))));
+    await db.insert(playerActions).values(bursty.map((at) => ({ matchId: gameId, userId: annId, at, kind: "regions/x/build" })));
+    await db.delete(fairplayFlags).where(eq(fairplayFlags.userA, annId));
+    expect(await detectAutomation(db)).toBe(0);
   });
 
   it("public pages and histories answer without a session", async () => {

@@ -279,19 +279,27 @@ export function AdminPage() {
           Scan now
         </Button>
       </div>
-      <p className="text-sm text-slate-400">Pairs of accounts sharing a network, device, or sending each other resources. Nothing here is automatic; review and decide.</p>
+      <p className="text-sm text-slate-400">Pairs of accounts sharing a network, device, or sending each other resources, and single accounts whose commands come at a machine's rhythm (flat intervals, active round the clock). Nothing here is automatic; review and decide.</p>
       {q.data?.flags.length === 0 && <Card>No open flags.</Card>}
       {q.data?.flags.map((f) => (
         <Card key={f.id} className="space-y-2 text-sm">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="font-medium">
-              {f.reason.replace("_", " ")} · score {f.score}
+              {f.reason.startsWith("automation") ? `automation (${f.reason.slice("automation_".length)})` : f.reason.replace("_", " ")} · score {f.score}
               {f.match ? ` · ${f.match}` : ""}
             </span>
             <span className="text-xs text-slate-500">{new Date(f.createdAt).toLocaleString()}</span>
           </div>
           <p className="text-slate-300">
-            {f.userA.displayName ?? f.userA.id} ({f.userA.email ?? "?"}) ↔ {f.userB.displayName ?? f.userB.id} ({f.userB.email ?? "?"})
+            {f.userA.id === f.userB.id ? (
+              <>
+                {f.userA.displayName ?? f.userA.id} ({f.userA.email ?? "?"})
+              </>
+            ) : (
+              <>
+                {f.userA.displayName ?? f.userA.id} ({f.userA.email ?? "?"}) ↔ {f.userB.displayName ?? f.userB.id} ({f.userB.email ?? "?"})
+              </>
+            )}
           </p>
           <pre className="overflow-x-auto rounded bg-slate-950/60 p-2 text-xs text-slate-400">{JSON.stringify(f.evidence)}</pre>
           <div className="flex flex-wrap gap-2">

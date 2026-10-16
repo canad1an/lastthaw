@@ -587,6 +587,23 @@ export const chatMessages = pgTable(
   (t) => [index("chat_channel_idx").on(t.matchId, t.channel, t.sentAt)],
 );
 
+/** Every command a human sent in a match (builds, orders, moves, trades), kept a week for the fair-play scan. */
+export const playerActions = pgTable(
+  "player_actions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    matchId: uuid("match_id")
+      .notNull()
+      .references(() => matches.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+    kind: text("kind").notNull(),
+  },
+  (t) => [index("player_actions_user_idx").on(t.userId, t.matchId, t.at), index("player_actions_at_idx").on(t.at)],
+);
+
 /** What each AI tribe has said on Discord, one row per tribe and day, so a post is never repeated. */
 export const discordPosts = pgTable(
   "discord_posts",
