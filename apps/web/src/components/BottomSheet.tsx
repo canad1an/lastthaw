@@ -52,11 +52,6 @@ export function BottomSheet({ stop, onStop, summary, children, className = "" }:
           {/* Explicit controls beside the drag handle: the buttons stop the handle's own tap-to-step so a tap never doubles up. */}
           <span className="flex shrink-0 items-center gap-1" onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}>
             {stop !== "peek" && (
-              <button className="rounded border border-slate-700 px-2 py-1 text-xs text-sky-200" onClick={() => onStop("peek")} aria-label="Show the map">
-                Map
-              </button>
-            )}
-            {stop !== "peek" && (
               <button className="rounded px-2 py-1 text-xs text-slate-400" onClick={() => step(-1)} aria-label="Smaller panel">
                 ▾
               </button>
