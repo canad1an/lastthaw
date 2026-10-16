@@ -9,6 +9,7 @@ import { ResearchPanel } from "../components/ResearchPanel.js";
 import { TopMenu } from "../components/TopMenu.js";
 import { BottomSheet, type SheetStop } from "../components/BottomSheet.js";
 import { MatchSummary, useSummaryOpen } from "../components/MatchSummary.js";
+import { MatchIntro, useIntroOpen } from "../components/MatchIntro.js";
 import { overlayBadges, useOverlays } from "../map/overlays.js";
 import { IncomingWarnings } from "../components/ArmyPanel.js";
 import { ActivityPanel } from "../components/ActivityPanel.js";
@@ -183,6 +184,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
   const finished = state.match.status === "finished";
   const eliminated = state.owned.length === 0 && !finished;
   const [summaryOpen, setSummaryOpen] = useSummaryOpen(matchId, finished);
+  const [introOpen, setIntroOpen] = useIntroOpen(matchId, !finished && !eliminated);
 
   // Colours follow join order (the server returns players in that order) and never change during a match.
   const colorOf = useMemo(() => {
@@ -257,6 +259,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
     <div className="flex h-[calc(100dvh-3rem)] flex-col">
       <TopMenu matchId={matchId} state={state} selectedRegionId={selected} colorOf={colorOf} overlays={overlays} onToggleOverlay={toggleOverlay} onSelectRegion={setSelected} clockOffsetMs={clockOffsetMs} />
       {finished && <MatchSummary matchId={matchId} open={summaryOpen} onClose={() => setSummaryOpen(false)} colorOf={colorOf} />}
+      {!finished && <MatchIntro open={introOpen} onClose={() => setIntroOpen(false)} matchName={state.match.name} speed={state.match.speed} />}
       <div className="relative flex min-h-0 flex-1 flex-col lg:flex-row">
       <div className="relative h-full w-full lg:flex-1">
         <WorldMap
@@ -284,6 +287,9 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
           <Badge muted={rtStatus !== "open"}>{rtStatus === "open" ? "live" : rtStatus === "closed" ? "reconnecting…" : "connecting…"}</Badge>
         </div>
         <div className="absolute right-2 top-2 flex gap-2 text-xs">
+          <button onClick={() => setIntroOpen(true)} className="rounded bg-slate-950/80 px-3 py-2 text-slate-200 hover:bg-slate-800 lg:px-2 lg:py-1" aria-label="How to play" title="How to play">
+            ?
+          </button>
           <button onClick={() => setForecast((f) => !f)} className={`rounded px-3 py-2 lg:px-2 lg:py-1 ${forecast ? "bg-sky-200 text-slate-900" : "bg-slate-950/80 text-slate-200 hover:bg-slate-800"}`}>
             Ice forecast
           </button>
