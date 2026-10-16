@@ -69,6 +69,14 @@ if it looks empty. Cron lines on the server:
 Keep a copy of `~/.backup.key` off the server (Matt has one in `~/.ssh/lastthaw-backup.key`). The upload uses the
 `lastthaw-backup` IAM user, which can only write to that bucket.
 
+## Analytics
+
+Matomo runs on the same box at https://stats.lastthaw.com (`matomo` and `matomo-db` services in `docker-compose.prod.yml`,
+`MATOMO_DB_PASSWORD` in `.env`). The site loads the tracker from there with cookies disabled and Do Not Track honoured.
+First visit after deploy: open https://stats.lastthaw.com, finish the installer (database host `matomo-db`, user and
+database `matomo`, password from `.env`, table prefix `matomo_`), create the site "Last Thaw" with URL https://lastthaw.com
+(it must get site id 1), and set up the admin login. Nothing else needs changing.
+
 ## Secrets and firewall
 
 `.env` on the server holds `POSTGRES_PASSWORD` and `REDIS_PASSWORD` (random); the compose files read them for Postgres,

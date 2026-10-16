@@ -88,6 +88,36 @@ services:
       - webdist:/srv/web
     profiles: ["app"]
 
+  # Web analytics at stats.lastthaw.com: Matomo with its own MariaDB, reachable only through Caddy.
+  matomo-db:
+    image: mariadb:11@sha256:6422478cb8e159f080fb1d8ccf65101e26fe51385787fde7d16c3b165a331f15
+    restart: unless-stopped
+    command: ["--max-allowed-packet=64MB", "--innodb-buffer-pool-size=256M"]
+    environment:
+      MARIADB_ROOT_PASSWORD: ${MATOMO_DB_PASSWORD}
+      MARIADB_DATABASE: matomo
+      MARIADB_USER: matomo
+      MARIADB_PASSWORD: ${MATOMO_DB_PASSWORD}
+    volumes:
+      - matomo_db:/var/lib/mysql
+    profiles: ["app"]
+
+  matomo:
+    image: matomo:5-apache@sha256:1e00192627025a9eb9108858a0d2fcedb495958adf8ee12cd2b2e4ec306efae4
+    restart: unless-stopped
+    environment:
+      MATOMO_DATABASE_HOST: matomo-db
+      MATOMO_DATABASE_ADAPTER: mysql
+      MATOMO_DATABASE_TABLES_PREFIX: matomo_
+      MATOMO_DATABASE_USERNAME: matomo
+      MATOMO_DATABASE_PASSWORD: ${MATOMO_DB_PASSWORD}
+      MATOMO_DATABASE_DBNAME: matomo
+    volumes:
+      - matomo_data:/var/www/html
+    depends_on:
+      - matomo-db
+    profiles: ["app"]
+
   caddy:
     image: caddy:2-alpine@sha256:d8542f48d34a9cf4e4c11a478865229840e87e4c96ea3f439101f31a5d35f75f
     restart: unless-stopped
@@ -102,9 +132,12 @@ services:
     depends_on:
       - api
       - web
+      - matomo
     profiles: ["app"]
 
 volumes:
   webdist:
   caddy_data:
   caddy_config:
+  matomo_db:
+  matomo_data:

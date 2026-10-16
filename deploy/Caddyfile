@@ -9,7 +9,7 @@ lastthaw.com, www.lastthaw.com {
         X-Frame-Options "DENY"
         Referrer-Policy "strict-origin-when-cross-origin"
         Permissions-Policy "camera=(), microphone=(), geolocation=()"
-        Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' wss://lastthaw.com wss://www.lastthaw.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+        Content-Security-Policy "default-src 'self'; script-src 'self' https://stats.lastthaw.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://stats.lastthaw.com; connect-src 'self' wss://lastthaw.com wss://www.lastthaw.com https://stats.lastthaw.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
         -Server
     }
 
@@ -28,4 +28,12 @@ lastthaw.com, www.lastthaw.com {
         try_files {path} /index.html
         file_server
     }
+}
+
+# Analytics. Matomo serves its own UI and the tracker; its headers are its own business apart from HSTS.
+stats.lastthaw.com {
+    encode zstd gzip
+    header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    header X-Content-Type-Options "nosniff"
+    reverse_proxy matomo:80
 }
