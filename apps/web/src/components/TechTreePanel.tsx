@@ -38,11 +38,11 @@ export function TechTreePanel({ matchId, state, clockOffsetMs }: { matchId: stri
   return (
     <div className="p-3 text-sm">
       <p className="mb-2 text-xs text-slate-400">
-        {doneCount} of {TECHS.length} techs researched · {AGES[state.me.age as AgeIndex] ?? "Unknown"} Age · day {Math.floor(day) + 1}. Ages have an earliest day; everything else needs only its prerequisites and the resources.
+        {doneCount} of {TECHS.length} techs researched · {AGES[state.me.age as AgeIndex] ?? "Unknown"} Age · day {Math.floor(day) + 1}. Ages have an earliest day; everything else needs only its prerequisites and the resources.<span className="sm:hidden"> Swipe sideways for other ages.</span>
       </p>
-      <div className="flex min-w-max gap-3">
+      <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2 sm:snap-none">
         {byAge.map((col) => (
-          <div key={col.i} className={`w-64 shrink-0 rounded-md border p-2 ${col.i === state.me.age ? "border-sky-500/40 bg-sky-500/5" : col.i < state.me.age ? "border-slate-800 bg-slate-900/40" : "border-slate-800"}`}>
+          <div key={col.i} className={`w-[86vw] shrink-0 snap-center rounded-md border p-2 sm:w-64 ${col.i === state.me.age ? "border-sky-500/40 bg-sky-500/5" : col.i < state.me.age ? "border-slate-800 bg-slate-900/40" : "border-slate-800"}`}>
             <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">
               {col.name} Age {col.i < state.me.age ? "· past" : col.i === state.me.age ? "· now" : ""}
             </h3>

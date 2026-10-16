@@ -74,7 +74,8 @@ export function LogisticsPanel({ state, onSelect }: { state: MatchStateView; onS
       </div>
       <p className={`text-xs ${verdict.tone}`}>{verdict.text}</p>
 
-      <table className="w-full text-xs">
+      <div className="overflow-x-auto">
+      <table className="w-full min-w-max text-xs">
         <thead className="text-slate-400">
           <tr>
             <th className="py-1 text-left font-medium">Hauler</th>
@@ -100,6 +101,7 @@ export function LogisticsPanel({ state, onSelect }: { state: MatchStateView; onS
           </tr>
         </tbody>
       </table>
+      </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
         <div>

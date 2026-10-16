@@ -13,7 +13,7 @@ import { EmpirePanel } from "./EmpirePanel.js";
 import { LogisticsPanel } from "./LogisticsPanel.js";
 import { TechTreePanel } from "./TechTreePanel.js";
 
-type Menu = "messages" | "alliance" | "chat" | "market" | "players" | "leaderboard" | "view" | "empire" | "logistics" | "tech";
+type Menu = "messages" | "alliance" | "chat" | "market" | "players" | "leaderboard" | "view" | "empire" | "logistics" | "tech" | "menu";
 
 /**
  * Slim menu bar above the map: Messages (with a 5-second toast for new ones),
@@ -76,31 +76,59 @@ export function TopMenu({
     </button>
   );
 
+  const entries: Array<{ id: Menu; label: string; badge?: string | number | undefined; tone?: "alert" | undefined }> = [
+    { id: "messages", label: "Messages", badge: unread ? `${unread} new` : undefined, tone: "alert" },
+    { id: "alliance", label: "Alliance", badge: state.me.allianceTag ? `[${state.me.allianceTag}]` : invites ? `${invites} invite` : undefined },
+    { id: "chat", label: "Chat" },
+    { id: "market", label: "Market", badge: marketOpen || undefined },
+    { id: "players", label: "Players", badge: state.players.length },
+    { id: "leaderboard", label: "Leaderboard" },
+    { id: "empire", label: "Resources", badge: state.owned.length },
+    { id: "logistics", label: "Logistics", badge: logisticsBadge, tone: logisticsBadge ? "alert" : undefined },
+    { id: "tech", label: "Tech", badge: `${state.me.techs.length}/${TECHS.length}` },
+    { id: "view", label: "View", badge: overlays.size || undefined },
+  ];
+  const alerts = (unread ? 1 : 0) + (logisticsBadge ? 1 : 0) + (invites ? 1 : 0);
+  const latest = toast ? (
+    <button className="min-w-0 flex-1 truncate text-left text-sm text-slate-100" onClick={() => toggle("messages")}>
+      <span className="mr-2">{messageIcon(toast.kind)}</span>
+      {toast.subject}
+    </button>
+  ) : (
+    <span className="min-w-0 flex-1 truncate text-sm text-slate-500">{newest ? `Latest: ${newest.subject}` : ""}</span>
+  );
+
   return (
     <div className="relative z-30 border-b border-slate-800 bg-slate-950/90 backdrop-blur">
-      <div className="flex h-10 items-center gap-1 overflow-x-auto px-2">
-        <Tab id="messages" label="Messages" badge={unread ? `${unread} new` : undefined} tone="alert" />
-        <Tab id="alliance" label="Alliance" badge={state.me.allianceTag ? `[${state.me.allianceTag}]` : invites ? `${invites} invite` : undefined} />
-        <Tab id="chat" label="Chat" />
-        <Tab id="market" label="Market" badge={marketOpen || undefined} />
-        <Tab id="players" label="Players" badge={state.players.length} />
-        <Tab id="leaderboard" label="Leaderboard" />
-        <Tab id="empire" label="Resources" badge={state.owned.length} />
-        <Tab id="logistics" label="Logistics" badge={logisticsBadge} tone={logisticsBadge ? "alert" : undefined} />
-        <Tab id="tech" label="Tech" badge={`${state.me.techs.length}/${TECHS.length}`} />
-        <Tab id="view" label="View" badge={overlays.size || undefined} />
+      {/* Phones: one Menu button and the latest message on its own row. Wider screens: the full tab row. */}
+      <div className="flex h-11 items-center gap-2 px-2 sm:hidden">
+        <button onClick={() => toggle("menu")} className={`flex h-9 shrink-0 items-center gap-2 rounded-md border border-slate-700 px-3 text-sm ${open ? "bg-slate-800 text-white" : "text-slate-200"}`}>
+          <span aria-hidden>☰</span> Menu
+          {alerts > 0 && <span className="rounded bg-rose-500/30 px-1.5 py-0.5 text-xs text-rose-200">{alerts}</span>}
+        </button>
+        {latest}
+      </div>
+      <div className="hidden h-10 items-center gap-1 overflow-x-auto px-2 sm:flex">
+        {entries.map((e) => (
+          <Tab key={e.id} id={e.id} label={e.label} badge={e.badge} tone={e.tone} />
+        ))}
         <div className="mx-2 h-5 w-px bg-slate-800" />
-        {toast ? (
-          <button className="min-w-0 flex-1 truncate text-left text-sm text-slate-100" onClick={() => toggle("messages")}>
-            <span className="mr-2">{messageIcon(toast.kind)}</span>
-            {toast.subject}
-          </button>
-        ) : (
-          <span className="min-w-0 flex-1 truncate text-sm text-slate-500">{newest ? `Latest: ${newest.subject}` : ""}</span>
-        )}
+        {latest}
       </div>
       {open && (
-        <Dropdown onClose={() => setOpen(null)} title={{ messages: "Messages", alliance: "Alliance", chat: "Chat", market: "Market", players: "Players", leaderboard: "Leaderboard", view: "View", empire: "Resources", logistics: "Logistics", tech: "Tech tree" }[open]}>
+        <Dropdown onClose={() => setOpen(null)} title={{ messages: "Messages", alliance: "Alliance", chat: "Chat", market: "Market", players: "Players", leaderboard: "Leaderboard", view: "View", empire: "Resources", logistics: "Logistics", tech: "Tech tree", menu: "Menu" }[open]}>
+          {open === "menu" && (
+            <div className="grid grid-cols-2 gap-2 p-3">
+              {entries.map((e) => (
+                <button key={e.id} onClick={() => setOpen(e.id)} className="flex min-h-14 items-center justify-between rounded-md border border-slate-700 bg-slate-900 px-3 text-left text-sm text-slate-100 active:bg-slate-800">
+                  <span>{e.label}</span>
+                  {e.badge !== undefined && e.badge !== 0 && e.badge !== "" && (
+                    <span className={`rounded px-1.5 py-0.5 text-xs ${e.tone === "alert" ? "bg-rose-500/30 text-rose-200" : "bg-slate-700 text-slate-300"}`}>{e.badge}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
           {open === "messages" && <MessagesList messages={q.data?.messages ?? []} />}
           {open === "alliance" && (
             <div className="p-3">
@@ -187,16 +215,16 @@ export function TopMenu({
 /** Every menu opens as a centred overlay on top of the map: wide enough for tables and the tech tree, scrollable, closed by the X, Escape or a click outside. */
 function Dropdown({ children, onClose, title }: { children: ReactNode; onClose: () => void; title?: string }) {
   return (
-    <div className="fixed inset-0 z-40 flex items-start justify-center bg-slate-950/70 p-2 pt-12 backdrop-blur-sm sm:p-6 sm:pt-14" onClick={onClose}>
+    <div className="fixed inset-0 z-40 flex items-start justify-center bg-slate-950/70 p-0 pt-11 backdrop-blur-sm sm:p-6 sm:pt-14" onClick={onClose}>
       <div
-        className="flex max-h-[88vh] w-full max-w-6xl flex-col overflow-hidden rounded-lg border border-slate-700 bg-slate-950 shadow-2xl"
+        className="flex h-[calc(100dvh-2.75rem)] w-full max-w-6xl flex-col overflow-hidden border-t border-slate-700 bg-slate-950 shadow-2xl sm:h-auto sm:max-h-[88vh] sm:rounded-lg sm:border"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
       >
         <div className="flex items-center justify-between border-b border-slate-800 px-3 py-2">
           <span className="text-sm font-medium text-slate-200">{title}</span>
-          <button className="rounded px-2 py-0.5 text-slate-400 hover:bg-slate-800 hover:text-white" onClick={onClose} aria-label="Close">
+          <button className="min-h-10 min-w-10 rounded px-2 py-0.5 text-lg text-slate-400 hover:bg-slate-800 hover:text-white" onClick={onClose} aria-label="Close">
             ✕
           </button>
         </div>

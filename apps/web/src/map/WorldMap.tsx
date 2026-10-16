@@ -12,8 +12,6 @@ export type RegionPaint = {
   dash?: [number, number];
   /** A second, thinner inner line (castles and bunkers). */
   inner?: string;
-  /** Wall badge drawn at the region's centre: a tower in this colour with this label. */
-  wall?: { label: string; colour: string; text: string };
 };
 
 export interface WorldMapProps {
@@ -427,21 +425,9 @@ const Regions = memo(function Regions({ paint, selected, strokeWidth }: { paint:
         const u = strokeWidth / 0.8;
         return (
           <g key={`${r.id}-wall`} pointerEvents="none">
-            <path d={r.path} fill="none" stroke="#0b1a2b" strokeWidth={strokeWidth * (p.strokeScale + 2)} strokeLinejoin="round" opacity={0.9} />
+            <path d={r.path} fill="none" stroke="#0b1a2b" strokeWidth={strokeWidth * (p.strokeScale + 3)} strokeLinejoin="round" opacity={0.95} />
             <path d={r.path} fill="none" stroke={p.stroke ?? "#cbd5e1"} strokeWidth={strokeWidth * p.strokeScale} strokeDasharray={p.dash ? `${p.dash[0] * strokeWidth} ${p.dash[1] * strokeWidth}` : undefined} strokeLinejoin="round" />
             {p.inner && <path d={r.path} fill="none" stroke={p.inner} strokeWidth={strokeWidth * 0.9} strokeLinejoin="round" />}
-            {p.wall && (
-              <g transform={`translate(${r.x} ${r.y + 11 * u}) scale(${u})`}>
-                <rect x={-24} y={-7} width={48} height={14} rx={3} fill="#0b1a2b" opacity={0.85} />
-                <rect x={-21} y={-4} width={9} height={8} fill={p.wall.colour} stroke="#0b1a2b" strokeWidth={0.6} />
-                <rect x={-21} y={-6} width={2.5} height={2.5} fill={p.wall.colour} />
-                <rect x={-17.8} y={-6} width={2.5} height={2.5} fill={p.wall.colour} />
-                <rect x={-14.5} y={-6} width={2.5} height={2.5} fill={p.wall.colour} />
-                <text x={-9} y={0.5} dominantBaseline="central" fontSize={7.5} fontWeight={700} fill={p.wall.colour} fontFamily="ui-sans-serif, system-ui">
-                  {p.wall.text}
-                </text>
-              </g>
-            )}
           </g>
         );
       })}

@@ -51,11 +51,11 @@ export function EmpirePanel({ state, onSelect }: { state: MatchStateView; onSele
   const shownRes = RES.filter((r) => r === "food" || r === "wood" || r === "stone" || totals.res[r] > 0 || (moving.cargo[r] ?? 0) > 0);
 
   return (
-    <div className="p-3 text-sm">
+    <div className="overflow-x-auto p-3 text-sm">
       <table className="w-full min-w-max border-collapse text-xs">
         <thead className="sticky top-0 z-10 bg-slate-950 text-slate-400 shadow-[0_1px_0_0_rgb(30_41_59)]">
           <tr>
-            <th className="px-2 py-1 text-left font-medium">Region</th>
+            <th className="sticky left-0 z-20 bg-slate-950 px-2 py-1 text-left font-medium">Region</th>
             <th className="px-2 py-1 text-right font-medium">People</th>
             {shownRes.map((r) => (
               <th key={r} className="px-2 py-1 text-right font-medium capitalize">
@@ -74,7 +74,7 @@ export function EmpirePanel({ state, onSelect }: { state: MatchStateView; onSele
             const units = Object.fromEntries(r.units);
             return (
               <tr key={r.id} className={`border-t border-slate-900 hover:bg-slate-900 ${r.frozen ? "text-slate-500" : "text-slate-200"}`}>
-                <td className="px-2 py-1">
+                <td className="sticky left-0 z-10 bg-slate-950 px-2 py-1">
                   <button className="text-left hover:text-white" onClick={() => onSelect(r.id)}>
                     {r.name}
                     {r.capital ? <span className="ml-1 rounded bg-sky-500/20 px-1 text-[10px] text-sky-300">capital</span> : null}
@@ -96,7 +96,7 @@ export function EmpirePanel({ state, onSelect }: { state: MatchStateView; onSele
             );
           })}
           <tr className="border-t-2 border-slate-700 font-medium text-white">
-            <td className="px-2 py-1">Total in {rows.length} regions</td>
+            <td className="sticky left-0 z-10 bg-slate-950 px-2 py-1">Total in {rows.length} regions</td>
             <td className="px-2 py-1 text-right tabular-nums">{fmt(totals.people)}</td>
             {shownRes.map((k) => (
               <td key={k} className="px-2 py-1 text-right tabular-nums">

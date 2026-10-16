@@ -56,12 +56,12 @@ export function RegionPanel({ matchId, state, regionId, clockOffsetMs, onClose, 
       </p>
       {owned ? (
         <>
-          <nav className="flex gap-1 border-b border-slate-800 text-sm">
+          <nav className="flex gap-1 overflow-x-auto border-b border-slate-800 text-sm">
             {(["overview", "build", "train", "units"] as Tab[]).map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
-                className={`px-3 py-1.5 capitalize ${tab === t ? "border-b-2 border-sky-400 text-white" : "text-slate-400 hover:text-slate-200"}`}
+                className={`shrink-0 px-3 py-2.5 capitalize sm:py-1.5 ${tab === t ? "border-b-2 border-sky-400 text-white" : "text-slate-400 hover:text-slate-200"}`}
               >
                 {t}
               </button>

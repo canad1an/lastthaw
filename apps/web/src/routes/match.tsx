@@ -7,6 +7,7 @@ import { useMatchRealtime } from "../api/realtime.js";
 import { RegionPanel, ageName } from "../components/RegionPanel.js";
 import { ResearchPanel } from "../components/ResearchPanel.js";
 import { TopMenu } from "../components/TopMenu.js";
+import { BottomSheet, type SheetStop } from "../components/BottomSheet.js";
 import { overlayBadges, useOverlays } from "../map/overlays.js";
 import { IncomingWarnings } from "../components/ArmyPanel.js";
 import { ActivityPanel } from "../components/ActivityPanel.js";
@@ -24,17 +25,17 @@ const PLAYER_COLORS = ["#38bdf8", "#f472b6", "#a3e635", "#fb923c", "#c084fc", "#
 function wallPaint(wall: string | null | undefined): Partial<RegionPaint> {
   switch (wall) {
     case "palisade":
-      return { stroke: "#f59e0b", strokeScale: 3, dash: [4, 3], wall: { label: "Palisade", colour: "#fbbf24", text: "PALISADE" } };
+      return { stroke: "#f59e0b", strokeScale: 6, dash: [5, 3] };
     case "walls":
-      return { stroke: "#e2e8f0", strokeScale: 3.5, wall: { label: "Stone walls", colour: "#e2e8f0", text: "WALLS" } };
+      return { stroke: "#e2e8f0", strokeScale: 8 };
     case "fort":
-      return { stroke: "#e2e8f0", strokeScale: 4, inner: "#0b1a2b", wall: { label: "Fort", colour: "#e2e8f0", text: "FORT" } };
+      return { stroke: "#e2e8f0", strokeScale: 9, inner: "#0b1a2b" };
     case "castle":
-      return { stroke: "#f8fafc", strokeScale: 5, inner: "#0b1a2b", wall: { label: "Castle", colour: "#f8fafc", text: "CASTLE" } };
+      return { stroke: "#f8fafc", strokeScale: 11, dash: [7, 3], inner: "#0b1a2b" };
     case "arsenal":
-      return { stroke: "#fde68a", strokeScale: 5, inner: "#0b1a2b", wall: { label: "Arsenal", colour: "#fde68a", text: "ARSENAL" } };
+      return { stroke: "#fde68a", strokeScale: 11, dash: [7, 3], inner: "#0b1a2b" };
     case "bunker":
-      return { stroke: "#ffffff", strokeScale: 6, inner: "#334155", wall: { label: "Bunker", colour: "#ffffff", text: "BUNKER" } };
+      return { stroke: "#ffffff", strokeScale: 14, dash: [8, 3], inner: "#334155" };
     default:
       return {};
   }
@@ -144,18 +145,24 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
   const [selected, setSelected] = useState<string | null>(state.me.capitalRegionId);
   const [picking, setPicking] = useState(false);
   const [target, setTarget] = useState<string | null>(null);
+  // Phone layout: the side panel is a bottom sheet. Selecting a region opens it halfway; tapping the same region again opens it fully.
+  const [sheet, setSheet] = useState<SheetStop>("half");
   const onMapSelect = useCallback(
     (id: string | null) => {
       if (picking && id) {
         setTarget(id);
         setPicking(false);
+        setSheet("half");
+      } else if (id && id === selected) {
+        setSheet("full");
       } else {
         setSelected(id);
         // A new origin region starts with no target, so an army is never sent to a stale one.
         setTarget(null);
+        setSheet(id ? "half" : "peek");
       }
     },
-    [picking],
+    [picking, selected],
   );
   // Server-time offset, captured once per state fetch. Recomputing it every render
   // would pin countdowns to the moment the snapshot was taken.
@@ -247,8 +254,8 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
   return (
     <div className="flex h-[calc(100dvh-3rem)] flex-col">
       <TopMenu matchId={matchId} state={state} selectedRegionId={selected} colorOf={colorOf} overlays={overlays} onToggleOverlay={toggleOverlay} onSelectRegion={setSelected} clockOffsetMs={clockOffsetMs} />
-      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
-      <div className="relative h-1/2 w-full lg:h-full lg:flex-1">
+      <div className="relative flex min-h-0 flex-1 flex-col lg:flex-row">
+      <div className="relative h-full w-full lg:flex-1">
         <WorldMap
           paint={paint}
           selected={selected}
@@ -262,7 +269,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
           roads={roadLinks}
           badges={badges}
         />
-        {picking && <div className="pointer-events-none absolute inset-x-0 top-2 text-center text-sm text-amber-300">Click a region to target it</div>}
+        {picking && <div className="pointer-events-none absolute inset-x-0 top-2 text-center text-sm text-amber-300">Tap a region to target it</div>}
         <div className="pointer-events-none absolute bottom-2 left-2 hidden flex-wrap gap-2 text-xs lg:flex">
           <Badge>{state.match.name}</Badge>
           <Badge>{state.match.speed}x</Badge>
@@ -274,12 +281,21 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
           <Badge muted={rtStatus !== "open"}>{rtStatus === "open" ? "live" : rtStatus === "closed" ? "reconnecting…" : "connecting…"}</Badge>
         </div>
         <div className="absolute right-2 top-2 flex gap-2 text-xs">
-          <button onClick={() => setForecast((f) => !f)} className={`rounded px-2 py-1 ${forecast ? "bg-sky-200 text-slate-900" : "bg-slate-950/80 text-slate-200 hover:bg-slate-800"}`}>
+          <button onClick={() => setForecast((f) => !f)} className={`rounded px-3 py-2 lg:px-2 lg:py-1 ${forecast ? "bg-sky-200 text-slate-900" : "bg-slate-950/80 text-slate-200 hover:bg-slate-800"}`}>
             Ice forecast
           </button>
         </div>
       </div>
-      <aside className="w-full space-y-3 overflow-y-auto border-t border-slate-800 p-4 lg:w-96 lg:border-l lg:border-t-0">
+      <BottomSheet
+        stop={sheet}
+        onStop={setSheet}
+        summary={
+          <span>
+            {selected ? <b className="text-slate-100">{regionById(selected)?.name ?? selected}</b> : "No region selected"}
+            <span className="text-slate-500"> · day {Math.min(balance.match.lengthDays, Math.floor(matchDay) + 1)} · {state.match.speed}x · {state.owned.length} regions</span>
+          </span>
+        }
+      >
         {finished && (
           <Card className="border-amber-500/40 bg-amber-500/10 text-sm text-amber-100">
             The match is over.{" "}
@@ -302,7 +318,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
         <TradeRoutesPanel matchId={matchId} state={state} selectedRegionId={selected} clockOffsetMs={clockOffsetMs} />
         <ResearchPanel matchId={matchId} state={state} clockOffsetMs={clockOffsetMs} />
         <DevTools matchId={matchId} />
-      </aside>
+      </BottomSheet>
       </div>
     </div>
   );
