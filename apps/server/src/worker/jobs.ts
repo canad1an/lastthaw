@@ -102,7 +102,7 @@ export async function runDueJobs(db: Db, publisher: Publisher, log: pino.Logger)
       const [w] = await tx.select({ name: players.name }).from(players).where(eq(players.id, owner)).limit(1);
       const everyone = await tx.select({ id: players.id }).from(players).where(and(eq(players.matchId, m.id), eq(players.isAi, false)));
       for (const other of everyone) await notify(tx, m.id, other.id, "system", `The ${def.name} is finished. ${w?.name ?? "Its builder"} has won the match.`, { regionId, wonder: true });
-      await finishMatch(tx, m, job.endsAt, publisher, after, owner);
+      await finishMatch(tx, m, job.endsAt, publisher, after, owner, "wonder");
     }
   }
 

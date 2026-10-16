@@ -4,6 +4,8 @@ import { ForgotPage, LoginPage, RegisterPage, ResetPage, VerifyPage } from "./ro
 import { LobbyPage } from "./routes/lobby.js";
 import { MatchPage } from "./routes/match.js";
 import { LeaderboardPage } from "./routes/leaderboard.js";
+import { ReportPage } from "./components/MatchSummary.js";
+import { ReplayPage } from "./routes/replay.js";
 import { ProfilePage } from "./routes/profile.js";
 import { AdminPage } from "./routes/admin.js";
 import { HomePage } from "./routes/home.js";
@@ -35,6 +37,8 @@ const routes = [
   createRoute({ getParentRoute: () => rootRoute, path: "/reset", component: ResetPage, validateSearch: tokenSearch }),
   createRoute({ getParentRoute: () => rootRoute, path: "/match/$matchId", component: MatchPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/match/$matchId/leaderboard", component: LeaderboardPage }),
+  createRoute({ getParentRoute: () => rootRoute, path: "/match/$matchId/report", component: ReportPage }),
+  createRoute({ getParentRoute: () => rootRoute, path: "/match/$matchId/replay", component: ReplayPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/profile", component: ProfilePage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/admin", component: AdminPage }),
 ];

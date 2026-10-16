@@ -46,7 +46,64 @@ export function LobbyPage() {
       </div>
 
       {me.data?.emailVerified && (me.data.isAdmin || info.data?.devTools) && <CreateMatch admin={!!me.data.isAdmin} />}
+
+      <PastMatches />
     </main>
+  );
+}
+
+interface PastMatch {
+  id: string;
+  name: string;
+  speed: number;
+  startsAt: string;
+  finishedAt: string | null;
+  winnerName: string | null;
+  winKind: string | null;
+  humans: number;
+  players: number;
+}
+
+/** Finished matches: open the report, or watch the whole month replayed in thirty seconds. */
+function PastMatches() {
+  const q = useQuery({
+    queryKey: ["past-matches"],
+    queryFn: () => fetch("/api/matches/past", { credentials: "include" }).then((r) => r.json() as Promise<{ matches: PastMatch[] }>),
+  });
+  const list = q.data?.matches ?? [];
+  if (list.length === 0) return null;
+  const how = (k: string | null) => (k === "hold" ? "held 60% of the world" : k === "wonder" ? "finished the Great Hearth" : k === "survival" ? "outlasted the ice" : k === "score" ? "highest score" : "");
+  return (
+    <section className="space-y-3">
+      <h2 className="text-xl font-semibold tracking-tight">Past matches</h2>
+      <div className="space-y-2">
+        {list.map((m) => (
+          <Card key={m.id} className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="font-medium text-slate-100">
+                {m.name} <span className="text-xs text-slate-500">· {m.speed}x · {m.players} players{m.humans ? `, ${m.humans} human` : ""}</span>
+              </p>
+              <p className="text-sm text-slate-400">
+                {m.finishedAt ? new Date(m.finishedAt).toLocaleDateString() : ""}
+                {m.winnerName && (
+                  <>
+                    {" "}· <span className="text-amber-200">{m.winnerName}</span> won{how(m.winKind) ? `: ${how(m.winKind)}` : ""}
+                  </>
+                )}
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Link to="/match/$matchId/replay" params={{ matchId: m.id }}>
+                <Button variant="ghost">▶ Replay</Button>
+              </Link>
+              <Link to="/match/$matchId/report" params={{ matchId: m.id }}>
+                <Button variant="ghost">Report</Button>
+              </Link>
+            </div>
+          </Card>
+        ))}
+      </div>
+    </section>
   );
 }
 

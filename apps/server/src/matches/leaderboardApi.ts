@@ -3,7 +3,7 @@ import { parseProfile } from "../sim/ai.js";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { AGES, allRegions, balance, buildingById, iceLatitudeOnDay, regionById } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
-import { allianceMembers, alliances, jobs, matchMilestones, matchRegions, matches, players, userMatchResults, users } from "../db/schema.js";
+import { allianceMembers, alliances, jobs, matchMilestones, matchRegions, matches, players, userMatchResults, users, battles, scoreHistory, ownershipFrames } from "../db/schema.js";
 import { milestoneLabel, milestonePoints } from "../sim/endgame.js";
 import { requireUser } from "../auth/session.js";
 import { matchNow } from "../sim/clock.js";
@@ -69,6 +69,125 @@ export async function leaderboardRoutes(app: FastifyInstance, opts: { db: Db }) 
         regions: statBy.get(p.id)?.regions ?? 0,
         population: Math.round(statBy.get(p.id)?.pop ?? 0),
         eliminated: p.eliminatedAt !== null,
+      })),
+    };
+  });
+
+  /** The end-of-match report: how it ended, standings, firsts, growth of every player's score by day, and a few totals. */
+  app.get("/api/matches/:id/summary", async (req, reply) => {
+    // Public: the report page lives at its URL forever, for anyone.
+    const user = req.user ?? null;
+    const matchId = (req.params as { id: string }).id;
+    const [m] = await db.select().from(matches).where(eq(matches.id, matchId)).limit(1);
+    if (!m) return reply.code(404).send({ error: "match not found" });
+    const ps = await db.select().from(players).where(eq(players.matchId, matchId)).orderBy(desc(players.score));
+    const me = user ? ps.find((p) => p.userId === user.id) : undefined;
+    const stats = await db
+      .select({
+        owner: matchRegions.ownerPlayerId,
+        regions: sql<number>`count(*)::int`,
+        pop: sql<number>`coalesce(sum(${matchRegions.popWorkers} + ${matchRegions.popSoldiers} + ${matchRegions.popOccupiers}), 0)::float`,
+      })
+      .from(matchRegions)
+      .where(and(eq(matchRegions.matchId, matchId), sql`${matchRegions.ownerPlayerId} is not null`, isNull(matchRegions.frozenAt)))
+      .groupBy(matchRegions.ownerPlayerId);
+    const statBy = new Map(stats.map((s) => [s.owner!, s]));
+    const members = await db
+      .select({ playerId: allianceMembers.playerId, tag: alliances.tag })
+      .from(allianceMembers)
+      .innerJoin(alliances, eq(alliances.id, allianceMembers.allianceId))
+      .where(eq(allianceMembers.matchId, matchId));
+    const tagBy = new Map(members.map((x) => [x.playerId, x.tag]));
+    const results = await db.select({ playerId: userMatchResults.playerId, rank: userMatchResults.finalRank }).from(userMatchResults).where(eq(userMatchResults.matchId, matchId));
+    const rankBy = new Map(results.map((r) => [r.playerId, r.rank]));
+    // Rank: the winner first, then by score; recorded ranks for humans win over the live order.
+    const ordered = [...ps].sort((a, b) => Number(b.id === m.winnerPlayerId) - Number(a.id === m.winnerPlayerId) || b.score - a.score);
+    const standings = ordered.map((p, i) => ({
+      rank: rankBy.get(p.id) ?? i + 1,
+      id: p.id,
+      name: p.name,
+      isAi: p.isAi,
+      allianceTag: tagBy.get(p.id) ?? null,
+      age: p.age,
+      score: p.score,
+      regions: statBy.get(p.id)?.regions ?? 0,
+      population: Math.round(statBy.get(p.id)?.pop ?? 0),
+      eliminated: p.eliminatedAt !== null,
+      won: p.id === m.winnerPlayerId,
+    }));
+    const nameOf = new Map(ps.map((p) => [p.id, p.name]));
+    const milestones = (await db.select().from(matchMilestones).where(eq(matchMilestones.matchId, matchId)).orderBy(matchMilestones.at)).map((x) => ({
+      key: x.key,
+      label: milestoneLabel(x.key),
+      playerId: x.playerId,
+      playerName: nameOf.get(x.playerId) ?? "?",
+      points: milestonePoints(x.key),
+      at: x.at.toISOString(),
+    }));
+    const hist = await db.select().from(scoreHistory).where(eq(scoreHistory.matchId, matchId)).orderBy(scoreHistory.day);
+    const history: Record<string, Array<{ day: number; score: number; regions: number; population: number }>> = {};
+    for (const h of hist) (history[h.playerId] ??= []).push({ day: h.day, score: h.score, regions: h.regions, population: h.population });
+    const [bt] = await db.select({ n: sql<number>`count(*)::int` }).from(battles).where(eq(battles.matchId, matchId));
+    return {
+      match: { id: m.id, name: m.name, speed: m.speed, startsAt: m.startsAt.toISOString(), finishedAt: m.finishedAt?.toISOString() ?? null, winnerPlayerId: m.winnerPlayerId, winKind: m.winKind ?? null, wonderName: buildingById.get(balance.win.wonderBuilding)?.name ?? "wonder" },
+      me: { playerId: me?.id ?? "", rank: me ? (standings.find((s) => s.id === me.id)?.rank ?? null) : null },
+      standings,
+      milestones,
+      history,
+      totals: { battles: bt?.n ?? 0, regionsHeld: standings.reduce((a, p) => a + p.regions, 0), agesReached: Math.max(0, ...ps.map((p) => p.age + 1)), players: ps.length, humans: ps.filter((p) => !p.isAi).length },
+    };
+  });
+
+  /** Replay frames for a match: public, like the report. A match recorded before replays existed gets its final positions as one frame. */
+  app.get("/api/matches/:id/replay", async (req, reply) => {
+    const matchId = (req.params as { id: string }).id;
+    const [m] = await db.select().from(matches).where(eq(matches.id, matchId)).limit(1);
+    if (!m) return reply.code(404).send({ error: "match not found" });
+    const ps = await db.select({ id: players.id, name: players.name, isAi: players.isAi }).from(players).where(eq(players.matchId, matchId)).orderBy(players.createdAt);
+    let frames = (await db.select().from(ownershipFrames).where(eq(ownershipFrames.matchId, matchId)).orderBy(ownershipFrames.day)).map((f) => ({ day: f.day, changes: f.changes }));
+    if (frames.length === 0 && m.status !== "lobby") {
+      const rows = await db
+        .select({ regionId: matchRegions.regionId, owner: matchRegions.ownerPlayerId, frozen: matchRegions.frozenAt })
+        .from(matchRegions)
+        .where(and(eq(matchRegions.matchId, matchId), sql`(${matchRegions.ownerPlayerId} is not null or ${matchRegions.frozenAt} is not null)`));
+      const changes: Record<string, string | null> = {};
+      for (const r of rows) changes[r.regionId] = r.frozen ? "ice" : r.owner;
+      const now = matchNow(m);
+      const day = Math.min(balance.match.lengthDays, Math.max(0, ((now.getTime() - m.startsAt.getTime()) / 86400_000) * m.speed));
+      frames = [{ day: Math.round(day * 4) / 4, changes }];
+    }
+    return {
+      match: { id: m.id, name: m.name, status: m.status, speed: m.speed, finishedAt: m.finishedAt?.toISOString() ?? null, winnerPlayerId: m.winnerPlayerId },
+      players: ps,
+      frames,
+    };
+  });
+
+  /** Finished matches, newest first, for the lobby's Past matches list. Public. */
+  app.get("/api/matches/past", async () => {
+    const rows = await db.select().from(matches).where(eq(matches.status, "finished")).orderBy(desc(matches.finishedAt)).limit(30);
+    const ids = rows.map((r) => r.id);
+    const winners = ids.length ? await db.select({ id: players.id, name: players.name }).from(players).where(inArray(players.id, rows.map((r) => r.winnerPlayerId).filter((x): x is string => !!x))) : [];
+    const counts = ids.length
+      ? await db
+          .select({ matchId: players.matchId, humans: sql<number>`count(*) filter (where not is_ai)::int`, total: sql<number>`count(*)::int` })
+          .from(players)
+          .where(inArray(players.matchId, ids))
+          .groupBy(players.matchId)
+      : [];
+    const countBy = new Map(counts.map((c) => [c.matchId, c]));
+    const winnerBy = new Map(winners.map((w) => [w.id, w.name]));
+    return {
+      matches: rows.map((m) => ({
+        id: m.id,
+        name: m.name,
+        speed: m.speed,
+        startsAt: m.startsAt.toISOString(),
+        finishedAt: m.finishedAt?.toISOString() ?? null,
+        winnerName: m.winnerPlayerId ? (winnerBy.get(m.winnerPlayerId) ?? null) : null,
+        winKind: m.winKind ?? null,
+        humans: countBy.get(m.id)?.humans ?? 0,
+        players: countBy.get(m.id)?.total ?? 0,
       })),
     };
   });

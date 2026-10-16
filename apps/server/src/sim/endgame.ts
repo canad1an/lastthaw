@@ -1,6 +1,7 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { AGES, allRegions, balance, buildingById, regionById, type AgeIndex } from "@lastthaw/shared";
-import { allianceMembers, alliances, events, jobs, matchMilestones, matchRegions, matches, players, userMatchResults } from "../db/schema.js";
+import { allianceMembers, alliances, events, jobs, matchMilestones, matchRegions, matches, players, scoreHistory, userMatchResults, ownershipFrames, ownershipLatest } from "../db/schema.js";
+import { matchNow } from "./clock.js";
 import type { Publisher } from "../realtime/publish.js";
 import type { Tx } from "./regions.js";
 import type { JobRow, MatchRow } from "../worker/jobs.js";
@@ -56,6 +57,28 @@ export async function wonderStarted(tx: Tx, m: MatchRow, playerId: string, playe
   await awardMilestone(tx, m, "wonder", playerId, at);
 }
 
+/** Record the ownership diff for the replay, once per quarter day. */
+export async function recordOwnershipFrame(tx: Tx, m: MatchRow, at: Date): Promise<void> {
+  const day = Math.round(Math.max(0, ((at.getTime() - m.startsAt.getTime()) / 86400_000) * m.speed) * 4) / 4;
+  const rows = await tx
+    .select({ regionId: matchRegions.regionId, owner: matchRegions.ownerPlayerId, frozen: matchRegions.frozenAt })
+    .from(matchRegions)
+    .where(and(eq(matchRegions.matchId, m.id), sql`(${matchRegions.ownerPlayerId} is not null or ${matchRegions.frozenAt} is not null)`));
+  const now: Record<string, string> = {};
+  for (const r of rows) {
+    if (r.frozen) now[r.regionId] = "ice";
+    else if (r.owner) now[r.regionId] = r.owner;
+  }
+  const [prev] = await tx.select().from(ownershipLatest).where(eq(ownershipLatest.matchId, m.id)).limit(1);
+  const before = prev?.owners ?? {};
+  const changes: Record<string, string | null> = {};
+  for (const [rid, pid] of Object.entries(now)) if (before[rid] !== pid) changes[rid] = pid;
+  for (const rid of Object.keys(before)) if (!(rid in now)) changes[rid] = null;
+  if (prev && Object.keys(changes).length === 0) return;
+  await tx.insert(ownershipFrames).values({ matchId: m.id, day, changes }).onConflictDoUpdate({ target: [ownershipFrames.matchId, ownershipFrames.day], set: { changes: sql`${ownershipFrames.changes} || excluded.changes` } });
+  await tx.insert(ownershipLatest).values({ matchId: m.id, owners: now }).onConflictDoUpdate({ target: ownershipLatest.matchId, set: { owners: now } });
+}
+
 /** Recompute every player's score from current state: territory, people and age, plus milestone bonuses. */
 export async function updateScores(tx: Tx, m: MatchRow): Promise<Array<{ id: string; score: number; regions: number; pop: number }>> {
   const rows = await tx
@@ -77,6 +100,14 @@ export async function updateScores(tx: Tx, m: MatchRow): Promise<Array<{ id: str
     const score = scoreOf(r?.regions ?? 0, r?.pop ?? 0, p.age) + (bonus.get(p.id) ?? 0);
     await tx.update(players).set({ score }).where(eq(players.id, p.id));
     out.push({ id: p.id, score, regions: r?.regions ?? 0, pop: r?.pop ?? 0 });
+  }
+  // One sample per quarter day per player, for the growth chart at the end.
+  const day = Math.round(Math.max(0, ((matchNow(m).getTime() - m.startsAt.getTime()) / 86400_000) * m.speed) * 4) / 4;
+  if (out.length) {
+    await tx
+      .insert(scoreHistory)
+      .values(out.map((s) => ({ matchId: m.id, playerId: s.id, day, score: s.score, regions: s.regions, population: Math.round(s.pop) })))
+      .onConflictDoNothing();
   }
   return out;
 }
@@ -136,9 +167,11 @@ export async function checkEarlyWin(tx: Tx, m: MatchRow, at: Date, standings: Ar
 }
 
 /** Mark the match finished, rank everyone and record their history. */
-export async function finishMatch(tx: Tx, m: MatchRow, at: Date, publisher: Publisher, after: (fn: () => Promise<void>) => void, winnerPlayerId: string | null): Promise<void> {
+export async function finishMatch(tx: Tx, m: MatchRow, at: Date, publisher: Publisher, after: (fn: () => Promise<void>) => void, winnerPlayerId: string | null, kind?: "hold" | "wonder" | "survival" | "score"): Promise<void> {
   if (m.status !== "running") return;
+  const winKind = kind ?? (winnerPlayerId ? "hold" : balance.win.survival ? "survival" : "score");
   const standings = await updateScores(tx, m);
+  await recordOwnershipFrame(tx, m, at);
   const ps = await tx.select().from(players).where(eq(players.matchId, m.id));
   const scoreOfId = (id: string) => standings.find((s) => s.id === id)?.score ?? 0;
   const ranked = [...ps].sort((a, b) => scoreOfId(b.id) - scoreOfId(a.id));
@@ -152,7 +185,7 @@ export async function finishMatch(tx: Tx, m: MatchRow, at: Date, publisher: Publ
   winner ??= ranked[0]?.id ?? null;
   // The winner is ranked first whatever the score says; everyone else by score.
   if (winner) ranked.sort((a, b) => Number(b.id === winner) - Number(a.id === winner) || scoreOfId(b.id) - scoreOfId(a.id));
-  await tx.update(matches).set({ status: "finished", finishedAt: at, winnerPlayerId: winner }).where(eq(matches.id, m.id));
+  await tx.update(matches).set({ status: "finished", finishedAt: at, winnerPlayerId: winner, winKind }).where(eq(matches.id, m.id));
   // Nothing outlives the match: pending jobs are cancelled so they never clog the due queue.
   await tx.update(jobs).set({ cancelledAt: at }).where(and(eq(jobs.matchId, m.id), isNull(jobs.completedAt), isNull(jobs.cancelledAt)));
   for (let i = 0; i < ranked.length; i++) {
@@ -171,5 +204,5 @@ export async function finishMatch(tx: Tx, m: MatchRow, at: Date, publisher: Publ
 
 export async function winHoldExpired(tx: Tx, m: MatchRow, job: JobRow, publisher: Publisher, after: (fn: () => Promise<void>) => void): Promise<void> {
   const winner = (job.payload as { playerId?: string }).playerId ?? null;
-  await finishMatch(tx, m, job.endsAt, publisher, after, winner);
+  await finishMatch(tx, m, job.endsAt, publisher, after, winner, "hold");
 }

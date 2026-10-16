@@ -141,6 +141,13 @@
       "when": 1792110455502,
       "tag": "0019_conscious_king_cobra",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1792116891710,
+      "tag": "0020_chemical_arachne",
+      "breakpoints": true
     }
   ]
 }

@@ -8,6 +8,7 @@ import { RegionPanel, ageName } from "../components/RegionPanel.js";
 import { ResearchPanel } from "../components/ResearchPanel.js";
 import { TopMenu } from "../components/TopMenu.js";
 import { BottomSheet, type SheetStop } from "../components/BottomSheet.js";
+import { MatchSummary, useSummaryOpen } from "../components/MatchSummary.js";
 import { overlayBadges, useOverlays } from "../map/overlays.js";
 import { IncomingWarnings } from "../components/ArmyPanel.js";
 import { ActivityPanel } from "../components/ActivityPanel.js";
@@ -181,6 +182,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
   const markers = useMemo(() => armyMarkers(shownArmies, state.incoming, now + clockOffsetMs, formatCountdown, state.me.techs), [shownArmies, state.incoming, now, clockOffsetMs]);
   const finished = state.match.status === "finished";
   const eliminated = state.owned.length === 0 && !finished;
+  const [summaryOpen, setSummaryOpen] = useSummaryOpen(matchId, finished);
 
   // Colours follow join order (the server returns players in that order) and never change during a match.
   const colorOf = useMemo(() => {
@@ -254,6 +256,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
   return (
     <div className="flex h-[calc(100dvh-3rem)] flex-col">
       <TopMenu matchId={matchId} state={state} selectedRegionId={selected} colorOf={colorOf} overlays={overlays} onToggleOverlay={toggleOverlay} onSelectRegion={setSelected} clockOffsetMs={clockOffsetMs} />
+      {finished && <MatchSummary matchId={matchId} open={summaryOpen} onClose={() => setSummaryOpen(false)} colorOf={colorOf} />}
       <div className="relative flex min-h-0 flex-1 flex-col lg:flex-row">
       <div className="relative h-full w-full lg:flex-1">
         <WorldMap
@@ -299,8 +302,12 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
         {finished && (
           <Card className="border-amber-500/40 bg-amber-500/10 text-sm text-amber-100">
             The match is over.{" "}
+            <button className="underline" onClick={() => setSummaryOpen(true)}>
+              Open the final report
+            </button>{" "}
+            or{" "}
             <Link to="/match/$matchId/leaderboard" params={{ matchId }} className="underline">
-              See the final standings
+              see the standings
             </Link>
             .
           </Card>

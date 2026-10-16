@@ -1,18 +1,5 @@
 import { sql } from "drizzle-orm";
-import {
-  boolean,
-  doublePrecision,
-  index,
-  integer,
-  jsonb,
-  pgEnum,
-  pgTable,
-  primaryKey,
-  text,
-  timestamp,
-  uniqueIndex,
-  uuid,
-} from "drizzle-orm/pg-core";
+import { boolean, doublePrecision, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid, real } from "drizzle-orm/pg-core";
 
 // ---------------------------------------------------------------------------
 // Accounts: carry over between matches. Never hold match state.
@@ -135,6 +122,8 @@ export const matches = pgTable(
     endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
     winnerPlayerId: uuid("winner_player_id"),
+    /** How it ended: hold (60% for 48h), wonder, survival (most people on day 30), score. */
+    winKind: text("win_kind"),
     settings: jsonb("settings").notNull().default({}),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -329,6 +318,49 @@ export const tradeRoutes = pgTable(
   },
   (t) => [index("trade_routes_due_idx").on(t.nextAt), index("trade_routes_from_idx").on(t.matchId, t.fromRegionId)],
 );
+
+/** Score, regions and people per player, sampled every quarter of a match day by the tick: the growth chart at the end. */
+export const scoreHistory = pgTable(
+  "score_history",
+  {
+    matchId: uuid("match_id")
+      .notNull()
+      .references(() => matches.id, { onDelete: "cascade" }),
+    playerId: uuid("player_id")
+      .notNull()
+      .references(() => players.id, { onDelete: "cascade" }),
+    day: real("day").notNull(),
+    score: integer("score").notNull(),
+    regions: integer("regions").notNull(),
+    population: integer("population").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.matchId, t.playerId, t.day] })],
+);
+
+/**
+ * Replay frames: who held which region, sampled every quarter of a match day.
+ * Each frame stores only what changed since the previous one (region → player id,
+ * "ice" once frozen, null when abandoned); the first frame is complete.
+ */
+export const ownershipFrames = pgTable(
+  "ownership_frames",
+  {
+    matchId: uuid("match_id")
+      .notNull()
+      .references(() => matches.id, { onDelete: "cascade" }),
+    day: real("day").notNull(),
+    changes: jsonb("changes").$type<Record<string, string | null>>().notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.matchId, t.day] })],
+);
+
+/** The owner map as of the latest frame, so the next diff is cheap. */
+export const ownershipLatest = pgTable("ownership_latest", {
+  matchId: uuid("match_id")
+    .primaryKey()
+    .references(() => matches.id, { onDelete: "cascade" }),
+  owners: jsonb("owners").$type<Record<string, string>>().notNull(),
+});
 
 /** First-in-the-match checkpoints: one row per key, held by whoever got there first. */
 export const matchMilestones = pgTable(
