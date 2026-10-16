@@ -81,6 +81,8 @@ export type MatchStatus = z.infer<typeof matchStatus>;
 
 export const matchSummary = z.object({
   id: z.string(),
+  /** Readable address for links; the UUID when an old match has none. */
+  slug: z.string().default(""),
   name: z.string(),
   status: matchStatus,
   speed: z.number(),

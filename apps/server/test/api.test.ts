@@ -237,6 +237,13 @@ describe("api routes", () => {
     const state = matchStateView.parse((await Ann.call("GET", `/api/matches/${gameId}/state`)).json());
     expect(state.match.status).toBe("running");
     expect(state.me.capitalRegionId).toBe(options[0]!.regionId);
+    // Readable addresses: the listing carries a slug like 2026-10-private-xyz, and every match route takes it in place of the id.
+    const listed = ((await Ann.call("GET", "/api/matches")).json() as Array<{ id: string; slug: string }>).find((m) => m.id === gameId)!;
+    expect(listed.slug).toMatch(/^\d{4}-\d{2}-private-[a-z0-9-]+$/);
+    const bySlug = matchStateView.parse((await Ann.call("GET", `/api/matches/${listed.slug}/state`)).json());
+    expect(bySlug.match.id).toBe(gameId);
+    expect((await Ann.call("GET", `/api/matches/${listed.slug}/leaderboard`)).statusCode).toBe(200);
+    expect((await Ann.call("GET", "/api/matches/2099-01-no-such-match/state")).statusCode).toBe(404);
     expect(state.players.length).toBe(2);
     expect((await Ben.call("POST", `/api/matches/${gameId}/join`, { inviteCode: code })).statusCode).toBe(409);
   });

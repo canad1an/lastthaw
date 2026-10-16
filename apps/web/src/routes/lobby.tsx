@@ -147,6 +147,7 @@ export function LobbyPage() {
 
 interface PastMatch {
   id: string;
+  slug?: string;
   name: string;
   speed: number;
   startsAt: string;
@@ -187,10 +188,10 @@ function PastMatches() {
               </p>
             </div>
             <div className="flex gap-2">
-              <Link to="/match/$matchId/replay" params={{ matchId: m.id }}>
+              <Link to="/match/$matchId/replay" params={{ matchId: m.slug || m.id }}>
                 <Button variant="ghost">▶ Replay</Button>
               </Link>
-              <Link to="/match/$matchId/report" params={{ matchId: m.id }}>
+              <Link to="/match/$matchId/report" params={{ matchId: m.slug || m.id }}>
                 <Button variant="ghost">Review</Button>
               </Link>
             </div>
@@ -310,7 +311,7 @@ function MatchRow({ m, canJoin }: { m: MatchSummary; canJoin: boolean }) {
       </div>
       <div className="flex items-center gap-2">
         {m.joined ? (
-          <Link to={m.status === "lobby" ? "/match/$matchId/lobby" : "/match/$matchId"} params={{ matchId: m.id }} className="btn-ember rounded-md px-3 py-2 text-sm font-semibold">
+          <Link to={m.status === "lobby" ? "/match/$matchId/lobby" : "/match/$matchId"} params={{ matchId: m.slug || m.id }} className="btn-ember rounded-md px-3 py-2 text-sm font-semibold">
             {m.status === "lobby" ? (m.capitalRegionId ? "Lobby" : "Pick your start") : "Play"}
           </Link>
         ) : registering ? (

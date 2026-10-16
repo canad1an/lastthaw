@@ -13,6 +13,7 @@ import { createDb, type Db } from "../db/client.js";
 import { matches } from "../db/schema.js";
 import { matchLengthSeconds } from "../matches/start.js";
 import { pickMatchName } from "../worker/weekly.js";
+import { uniqueSlug } from "../matches/slug.js";
 
 export const SIM_SPEED = 720;
 
@@ -25,6 +26,7 @@ export async function createSimMatch(db: Db, now = new Date()): Promise<{ id: st
     .insert(matches)
     .values({
       name,
+      slug: await uniqueSlug(db, name, now),
       speed: SIM_SPEED,
       seed: randomBytes(8).toString("hex"),
       startsAt: now,

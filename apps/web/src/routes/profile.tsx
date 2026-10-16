@@ -7,8 +7,8 @@ import { api, keys } from "../api/client.js";
 import { Button, Card, ErrorText, Field, Input, fmt } from "../components/ui.js";
 
 interface History {
-  history: Array<{ matchId: string; name: string; speed: number; finishedAt: string | null; rank: number; score: number; regions: number; age: string; won: boolean }>;
-  active: Array<{ matchId: string; name: string; status: string }>;
+  history: Array<{ matchId: string; slug?: string; name: string; speed: number; finishedAt: string | null; rank: number; score: number; regions: number; age: string; won: boolean }>;
+  active: Array<{ matchId: string; slug?: string; name: string; status: string }>;
   wins: number;
   played: number;
   titles?: Array<{ title: string; n: number }>;
@@ -274,7 +274,7 @@ function MatchHistory({ q }: { q: History | undefined }) {
           <ul className="space-y-1 text-sm">
             {q.active.map((a) => (
               <li key={a.matchId} className="flex items-center justify-between">
-                <Link to="/match/$matchId" params={{ matchId: a.matchId }} className="text-sky-300 hover:text-white">
+                <Link to="/match/$matchId" params={{ matchId: a.slug ?? a.matchId }} className="text-sky-300 hover:text-white">
                   {a.name}
                 </Link>
                 <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-300">{a.status}</span>
@@ -291,7 +291,7 @@ function MatchHistory({ q }: { q: History | undefined }) {
           <li key={h.matchId} className="flex flex-wrap items-center justify-between gap-2 py-2">
             <span>
               {h.won && <span className="mr-1 text-amber-300">🏆</span>}
-              <Link to="/match/$matchId/report" params={{ matchId: h.matchId }} className="text-slate-100 hover:text-white hover:underline">
+              <Link to="/match/$matchId/report" params={{ matchId: h.slug ?? h.matchId }} className="text-slate-100 hover:text-white hover:underline">
                 {h.name}
               </Link>{" "}
               <span className="text-slate-500">{h.finishedAt ? new Date(h.finishedAt).toLocaleDateString() : ""}</span>

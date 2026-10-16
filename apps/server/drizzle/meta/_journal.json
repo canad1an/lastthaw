@@ -225,6 +225,13 @@
       "when": 1792179405219,
       "tag": "0031_orange_dreadnoughts",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1792182589081,
+      "tag": "0032_clumsy_mole_man",
+      "breakpoints": true
     }
   ]
 }

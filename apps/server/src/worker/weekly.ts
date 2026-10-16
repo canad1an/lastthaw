@@ -5,6 +5,7 @@ import { balance } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { matches } from "../db/schema.js";
 import { matchLengthSeconds } from "../matches/start.js";
+import { uniqueSlug } from "../matches/slug.js";
 
 const FIRST = ["Frozen", "Bitter", "Howling", "Iron", "Grey", "Silent", "Black", "Pale", "Long", "Broken", "Burning", "Crimson", "Northern", "Hollow", "Glacial", "Ashen", "Shattered", "Sleeping", "Starving", "Last", "White", "Cold", "Wild", "Endless", "Scarred", "Dying", "Bleak", "Savage", "Hungry", "Brittle"];
 const SECOND = ["Winter", "Siege", "Frost", "Blizzard", "March", "Vanguard", "Thaw", "Tundra", "Glacier", "Campaign", "Redoubt", "Retreat", "Front", "Snowfall", "Hearth", "Ember", "Avalanche", "Garrison", "Rampart", "Ice", "Reckoning", "Crusade", "Dawn", "Watch", "Harvest", "Crossing", "Standoff", "Muster", "Advance", "Stand"];
@@ -42,7 +43,7 @@ export async function ensureWeeklyMatch(db: Db, log: pino.Logger): Promise<void>
     const seed = randomBytes(8).toString("hex");
     const name = pickMatchName(taken, seed);
     taken.add(name.toLowerCase());
-    await db.insert(matches).values({ name, speed: balance.match.defaultSpeed, seed, startsAt, endsAt, settings: { weekly: true, kind: "tournament" } });
+    await db.insert(matches).values({ name, slug: await uniqueSlug(db, name, startsAt), speed: balance.match.defaultSpeed, seed, startsAt, endsAt, settings: { weekly: true, kind: "tournament" } });
     log.info({ name, startsAt }, "tournament scheduled");
     startsAt = nextWeeklyStart(startsAt, s.weekday, s.hourUtc);
   }

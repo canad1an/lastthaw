@@ -79,7 +79,7 @@ export async function leaderboardRoutes(app: FastifyInstance, opts: { db: Db }) 
         .where(and(eq(jobs.matchId, matchId), eq(jobs.kind, "build"), eq(jobs.refId, balance.win.wonderBuilding), isNull(jobs.completedAt), isNull(jobs.cancelledAt)))
     ).map((j) => ({ playerId: j.playerId, playerName: nameOf.get(j.playerId ?? "") ?? "?", regionId: member ? j.regionId : null, regionName: member ? (regionById(j.regionId ?? "")?.name ?? j.regionId) : "a capital", endsAt: j.endsAt.toISOString(), waiting: !!j.waitingFor }));
     return {
-      match: { id: m.id, name: m.name, status: m.status, speed: m.speed, day, iceLatitude: iceLatitudeOnDay(day), totalRegions: total, winnerPlayerId: m.winnerPlayerId, survival: balance.win.survival, wonderName: buildingById.get(balance.win.wonderBuilding)?.name ?? "wonder" },
+      match: { id: m.id, slug: m.slug ?? m.id, name: m.name, status: m.status, speed: m.speed, day, iceLatitude: iceLatitudeOnDay(day), totalRegions: total, winnerPlayerId: m.winnerPlayerId, survival: balance.win.survival, wonderName: buildingById.get(balance.win.wonderBuilding)?.name ?? "wonder" },
       milestones,
       objective: await objectiveOf(db, m),
       wonders,
@@ -157,7 +157,7 @@ export async function leaderboardRoutes(app: FastifyInstance, opts: { db: Db }) 
     for (const h of hist) (history[h.playerId] ??= []).push({ day: h.day, score: h.score, regions: h.regions, population: h.population });
     const [bt] = await db.select({ n: sql<number>`count(*)::int` }).from(battles).where(eq(battles.matchId, matchId));
     return {
-      match: { id: m.id, name: m.name, speed: m.speed, startsAt: m.startsAt.toISOString(), finishedAt: m.finishedAt?.toISOString() ?? null, winnerPlayerId: m.winnerPlayerId, winKind: m.winKind ?? null, wonderName: buildingById.get(balance.win.wonderBuilding)?.name ?? "wonder" },
+      match: { id: m.id, slug: m.slug ?? m.id, name: m.name, speed: m.speed, startsAt: m.startsAt.toISOString(), finishedAt: m.finishedAt?.toISOString() ?? null, winnerPlayerId: m.winnerPlayerId, winKind: m.winKind ?? null, wonderName: buildingById.get(balance.win.wonderBuilding)?.name ?? "wonder" },
       me: { playerId: me?.id ?? "", rank: me ? (standings.find((s) => s.id === me.id)?.rank ?? null) : null },
       standings,
       milestones,
@@ -188,7 +188,7 @@ export async function leaderboardRoutes(app: FastifyInstance, opts: { db: Db }) 
       frames = [{ day: Math.round(day * 4) / 4, changes }];
     }
     return {
-      match: { id: m.id, name: m.name, status: m.status, speed: m.speed, finishedAt: m.finishedAt?.toISOString() ?? null, winnerPlayerId: m.winnerPlayerId },
+      match: { id: m.id, slug: m.slug ?? m.id, name: m.name, status: m.status, speed: m.speed, finishedAt: m.finishedAt?.toISOString() ?? null, winnerPlayerId: m.winnerPlayerId },
       players: ps,
       frames,
     };
@@ -211,6 +211,7 @@ export async function leaderboardRoutes(app: FastifyInstance, opts: { db: Db }) 
     return {
       matches: rows.map((m) => ({
         id: m.id,
+        slug: m.slug ?? m.id,
         name: m.name,
         speed: m.speed,
         startsAt: m.startsAt.toISOString(),
@@ -228,20 +229,21 @@ export async function leaderboardRoutes(app: FastifyInstance, opts: { db: Db }) 
   app.get("/api/me/history", async (req) => {
     const user = requireUser(req);
     const rows = await db
-      .select({ r: userMatchResults, name: matches.name, speed: matches.speed, finishedAt: matches.finishedAt })
+      .select({ r: userMatchResults, name: matches.name, slug: matches.slug, speed: matches.speed, finishedAt: matches.finishedAt })
       .from(userMatchResults)
       .innerJoin(matches, eq(matches.id, userMatchResults.matchId))
       .where(eq(userMatchResults.userId, user.id))
       .orderBy(desc(userMatchResults.recordedAt))
       .limit(50);
     const active = await db
-      .select({ matchId: players.matchId, name: matches.name, status: matches.status })
+      .select({ matchId: players.matchId, slug: matches.slug, name: matches.name, status: matches.status })
       .from(players)
       .innerJoin(matches, eq(matches.id, players.matchId))
       .where(and(eq(players.userId, user.id), inArray(matches.status, ["lobby", "running"]), isNull(players.eliminatedAt)));
     return {
       history: rows.map((x) => ({
         matchId: x.r.matchId,
+        slug: x.slug ?? x.r.matchId,
         name: x.name,
         speed: x.speed,
         finishedAt: x.finishedAt?.toISOString() ?? null,
@@ -251,7 +253,7 @@ export async function leaderboardRoutes(app: FastifyInstance, opts: { db: Db }) 
         age: AGES[x.r.ageReached as 0 | 1 | 2 | 3 | 4],
         won: x.r.won,
       })),
-      active: active.map((a) => ({ matchId: a.matchId, name: a.name, status: a.status })),
+      active: active.map((a) => ({ matchId: a.matchId, slug: a.slug ?? a.matchId, name: a.name, status: a.status })),
       wins: rows.filter((x) => x.r.won).length,
       played: rows.length,
       titles: (await titlesOf(db, [user.id])).get(user.id) ?? [],

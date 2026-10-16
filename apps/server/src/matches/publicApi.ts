@@ -80,6 +80,7 @@ export async function publicRoutes(app: FastifyInstance, opts: { db: Db }) {
       const day = m.status === "lobby" ? 0 : Math.min(balance.match.lengthDays, ((now.getTime() - m.startsAt.getTime()) / 86400_000) * m.speed);
       return {
         id: m.id,
+        slug: m.slug ?? m.id,
         name: m.name,
         status: m.status,
         speed: m.speed,
@@ -120,6 +121,7 @@ export async function publicRoutes(app: FastifyInstance, opts: { db: Db }) {
         : [];
       out.push({
         id: m.id,
+        slug: m.slug ?? m.id,
         name: m.name,
         speed: m.speed,
         startedAt: m.startsAt.toISOString(),

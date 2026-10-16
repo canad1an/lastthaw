@@ -49,7 +49,8 @@ function wallPaint(wall: string | null | undefined): Partial<RegionPaint> {
 export function MatchPage() {
   const { matchId } = useParams({ from: "/match/$matchId" });
   const state = useQuery({ queryKey: keys.matchState(matchId), queryFn: () => api.matchState(matchId), refetchInterval: 30_000 });
-  const rt = useMatchRealtime(matchId);
+  // The address may be the readable slug; the socket and the match's own links want the id.
+  const rt = useMatchRealtime(state.data?.match.id ?? null);
 
   if (state.isLoading) return <p className="p-6 text-slate-400">Loading match...</p>;
   if (state.error || !state.data) {
@@ -91,7 +92,7 @@ function LobbyRoom({ matchId, state }: { matchId: string; state: MatchStateView 
   const now = useNow(1000);
   const [picking, setPicking] = useState(false);
   // Being connected is what "online" means here, so the room keeps the socket open.
-  useMatchRealtime(matchId);
+  useMatchRealtime(state.match.id);
   const presence = useQuery({
     queryKey: ["presence", matchId],
     queryFn: () => fetch(`/api/matches/${matchId}/presence`, { credentials: "include" }).then((r) => (r.ok ? (r.json() as Promise<{ online: string[] }>) : { online: [] })),

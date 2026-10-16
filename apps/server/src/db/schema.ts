@@ -136,6 +136,8 @@ export const matches = pgTable(
     /** Set while the match is paused: the clock stands still, nothing completes, moves or acts; resuming shifts every timestamp forward. */
     pausedAt: timestamp("paused_at", { withTimezone: true }),
     seed: text("seed").notNull(),
+    /** Readable address: "2026-10-ashen-ice" (start month and name). The UUID keeps working too. */
+    slug: text("slug"),
     lobbyOpensAt: timestamp("lobby_opens_at", { withTimezone: true }).notNull().defaultNow(),
     startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
     endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
@@ -146,7 +148,7 @@ export const matches = pgTable(
     settings: jsonb("settings").notNull().default({}),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("matches_status_idx").on(t.status)],
+  (t) => [index("matches_status_idx").on(t.status), uniqueIndex("matches_slug_idx").on(t.slug)],
 );
 
 export const players = pgTable(

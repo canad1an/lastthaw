@@ -31,7 +31,7 @@ function CurrentMatches({ onPick }: { onPick: () => void }) {
         <Link
           key={m.id}
           to={m.status === "lobby" ? "/match/$matchId/lobby" : "/match/$matchId"}
-          params={{ matchId: m.id }}
+          params={{ matchId: m.slug || m.id }}
           onClick={onPick}
           className={`rounded-md px-2.5 py-1 text-xs font-semibold ${m.status === "lobby" ? "bg-amber-400/90 text-slate-950 hover:bg-amber-300" : "bg-emerald-400/90 text-slate-950 hover:bg-emerald-300"}`}
           title={m.status === "lobby" ? "Back to the waiting room" : "Back to the match"}

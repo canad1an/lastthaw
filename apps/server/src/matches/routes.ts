@@ -5,6 +5,7 @@ import { assignBody, balance, createMatchBody, normalizeAssignment, pickStartBod
 import type { Db } from "../db/client.js";
 import { matchRegions, matches, players, tournamentRegistrations } from "../db/schema.js";
 import { isTournament, joinOpensAt } from "./registrations.js";
+import { uniqueSlug } from "./slug.js";
 import { requireUser, requireVerified } from "../auth/session.js";
 import { config } from "../config.js";
 import type { Publisher } from "../realtime/publish.js";
@@ -80,6 +81,7 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
       if (kind === "private" && !createdByMe && !mp) continue;
       out.push({
         id: m.id,
+        slug: m.slug ?? m.id,
         name: m.name,
         status: m.status,
         speed: m.speed,
@@ -122,10 +124,12 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
     const startsAt = body.startsAt ? new Date(body.startsAt) : new Date(Date.now() + body.startsInMinutes * 60_000);
     if (startsAt.getTime() < Date.now() - 60_000) throw httpError(400, "the start time is in the past");
     const endsAt = new Date(startsAt.getTime() + matchLengthSeconds(body.speed) * 1000);
+    const slug = await uniqueSlug(db, body.name, startsAt);
     const [m] = await db
       .insert(matches)
       .values({
         name: body.name,
+        slug,
         speed: body.speed,
         seed: randomBytes(8).toString("hex"),
         startsAt,

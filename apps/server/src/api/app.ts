@@ -24,6 +24,7 @@ import { feedRoutes } from "../matches/feedApi.js";
 import { eventRoutes, diplomacyRoutes } from "../matches/eventsApi.js";
 import { adminRoutes } from "../fairplay/adminApi.js";
 import { registrationRoutes } from "../matches/registrations.js";
+import { resolveMatchRef } from "../matches/slug.js";
 import { publicRoutes } from "../matches/publicApi.js";
 import { tradeRouteRoutes } from "../matches/tradeApi.js";
 import { registerWebsocket } from "./ws.js";
@@ -60,6 +61,15 @@ export async function buildApp(deps: AppDeps = {}) {
   await app.register(rateLimit, { global: true, max: 300, timeWindow: "1 minute", redis, nameSpace: "lt-rl:", keyGenerator: (req) => req.ip, skipOnError: true });
   // Cross-site writes are refused outright: browsers always send Origin on cross-site POSTs.
   const allowedOrigins = new Set([cfg.PUBLIC_URL, cfg.PUBLIC_URL.replace("://", "://www.")]);
+  // Match addresses: every /api/matches/:id route takes the UUID or the readable slug; the slug is swapped for the UUID here.
+  app.addHook("preValidation", async (req, reply) => {
+    const params = req.params as { id?: string } | undefined;
+    if (!params?.id || !req.url.startsWith("/api/matches/")) return;
+    const id = await resolveMatchRef(db, params.id);
+    if (id === "bad") return reply.code(400).send({ error: "bad match id" });
+    if (!id) return reply.code(404).send({ error: "match not found" });
+    params.id = id;
+  });
   app.addHook("onRequest", async (req, reply) => {
     if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") return;
     const origin = req.headers.origin;
