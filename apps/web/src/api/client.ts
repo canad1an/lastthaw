@@ -56,7 +56,7 @@ export const api = {
   changePassword: (b: { currentPassword: string; newPassword: string }) => request<{ ok: true }>("POST", "/api/me/password", b),
 
   matches: () => request("GET", "/api/matches", undefined, matchSummary.array()),
-  createMatch: (b: { name: string; speed: number; startsInMinutes: number; aiFillTo?: number; neutralTribes?: number; aiDifficulty?: "mixed" | "easy" | "medium" | "hard" }) => request<{ id: string }>("POST", "/api/matches", b),
+  createMatch: (b: { name: string; speed: number; startsInMinutes: number; startsAt?: string; weekly?: boolean; aiFillTo?: number; neutralTribes?: number; aiDifficulty?: "mixed" | "easy" | "medium" | "hard" }) => request<{ id: string }>("POST", "/api/matches", b),
   joinMatch: (id: string) => request<{ playerId: string }>("POST", `/api/matches/${id}/join`, {}),
   startOptions: (id: string) => request<{ options: string[]; current: string | null }>("GET", `/api/matches/${id}/start-options`),
   pickStart: (id: string, regionId: string) => request<{ ok: true }>("POST", `/api/matches/${id}/pick-start`, { regionId }),
@@ -82,6 +82,8 @@ export const api = {
     request<{ ok: true; armyId: string; arrivesAt: string; routeId: string | null }>("POST", `/api/matches/${id}/regions/${regionId}/colonize`, body),
   setCapital: (id: string, regionId: string) =>
     request<{ ok: true; armyId: string; arrivesAt: string; cargo: Record<string, number>; path: string[] }>("POST", `/api/matches/${id}/capital`, { regionId }),
+  decideRefugees: (id: string, offerId: string, accept: boolean) => request<{ ok: true; accepted: boolean }>("POST", `/api/matches/${id}/refugees/${offerId}`, { accept }),
+  nameSuggestion: () => request<{ name: string }>("GET", "/api/matches/name-suggestion"),
   rally: (id: string, includeMissions: boolean) =>
     request<{ ok: true; groups: number; soldiers: number; recalled: number; skipped: string[] }>("POST", `/api/matches/${id}/rally`, { includeMissions }),
   convert: (id: string, regionId: string, body: { from: string; to: string; qty: number }) =>

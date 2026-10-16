@@ -47,6 +47,8 @@ export const messageIcon = (kind: string) => KIND_ICON[kind] ?? "•";
  */
 export function isImportant(m: MessageView): boolean {
   if (m.kind === "battle" || m.kind === "alliance" || m.kind === "scout") return true;
+  const p = (m.payload ?? {}) as Record<string, unknown>;
+  if (p.storm || p.thaw || p.plague || p.horde || p.refugees || p.boom || p.wonder) return true;
   if (m.kind === "system") {
     const s = m.subject;
     return !(s.startsWith("Troops arrived") || s.startsWith("Army returned") || /joined the occupiers|are on their way there|founded a new home/.test(s));

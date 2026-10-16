@@ -133,6 +133,8 @@ export interface TechEffect {
   loyalty?: number;
   /** Vision in hops beyond your borders (99 = the whole map). */
   vision?: number;
+  /** Plague resistance: 0.5 halves the chance of sickness, 1 ends it. */
+  plagueResist?: number;
 }
 
 export interface TechDef {
@@ -272,7 +274,7 @@ export const TECHS: readonly TechDef[] = [
   { id: "brick_making", name: "Brick making", age: 1, description: "Fired bricks: bigger, drier stores.", cost: {stone: 1200, wood: 500}, baseSeconds: 1080, requires: ["pottery"], effect: {storage: 0.1} },
   { id: "bronze_weapons", name: "Bronze weapons", age: 1, description: "Cast blades and spearheads for every soldier.", cost: {wood: 800, stone: 400, copper: 10}, baseSeconds: 1080, requires: ["copper_smelting"], effect: {attack: 0.1, defense: 0.05} },
   { id: "shield_wall", name: "Shield wall", age: 1, description: "Fight shoulder to shoulder.", cost: {wood: 1000, copper: 10}, baseSeconds: 1080, requires: ["bronze_weapons"], effect: {defense: 0.1} },
-  { id: "herbal_medicine", name: "Herbal medicine", age: 1, description: "Fewer die young: people grow faster.", cost: {food: 1500, wood: 500}, baseSeconds: 900, effect: {growth: 0.2} },
+  { id: "herbal_medicine", name: "Herbal medicine", age: 1, description: "Fewer die young: people grow faster.", cost: {food: 1500, wood: 500}, baseSeconds: 900, effect: {growth: 0.2, plagueResist: 0.5} },
   { id: "sailing", name: "Sailing", age: 1, description: "Rafts and sails along the coast. Leads to Shipbuilding.", cost: {wood: 1200, food: 400}, baseSeconds: 900, requires: ["fishing_nets"] },
   { id: "surveying", name: "Surveying", age: 1, description: "Measure the land: leads to Engineering and Railways.", cost: {stone: 1000, wood: 600}, baseSeconds: 1080, requires: ["writing", "road_building"] },
   { id: "iron_working", name: "Iron working", age: 1, description: "Smelt iron. Enters the Iron Age.", cost: {wood: 5000, stone: 3000, copper: 40}, baseSeconds: 14400, requires: ["mining", "copper_smelting"], advancesTo: 2, earliestDay: 4 },
@@ -336,8 +338,8 @@ export const TECHS: readonly TechDef[] = [
   { id: "mass_production", name: "Mass production", age: 5, description: "Interchangeable parts: arms by the crate, soldiers trained faster.", cost: {iron: 1500, stone: 40000}, baseSeconds: 8640, requires: ["steel_mills"], effect: {trainSpeed: 0.2} },
   { id: "rifling", name: "Rifling", age: 5, description: "Grooved barrels: unlocks the Rifleman.", cost: {iron: 1500, wood: 30000}, baseSeconds: 8640, requires: ["gunpowder", "steel_mills"], effect: {attack: 0.25, defense: 0.1} },
   { id: "dynamite", name: "Dynamite", age: 5, description: "Blasting powder that breaks rock and walls.", cost: {iron: 1000, stone: 30000}, baseSeconds: 7200, requires: ["gunpowder"], effect: {attack: 0.1, yield: {stone: 0.1}} },
-  { id: "vaccination", name: "Vaccination", age: 5, description: "Far fewer die of disease.", cost: {food: 80000, stone: 20000}, baseSeconds: 6480, requires: ["public_schools"], effect: {growth: 0.4} },
-  { id: "sanitation", name: "Sanitation", age: 5, description: "Sewers and clean water in every town.", cost: {stone: 60000, iron: 500}, baseSeconds: 7200, requires: ["vaccination"], effect: {growth: 0.2} },
+  { id: "vaccination", name: "Vaccination", age: 5, description: "Far fewer die of disease.", cost: {food: 80000, stone: 20000}, baseSeconds: 6480, requires: ["public_schools"], effect: {growth: 0.4, plagueResist: 1} },
+  { id: "sanitation", name: "Sanitation", age: 5, description: "Sewers and clean water in every town.", cost: {stone: 60000, iron: 500}, baseSeconds: 7200, requires: ["vaccination"], effect: {growth: 0.2, plagueResist: 1} },
   { id: "internal_combustion", name: "Internal combustion", age: 5, description: "Engines that run on oil: lorries on every road.", cost: {iron: 2000, wood: 50000}, baseSeconds: 10800, requires: ["steel_mills"], effect: {travel: 0.2} },
   { id: "electronics", name: "Electronics", age: 5, description: "Circuits and radio. Enters the Modern Age.", cost: {food: 600000, wood: 400000, iron: 6000}, baseSeconds: 28800, requires: ["telegraph", "steam_power"], advancesTo: 6, earliestDay: 24 },
   // Modern

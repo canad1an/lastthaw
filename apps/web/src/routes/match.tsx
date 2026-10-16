@@ -10,6 +10,7 @@ import { TopMenu } from "../components/TopMenu.js";
 import { BottomSheet, type SheetStop } from "../components/BottomSheet.js";
 import { MatchSummary, useSummaryOpen } from "../components/MatchSummary.js";
 import { MatchIntro, useIntroOpen } from "../components/MatchIntro.js";
+import { RefugeePanel } from "../components/RefugeePanel.js";
 import { overlayBadges, useOverlays } from "../map/overlays.js";
 import { IncomingWarnings } from "../components/ArmyPanel.js";
 import { ActivityPanel } from "../components/ActivityPanel.js";
@@ -274,6 +275,8 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
           armies={markers}
           roads={roadLinks}
           badges={badges}
+          storms={state.storms}
+          thaws={state.thaws}
         />
         {picking && <div className="pointer-events-none absolute inset-x-0 top-2 text-center text-sm text-amber-300">Tap a region to target it</div>}
         <div className="pointer-events-none absolute bottom-2 left-2 hidden flex-wrap gap-2 text-xs lg:flex">
@@ -320,6 +323,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
         )}
         {eliminated && <Card className="border-slate-600 text-sm text-slate-300">You have no regions left. You can keep watching the match and chat; join the next match from the lobby.</Card>}
         <IncomingWarnings state={state} clockOffsetMs={clockOffsetMs} onSelect={setSelected} />
+        <RefugeePanel matchId={matchId} state={state} clockOffsetMs={clockOffsetMs} onSelect={setSelected} />
         <ActivityPanel matchId={matchId} state={state} clockOffsetMs={clockOffsetMs} onSelect={setSelected} />
         {selected ? (
           <RegionPanel matchId={matchId} state={state} regionId={selected} clockOffsetMs={clockOffsetMs} onClose={() => setSelected(null)} target={target} onPickTarget={setPicking} onClearTarget={() => setTarget(null)} />

@@ -1,8 +1,8 @@
-import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, or, sql, gt } from "drizzle-orm";
 import { parseProfile } from "../sim/ai.js";
-import { emptySpecial, regionById, type ArmyView, type IncomingView, type JobView, type MatchStateView, type OwnedRegionView, type SightedRegionView, techEffectsOf, allRegions, wallOf } from "@lastthaw/shared";
+import { emptySpecial, regionById, type ArmyView, type IncomingView, type JobView, type MatchStateView, type OwnedRegionView, type SightedRegionView, techEffectsOf, allRegions, wallOf, balance } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
-import { allianceMembers, alliances, armies, jobs, matchRegions, matches, playerTechs, players, regionSightings, tradeRoutes } from "../db/schema.js";
+import { allianceMembers, alliances, armies, jobs, matchRegions, matches, playerTechs, players, regionSightings, tradeRoutes, refugeeOffers } from "../db/schema.js";
 import { matchNow } from "../sim/clock.js";
 import { alliesOf } from "../sim/alliances.js";
 import { countOwnedRegions, projectRegion } from "../sim/regions.js";
@@ -62,6 +62,10 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
       growthMult: economy.growthMult,
       frozen: economy.frozen,
       evacuated: economy.abandoned,
+      stormUntil: economy.storm ? row.stormUntil!.toISOString() : null,
+      plagueUntil: economy.plague ? row.plagueUntil!.toISOString() : null,
+      thawUntil: row.thawUntil && row.thawUntil > now ? row.thawUntil.toISOString() : null,
+      boom: economy.boom && row.boom ? { resource: row.boom.resource, until: row.boom.until } : null,
       asOf: now.toISOString(),
       rates: { food: rates.food, wood: rates.wood, stone: rates.stone, population: rates.population, starving: rates.starving },
       isCapital: row.regionId === me.capitalRegionId,
@@ -82,6 +86,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
       seenAt: s.seenAt.toISOString(),
       roads: (snap.buildings?.roads ?? 0) >= 1,
       wall: wallOf(snap.buildings),
+      storm: false,
     };
   });
 
@@ -110,6 +115,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
         seenAt: now.toISOString(),
         roads: ((row.buildings as Record<string, number>).roads ?? 0) >= 1,
         wall: wallOf(row.buildings as Record<string, number>),
+        storm: false,
       };
       if (seen.has(row.regionId)) {
         const i = sighted.findIndex((s) => s.regionId === row.regionId);
@@ -153,6 +159,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
           seenAt: now.toISOString(),
           roads: ((row.buildings as Record<string, number>).roads ?? 0) >= 1,
           wall: wallOf(row.buildings as Record<string, number>),
+          storm: false,
         };
         const i = sighted.findIndex((s) => s.regionId === row.regionId);
         if (i >= 0) sighted[i] = view;
@@ -164,7 +171,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
       // Empty land in view is listed too, so it reads as explored.
       for (const id of visible) {
         if (seen.has(id)) continue;
-        sighted.push({ regionId: id, ownerPlayerId: null, ownerName: null, population: 0, seenAt: now.toISOString(), roads: false, wall: null });
+        sighted.push({ regionId: id, ownerPlayerId: null, ownerName: null, population: 0, seenAt: now.toISOString(), roads: false, wall: null, storm: false });
         seen.add(id);
       }
     }
@@ -196,7 +203,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
     waitingFor: j.waitingFor ?? null,
   }));
 
-  const all = await db.select().from(players).where(eq(players.matchId, matchId)).orderBy(asc(players.createdAt), asc(players.id));
+  const all = await db.select().from(players).where(and(eq(players.matchId, matchId), eq(players.hidden, false))).orderBy(asc(players.createdAt), asc(players.id));
   const counts = await countOwnedRegions(db, matchId);
   const nameOf = new Map(all.map((p) => [p.id, p.name]));
 
@@ -241,6 +248,12 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
   const frontier = frontierIds.filter((id) => !occupiedFrontier.has(id) && !regionById(id)?.terrain.startsWith("tundra"));
 
   const routeRows = await db.select().from(tradeRoutes).where(and(eq(tradeRoutes.matchId, matchId), eq(tradeRoutes.playerId, me.id))).orderBy(asc(tradeRoutes.createdAt));
+  // Weather and thaw pockets are common knowledge; migrant columns are mine alone.
+  const stormRows = await db.select({ regionId: matchRegions.regionId }).from(matchRegions).where(and(eq(matchRegions.matchId, matchId), gt(matchRegions.stormUntil, now)));
+  const thawRows = await db.select({ regionId: matchRegions.regionId, thawUntil: matchRegions.thawUntil }).from(matchRegions).where(and(eq(matchRegions.matchId, matchId), gt(matchRegions.thawUntil, now)));
+  const offerRows = await db.select().from(refugeeOffers).where(and(eq(refugeeOffers.playerId, me.id), isNull(refugeeOffers.decidedAt), gt(refugeeOffers.expiresAt, now))).orderBy(asc(refugeeOffers.expiresAt));
+  const stormSet = new Set(stormRows.map((r) => r.regionId));
+  for (const s of sighted) s.storm = stormSet.has(s.regionId);
 
   const incoming: IncomingView[] = hostile
     .filter((a) => a.playerId !== me.id)
@@ -284,6 +297,9 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
     armies: armyViews,
     incoming,
     frontier,
+    storms: stormRows.map((r) => r.regionId),
+    thaws: thawRows.map((r) => ({ regionId: r.regionId, until: r.thawUntil!.toISOString() })),
+    refugees: offerRows.map((o) => ({ id: o.id, regionId: o.regionId, fromRegionId: o.fromRegionId, people: o.people, food: o.people * balance.events.refugees.foodPerPerson, expiresAt: o.expiresAt.toISOString() })),
     routes: routeRows.map((r) => ({
       id: r.id,
       fromRegionId: r.fromRegionId,

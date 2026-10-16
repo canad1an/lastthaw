@@ -94,6 +94,10 @@ export const createMatchBody = z.object({
   name: z.string().trim().min(2).max(40),
   speed: z.number().int().min(1).max(1000),
   startsInMinutes: z.number().int().min(0).max(60 * 24 * 14),
+  /** Exact start (ISO); wins over startsInMinutes when given. */
+  startsAt: z.string().datetime().optional(),
+  /** Counts toward the six scheduled matches the worker keeps ahead. */
+  weekly: z.boolean().optional(),
   /** AI tribes are added until this many players exist. Default from balance. */
   aiFillTo: z.number().int().min(0).max(100).optional(),
   /** Neutral tribes scattered on the map. Default from balance. */
@@ -157,6 +161,14 @@ export const ownedRegionView = z.object({
   frozen: z.boolean(),
   /** Evacuated and empty: no growth or production until people move back in. */
   evacuated: z.boolean().default(false),
+  /** Blizzard until (ISO), or null. */
+  stormUntil: z.string().nullable().default(null),
+  /** Sickness until (ISO), or null. */
+  plagueUntil: z.string().nullable().default(null),
+  /** Thaw pocket: the ice passes this region by until (ISO), or null. */
+  thawUntil: z.string().nullable().default(null),
+  /** Rich find: doubled resource and until when. */
+  boom: z.object({ resource: z.string(), until: z.string() }).nullable().default(null),
   /** Server time the amounts above are valid for. Clients project forward from here. */
   asOf: z.string(),
   rates: z.object({ food: z.number(), wood: z.number(), stone: z.number(), population: z.number(), starving: z.boolean() }),
@@ -166,7 +178,7 @@ export type OwnedRegionView = z.infer<typeof ownedRegionView>;
 
 export const jobView = z.object({
   id: z.string(),
-  kind: z.enum(["build", "research", "train", "mission", "ice_step", "win_hold", "match_end"]),
+  kind: z.enum(["build", "research", "train", "mission", "ice_step", "win_hold", "match_end", "storm", "merc_expire"]),
   regionId: z.string().nullable(),
   refId: z.string().nullable(),
   level: z.number().nullable(),
@@ -286,7 +298,19 @@ export const sightedRegionView = z.object({
   roads: z.boolean().default(false),
   /** Strongest defensive building seen there (palisade, walls, fort, castle, arsenal, bunker), or null. */
   wall: z.string().nullable().default(null),
+  /** A blizzard is blowing there now. */
+  storm: z.boolean().default(false),
 });
+
+export const refugeeOfferView = z.object({
+  id: z.string(),
+  regionId: z.string(),
+  fromRegionId: z.string(),
+  people: z.number(),
+  food: z.number(),
+  expiresAt: z.string(),
+});
+export type RefugeeOfferView = z.infer<typeof refugeeOfferView>;
 export type SightedRegionView = z.infer<typeof sightedRegionView>;
 
 export const playerPublic = z.object({
@@ -334,6 +358,12 @@ export const matchStateView = z.object({
   incoming: z.array(incomingView),
   /** Unclaimed, empty regions bordering mine: settle targets. */
   frontier: z.array(z.string()).default([]),
+  /** Every region in a blizzard right now, mine or not, for the map. */
+  storms: z.array(z.string()).default([]),
+  /** Thaw pockets anyone can see: region and until when. */
+  thaws: z.array(z.object({ regionId: z.string(), until: z.string() })).default([]),
+  /** Migrant columns waiting at my borders. */
+  refugees: z.array(refugeeOfferView).default([]),
   /** My automated caravan routes. */
   routes: z.array(tradeRouteView).default([]),
   /** Player ids of my alliance mates (their regions are always visible). */

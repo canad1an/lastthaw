@@ -128,6 +128,9 @@ export function useLiveEconomy(owned: OwnedRegionView, clockOffsetMs: number, sp
       growthMult: owned.growthMult,
       abandoned: owned.evacuated,
       frozen: owned.frozen,
+      storm: !!owned.stormUntil,
+      plague: !!owned.plagueUntil,
+      boom: owned.boom?.resource ?? null,
     };
     const elapsed = Math.max(0, (now + clockOffsetMs - Date.parse(owned.asOf)) / 1000);
     const e = settle(traits, base, elapsed, speed);
@@ -147,6 +150,10 @@ function OwnedDetails({ matchId, state, owned, clockOffsetMs, speed }: { matchId
       {owned.isCapital && !owned.frozen && <Rally matchId={matchId} state={state} />}
       {owned.frozen && <span className="ml-2 inline-block rounded bg-cyan-200/20 px-1.5 py-0.5 text-xs text-cyan-200">Frozen</span>}
       {owned.evacuated && !owned.frozen && <span className="ml-2 inline-block rounded bg-slate-700 px-1.5 py-0.5 text-xs text-slate-300" title="Nobody lives here: no growth or production until people move back in">Evacuated</span>}
+      {owned.stormUntil && <span className="ml-2 inline-block rounded bg-sky-200/20 px-1.5 py-0.5 text-xs text-sky-100" title="Half production and double travel while it blows">Blizzard · {formatCountdown(Math.max(0, (Date.parse(owned.stormUntil) - Date.now() - clockOffsetMs) / 1000))}</span>}
+      {owned.plagueUntil && <span className="ml-2 inline-block rounded bg-rose-500/20 px-1.5 py-0.5 text-xs text-rose-200" title="No growth and people dying each hour. Herbal medicine halves the risk; Vaccination and Sanitation end it">Sickness · {formatCountdown(Math.max(0, (Date.parse(owned.plagueUntil) - Date.now() - clockOffsetMs) / 1000))}</span>}
+      {owned.thawUntil && <span className="ml-2 inline-block rounded bg-amber-400/20 px-1.5 py-0.5 text-xs text-amber-200" title="A warm pocket: the ice passes this region by until then">Thaw pocket · {formatCountdown(Math.max(0, (Date.parse(owned.thawUntil) - Date.now() - clockOffsetMs) / 1000))}</span>}
+      {owned.boom && <span className="ml-2 inline-block rounded bg-emerald-500/20 px-1.5 py-0.5 text-xs text-emerald-200" title="Output of this resource is doubled">Rich {owned.boom.resource} · {formatCountdown(Math.max(0, (Date.parse(owned.boom.until) - Date.now() - clockOffsetMs) / 1000))}</span>}
       {!owned.isCapital && !owned.frozen && <MakeCapital matchId={matchId} state={state} regionId={owned.regionId} clockOffsetMs={clockOffsetMs} />}
       <dl className="grid grid-cols-[auto_1fr_auto] gap-x-3 gap-y-1 text-sm">
         <Row label="People" value={`${fmt(pop)} / ${fmt(live.e.capacity)}`} rate={perHour(live.rates.population)} />

@@ -1,6 +1,6 @@
-import { and, eq, inArray, isNull } from "drizzle-orm";
-import { allRegions, balance, emptySpecial, iceExposure, iceLatitudeOnDay, regionById } from "@lastthaw/shared";
-import { events, jobs, matchRegions, players } from "../db/schema.js";
+import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { allRegions, balance, emptySpecial, iceExposure, iceLatitudeOnDay, regionById, seededRng, freezeDayForLatitude } from "@lastthaw/shared";
+import { events, jobs, matchRegions, matches, players, refugeeOffers } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
 import { settleAndLockRegion, type Tx } from "./regions.js";
 import { notify, type JobRow, type MatchRow } from "../worker/jobs.js";
@@ -34,22 +34,50 @@ export async function applyIceStep(tx: Tx, m: MatchRow, job: JobRow, publisher: 
   const taperChanges = taperRows
     .map((row) => ({ regionId: row.regionId, factor: tapering.find((t) => t.id === row.regionId)!.factor, current: row.iceFactor }))
     .filter((x) => Math.abs(x.factor - x.current) >= 0.01);
+  // A thaw pocket: once or twice a match a valuable region that should freeze soon stays open a few days longer.
+  const thaw = balance.events.thaw;
+  const settings = (m.settings ?? {}) as { thawPockets?: number };
+  if (day >= thaw.fromDay && day <= thaw.toDay && (settings.thawPockets ?? 0) < thaw.max) {
+    const rng = seededRng(`${m.seed}:thaw:${day}`);
+    if (rng() < thaw.chance) {
+      const soonLat = iceLatitudeOnDay(day + 2);
+      const soon = allRegions().filter((r) => Math.abs(r.lat) < lat && Math.abs(r.lat) >= soonLat && r.terrain !== "tundra").sort((a, b) => b.value - a.value).slice(0, 8);
+      const pick = soon[Math.floor(rng() * soon.length)];
+      if (pick) {
+        const freezeDay = freezeDayForLatitude(Math.abs(pick.lat)) ?? day + 2;
+        const until = new Date(m.startsAt.getTime() + ((freezeDay + thaw.extraDays) * 86400_000) / m.speed);
+        await tx.update(matchRegions).set({ thawUntil: until }).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, pick.id)));
+        await tx.update(matches).set({ settings: { ...(m.settings as object), thawPockets: (settings.thawPockets ?? 0) + 1 } }).where(eq(matches.id, m.id));
+        await tx.insert(events).values({ matchId: m.id, at: job.endsAt, kind: "thaw.pocket", payload: { regionId: pick.id, until: until.toISOString(), day } });
+        const everyone = await tx.select({ id: players.id }).from(players).where(and(eq(players.matchId, m.id), eq(players.isAi, false)));
+        for (const p of everyone) await notify(tx, m.id, p.id, "system", `A warm pocket lingers over ${pick.name}: the ice passes it by until day ${Math.round(freezeDay + thaw.extraDays)}. A last chance for whoever holds it.`, { regionId: pick.id, until: until.toISOString(), thaw: true });
+      }
+    }
+  }
   const toFreeze = allRegions().filter((r) => Math.abs(r.lat) >= lat).map((r) => r.id);
   const rows = toFreeze.length
     ? await tx
-        .select({ regionId: matchRegions.regionId, owner: matchRegions.ownerPlayerId })
+        .select({ regionId: matchRegions.regionId, owner: matchRegions.ownerPlayerId, thawUntil: matchRegions.thawUntil })
         .from(matchRegions)
         .where(and(eq(matchRegions.matchId, m.id), isNull(matchRegions.frozenAt), inArray(matchRegions.regionId, toFreeze)))
     : [];
-  if (taperChanges.length === 0 && rows.length === 0) return;
+  const spared = rows.filter((r) => r.thawUntil && r.thawUntil > job.endsAt).map((r) => r.regionId);
+  const freezing = rows.filter((r) => !spared.includes(r.regionId));
+  if (taperChanges.length === 0 && freezing.length === 0) return;
   // Lock every region we touch in ascending order (the lock order used everywhere) before changing any.
-  const touched = [...new Set([...taperChanges.map((t) => t.regionId), ...rows.map((r) => r.regionId)])].sort();
-  for (const id of touched) await settleAndLockRegion(tx, m.id, id, job.endsAt, m.speed);
+  const touched = [...new Set([...taperChanges.map((t) => t.regionId), ...freezing.map((r) => r.regionId)])].sort();
+  const settled = new Map<string, Awaited<ReturnType<typeof settleAndLockRegion>>>();
+  for (const id of touched) settled.set(id, await settleAndLockRegion(tx, m.id, id, job.endsAt, m.speed));
   for (const t of taperChanges) {
     await tx.update(matchRegions).set({ iceFactor: t.factor }).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, t.regionId)));
   }
   const byOwner = new Map<string, string[]>();
-  for (const r of rows) {
+  const columns: Array<{ from: string; people: number }> = [];
+  for (const r of freezing) {
+    // Some of the people get out ahead of the ice as a migrant column (see below).
+    const before = settled.get(r.regionId);
+    const people = before ? Math.floor((before.popWorkers + before.popOccupiers) * balance.events.refugees.share) : 0;
+    if (people >= 5) columns.push({ from: r.regionId, people });
     // Fully frozen: nothing and nobody survives. Stores, people and units all go to zero.
     await tx
       .update(matchRegions)
@@ -57,7 +85,8 @@ export async function applyIceStep(tx: Tx, m: MatchRow, job: JobRow, publisher: 
       .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, r.regionId)));
     if (r.owner) byOwner.set(r.owner, [...(byOwner.get(r.owner) ?? []), r.regionId]);
   }
-  await tx.insert(events).values({ matchId: m.id, at: job.endsAt, kind: "ice.advanced", payload: { day, latitude: lat, frozen: rows.length } });
+  await tx.insert(events).values({ matchId: m.id, at: job.endsAt, kind: "ice.advanced", payload: { day, latitude: lat, frozen: freezing.length, regions: freezing.map((r) => r.regionId).slice(0, 12), spared } });
+  await offerRefugees(tx, m, job.endsAt, columns);
   for (const [owner, regions] of byOwner) {
     const names = regions.map((id) => regionById(id)?.name ?? id).join(", ");
     await notify(tx, m.id, owner, "system", `The ice has taken ${names}. Everything and everyone there is lost.`, { regions, day });
@@ -70,4 +99,42 @@ export async function applyIceStep(tx: Tx, m: MatchRow, job: JobRow, publisher: 
     }
   }
   after(() => publisher.toMatch(m.id, "region.updated", { ice: { day, latitude: lat } }));
+}
+
+/**
+ * Migrant columns: the people who got out of each freezing region walk to the
+ * nearest unfrozen empire within a couple of hops and wait at its border. The
+ * owner has a day to take them in (for food) or turn them away.
+ */
+async function offerRefugees(tx: Tx, m: MatchRow, at: Date, columns: Array<{ from: string; people: number }>): Promise<void> {
+  if (columns.length === 0) return;
+  const c = balance.events.refugees;
+  const owned = await tx
+    .select({ regionId: matchRegions.regionId, owner: matchRegions.ownerPlayerId })
+    .from(matchRegions)
+    .where(and(eq(matchRegions.matchId, m.id), isNotNull(matchRegions.ownerPlayerId), isNull(matchRegions.frozenAt), isNull(matchRegions.evacuatedAt)));
+  const ownerOf = new Map(owned.map((r) => [r.regionId, r.owner!]));
+  const expiresAt = new Date(at.getTime() + (c.hours * 3600_000) / m.speed);
+  for (const col of columns) {
+    // Breadth-first out to `hops`, nearest owned region first.
+    let ring = [col.from];
+    const seen = new Set(ring);
+    let dest: string | null = null;
+    for (let h = 0; h < c.hops && !dest; h++) {
+      const next: string[] = [];
+      for (const id of ring) for (const n of regionById(id)?.neighbors ?? []) if (!seen.has(n)) { seen.add(n); next.push(n); }
+      const here = next.filter((n) => ownerOf.has(n));
+      if (here.length) dest = here[0]!;
+      ring = next;
+    }
+    const fromName = regionById(col.from)?.name ?? col.from;
+    if (!dest) {
+      await tx.insert(events).values({ matchId: m.id, at, kind: "refugees.lost", payload: { fromRegionId: col.from, people: col.people } });
+      continue;
+    }
+    const owner = ownerOf.get(dest)!;
+    await tx.insert(refugeeOffers).values({ matchId: m.id, playerId: owner, regionId: dest, fromRegionId: col.from, people: col.people, expiresAt });
+    await notify(tx, m.id, owner, "battle", `${col.people} people fleeing the ice from ${fromName} have reached ${regionById(dest)?.name ?? dest}. Take them in for ${col.people * c.foodPerPerson} food, or turn them away; they wait a day.`, { regionId: dest, fromRegionId: col.from, people: col.people, expiresAt: expiresAt.toISOString(), refugees: true });
+    await tx.insert(events).values({ matchId: m.id, at, kind: "refugees.arrived", payload: { fromRegionId: col.from, regionId: dest, playerId: owner, people: col.people } });
+  }
 }

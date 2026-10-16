@@ -34,6 +34,10 @@ export interface WorldMapProps {
   roads?: Array<[string, string, string, "road" | "rail"]>;
   /** Overlay badges (View menu): small glyph markers at region centres. */
   badges?: Array<{ regionId: string; colour: string; glyph: string; label: string }>;
+  /** Regions in a blizzard right now: drawn with a white hatch. */
+  storms?: string[];
+  /** Thaw pockets: amber outline until the ice finally takes them. */
+  thaws?: Array<{ regionId: string; until: string }>;
 }
 
 /** Missions drawn as military (orange, sword) rather than civil traffic. */
@@ -67,7 +71,7 @@ const MAX_K = 14;
  * Rendering ~400 paths is cheap; the expensive part is re-rendering on every
  * state change, so the static layer is memoized and only the paint changes.
  */
-export function WorldMap({ paint, selected, onSelect, focus, className = "", ice, flags = [], dashed = [], armies = [], roads = [], badges = [] }: WorldMapProps) {
+export function WorldMap({ paint, selected, onSelect, focus, className = "", ice, flags = [], dashed = [], armies = [], roads = [], badges = [], storms = [], thaws = [] }: WorldMapProps) {
   const [hoverArmy, setHoverArmy] = useState<string | null>(null);
   const [routeArmy, setRouteArmy] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -197,8 +201,21 @@ export function WorldMap({ paint, selected, onSelect, focus, className = "", ice
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
     >
+      <defs>
+        <pattern id="lt-storm" width={6} height={6} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+          <line x1={0} y1={0} x2={0} y2={6} stroke="#e0f2fe" strokeWidth={2} opacity={0.75} />
+        </pattern>
+      </defs>
       <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>
         <Regions paint={paint} selected={selected} strokeWidth={0.8 / view.k} />
+        {storms.map((id) => {
+          const r = regionById(id);
+          return r ? <path key={`storm-${id}`} d={r.path} fill="url(#lt-storm)" pointerEvents="none" /> : null;
+        })}
+        {thaws.map((t) => {
+          const r = regionById(t.regionId);
+          return r ? <path key={`thaw-${t.regionId}`} d={r.path} fill="#fbbf24" fillOpacity={0.18} stroke="#fbbf24" strokeWidth={2.4 / view.k} strokeDasharray={`${5 / view.k} ${3 / view.k}`} pointerEvents="none" /> : null;
+        })}
         {ice && <IceLayer ice={ice} k={view.k / unitsPerPx} />}
         <g pointerEvents="none">
           {dashed.map((id) => {

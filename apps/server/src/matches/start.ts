@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { allRegions, balance, distanceKm, seededRng } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { events, jobs, matchRegions, matches, players } from "../db/schema.js";
@@ -41,7 +41,11 @@ export async function startMatch(db: Db, publisher: Publisher, matchId: string):
       await tx.insert(players).values({ matchId, isAi: true, aiProfile: randomProfile(rng, settings.aiDifficulty), name });
     }
 
-    const ps = await tx.select().from(players).where(eq(players.matchId, matchId));
+    // The hordes belong to a hidden player with no capital, no standings and no turn of its own.
+    const [hordeRow] = await tx.select({ id: players.id }).from(players).where(and(eq(players.matchId, matchId), eq(players.hidden, true))).limit(1);
+    if (!hordeRow) await tx.insert(players).values({ matchId, isAi: true, hidden: true, aiProfile: "horde", name: balance.events.horde.name, protectionUntil: now, nextAiAt: null });
+
+    const ps = (await tx.select().from(players).where(eq(players.matchId, matchId))).filter((p) => !p.hidden);
     const taken = ps.map((p) => p.capitalRegionId).filter((x): x is string => !!x);
     for (const p of ps) {
       let capital = p.capitalRegionId;

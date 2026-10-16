@@ -12,6 +12,7 @@ import { handleRegionLost } from "./missions.js";
 import { checkEarlyWin, recordOwnershipFrame, updateScores } from "./endgame.js";
 import { notify, type MatchRow } from "../worker/jobs.js";
 import { runAiPlayer } from "./ai.js";
+import { runDailyEvents } from "./worldEvents.js";
 
 /**
  * Periodic per-match tick: loyalty drift and rebellions on occupied regions,
@@ -54,6 +55,10 @@ async function tickMatch(db: Db, publisher: Publisher, matchId: string, log: pin
     await migrateCrowded(tx, m, now, elapsedGameHours);
     await repairWaitingBuilds(tx, m, now);
     await neutralGrowth(tx, m, now, elapsedGameHours);
+    // Once per match day: blizzards, plague, rich finds and the hordes.
+    const dayNow = Math.floor(((now.getTime() - m.startsAt.getTime()) / 86400_000) * m.speed);
+    const dayBefore = Math.floor(((last.getTime() - m.startsAt.getTime()) / 86400_000) * m.speed);
+    if (dayNow > dayBefore && dayNow >= 1) await runDailyEvents(tx, m, now, dayNow, seededRng(`${m.seed}:day:${dayNow}`), publisher, (fn) => after.push(fn));
     const standings = await updateScores(tx, m);
     await recordOwnershipFrame(tx, m, now);
     await checkEarlyWin(tx, m, now, standings, publisher, (fn) => after.push(fn));
@@ -75,7 +80,7 @@ export async function runAiDecisions(db: Db, publisher: Publisher, log: pino.Log
     const dueAi = await db
       .select()
       .from(players)
-      .where(and(eq(players.matchId, m.id), eq(players.isAi, true), isNull(players.eliminatedAt), or(isNull(players.nextAiAt), lte(players.nextAiAt, now))))
+      .where(and(eq(players.matchId, m.id), eq(players.isAi, true), eq(players.hidden, false), isNull(players.eliminatedAt), or(isNull(players.nextAiAt), lte(players.nextAiAt, now))))
       .orderBy(players.nextAiAt)
       .limit(limit);
     for (const p of dueAi) {

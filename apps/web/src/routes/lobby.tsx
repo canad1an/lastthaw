@@ -172,14 +172,17 @@ function MatchRow({ m, canJoin }: { m: MatchSummary; canJoin: boolean }) {
 function CreateMatch({ admin }: { admin: boolean }) {
   const qc = useQueryClient();
   const [name, setName] = useState("Test match");
-  const [speed, setSpeed] = useState(10);
+  const [speed, setSpeed] = useState(admin ? 1 : 10);
   const [startsIn, setStartsIn] = useState(5);
-  const [aiFillTo, setAiFillTo] = useState(24);
+  const [startsAt, setStartsAt] = useState("");
+  const [weekly, setWeekly] = useState(admin);
+  const [aiFillTo, setAiFillTo] = useState(20);
   const [aiDifficulty, setAiDifficulty] = useState<"mixed" | "easy" | "medium" | "hard">("mixed");
   const m = useMutation({
-    mutationFn: () => api.createMatch({ name, speed, startsInMinutes: startsIn, aiFillTo, aiDifficulty }),
+    mutationFn: () => api.createMatch({ name, speed, startsInMinutes: startsIn, ...(startsAt ? { startsAt: new Date(startsAt).toISOString() } : {}), weekly, aiFillTo, aiDifficulty }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matches }),
   });
+  const suggest = useMutation({ mutationFn: () => api.nameSuggestion(), onSuccess: (r) => setName(r.name) });
   return (
     <Card>
       <h2 className="mb-1 font-medium">Create a match {admin ? "(admin)" : "(dev tool)"}</h2>
@@ -194,13 +197,28 @@ function CreateMatch({ admin }: { admin: boolean }) {
         className="grid grid-cols-1 gap-3 sm:grid-cols-3"
       >
         <Field label="Name">
-          <Input value={name} onChange={(e) => setName(e.target.value)} />
+          <div className="flex gap-1">
+            <Input value={name} onChange={(e) => setName(e.target.value)} />
+            <Button type="button" variant="ghost" className="shrink-0 px-2" onClick={() => suggest.mutate()} title="A war-or-winter name nobody has used">
+              Suggest
+            </Button>
+          </div>
         </Field>
         <Field label="Speed">
           <Input type="number" min={1} max={100} value={speed} onChange={(e) => setSpeed(Number(e.target.value))} />
         </Field>
-        <Field label="Starts in (min)">
-          <Input type="number" min={0} value={startsIn} onChange={(e) => setStartsIn(Number(e.target.value))} />
+        <Field label="Starts at (your time)">
+          <Input type="datetime-local" value={startsAt} onChange={(e) => setStartsAt(e.target.value)} />
+        </Field>
+        {!startsAt && (
+          <Field label="…or starts in (min)">
+            <Input type="number" min={0} value={startsIn} onChange={(e) => setStartsIn(Number(e.target.value))} />
+          </Field>
+        )}
+        <Field label="Counts toward the weekly schedule">
+          <label className="flex h-10 items-center gap-2 text-sm text-slate-300">
+            <input type="checkbox" checked={weekly} onChange={(e) => setWeekly(e.target.checked)} /> Yes, it is one of the six ahead
+          </label>
         </Field>
         <Field label="AI tribes up to">
           <Input type="number" min={0} max={100} value={aiFillTo} onChange={(e) => setAiFillTo(Number(e.target.value))} />

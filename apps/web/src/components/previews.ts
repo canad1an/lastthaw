@@ -21,6 +21,9 @@ export function buildingPreview(def: BuildingDef, level: number, buildings: Reco
     yieldMult: f.yield,
     extract: f.extract,
     iceFactor: economy.iceFactor,
+    storm: economy.storm,
+    plague: economy.plague,
+    boom: economy.boom,
     growthMult: economy.growthMult,
     abandoned: economy.abandoned,
   });

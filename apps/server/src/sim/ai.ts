@@ -1,12 +1,13 @@
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { availableBuildings, availableTechs, buildingBlockedBy, availableUnits, balance, buildingById, buildingCost, dayCostMultiplier, effectsOf, freezeDayForLatitude, distanceKm, regionById, seededRng, techById, techCost, normalizeAssignment, type Cost, techEffectsOf, haulerCount, unitById, TECHS, breachOf, wallBonusAgainst } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
-import { armies, jobs, marketOrders, matchRegions, playerTechs, players } from "../db/schema.js";
+import { armies, jobs, marketOrders, matchRegions, playerTechs, players, refugeeOffers } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
 import { applyCost, projectRegion, settleAndLockRegion, stockOf, type MatchRegionRow } from "./regions.js";
 import { queueBuild, queueResearch, queueTrain, sendArmy, type CommandContext, type PlayerRow } from "./commands.js";
 import { areAllied } from "./alliances.js";
 import { acceptMarketOrder } from "../matches/marketApi.js";
+import { decideRefugees } from "../matches/eventsApi.js";
 import type { MatchRow } from "../worker/jobs.js";
 
 export type Difficulty = "easy" | "medium" | "hard";
@@ -85,6 +86,16 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
     .select({ regionId: jobs.regionId, kind: jobs.kind, refId: jobs.refId, waitingFor: jobs.waitingFor })
     .from(jobs)
     .where(and(eq(jobs.matchId, m.id), eq(jobs.playerId, p.id), isNull(jobs.completedAt), isNull(jobs.cancelledAt)));
+  // Migrant columns at the border: take them in when the food is there and the region has room to spare.
+  const waiting = await db.select().from(refugeeOffers).where(and(eq(refugeeOffers.playerId, p.id), isNull(refugeeOffers.decidedAt)));
+  for (const offer of waiting) {
+    const region = owned.find((r) => r.regionId === offer.regionId);
+    if (!region) continue;
+    const { economy } = projectRegion(region, now, m.speed, techFx);
+    const crowded = economy.popWorkers + economy.popSoldiers + economy.popOccupiers + offer.people > economy.capacity * 1.5;
+    const ok = !crowded && economy.food >= offer.people * balance.events.refugees.foodPerPerson * 1.5;
+    await attempt(() => decideRefugees(db, m, p, offer.id, ok));
+  }
   const researchQueued = pendingJobs.filter((j) => j.kind === "research").length;
   const researching = researchQueued >= 3;
   const queueLen = (regionId: string) => pendingJobs.filter((j) => j.regionId === regionId).length;

@@ -12,6 +12,7 @@ import { OVERLAYS, OVERLAY_HINT } from "../map/overlays.js";
 import { EmpirePanel } from "./EmpirePanel.js";
 import { LogisticsPanel } from "./LogisticsPanel.js";
 import { TechTreePanel } from "./TechTreePanel.js";
+import { Ticker } from "./Ticker.js";
 
 type Menu = "messages" | "alliance" | "chat" | "market" | "players" | "leaderboard" | "view" | "empire" | "logistics" | "tech" | "menu";
 
@@ -115,6 +116,7 @@ export function TopMenu({
         <div className="mx-2 h-5 w-px bg-slate-800" />
         {latest}
       </div>
+      <Ticker matchId={matchId} nudge={state.match.now} onSelectRegion={onSelectRegion} />
       {open && (
         <Dropdown onClose={() => setOpen(null)} title={{ messages: "Messages", alliance: "Alliance", chat: "Chat", market: "Market", players: "Players", leaderboard: "Leaderboard", view: "View", empire: "Resources", logistics: "Logistics", tech: "Tech tree", menu: "Menu" }[open]}>
           {open === "menu" && (

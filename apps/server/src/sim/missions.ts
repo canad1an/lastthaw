@@ -315,6 +315,13 @@ async function comeHome(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher:
   for (const id of ids) locked.set(id, await lockRegion(tx, m, id, at));
   let home = locked.get(army.originRegionId)!;
   if (home.ownerPlayerId !== army.playerId && fallback) home = locked.get(fallback)!;
+  const [owner] = await tx.select({ hidden: players.hidden }).from(players).where(eq(players.id, army.playerId)).limit(1);
+  if (owner?.hidden) {
+    // The horde camps where it came from: its fighters become that neutral region's defenders.
+    if (!home.ownerPlayerId) await depositInto(tx, home, army.units, {});
+    await tx.update(armies).set({ status: "done" }).where(eq(armies.id, army.id));
+    return;
+  }
   if (home.ownerPlayerId === army.playerId) {
     await depositInto(tx, home, army.units, army.cargo);
     await notify(tx, m.id, army.playerId, "system", `Army returned to ${regionById(home.regionId)?.name}`, { regionId: home.regionId, units: army.units, cargo: army.cargo });

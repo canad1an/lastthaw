@@ -176,6 +176,13 @@
       "when": 1792162040745,
       "tag": "0024_profile_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1792165662186,
+      "tag": "0025_wealthy_freak",
+      "breakpoints": true
     }
   ]
 }

@@ -42,6 +42,12 @@ export interface RegionEconomy {
   /** Evacuated: nobody lives here, nothing grows or is gathered until people return. */
   abandoned: boolean;
   frozen: boolean;
+  /** A blizzard is blowing: gathering halves. */
+  storm: boolean;
+  /** Sickness: no growth, people die each hour. */
+  plague: boolean;
+  /** A rich find: this resource's output is doubled. */
+  boom: string | null;
 }
 
 export interface Rates {
@@ -94,11 +100,12 @@ export function computeRates(traits: RegionTraits, e: RegionEconomy): Rates {
   const gross: Record<BaseResource, number> = { food: 0, wood: 0, stone: 0 };
   const special = emptySpecial();
   if (!e.frozen && !e.abandoned) {
+    const weather = e.storm ? balance.events.storm.production : 1;
     for (const res of BASE_RESOURCES) {
-      gross[res] = e.popWorkers * assignment[res] * yieldPerWorker(traits, res) * (e.yieldMult[res] ?? 1) * e.iceFactor;
+      gross[res] = e.popWorkers * assignment[res] * yieldPerWorker(traits, res) * (e.yieldMult[res] ?? 1) * e.iceFactor * weather * (e.boom === res ? balance.events.boom.mult : 1);
     }
     for (const s of SPECIAL_RESOURCES) {
-      if (traits.resources.includes(s)) special[s] = (e.extract[s] ?? 0) * e.iceFactor;
+      if (traits.resources.includes(s)) special[s] = (e.extract[s] ?? 0) * e.iceFactor * weather * (e.boom === s ? balance.events.boom.mult : 1);
     }
   }
   const consumption = (e.popWorkers + e.popOccupiers + e.popSoldiers * eco.soldierFoodMultiplier) * eco.foodPerPersonPerHour;
@@ -112,6 +119,8 @@ export function computeRates(traits: RegionTraits, e: RegionEconomy): Rates {
     population = 0;
   } else if (starving) {
     population = -pop * eco.starvationPerHour;
+  } else if (e.plague) {
+    population = -pop * balance.events.plague.deathPerHour;
   } else {
     const room = Math.max(0, 1 - pop / Math.max(1, e.capacity));
     population = (pop * eco.growthPerHour + eco.arrivalsPerHour) * room * e.growthMult;
@@ -193,6 +202,9 @@ export function startingEconomy(): RegionEconomy {
     yieldMult: { food: 1, wood: 1, stone: 1 },
     extract: {},
     iceFactor: 1,
+    storm: false,
+    plague: false,
+    boom: null,
     growthMult: 1,
     abandoned: false,
     frozen: false,

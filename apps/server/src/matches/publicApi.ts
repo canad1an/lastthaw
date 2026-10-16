@@ -80,7 +80,7 @@ export async function publicRoutes(app: FastifyInstance, opts: { db: Db }) {
       const top = await db
         .select({ name: players.name, score: players.score, isAi: players.isAi, age: players.age })
         .from(players)
-        .where(eq(players.matchId, m.id))
+        .where(and(eq(players.matchId, m.id), eq(players.hidden, false)))
         .orderBy(desc(players.score))
         .limit(3);
       const [regions] = winner

@@ -13,7 +13,7 @@ export function traitsOf(regionId: string): RegionTraits {
   return { terrain: r.terrain, resources: r.resources, coastal: r.coastal, river: r.river };
 }
 
-export function economyOf(row: MatchRegionRow, effects: RegionEffects = effectsOf(row.buildings), growthMult = 1): RegionEconomy {
+export function economyOf(row: MatchRegionRow, effects: RegionEffects = effectsOf(row.buildings), growthMult = 1, at: Date = new Date()): RegionEconomy {
   const special = { ...emptySpecial(), ...(row.special as Partial<Record<(typeof SPECIAL_RESOURCES)[number], number>>) };
   return {
     popWorkers: row.popWorkers,
@@ -32,6 +32,9 @@ export function economyOf(row: MatchRegionRow, effects: RegionEffects = effectsO
     growthMult,
     abandoned: row.evacuatedAt !== null,
     frozen: row.frozenAt !== null,
+    storm: !!row.stormUntil && row.stormUntil > at,
+    plague: !!row.plagueUntil && row.plagueUntil > at,
+    boom: row.boom && new Date(row.boom.until) > at ? row.boom.resource : null,
   };
 }
 
@@ -46,7 +49,7 @@ export async function ownerTechEffects(db: Db | Tx, playerId: string | null): Pr
 export function projectRegion(row: MatchRegionRow, asOf: Date, speed: number, tech: TechEffects = NO_TECH_EFFECTS): { economy: RegionEconomy; rates: Rates; effects: RegionEffects } {
   const traits = traitsOf(row.regionId);
   const effects = applyTechEffects(effectsOf(row.buildings), tech);
-  const economy = settle(traits, economyOf(row, effects, 1 + tech.growth), elapsedSeconds(row.settledAt, asOf), speed);
+  const economy = settle(traits, economyOf(row, effects, 1 + tech.growth, asOf), elapsedSeconds(row.settledAt, asOf), speed);
   return { economy, rates: computeRates(traits, economy), effects };
 }
 

@@ -21,6 +21,7 @@ import { settleAndLockRegion } from "../sim/regions.js";
 import { buildMatchState } from "../view/matchState.js";
 import { startMatch, matchLengthSeconds } from "./start.js";
 import { farEnough, startOptionsFor } from "./startOptions.js";
+import { pickMatchName } from "../worker/weekly.js";
 import { idParams, regionParams } from "./params.js";
 
 function httpError(status: number, message: string): Error {
@@ -92,7 +93,8 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
     const user = requireVerified(req);
     if (!devTools && !user.isAdmin) throw httpError(403, "only admins can create matches; the weekly match is created automatically");
     const body = createMatchBody.parse(req.body);
-    const startsAt = new Date(Date.now() + body.startsInMinutes * 60_000);
+    const startsAt = body.startsAt ? new Date(body.startsAt) : new Date(Date.now() + body.startsInMinutes * 60_000);
+    if (startsAt.getTime() < Date.now() - 60_000) throw httpError(400, "the start time is in the past");
     const endsAt = new Date(startsAt.getTime() + matchLengthSeconds(body.speed) * 1000);
     const [m] = await db
       .insert(matches)
@@ -107,10 +109,19 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
           ...(body.aiFillTo !== undefined ? { aiFillTo: body.aiFillTo } : {}),
           ...(body.neutralTribes !== undefined ? { neutralTribes: body.neutralTribes } : {}),
           ...(body.aiDifficulty ? { aiDifficulty: body.aiDifficulty } : {}),
+          ...(body.weekly ? { weekly: true } : {}),
         },
       })
       .returning();
     return reply.code(201).send({ id: m!.id });
+  });
+
+  /** A war-or-winter name no match has used, for the admin's create form. */
+  app.get("/api/matches/name-suggestion", async (req) => {
+    const user = requireUser(req);
+    if (!devTools && !user.isAdmin) throw httpError(403, "admins only");
+    const taken = new Set((await db.select({ name: matches.name }).from(matches)).map((r) => r.name.toLowerCase()));
+    return { name: pickMatchName(taken, randomBytes(8).toString("hex")) };
   });
 
   app.post("/api/matches/:id/join", async (req, reply) => {

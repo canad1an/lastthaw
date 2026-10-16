@@ -36,7 +36,7 @@ export async function awardMilestone(tx: Tx, m: MatchRow, key: string, playerId:
   const [p] = await tx.select({ name: players.name }).from(players).where(eq(players.id, playerId)).limit(1);
   const points = milestonePoints(key);
   await tx.insert(events).values({ matchId: m.id, at, kind: "milestone", payload: { key, playerId, points } });
-  const everyone = await tx.select({ id: players.id }).from(players).where(and(eq(players.matchId, m.id), eq(players.isAi, false)));
+  const everyone = await tx.select({ id: players.id }).from(players).where(and(eq(players.matchId, m.id), eq(players.isAi, false), eq(players.hidden, false)));
   for (const other of everyone) {
     await notify(tx, m.id, other.id, "system", other.id === playerId ? `${milestoneLabel(key)}: that was you (+${points} score)` : `${milestoneLabel(key)}: ${p?.name ?? "someone"} (+${points} score)`, { milestone: key, playerId, points });
   }
@@ -49,7 +49,7 @@ export async function wonderStarted(tx: Tx, m: MatchRow, playerId: string, playe
   const where = regionById(regionId)?.name ?? regionId;
   const at = new Date();
   await tx.insert(events).values({ matchId: m.id, at, kind: "wonder.started", payload: { playerId, regionId, endsAt, waiting } });
-  const everyone = await tx.select({ id: players.id }).from(players).where(and(eq(players.matchId, m.id), eq(players.isAi, false)));
+  const everyone = await tx.select({ id: players.id }).from(players).where(and(eq(players.matchId, m.id), eq(players.isAi, false), eq(players.hidden, false)));
   for (const other of everyone) {
     if (other.id === playerId) continue;
     await notify(tx, m.id, other.id, "battle", `${playerName} has begun the ${name} in ${where}${waiting ? " and is gathering the materials" : ""}. If it is finished, they win. Take ${where} to stop it.`, { playerId, regionId, endsAt, wonder: true });
@@ -93,7 +93,7 @@ export async function updateScores(tx: Tx, m: MatchRow): Promise<Array<{ id: str
   const byOwner = new Map(rows.map((r) => [r.owner!, r]));
   const bonus = new Map<string, number>();
   for (const ms of await tx.select().from(matchMilestones).where(eq(matchMilestones.matchId, m.id))) bonus.set(ms.playerId, (bonus.get(ms.playerId) ?? 0) + milestonePoints(ms.key));
-  const ps = await tx.select({ id: players.id, age: players.age }).from(players).where(eq(players.matchId, m.id));
+  const ps = await tx.select({ id: players.id, age: players.age }).from(players).where(and(eq(players.matchId, m.id), eq(players.hidden, false)));
   const out: Array<{ id: string; score: number; regions: number; pop: number }> = [];
   for (const p of ps) {
     const r = byOwner.get(p.id);
@@ -157,7 +157,7 @@ export async function checkEarlyWin(tx: Tx, m: MatchRow, at: Date, standings: Ar
     }
     await tx.insert(jobs).values({ matchId: m.id, kind: "win_hold", payload: { kind: leader.kind, id: leader.id, playerId: winnerPlayerId }, startsAt: at, endsAt });
     await tx.insert(events).values({ matchId: m.id, at, kind: "win.hold.started", payload: { ...leader, endsAt } });
-    const everyone = await tx.select({ id: players.id }).from(players).where(and(eq(players.matchId, m.id), eq(players.isAi, false)));
+    const everyone = await tx.select({ id: players.id }).from(players).where(and(eq(players.matchId, m.id), eq(players.isAi, false), eq(players.hidden, false)));
     for (const p of everyone) await notify(tx, m.id, p.id, "system", `${name} holds ${leader.regions} regions. The match ends in ${balance.win.holdHours} hours unless they are pushed back.`, { endsAt });
     after(() => publisher.toMatch(m.id, "match.started", { winHold: true }));
   } else if (!leader && pending) {
@@ -172,7 +172,7 @@ export async function finishMatch(tx: Tx, m: MatchRow, at: Date, publisher: Publ
   const winKind = kind ?? (winnerPlayerId ? "hold" : balance.win.survival ? "survival" : "score");
   const standings = await updateScores(tx, m);
   await recordOwnershipFrame(tx, m, at);
-  const ps = await tx.select().from(players).where(eq(players.matchId, m.id));
+  const ps = await tx.select().from(players).where(and(eq(players.matchId, m.id), eq(players.hidden, false)));
   const scoreOfId = (id: string) => standings.find((s) => s.id === id)?.score ?? 0;
   const ranked = [...ps].sort((a, b) => scoreOfId(b.id) - scoreOfId(a.id));
   let winner = winnerPlayerId;

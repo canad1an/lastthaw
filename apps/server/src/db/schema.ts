@@ -153,6 +153,8 @@ export const players = pgTable(
     userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
     isAi: boolean("is_ai").notNull().default(false),
     aiProfile: text("ai_profile"),
+    /** System players (the horde) that never appear in lists or standings. */
+    hidden: boolean("hidden").notNull().default(false),
     name: text("name").notNull(),
     capitalRegionId: text("capital_region_id"),
     age: integer("age").notNull().default(0),
@@ -201,6 +203,14 @@ export const matchRegions = pgTable(
     isCapital: boolean("is_capital").notNull().default(false),
     /** Taken by force from someone else: needs occupiers to stay loyal. Settled and founded regions are your own people. */
     conquered: boolean("conquered").notNull().default(false),
+    /** A blizzard is blowing here until then: half production, double travel. */
+    stormUntil: timestamp("storm_until", { withTimezone: true }),
+    /** Sickness until then: no growth, people die. */
+    plagueUntil: timestamp("plague_until", { withTimezone: true }),
+    /** A thaw pocket: the ice passes this region by until then. */
+    thawUntil: timestamp("thaw_until", { withTimezone: true }),
+    /** A rich find: `resource` output doubled until `until` (ISO). */
+    boom: jsonb("boom").$type<{ resource: string; until: string } | null>(),
     /** Emptied by an evacuation: no growth or production until people move back in. */
     evacuatedAt: timestamp("evacuated_at", { withTimezone: true }),
     /** Match-clock time the amounts above were last settled to. */
@@ -213,7 +223,7 @@ export const matchRegions = pgTable(
 /** Partial index predicate for the due-job scan. */
 const sqlNullCompleted = sql`completed_at is null and cancelled_at is null`;
 
-export const jobKind = pgEnum("job_kind", ["build", "research", "train", "mission", "ice_step", "win_hold", "match_end"]);
+export const jobKind = pgEnum("job_kind", ["build", "research", "train", "mission", "ice_step", "win_hold", "match_end", "storm", "merc_expire"]);
 
 export const jobs = pgTable(
   "jobs",
@@ -390,6 +400,28 @@ export const sessionSightings = pgTable(
     userAgent: text("user_agent"),
   },
   (t) => [primaryKey({ columns: [t.sessionId, t.hour] }), index("sightings_ip_idx").on(t.ip, t.userId)],
+);
+
+/** A migrant column at the border: the owner of `regionId` may take them in before `expiresAt`. */
+export const refugeeOffers = pgTable(
+  "refugee_offers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    matchId: uuid("match_id")
+      .notNull()
+      .references(() => matches.id, { onDelete: "cascade" }),
+    playerId: uuid("player_id")
+      .notNull()
+      .references(() => players.id, { onDelete: "cascade" }),
+    regionId: text("region_id").notNull(),
+    fromRegionId: text("from_region_id").notNull(),
+    people: integer("people").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    decidedAt: timestamp("decided_at", { withTimezone: true }),
+    accepted: boolean("accepted"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("refugees_player_idx").on(t.playerId, t.decidedAt)],
 );
 
 /** First-in-the-match checkpoints: one row per key, held by whoever got there first. */
