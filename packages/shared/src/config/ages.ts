@@ -41,7 +41,21 @@ export interface BuildingEffect {
 
 }
 
+export type BuildingCategory = "growth" | "production" | "storage" | "defense" | "training" | "transport" | "loyalty";
+
+/** Build-tab groups, in display order. */
+export const BUILDING_CATEGORIES: ReadonlyArray<{ id: BuildingCategory; name: string; hint: string; icon: string }> = [
+  { id: "growth", name: "Growth & food", hint: "More people and the food to keep them.", icon: "🌾" },
+  { id: "production", name: "Production", hint: "Faster wood, stone, ore and horses.", icon: "⚒" },
+  { id: "storage", name: "Storage", hint: "Bigger stores, and stock hidden from raiders.", icon: "🏺" },
+  { id: "defense", name: "Defence", hint: "Walls and garrisons that help defenders.", icon: "🛡" },
+  { id: "training", name: "Training & research", hint: "Faster soldiers and faster science.", icon: "📜" },
+  { id: "transport", name: "Transport", hint: "Roads, rails and harbours that speed up every trip.", icon: "🛣" },
+  { id: "loyalty", name: "Loyalty", hint: "Keep conquered people from rebelling.", icon: "⚜" },
+];
+
 export interface BuildingDef {
+  category: BuildingCategory;
   /** Cost is per adjacent region: one build connects the region to all of its neighbours. */
   perNeighbor?: boolean;
   /** Needs this building in the region first (Railway needs Roads). */
@@ -135,42 +149,42 @@ export interface TechDef {
 
 export const BUILDINGS: readonly BuildingDef[] = [
   // Stone
-  { id: "huts", name: "Huts", age: 0, description: "Shelter for more families.", maxLevel: 20, cost: { wood: 40, stone: 10 }, baseSeconds: 45, effect: { capacity: 10 } },
-  { id: "storehouse", name: "Storehouse", age: 0, description: "Bigger stores, and some stock hidden from raiders.", maxLevel: 20, cost: { wood: 60, stone: 20 }, baseSeconds: 60, effect: { storage: 0.5, protect: 60 } },
-  { id: "hunting_grounds", name: "Hunting grounds", age: 0, description: "Better food from the land.", maxLevel: 15, cost: { wood: 30, food: 20 }, baseSeconds: 40, effect: { yield: { food: 0.2 } } },
-  { id: "lumber_camp", name: "Lumber camp", age: 0, description: "Faster wood gathering.", maxLevel: 15, cost: { wood: 30, stone: 10 }, baseSeconds: 40, effect: { yield: { wood: 0.25 } } },
-  { id: "quarry", name: "Quarry", age: 0, description: "Faster stone gathering.", maxLevel: 15, cost: { wood: 50, food: 30 }, baseSeconds: 50, effect: { yield: { stone: 0.25 } } },
+  { id: "huts", category: "growth", name: "Huts", age: 0, description: "Shelter for more families.", maxLevel: 20, cost: { wood: 40, stone: 10 }, baseSeconds: 45, effect: { capacity: 10 } },
+  { id: "storehouse", category: "storage", name: "Storehouse", age: 0, description: "Bigger stores, and some stock hidden from raiders.", maxLevel: 20, cost: { wood: 60, stone: 20 }, baseSeconds: 60, effect: { storage: 0.5, protect: 60 } },
+  { id: "hunting_grounds", category: "growth", name: "Hunting grounds", age: 0, description: "Better food from the land.", maxLevel: 15, cost: { wood: 30, food: 20 }, baseSeconds: 40, effect: { yield: { food: 0.2 } } },
+  { id: "lumber_camp", category: "production", name: "Lumber camp", age: 0, description: "Faster wood gathering.", maxLevel: 15, cost: { wood: 30, stone: 10 }, baseSeconds: 40, effect: { yield: { wood: 0.25 } } },
+  { id: "quarry", category: "production", name: "Quarry", age: 0, description: "Faster stone gathering.", maxLevel: 15, cost: { wood: 50, food: 30 }, baseSeconds: 50, effect: { yield: { stone: 0.25 } } },
   // Bronze
-  { id: "farm", name: "Farm", age: 1, description: "Cultivated fields feed many more people.", maxLevel: 15, cost: { wood: 120, stone: 40 }, baseSeconds: 150, effect: { yield: { food: 0.2 }, capacity: 15 }, requires: "agriculture" },
-  { id: "mine", name: "Mine", age: 1, description: "Extracts copper, tin or iron where the region has it.", maxLevel: 10, cost: { wood: 150, stone: 100 }, baseSeconds: 200, effect: { extract: { copper: 1.5, tin: 1.0, iron: 1.2 } }, requires: "mining", needsResource: ["copper", "tin", "iron"] },
-  { id: "palisade", name: "Palisade", age: 1, description: "A wooden wall that helps defenders.", maxLevel: 10, cost: { wood: 200, stone: 30 }, baseSeconds: 180, effect: { defense: 0.1 } },
-  { id: "stables", name: "Stables", age: 1, description: "Breeds horses where wild herds roam.", maxLevel: 10, cost: { wood: 120, food: 150 }, baseSeconds: 160, effect: { extract: { horses: 0.6 } }, requires: "animal_husbandry", needsResource: ["horses"] },
-  { id: "granary", name: "Granary", age: 1, description: "Dry, sealed pits for grain: doubles food storage per level and hides stock from raiders.", maxLevel: 10, cost: { wood: 100, stone: 120 }, baseSeconds: 150, effect: { foodStorage: 1.0, protect: 120 } },
+  { id: "farm", category: "growth", name: "Farm", age: 1, description: "Cultivated fields feed many more people.", maxLevel: 15, cost: { wood: 120, stone: 40 }, baseSeconds: 150, effect: { yield: { food: 0.2 }, capacity: 15 }, requires: "agriculture" },
+  { id: "mine", category: "production", name: "Mine", age: 1, description: "Extracts copper, tin or iron where the region has it.", maxLevel: 10, cost: { wood: 150, stone: 100 }, baseSeconds: 200, effect: { extract: { copper: 1.5, tin: 1.0, iron: 1.2 } }, requires: "mining", needsResource: ["copper", "tin", "iron"] },
+  { id: "palisade", category: "defense", name: "Palisade", age: 1, description: "A wooden wall that helps defenders.", maxLevel: 10, cost: { wood: 200, stone: 30 }, baseSeconds: 180, effect: { defense: 0.1 } },
+  { id: "stables", category: "production", name: "Stables", age: 1, description: "Breeds horses where wild herds roam.", maxLevel: 10, cost: { wood: 120, food: 150 }, baseSeconds: 160, effect: { extract: { horses: 0.6 } }, requires: "animal_husbandry", needsResource: ["horses"] },
+  { id: "granary", category: "storage", name: "Granary", age: 1, description: "Dry, sealed pits for grain: doubles food storage per level and hides stock from raiders.", maxLevel: 10, cost: { wood: 100, stone: 120 }, baseSeconds: 150, effect: { foodStorage: 1.0, protect: 120 } },
   // Iron
-  { id: "forge", name: "Forge", age: 2, description: "Works iron faster; speeds up training.", maxLevel: 10, cost: { wood: 200, stone: 200, iron: 20 }, baseSeconds: 400, effect: { trainSpeed: 0.06, extract: { iron: 0.8 } }, requires: "iron_working" },
-  { id: "walls", name: "Stone walls", age: 2, description: "Solid walls around the settlement.", maxLevel: 10, cost: { stone: 400, wood: 100 }, baseSeconds: 500, effect: { defense: 0.18 }, requires: "masonry" },
-  { id: "roads", name: "Roads", age: 1, description: "Paved roads to every neighbouring region. Built once; legs between two road regions are much faster, and the region is easier to hold.", maxLevel: 1, cost: { stone: 80, wood: 40 }, perNeighbor: true, baseSeconds: 600, effect: { loyalty: 0.1 }, requires: "road_building" },
-  { id: "railway", name: "Railway", age: 4, description: "Rails to every neighbouring region that also has them. Built once on top of Roads; legs between two railway regions are far faster.", maxLevel: 1, cost: { stone: 400, iron: 20 }, perNeighbor: true, baseSeconds: 1800, effect: { loyalty: 0.05 }, requires: "railways", requiresBuilding: "roads" },
-  { id: "temple", name: "Temple", age: 2, description: "Binds a conquered people to their new rulers. Built once: raises loyalty and keeps turning workers into occupiers until the region has enough, however much it grows.", maxLevel: 1, cost: { stone: 1500, wood: 800, food: 500 }, baseSeconds: 2400, effect: { loyalty: 0.2 } },
-  { id: "barracks", name: "Barracks", age: 2, description: "Trains soldiers faster.", maxLevel: 10, cost: { wood: 300, stone: 150 }, baseSeconds: 400, effect: { trainSpeed: 0.1 } },
+  { id: "forge", category: "training", name: "Forge", age: 2, description: "Works iron faster; speeds up training.", maxLevel: 10, cost: { wood: 200, stone: 200, iron: 20 }, baseSeconds: 400, effect: { trainSpeed: 0.06, extract: { iron: 0.8 } }, requires: "iron_working" },
+  { id: "walls", category: "defense", name: "Stone walls", age: 2, description: "Solid walls around the settlement.", maxLevel: 10, cost: { stone: 400, wood: 100 }, baseSeconds: 500, effect: { defense: 0.18 }, requires: "masonry" },
+  { id: "roads", category: "transport", name: "Roads", age: 1, description: "Paved roads to every neighbouring region. Built once; legs between two road regions are much faster, and the region is easier to hold.", maxLevel: 1, cost: { stone: 80, wood: 40 }, perNeighbor: true, baseSeconds: 600, effect: { loyalty: 0.1 }, requires: "road_building" },
+  { id: "railway", category: "transport", name: "Railway", age: 4, description: "Rails to every neighbouring region that also has them. Built once on top of Roads; legs between two railway regions are far faster.", maxLevel: 1, cost: { stone: 400, iron: 20 }, perNeighbor: true, baseSeconds: 1800, effect: { loyalty: 0.05 }, requires: "railways", requiresBuilding: "roads" },
+  { id: "temple", category: "loyalty", name: "Temple", age: 2, description: "Binds a conquered people to their new rulers. Built once: raises loyalty and keeps turning workers into occupiers until the region has enough, however much it grows.", maxLevel: 1, cost: { stone: 1500, wood: 800, food: 500 }, baseSeconds: 2400, effect: { loyalty: 0.2 } },
+  { id: "barracks", category: "training", name: "Barracks", age: 2, description: "Trains soldiers faster.", maxLevel: 10, cost: { wood: 300, stone: 150 }, baseSeconds: 400, effect: { trainSpeed: 0.1 } },
   // Classical
-  { id: "aqueduct", name: "Aqueduct", age: 3, description: "Clean water lets the city grow.", maxLevel: 10, cost: { stone: 600, wood: 200 }, baseSeconds: 900, effect: { capacity: 40 } },
-  { id: "fort", name: "Fort", age: 3, description: "A garrison that defends and holds the province.", maxLevel: 10, cost: { stone: 700, wood: 300, iron: 40 }, baseSeconds: 1000, effect: { defense: 0.15, loyalty: 0.15 } },
-  { id: "library", name: "Library", age: 3, description: "Scholars speed up research.", maxLevel: 10, cost: { wood: 500, stone: 400 }, baseSeconds: 900, effect: { researchSpeed: 0.08 }, requires: "writing" },
-  { id: "harbor", name: "Harbor", age: 3, description: "Quays and boats. Built once on a coast: sea legs to another harbour of yours are far faster, and faster still than open water at one end.", maxLevel: 1, cost: { wood: 2500, stone: 1500 }, baseSeconds: 1800, effect: { harbor: true }, requires: "shipbuilding", needsCoast: true },
-  { id: "market", name: "Market", age: 3, description: "More goods kept safely in town.", maxLevel: 10, cost: { wood: 400, stone: 400 }, baseSeconds: 800, effect: { storage: 0.6, protect: 200 } },
+  { id: "aqueduct", category: "growth", name: "Aqueduct", age: 3, description: "Clean water lets the city grow.", maxLevel: 10, cost: { stone: 600, wood: 200 }, baseSeconds: 900, effect: { capacity: 40 } },
+  { id: "fort", category: "defense", name: "Fort", age: 3, description: "A garrison that defends and holds the province.", maxLevel: 10, cost: { stone: 700, wood: 300, iron: 40 }, baseSeconds: 1000, effect: { defense: 0.15, loyalty: 0.15 } },
+  { id: "library", category: "training", name: "Library", age: 3, description: "Scholars speed up research.", maxLevel: 10, cost: { wood: 500, stone: 400 }, baseSeconds: 900, effect: { researchSpeed: 0.08 }, requires: "writing" },
+  { id: "harbor", category: "transport", name: "Harbor", age: 3, description: "Quays and boats. Built once on a coast: sea legs to another harbour of yours are far faster, and faster still than open water at one end.", maxLevel: 1, cost: { wood: 2500, stone: 1500 }, baseSeconds: 1800, effect: { harbor: true }, requires: "shipbuilding", needsCoast: true },
+  { id: "market", category: "storage", name: "Market", age: 3, description: "More goods kept safely in town.", maxLevel: 10, cost: { wood: 400, stone: 400 }, baseSeconds: 800, effect: { storage: 0.6, protect: 200 } },
   // Medieval
-  { id: "castle", name: "Castle", age: 4, description: "The strongest defence money can build.", maxLevel: 5, cost: { stone: 1500, wood: 500, iron: 120 }, baseSeconds: 2400, effect: { defense: 0.3, loyalty: 0.1 } },
-  { id: "windmill", name: "Windmill", age: 4, description: "Grinds grain for a growing population.", maxLevel: 10, cost: { wood: 900, stone: 300 }, baseSeconds: 1800, effect: { yield: { food: 0.25 } } },
-  { id: "guild_hall", name: "Guild hall", age: 4, description: "Organised craftsmen work faster.", maxLevel: 10, cost: { wood: 800, stone: 800 }, baseSeconds: 2000, effect: { yield: { wood: 0.2, stone: 0.2 }, trainSpeed: 0.05 } },
-  { id: "cathedral", name: "Cathedral", age: 4, description: "A monument that commands loyalty far and wide.", maxLevel: 5, cost: { stone: 2000, wood: 600 }, baseSeconds: 3000, effect: { loyalty: 0.3 } },
+  { id: "castle", category: "defense", name: "Castle", age: 4, description: "The strongest defence money can build.", maxLevel: 5, cost: { stone: 1500, wood: 500, iron: 120 }, baseSeconds: 2400, effect: { defense: 0.3, loyalty: 0.1 } },
+  { id: "windmill", category: "growth", name: "Windmill", age: 4, description: "Grinds grain for a growing population.", maxLevel: 10, cost: { wood: 900, stone: 300 }, baseSeconds: 1800, effect: { yield: { food: 0.25 } } },
+  { id: "guild_hall", category: "production", name: "Guild hall", age: 4, description: "Organised craftsmen work faster.", maxLevel: 10, cost: { wood: 800, stone: 800 }, baseSeconds: 2000, effect: { yield: { wood: 0.2, stone: 0.2 }, trainSpeed: 0.05 } },
+  { id: "cathedral", category: "loyalty", name: "Cathedral", age: 4, description: "A monument that commands loyalty far and wide.", maxLevel: 5, cost: { stone: 2000, wood: 600 }, baseSeconds: 3000, effect: { loyalty: 0.3 } },
   // Industrial
-  { id: "factory", name: "Factory", age: 5, description: "Machines and shifts: trains troops faster and turns out more wood and stone.", maxLevel: 10, cost: { wood: 3000, stone: 2500, iron: 100 }, baseSeconds: 3000, effect: { trainSpeed: 0.1, yield: { wood: 0.1, stone: 0.1 } }, requires: "steam_power" },
-  { id: "arsenal", name: "Arsenal", age: 5, description: "Stores of powder and shot: a hard place to take.", maxLevel: 5, cost: { stone: 5000, iron: 300 }, baseSeconds: 3600, effect: { defense: 0.25, protect: 2000 } },
+  { id: "factory", category: "production", name: "Factory", age: 5, description: "Machines and shifts: trains troops faster and turns out more wood and stone.", maxLevel: 10, cost: { wood: 3000, stone: 2500, iron: 100 }, baseSeconds: 3000, effect: { trainSpeed: 0.1, yield: { wood: 0.1, stone: 0.1 } }, requires: "steam_power" },
+  { id: "arsenal", category: "defense", name: "Arsenal", age: 5, description: "Stores of powder and shot: a hard place to take.", maxLevel: 5, cost: { stone: 5000, iron: 300 }, baseSeconds: 3600, effect: { defense: 0.25, protect: 2000 } },
   // Modern
-  { id: "power_plant", name: "Power plant", age: 6, description: "Electricity for every workshop and field.", maxLevel: 10, cost: { stone: 8000, iron: 400 }, baseSeconds: 4000, effect: { yield: { food: 0.15, wood: 0.15, stone: 0.15 }, capacity: 20 }, requires: "electricity" },
-  { id: "bunker", name: "Bunker", age: 6, description: "Concrete and steel: the strongest defence there is.", maxLevel: 5, cost: { stone: 6000, iron: 500 }, baseSeconds: 3600, effect: { defense: 0.5 } },
-  { id: "university", name: "University", age: 4, description: "The fastest research in the land.", maxLevel: 5, cost: { wood: 1200, stone: 1200 }, baseSeconds: 2600, effect: { researchSpeed: 0.15 } },
+  { id: "power_plant", category: "production", name: "Power plant", age: 6, description: "Electricity for every workshop and field.", maxLevel: 10, cost: { stone: 8000, iron: 400 }, baseSeconds: 4000, effect: { yield: { food: 0.15, wood: 0.15, stone: 0.15 }, capacity: 20 }, requires: "electricity" },
+  { id: "bunker", category: "defense", name: "Bunker", age: 6, description: "Concrete and steel: the strongest defence there is.", maxLevel: 5, cost: { stone: 6000, iron: 500 }, baseSeconds: 3600, effect: { defense: 0.5 } },
+  { id: "university", category: "training", name: "University", age: 4, description: "The fastest research in the land.", maxLevel: 5, cost: { wood: 1200, stone: 1200 }, baseSeconds: 2600, effect: { researchSpeed: 0.15 } },
 ];
 
 // ---------------------------------------------------------------------------

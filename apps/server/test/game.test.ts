@@ -386,8 +386,10 @@ describe("milestone 1 flow", () => {
       }
       expect(port, "a free coastal pair").not.toBe("");
       const at = new Date(Date.parse(matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json()).match.now));
-      await foundCapital(db, matchId, aliceRow!.id, port, at);
-      await foundCapital(db, matchId, bobRow!.id, far, at);
+      await db.transaction(async (tx) => {
+        await foundCapital(tx, matchId, aliceRow!.id, port, at);
+        await foundCapital(tx, matchId, bobRow!.id, far, at);
+      });
       await db.update(matchRegions).set({ isCapital: false, popWorkers: 50, popSoldiers: 4, units: { galley: 4 }, buildings: { harbor: 1 }, wood: 5000, food: 5000 }).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, port)));
       await db.update(matchRegions).set({ isCapital: false, popWorkers: 50, popSoldiers: 1, units: { galley: 1 } }).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, far)));
       // Training a ship needs the Harbor and the tech: the far side has neither.

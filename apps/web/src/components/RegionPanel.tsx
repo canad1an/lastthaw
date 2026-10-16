@@ -10,7 +10,7 @@ import { ColonizePanel } from "./ColonizePanel.js";
 import { EvacuatePanel } from "./EvacuatePanel.js";
 import { BeforeAfter, Tooltip } from "./Tooltip.js";
 import { buildingPreview, unitPreview } from "./previews.js";
-import type { BuildingDef, UnitDef } from "@lastthaw/shared";
+import { BUILDING_CATEGORIES, type BuildingCategory, type BuildingDef, type UnitDef } from "@lastthaw/shared";
 
 interface Props {
   matchId: string;
@@ -286,6 +286,16 @@ function stockOf(e: RegionEconomy): Record<string, number> {
   return { food: e.food, wood: e.wood, stone: e.stone, ...e.special };
 }
 
+const CATEGORY_TONE: Record<BuildingCategory, string> = {
+  growth: "border-lime-500/60 bg-lime-950/20 [&_h4]:text-lime-300",
+  production: "border-orange-500/60 bg-orange-950/20 [&_h4]:text-orange-300",
+  storage: "border-yellow-500/60 bg-yellow-950/20 [&_h4]:text-yellow-300",
+  defense: "border-rose-500/60 bg-rose-950/20 [&_h4]:text-rose-300",
+  training: "border-violet-500/60 bg-violet-950/20 [&_h4]:text-violet-300",
+  transport: "border-sky-500/60 bg-sky-950/20 [&_h4]:text-sky-300",
+  loyalty: "border-fuchsia-500/60 bg-fuchsia-950/20 [&_h4]:text-fuchsia-300",
+};
+
 function BuildTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; state: MatchStateView; owned: OwnedRegionView; clockOffsetMs: number }) {
   const qc = useQueryClient();
   const live = useLiveEconomy(owned, clockOffsetMs, state.match.speed);
@@ -313,12 +323,9 @@ function BuildTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
       .filter(([k, v]) => (v ?? 0) > (here[k] ?? 0) && (stock[k] ?? 0) >= (v ?? 0))
       .map(([k, v]) => `${fmt((v ?? 0) - (here[k] ?? 0))} ${k}`);
   const list = availableBuildings(state.me.age, techs);
-  return (
-    <div className="space-y-2">
-      {queueFull && <p className="text-xs text-amber-300">Queue full ({balance.queue.slotsPerRegion} slots).</p>}
-      <ErrorText>{m.error?.message}</ErrorText>
-      <ul className="divide-y divide-slate-800">
-        {list.map((b) => {
+  const renderRows = (bs: BuildingDef[]) => (
+    <>
+        {bs.map((b) => {
           const queued = pendingHere.filter((j) => j.kind === "build" && j.refId === b.id).length;
           const level = (owned.buildings[b.id] ?? 0) + queued + 1;
           const maxed = level > b.maxLevel;
@@ -359,7 +366,28 @@ function BuildTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
             </li>
           );
         })}
-      </ul>
+    </>
+  );
+  return (
+    <div className="space-y-2">
+      {queueFull && <p className="text-xs text-amber-300">Queue full ({balance.queue.slotsPerRegion} slots).</p>}
+      <ErrorText>{m.error?.message}</ErrorText>
+      {BUILDING_CATEGORIES.map((c) => {
+        const bs = list.filter((b) => b.category === c.id);
+        if (!bs.length) return null;
+        const built = bs.filter((b) => (owned.buildings[b.id] ?? 0) > 0).length;
+        return (
+          <section key={c.id} className={`rounded-lg border-l-4 px-3 py-2 ${CATEGORY_TONE[c.id]}`}>
+            <h4 className="flex items-center gap-1.5 text-sm font-semibold">
+              <span aria-hidden>{c.icon}</span>
+              {c.name}
+              {built > 0 && <span className="rounded-full bg-slate-800 px-2 text-xs font-normal text-slate-200">{built} of {bs.length} built</span>}
+            </h4>
+            <p className="mb-1 text-xs text-slate-400">{c.hint}</p>
+            <ul className="divide-y divide-slate-800/70">{renderRows(bs)}</ul>
+          </section>
+        );
+      })}
     </div>
   );
 }
@@ -380,13 +408,11 @@ function TrainTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
   const list = availableUnits(state.me.age, techs);
   const here = (us: UnitDef[]) => us.reduce((a, u) => a + (owned.units[u.id] ?? 0), 0);
   const groups = [
-    { title: "Army", hint: "fight on land", units: list.filter((u) => !u.civilian && !u.naval && !u.hauler) },
-    { title: "Ships", hint: "sail one sea lane at a time; need a Harbor", units: list.filter((u) => u.naval) },
-    { title: "Haulers", hint: "carry goods on routes and transports", units: list.filter((u) => u.hauler && !u.naval) },
-    { title: "Settlers", hint: "found colonies and occupy conquests", units: list.filter((u) => u.civilian && !u.hauler && !u.naval) },
-  ]
-    .filter((g) => g.units.length)
-    .map((g) => ({ ...g, hint: `${here(g.units) ? `${fmt(here(g.units))} here · ` : ""}${g.hint}` }));
+    { title: "Army", icon: "⚔", tone: "border-rose-500/60 bg-rose-950/20", text: "text-rose-300", hint: "Fight on land: raid, conquer, defend.", units: list.filter((u) => !u.civilian && !u.naval && !u.hauler) },
+    { title: "Ships", icon: "⚓", tone: "border-sky-500/60 bg-sky-950/20", text: "text-sky-300", hint: "Sail one sea lane at a time; need a Harbor. Patrol lanes and fight other ships.", units: list.filter((u) => u.naval) },
+    { title: "Haulers", icon: "🛒", tone: "border-amber-500/60 bg-amber-950/20", text: "text-amber-300", hint: "Carry goods on routes, transports and builds. No fighting.", units: list.filter((u) => u.hauler && !u.naval) },
+    { title: "Settlers", icon: "🏕", tone: "border-emerald-500/60 bg-emerald-950/20", text: "text-emerald-300", hint: "Found colonies and occupy conquests. No fighting.", units: list.filter((u) => u.civilian && !u.hauler && !u.naval) },
+  ].filter((g) => g.units.length);
   const renderRows = (units: UnitDef[]) => (
     <>
         {units.map((u) => {
@@ -444,12 +470,16 @@ function TrainTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
       {queueFull && <p className="text-xs text-amber-300">Queue full.</p>}
       <ErrorText>{m.error?.message}</ErrorText>
       {groups.map((g) => (
-        <section key={g.title}>
-          <h4 className="mb-1 mt-3 flex items-baseline justify-between border-b border-slate-800 pb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
-            <span>{g.title}</span>
-            <span className="font-normal normal-case tracking-normal text-slate-500">{g.hint}</span>
+        <section key={g.title} className={`rounded-lg border-l-4 ${g.tone} px-3 py-2`}>
+          <h4 className="flex items-baseline justify-between gap-2">
+            <span className={`flex items-center gap-1.5 text-sm font-semibold ${g.text}`}>
+              <span aria-hidden>{g.icon}</span>
+              {g.title}
+              {here(g.units) > 0 && <span className="rounded-full bg-slate-800 px-2 text-xs font-normal text-slate-200">{fmt(here(g.units))} here</span>}
+            </span>
           </h4>
-          <ul className="divide-y divide-slate-800">
+          <p className="mb-1 text-xs text-slate-400">{g.hint}</p>
+          <ul className="divide-y divide-slate-800/70">
             {renderRows(g.units)}
           </ul>
         </section>
