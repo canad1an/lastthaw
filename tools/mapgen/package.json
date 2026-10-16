@@ -17,7 +17,7 @@
   "devDependencies": {
     "@types/d3-geo": "^3.1.0",
     "@types/geojson": "^7946.0.16",
-    "@types/node": "^22.0.0",
+    "@types/node": "^26.6.5",
     "@types/topojson-client": "^3.1.5",
     "@types/topojson-server": "^3.0.4",
     "@types/topojson-simplify": "^3.0.3",
