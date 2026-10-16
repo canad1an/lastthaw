@@ -392,6 +392,9 @@ describe("api routes", () => {
     expect(row).toMatchObject({ status: "running", humans: 2, ai: 0 });
     expect(row!.jobs.open).toBeGreaterThanOrEqual(0);
     expect(typeof mt.online.sockets).toBe("number");
+    const procs = (metrics.json() as { processes: { workerBeatSeconds: number | null; aiBeatSeconds: number | null; lobbiesOverdue: number } }).processes;
+    expect(procs.lobbiesOverdue).toBeGreaterThanOrEqual(0);
+    expect(procs.workerBeatSeconds === null || typeof procs.workerBeatSeconds === "number").toBe(true);
     expect((await A.call("GET", "/api/admin/fairplay")).statusCode).toBe(200);
     expect((await A.call("POST", "/api/admin/fairplay/scan", {})).statusCode).toBe(200);
     expect((await A.call("POST", "/api/admin/fairplay/00000000-0000-0000-0000-000000000000/review", { verdict: "cleared" })).statusCode).toBe(404);

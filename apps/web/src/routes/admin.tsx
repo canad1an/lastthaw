@@ -37,6 +37,7 @@ interface Metrics {
     open: Array<{ id: string; name: string; status: string; speed: number; kind: string; day: number; humans: number; ai: number; online: number; lastTickAgeSeconds: number | null; paused: boolean; jobs: { open: number; due: number; parked: number; doneHour: number } }>;
   };
   activity: { battles24h: number; chat24h: number; events24h: number; sessions7d: number };
+  processes: { workerBeatSeconds: number | null; aiBeatSeconds: number | null; lobbiesOverdue: number };
 }
 
 function Stat({ n, label, tone }: { n: number | string; label: string; tone?: "good" | "warn" | "bad" | undefined }) {
@@ -63,6 +64,8 @@ function LiveMetrics() {
   const parked = running.reduce((a, m) => a + m.jobs.parked, 0);
   const due = running.reduce((a, m) => a + m.jobs.due, 0);
   const age = (s: number | null) => (s === null ? "never" : s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : `${Math.round(s / 3600)}h ago`);
+  const workerDown = d.processes.workerBeatSeconds === null || d.processes.workerBeatSeconds > 30;
+  const aiDown = d.processes.aiBeatSeconds === null || d.processes.aiBeatSeconds > 90;
   return (
     <section className="space-y-3">
       <div className="flex flex-wrap items-end justify-between gap-2">
@@ -74,7 +77,17 @@ function LiveMetrics() {
           </a>
         </p>
       </div>
+      {(workerDown || aiDown || d.processes.lobbiesOverdue > 0) && (
+        <div className="rounded-lg border border-rose-500/50 bg-rose-950/40 px-3 py-2 text-sm text-rose-100">
+          {workerDown && <p>The worker is down: no heartbeat {d.processes.workerBeatSeconds === null ? "at all" : `for ${d.processes.workerBeatSeconds}s`}. Nothing completes, no match starts and no reminders go out until it is back.</p>}
+          {aiDown && <p>The AI process is down: no heartbeat {d.processes.aiBeatSeconds === null ? "at all" : `for ${d.processes.aiBeatSeconds}s`}. AI tribes are standing still.</p>}
+          {d.processes.lobbiesOverdue > 0 && <p>{d.processes.lobbiesOverdue} match{d.processes.lobbiesOverdue === 1 ? "" : "es"} past the start time and still in the lobby.</p>}
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <Stat n={workerDown ? "DOWN" : `${d.processes.workerBeatSeconds}s ago`} label="worker heartbeat" tone={workerDown ? "bad" : "good"} />
+        <Stat n={aiDown ? "DOWN" : `${d.processes.aiBeatSeconds}s ago`} label="AI heartbeat" tone={aiDown ? "bad" : "good"} />
+        <Stat n={d.processes.lobbiesOverdue} label="lobbies past start" tone={d.processes.lobbiesOverdue > 0 ? "bad" : "good"} />
         <Stat n={d.online.users.length} label="online now" tone={d.online.users.length > 0 ? "good" : undefined} />
         <Stat n={d.active15m.length} label="active last 15 min" />
         <Stat n={running.length} label="matches running" />

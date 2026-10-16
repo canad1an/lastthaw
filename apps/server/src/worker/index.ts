@@ -66,6 +66,8 @@ await Promise.all([
   every(5000, "scheduler", scheduler),
   every(1000, "jobs", async () => {
     await runDueJobs(db, publisher, log);
+    // Heartbeat for the admin page: a missing or stale beat means the worker is down.
+    await redis.set("lt-heartbeat:worker", new Date().toISOString(), "EX", 60).catch(() => {});
   }),
   every(Number(process.env.TICK_MS) || 30_000, "tick", () => runMatchTicks(db, publisher, log)),
   every(60_000, "weekly", () => ensureWeeklyMatch(db, log)),

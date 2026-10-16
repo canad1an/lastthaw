@@ -31,6 +31,7 @@ while (!stopping) {
   try {
     const n = await runAiDecisions(db, publisher, log);
     if (n) log.debug({ decisions: n, ms: Date.now() - started }, "ai pass");
+    await redis.set("lt-heartbeat:ai", new Date().toISOString(), "EX", 120).catch(() => {});
   } catch (err) {
     log.error({ err }, "ai pass failed");
   }

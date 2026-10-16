@@ -102,6 +102,12 @@ export async function adminRoutes(app: FastifyInstance, opts: { db: Db; publishe
     const pc = new Map(playerCounts.map((r) => [r.matchId, r]));
     const jc = new Map(jobCounts.map((r) => [r.matchId, r]));
     const [finished] = await db.select({ n: sql<number>`count(*)::int`, day: sql<number>`count(*) filter (where ${matches.finishedAt} > ${h24.toISOString()}::timestamptz)::int` }).from(matches).where(eq(matches.status, "finished"));
+    // The processes: each writes a heartbeat to Redis; a stale or missing one is an alarm. Lobbies past their start time mean the scheduler is not running.
+    const beat = async (key: string) => {
+      const raw = redis ? await redis.get(key).catch(() => null) : null;
+      return raw ? Math.round((now.getTime() - Date.parse(raw)) / 1000) : null;
+    };
+    const processes = { workerBeatSeconds: await beat("lt-heartbeat:worker"), aiBeatSeconds: await beat("lt-heartbeat:ai"), lobbiesOverdue: matchRows.filter((m) => m.status === "lobby" && m.startsAt.getTime() < now.getTime() - 60_000).length };
     const actRows = (await db.execute(
       sql`select (select count(*) from battles where resolved_at > ${h24.toISOString()}::timestamptz)::int as "battles24h",
                  (select count(*) from chat_messages where sent_at > ${h24.toISOString()}::timestamptz)::int as "chat24h",
@@ -143,6 +149,7 @@ export async function adminRoutes(app: FastifyInstance, opts: { db: Db; publishe
         }),
       },
       activity: activity ?? { battles24h: 0, chat24h: 0, events24h: 0, sessions7d: 0 },
+      processes,
     };
   });
 
