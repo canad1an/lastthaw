@@ -234,7 +234,7 @@ export async function adminRoutes(app: FastifyInstance, opts: { db: Db; publishe
   app.get("/api/admin/users", async (req) => {
     requireAdmin(req);
     const rows = await db
-      .select({ id: users.id, email: users.email, displayName: users.displayName, createdAt: users.createdAt, emailVerifiedAt: users.emailVerifiedAt, approvedAt: users.approvedAt, suspendedAt: users.suspendedAt, lastLoginAt: users.lastLoginAt })
+      .select({ id: users.id, email: users.email, displayName: users.displayName, createdAt: users.createdAt, emailVerifiedAt: users.emailVerifiedAt, approvedAt: users.approvedAt, suspendedAt: users.suspendedAt, lastLoginAt: users.lastLoginAt, isAdmin: users.isAdmin })
       .from(users)
       .orderBy(desc(users.createdAt))
       .limit(500);
@@ -245,6 +245,17 @@ export async function adminRoutes(app: FastifyInstance, opts: { db: Db; publishe
     requireAdmin(req);
     const id = idParams.parse(req.params).id;
     await db.update(users).set({ approvedAt: new Date() }).where(eq(users.id, id));
+    return { ok: true };
+  });
+
+  // Admin rights: an admin may grant them to another account or take them back, never from themselves (so there is always one left).
+  app.post("/api/admin/users/:id/admin", async (req) => {
+    const me = requireAdmin(req);
+    const id = idParams.parse(req.params).id;
+    const { admin } = z.object({ admin: z.boolean() }).parse(req.body ?? {});
+    if (id === me.id && !admin) throw Object.assign(new Error("you cannot remove your own admin rights"), { statusCode: 400 });
+    const [row] = await db.update(users).set(admin ? { isAdmin: true, approvedAt: sql`coalesce(${users.approvedAt}, now())` } : { isAdmin: false }).where(eq(users.id, id)).returning({ id: users.id });
+    if (!row) throw Object.assign(new Error("no such user"), { statusCode: 404 });
     return { ok: true };
   });
 

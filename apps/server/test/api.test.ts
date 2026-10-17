@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { balance, matchStateView, regionById } from "@lastthaw/shared";
 import { buildApp } from "../src/api/app.js";
 import { createDb, type Db } from "../src/db/client.js";
@@ -168,6 +168,15 @@ describe("api routes", () => {
     expect((await A.call("POST", `/api/admin/users/${annId}/revoke`, {})).statusCode).toBe(200);
     expect((await Ann.call("GET", "/api/auth/me")).json()).toMatchObject({ approved: false });
     expect((await A.call("POST", `/api/admin/users/${annId}/approve`, {})).statusCode).toBe(200);
+    // Admin rights can be handed on and taken back, but never dropped by the last admin on themselves.
+    expect((await Ann.call("POST", `/api/admin/users/${benId}/admin`, { admin: true })).statusCode).toBeGreaterThanOrEqual(400);
+    expect((await A.call("POST", `/api/admin/users/${annId}/admin`, { admin: true })).statusCode).toBe(200);
+    expect((await Ann.call("GET", "/api/auth/me")).json()).toMatchObject({ isAdmin: true, approved: true });
+    expect((await Ann.call("POST", `/api/admin/users/${benId}/approve`, {})).statusCode).toBe(200);
+    expect((await Ann.call("POST", `/api/admin/users/${annId}/admin`, { admin: false })).statusCode).toBe(400);
+    expect((await A.call("POST", `/api/admin/users/${annId}/admin`, { admin: false })).statusCode).toBe(200);
+    expect((await Ann.call("GET", "/api/auth/me")).json()).toMatchObject({ isAdmin: false });
+    expect((await A.call("POST", `/api/admin/users/${annId}/admin`, { admin: "yes" })).statusCode).toBe(400);
   });
 
   it("suspension locks the account out until it is lifted", async () => {
@@ -546,7 +555,7 @@ describe("api routes", () => {
     const before = (await db.select().from(playerActions).where(eq(playerActions.userId, annId))).length;
     expect((await Ann.call("POST", `${base}/regions/${cap}/assign`, { food: 0.4, wood: 0.3, stone: 0.3 })).statusCode).toBe(200);
     expect((await Ann.call("GET", `${base}/state`)).statusCode).toBe(200);
-    const logged = await db.select().from(playerActions).where(eq(playerActions.userId, annId));
+    const logged = await db.select().from(playerActions).where(eq(playerActions.userId, annId)).orderBy(asc(playerActions.at));
     expect(logged.length).toBe(before + 1);
     expect(logged[logged.length - 1]!.kind).toMatch(/^regions\/[a-z0-9-]+\/assign$/);
     // The cap: more commands in a minute than a hand makes are refused.

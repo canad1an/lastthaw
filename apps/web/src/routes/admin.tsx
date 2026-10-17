@@ -24,6 +24,7 @@ interface BetaUser {
   approvedAt: string | null;
   suspendedAt: string | null;
   lastLoginAt: string | null;
+  isAdmin: boolean;
 }
 
 interface Metrics {
@@ -204,6 +205,10 @@ export function AdminPage() {
   });
   const approve = useMutation({ mutationFn: (id: string) => post(`/api/admin/users/${id}/approve`), onSuccess: () => void qc.invalidateQueries({ queryKey: ["admin"] }) });
   const revoke = useMutation({ mutationFn: (id: string) => post(`/api/admin/users/${id}/revoke`), onSuccess: () => void qc.invalidateQueries({ queryKey: ["admin"] }) });
+  const setAdmin = useMutation({
+    mutationFn: ({ id, admin }: { id: string; admin: boolean }) => post(`/api/admin/users/${id}/admin`, { admin }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["admin"] }),
+  });
   const kick = useMutation({ mutationFn: (v: { matchId: string; userId: string }) => post(`/api/admin/matches/${v.matchId}/kick/${v.userId}`), onSuccess: () => void qc.invalidateQueries({ queryKey: ["admin"] }) });
   const act = (u: { id: string; displayName?: string; suspendedAt?: string | null }, matchId: string | null) => (
     <span className="inline-flex flex-wrap gap-1">
@@ -255,8 +260,21 @@ export function AdminPage() {
                   <td className="px-3 py-1.5 text-slate-400">{new Date(u.createdAt).toLocaleDateString()}</td>
                   <td className="px-3 py-1.5">
                     {u.suspendedAt ? <span className="text-rose-300">suspended</span> : u.approvedAt ? <span className="text-emerald-300">approved</span> : !u.emailVerifiedAt ? <span className="text-slate-500">unverified</span> : <span className="text-amber-300">waiting</span>}
+                    {u.isAdmin && <span className="ml-2 rounded bg-sky-500/20 px-1.5 py-0.5 text-xs text-sky-200">admin</span>}
                   </td>
-                  <td className="px-3 py-1.5 text-right">
+                  <td className="space-x-1 px-3 py-1.5 text-right">
+                    {u.id !== me.data?.id && (
+                      <Button
+                        variant="ghost"
+                        className="px-2 py-1 text-xs"
+                        title={u.isAdmin ? "Take back admin rights" : "Grant admin rights: the admin page, approvals, pausing and starting matches"}
+                        onClick={() => {
+                          if (window.confirm(u.isAdmin ? `Remove admin rights from ${u.displayName}?` : `Make ${u.displayName} an admin? They will see everything on this page and can approve, suspend and kick players.`)) setAdmin.mutate({ id: u.id, admin: !u.isAdmin });
+                        }}
+                      >
+                        {u.isAdmin ? "remove admin" : "make admin"}
+                      </Button>
+                    )}
                     {u.approvedAt ? (
                       <Button variant="ghost" className="px-2 py-1 text-xs" onClick={() => revoke.mutate(u.id)}>
                         revoke
