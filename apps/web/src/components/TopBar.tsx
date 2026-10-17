@@ -20,10 +20,10 @@ const NAV = [
  * The matches you are in, always one click away: a waiting room you have joined
  * (amber) or a match in progress (green), at the top of every page.
  */
-function CurrentMatches({ onPick }: { onPick: () => void }) {
+function CurrentMatches({ onPick, compact }: { onPick: () => void; compact?: boolean }) {
   const me = useMe();
   const q = useQuery({ queryKey: keys.matches, queryFn: () => api.matches(), enabled: !!me.data, refetchInterval: 30_000 });
-  const mine = (q.data ?? []).filter((m) => m.joined && m.status !== "finished").slice(0, 2);
+  const mine = (q.data ?? []).filter((m) => m.joined && m.status !== "finished").slice(0, compact ? 1 : 2);
   if (mine.length === 0) return null;
   return (
     <>
@@ -33,7 +33,7 @@ function CurrentMatches({ onPick }: { onPick: () => void }) {
           to={m.status === "lobby" ? "/match/$matchId/lobby" : "/match/$matchId"}
           params={{ matchId: m.slug || m.id }}
           onClick={onPick}
-          className={`rounded-md px-2.5 py-1 text-xs font-semibold ${m.status === "lobby" ? "bg-amber-400/90 text-slate-950 hover:bg-amber-300" : "bg-emerald-400/90 text-slate-950 hover:bg-emerald-300"}`}
+          className={`rounded-md px-2.5 py-1 text-xs font-semibold ${compact ? "max-w-[9rem] truncate" : ""} ${m.status === "lobby" ? "bg-amber-400/90 text-slate-950 hover:bg-amber-300" : "bg-emerald-400/90 text-slate-950 hover:bg-emerald-300"}`}
           title={m.status === "lobby" ? "Back to the waiting room" : "Back to the match"}
         >
           {m.status === "lobby" ? "Lobby" : "Play"} · {m.name}
@@ -77,7 +77,10 @@ export function TopBar() {
         <AccountLinks me={me.data ?? null} onLogout={() => logout.mutate()} loggingOut={logout.isPending} />
       </nav>
 
-      {/* Phone: hamburger */}
+      {/* Phone: the match you are in stays in the bar itself, then the hamburger. */}
+      <span className="relative ml-auto mr-1 flex min-w-0 items-center md:hidden">
+        <CurrentMatches onPick={() => setOpen(false)} compact />
+      </span>
       <button
         className="relative rounded p-2 text-slate-200 hover:bg-slate-800 md:hidden"
         onClick={() => setOpen((o) => !o)}

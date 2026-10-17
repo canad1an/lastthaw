@@ -374,7 +374,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
   const matchDay = Math.min(balance.match.lengthDays, Math.max(0, ((now + clockOffsetMs - Date.parse(state.match.startsAt)) / 86400_000) * state.match.speed));
   const ice = useMemo(() => ({ latitude: iceLatitudeOnDay(matchDay), forecast, day: matchDay }), [matchDay, forecast]);
   const { enabled: overlays, toggle: toggleOverlay } = useOverlays();
-  const menu = useMenuData(matchId, state, overlays, phone && screen.kind === "panel" && screen.id === "messages");
+  const menu = useMenuData(matchId, state, overlays, phone && screen.kind === "panel" && screen.id === "messages", phone && screen.kind === "panel" && screen.id === "chat");
   const hideHaulers = overlays.has("hidehaulers");
   const shownArmies = useMemo(
     () => (hideHaulers ? state.armies.filter((a) => a.mission === "relocate" || !Object.entries(a.units).every(([id, n]) => n <= 0 || unitById.get(id)?.hauler)) : state.armies),
@@ -463,7 +463,13 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
         <div className="age-bar flex h-10 shrink-0 items-center gap-2 border-b border-slate-800 bg-slate-950/90 px-2">
           <AgeChip age={state.me.age} compact />
           <div className="min-w-0 flex-1">
-            <Ticker matchId={matchId} nudge={state.match.now} onSelectRegion={openRegion} />
+            {menu.chatToast ? (
+              <button className="block w-full truncate text-left text-sm text-slate-100" onClick={() => setStack([{ kind: "map" }, { kind: "panel", id: "chat" }])}>
+                💬 <span className="text-sky-200">{menu.chatToast.playerName}:</span> {menu.chatToast.body}
+              </button>
+            ) : (
+              <Ticker matchId={matchId} nudge={state.match.now} onSelectRegion={openRegion} />
+            )}
           </div>
           <span className="shrink-0 text-xs text-slate-400">day {Math.min(balance.match.lengthDays, Math.floor(matchDay) + 1)}</span>
         </div>

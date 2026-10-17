@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type ReactNode } from "react";
 import { ageTheme } from "../ageTheme.js";
+import { useChatWatch, type ChatToast } from "./chatWatch.js";
 import { TECHS, regionById, type MatchStateView } from "@lastthaw/shared";
 import { api, keys, type MessageView } from "../api/client.js";
 import { MessagesList, isImportant, messageIcon, useMessageToast } from "./Messages.js";
@@ -33,15 +34,19 @@ export interface MenuData {
   newest: MessageView | null;
   toast: { kind: string; subject: string } | null;
   clearToast: () => void;
+  /** A chat line just in, for the bar; null once it has been shown a few seconds or chat is muted. */
+  chatToast: ChatToast | null;
+  clearChatToast: () => void;
 }
 
 /**
  * The numbers behind the menu: unread mail, open market offers, logistics trouble, pacts to answer.
  * Both layouts read it, the desktop bar and the phone's tab bar and menu grid.
  */
-export function useMenuData(matchId: string, state: MatchStateView, overlays: Set<string>, inboxOpen: boolean): MenuData {
+export function useMenuData(matchId: string, state: MatchStateView, overlays: Set<string>, inboxOpen: boolean, chatOpen: boolean): MenuData {
   const qc = useQueryClient();
   const { q, toast, clearToast } = useMessageToast(matchId, inboxOpen);
+  const chat = useChatWatch(matchId, state, chatOpen);
   const markRead = useMutation({ mutationFn: () => api.markMessagesRead(matchId), onSuccess: () => void qc.invalidateQueries({ queryKey: keys.messages(matchId) }) });
   // Only important unread messages count toward the alert badge; the rest sit quietly in the inbox.
   const unread = (q.data?.messages ?? []).filter((m) => !m.readAt && isImportant(m)).length;
@@ -62,7 +67,7 @@ export function useMenuData(matchId: string, state: MatchStateView, overlays: Se
   const entries: MenuEntry[] = [
     { id: "messages", label: "Messages", badge: unread ? `${unread} new` : undefined, tone: "alert" },
     { id: "alliance", label: "Alliance", badge: proposals ? `${proposals} to answer` : state.me.allianceTag ? `[${state.me.allianceTag}]` : invites ? `${invites} invite` : undefined, tone: proposals ? "alert" : undefined },
-    { id: "chat", label: "Chat" },
+    { id: "chat", label: "Chat", badge: chat.unread ? `${chat.unread} new` : chat.mutedAll ? "muted" : undefined, tone: chat.unread ? "alert" : undefined },
     { id: "market", label: "Market", badge: marketOpen || undefined },
     { id: "players", label: "Players", badge: state.players.length },
     { id: "leaderboard", label: "Leaderboard" },
@@ -71,8 +76,8 @@ export function useMenuData(matchId: string, state: MatchStateView, overlays: Se
     { id: "tech", label: "Tech", badge: `${state.me.techs.length}/${TECHS.length}` },
     { id: "view", label: "View", badge: overlays.size || undefined },
   ];
-  const alerts = (unread ? 1 : 0) + (logisticsBadge ? 1 : 0) + (invites ? 1 : 0) + (proposals ? 1 : 0);
-  return { entries, alerts, messages: q.data?.messages ?? [], newest, toast, clearToast };
+  const alerts = (unread ? 1 : 0) + (chat.unread ? 1 : 0) + (logisticsBadge ? 1 : 0) + (invites ? 1 : 0) + (proposals ? 1 : 0);
+  return { entries, alerts, messages: q.data?.messages ?? [], newest, toast, clearToast, chatToast: chat.toast, clearChatToast: chat.clearToast };
 }
 
 /**
@@ -99,10 +104,11 @@ export function TopMenu({
   clockOffsetMs: number;
 }) {
   const [open, setOpen] = useState<Menu | null>(null);
-  const { entries, alerts, messages, newest, toast, clearToast } = useMenuData(matchId, state, overlays, open === "messages");
+  const { entries, alerts, messages, newest, toast, clearToast, chatToast, clearChatToast } = useMenuData(matchId, state, overlays, open === "messages", open === "chat");
   const toggle = (m: Menu) => {
     setOpen((o) => (o === m ? null : m));
     clearToast();
+    clearChatToast();
   };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(null);
@@ -126,6 +132,11 @@ export function TopMenu({
     <button className="min-w-0 flex-1 truncate text-left text-sm text-slate-100" onClick={() => toggle("messages")}>
       <span className="mr-2">{messageIcon(toast.kind)}</span>
       {toast.subject}
+    </button>
+  ) : chatToast ? (
+    <button className="min-w-0 flex-1 truncate text-left text-sm text-slate-100" onClick={() => toggle("chat")} title="Open the chat">
+      <span className="mr-2">💬</span>
+      <span className="text-sky-200">{chatToast.playerName}:</span> {chatToast.body}
     </button>
   ) : (
     <span className="min-w-0 flex-1 truncate text-sm text-slate-500">{newest ? `Latest: ${newest.subject}` : ""}</span>

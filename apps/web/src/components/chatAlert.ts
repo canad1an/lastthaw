@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 
 /** Two short tones, generated on the spot so there is no file to load. Silent until the user has interacted with the page (browser rule). */
-function chime() {
+export function chime() {
   try {
     const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!Ctx) return;
@@ -30,7 +30,8 @@ let originalTitle: string | null = null;
 let unread = 0;
 
 /** Alternate the tab title with "(n) label" until the tab is looked at again. */
-function flashTitle(label: string) {
+export function flashTitle(label: string, add = 0) {
+  unread += add;
   if (originalTitle === null) originalTitle = document.title;
   const base = originalTitle;
   if (flashTimer) clearInterval(flashTimer);

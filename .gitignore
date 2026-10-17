@@ -10,3 +10,7 @@ coverage/
 tools/mapgen/data/
 apps/web/dist/
 .vite/
+
+# Playwright phone tests
+apps/web/test-results/
+apps/web/playwright-report/
