@@ -7,7 +7,7 @@
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { availableUnits, armySpeed, balance, buildingBlockedBy, carryCapacity, buildingById, buildingCost, buildingSeconds, canAfford, effectsOf, findRoute, missingFor, realSeconds, regionById, techById, techCost, techSeconds, trainSeconds, travelSeconds, unitById, unitCost, type Cost, type MissionKind, caravanCarry, techEffectsOf, distanceKm, splitNaval, seaLegsOf, laneKey, laneName, resolveCombat } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
-import { armies, battles, jobs, matchRegions, messages, players, tradeRoutes, regionSightings } from "../db/schema.js";
+import { armies, battles, jobs, matchRegions, matches, messages, players, tradeRoutes, regionSightings } from "../db/schema.js";
 import { matchDayAt, matchNow } from "./clock.js";
 import { wonderStarted } from "./endgame.js";
 import { stormFactorFor } from "./worldEvents.js";
@@ -30,6 +30,17 @@ export function httpError(status: number, message: string): Error {
 }
 
 /** Pending (not completed, not cancelled) jobs for a region, in queue order. */
+/**
+ * Re-read the match inside the transaction. A command carries a match row read before the
+ * transaction began (the AI process keeps one for a whole pass), so a match that finished or
+ * paused in the meantime would otherwise take jobs that outlive it and sit open for ever.
+ */
+export async function requireRunning(tx: Tx, matchId: string): Promise<void> {
+  const [row] = await tx.select({ status: matches.status, pausedAt: matches.pausedAt }).from(matches).where(eq(matches.id, matchId)).limit(1);
+  if (!row || row.status !== "running") throw httpError(409, "the match is not running");
+  if (row.pausedAt) throw httpError(409, "the match is paused");
+}
+
 export async function pendingRegionJobs(tx: Tx | Db, matchId: string, regionId: string) {
   return tx
     .select()
@@ -52,6 +63,7 @@ export async function queueBuild(ctx: CommandContext, regionId: string, building
   if (blocked) throw httpError(400, blocked);
 
   return db.transaction(async (tx) => {
+    await requireRunning(tx, m.id);
     const now = matchNow(m);
     // Buildings are paid from the region first, then the capital, then any other region
     // (nearest first), so a level that costs more than one region can hold stays buildable.
@@ -180,6 +192,7 @@ export async function queueTrain(ctx: CommandContext, regionId: string, unitId: 
   }
 
   return db.transaction(async (tx) => {
+    await requireRunning(tx, m.id);
     const now = matchNow(m);
     const row = await settleAndLockRegion(tx, m.id, regionId, now, m.speed);
     if (row.ownerPlayerId !== p.id) throw httpError(403, "not your region");
@@ -214,6 +227,7 @@ export async function queueResearch(ctx: CommandContext, techId: string) {
   if (!p.capitalRegionId) throw httpError(409, "no capital");
 
   return db.transaction(async (tx) => {
+    await requireRunning(tx, m.id);
     const now = matchNow(m);
     // Research queues: the next tech starts when the current one finishes.
     const pending = await tx
@@ -350,6 +364,7 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
   const lanes = seaLegsOf(route.path);
 
   const outcome = await db.transaction(async (tx) => {
+    await requireRunning(tx, m.id);
     const origin = await settleAndLockRegion(tx, m.id, regionId, now, m.speed);
     if (origin.ownerPlayerId !== p.id) throw httpError(403, "not your region");
 
@@ -539,6 +554,7 @@ export async function convertUnits(ctx: CommandContext, regionId: string, from: 
   const per = balance.trade.convertCost[to];
   if (!per) throw httpError(400, "that upgrade is not available");
   return db.transaction(async (tx) => {
+    await requireRunning(tx, m.id);
     const now = matchNow(m);
     const row = await settleAndLockRegion(tx, m.id, regionId, now, m.speed);
     if (row.ownerPlayerId !== p.id) throw httpError(403, "not your region");

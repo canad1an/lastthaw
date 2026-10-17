@@ -6,7 +6,7 @@ import { armies, jobs, matchRegions, matches, playerTechs, players, tradeRoutes 
 import { matchNow } from "../sim/clock.js";
 import { requireUser } from "../auth/session.js";
 import type { Publisher } from "../realtime/publish.js";
-import { httpError, sendArmy, type CommandContext, convertUnits } from "../sim/commands.js";
+import { httpError, requireRunning, sendArmy, type CommandContext, convertUnits } from "../sim/commands.js";
 import { disbandUnits, evacuateRegion } from "../sim/evacuate.js";
 import { applyCost, waySetsFor, settleAndLockRegion, stockOf } from "../sim/regions.js";
 import { alliesOf } from "../sim/alliances.js";
@@ -120,6 +120,7 @@ export async function armyRoutes(app: FastifyInstance, opts: { db: Db; publisher
     const now = matchNow(m);
     const seconds = travelSeconds(route, balance.capital.wagonSpeed, m.speed);
     const result = await db.transaction(async (tx) => {
+      await requireRunning(tx, matchId);
       const ids = [p.capitalRegionId!, regionId].sort();
       const locked = new Map<string, Awaited<ReturnType<typeof settleAndLockRegion>>>();
       for (const id of ids) locked.set(id, await settleAndLockRegion(tx, matchId, id, now, m.speed));
@@ -219,6 +220,7 @@ export async function armyRoutes(app: FastifyInstance, opts: { db: Db; publisher
         if (army.targetRegionId === p.capitalRegionId && army.mission === "move") continue;
         if (Object.entries(army.units).every(([id, n]) => n <= 0 || unitById.get(id)?.civilian)) continue;
         await db.transaction(async (tx) => {
+          await requireRunning(tx, matchId);
           const travelled = Math.max(1000, now.getTime() - army.departsAt.getTime());
           const returnsAt = new Date(now.getTime() + travelled);
           await tx
@@ -241,6 +243,7 @@ export async function armyRoutes(app: FastifyInstance, opts: { db: Db; publisher
     const { id: matchId, armyId } = armyParams.parse(req.params);
     const { m, p } = await loadContext(matchId, user.id);
     const result = await db.transaction(async (tx) => {
+      await requireRunning(tx, matchId);
       const [army] = await tx.select().from(armies).where(eq(armies.id, armyId)).for("update");
       if (!army || army.matchId !== matchId || army.playerId !== p.id) throw httpError(404, "army not found");
       if (army.status !== "outbound") throw httpError(409, "that army is already on its way back");

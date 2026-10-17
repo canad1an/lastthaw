@@ -10,6 +10,7 @@ import { Publisher } from "../src/realtime/publish.js";
 import { createRedis } from "../src/redis.js";
 import { runDueJobs } from "../src/worker/jobs.js";
 import { foundCapital } from "../src/sim/regions.js";
+import { queueBuild } from "../src/sim/commands.js";
 import { logger } from "../src/logger.js";
 
 process.env.DATABASE_URL ??= "postgres://lastthaw:lastthaw@localhost:5432/lastthaw";
@@ -456,6 +457,17 @@ describe("milestone 1 flow", () => {
     expect(history.played).toBe(1);
     expect(history.history[0]!.matchId).toBe(matchId);
     expect(history.history[0]!.rank).toBeGreaterThanOrEqual(1);
+
+    // Nothing outlives the match: every job is completed or cancelled, and a command issued from a stale
+    // "running" snapshot (the AI process keeps one for a whole pass) is refused inside its transaction.
+    const open = await db.select({ id: jobs.id }).from(jobs).where(and(eq(jobs.matchId, matchId), isNull(jobs.completedAt), isNull(jobs.cancelledAt)));
+    expect(open).toHaveLength(0);
+    const [finishedRow] = await db.select().from(matches).where(eq(matches.id, matchId));
+    const stale = { ...finishedRow!, status: "running" as const };
+    const [alicePlayer] = await db.select().from(players).where(and(eq(players.matchId, matchId), eq(players.name, alice.displayName)));
+    const cheap = [...buildingById.values()].find((b) => b.age === 0 && !b.requires)!;
+    await expect(queueBuild({ db, m: stale, p: alicePlayer!, techs: new Set() }, aPick, cheap.id)).rejects.toMatchObject({ statusCode: 409, message: "the match is not running" });
+    expect(await db.select({ id: jobs.id }).from(jobs).where(and(eq(jobs.matchId, matchId), isNull(jobs.completedAt), isNull(jobs.cancelledAt)))).toHaveLength(0);
 
     // Milestone 7: admin review is hidden from ordinary users.
     expect((await a.call("GET", "/api/admin/fairplay")).statusCode).toBe(404);
