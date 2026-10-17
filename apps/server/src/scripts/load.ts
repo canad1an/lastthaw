@@ -150,7 +150,7 @@ async function main() {
   console.log(`creating ${MATCHES} matches at ${SPEED}x...`);
   const matchIds: string[] = [];
   for (let m = 0; m < MATCHES; m++) {
-    const r = await admin.call("POST", "/api/matches", { name: `${TAG} ${m + 1} ${Date.now().toString(36)}`, speed: SPEED, startsInMinutes: 0, kind: "public", aiFillTo: 20, aiDifficulty: "mixed" });
+    const r = await admin.call("POST", "/api/matches", { name: `${TAG} ${m + 1} ${Date.now().toString(36)}`, speed: SPEED, startsInMinutes: 60, kind: "public", aiFillTo: 20, aiDifficulty: "mixed" });
     if (r.status !== 201) throw new Error(`create match ${m}: ${r.status} ${JSON.stringify(r.json)}`);
     matchIds.push((r.json as { id: string }).id);
   }
