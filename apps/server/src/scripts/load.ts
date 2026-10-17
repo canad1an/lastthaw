@@ -113,7 +113,18 @@ async function report(label: string) {
 
 // ------------------------------------------------------------ cleanup
 async function cleanup() {
-  const gone = await db.delete(matches).where(like(matches.name, `${TAG} %`)).returning({ id: matches.id });
+  // A running worker ticks these matches; a delete can deadlock against a tick, so try again a few times.
+  let gone: Array<{ id: string }> = [];
+  for (let attempt = 1; ; attempt++) {
+    try {
+      gone = await db.delete(matches).where(like(matches.name, `${TAG} %`)).returning({ id: matches.id });
+      break;
+    } catch (e) {
+      if (attempt >= 8 || !/deadlock/i.test(String((e as Error).message))) throw e;
+      console.log(`cleanup deadlocked against the worker, retry ${attempt}`);
+      await new Promise((r) => setTimeout(r, 3000));
+    }
+  }
   const goneUsers = await db.delete(users).where(like(users.email, "load-%@example.test")).returning({ id: users.id });
   console.log(`removed ${gone.length} load matches and ${goneUsers.length} load users`);
 }
