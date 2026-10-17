@@ -39,6 +39,9 @@ services:
     profiles: ["app"]
 
   api:
+    build:
+      args:
+        APP_VERSION: ${APP_VERSION:-0.0}
     restart: unless-stopped
     ports: !reset []
     deploy:
@@ -97,6 +100,8 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+      args:
+        APP_VERSION: ${APP_VERSION:-0.0}
     restart: unless-stopped
     volumes:
       - webdist:/srv/web

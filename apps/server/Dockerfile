@@ -14,7 +14,8 @@ RUN npm run build --workspace=@lastthaw/server
 
 FROM node:26-alpine@sha256:6f08a523443ddedf52941874c203475b0ad503e859ad70cb26ab8be9a517dbd5
 WORKDIR /app
-ENV NODE_ENV=production
+ARG APP_VERSION=0.0
+ENV NODE_ENV=production APP_VERSION=$APP_VERSION
 COPY package.json package-lock.json ./
 COPY packages/shared/package.json packages/shared/
 COPY apps/server/package.json apps/server/

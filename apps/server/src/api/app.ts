@@ -37,7 +37,8 @@ import { publicRoutes } from "../matches/publicApi.js";
 import { tradeRouteRoutes } from "../matches/tradeApi.js";
 import { registerWebsocket } from "./ws.js";
 
-export const VERSION = "0.1.0";
+/** 0.<commits on main>, baked into the image at build time; "0.dev" when run from source. */
+export const VERSION = process.env.APP_VERSION ?? "0.dev";
 
 export interface AppDeps {
   db?: Db;
