@@ -32,6 +32,7 @@ export function RegionPanel({ matchId, state, regionId, clockOffsetMs, onClose, 
   const region = regionById(regionId);
   const owned = state.owned.find((o) => o.regionId === regionId) ?? null;
   const sighted = state.sighted.find((s) => s.regionId === regionId) ?? null;
+  const myNote = state.notes.find((n) => n.regionId === regionId) ?? null;
   const [tab, setTab] = useState<Tab>("overview");
   useEffect(() => setTab("overview"), [regionId]);
   if (!region) return null;
@@ -40,7 +41,10 @@ export function RegionPanel({ matchId, state, regionId, clockOffsetMs, onClose, 
     <Card className="space-y-3">
       <div className="flex items-start justify-between gap-2">
         <div>
-          <h2 className="text-lg font-semibold leading-tight">{region.name}</h2>
+          <h2 className="flex items-center gap-2 text-lg font-semibold leading-tight">
+            {myNote?.colour && <span className="inline-block h-3 w-3 shrink-0 rounded-full ring-2 ring-white/70" style={{ background: NOTE_HEX[myNote.colour] }} title={`Marked ${myNote.colour}`} />}
+            {region.name}
+          </h2>
           <p className="text-xs text-slate-400">
             {region.countryName} · {region.terrain}
             {region.coastal ? " · coastal" : ""}
@@ -116,8 +120,8 @@ function RegionNotes({ matchId, state, regionId }: { matchId: string; state: Mat
   const dirty = text.trim() !== (note?.text ?? "") || colour !== (note?.colour ?? null);
   if (!open) {
     return (
-      <button className="flex items-center gap-2 rounded border border-slate-700 bg-slate-900/60 px-2 py-1.5 text-sm text-slate-200 hover:border-slate-500 hover:bg-slate-800" onClick={() => setOpen(true)} title="Pin this region on your map with a colour and keep private notes on it">
-        <span aria-hidden>✎</span> Mark region and add notes
+      <button className="flex w-full items-center gap-2 rounded border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-sm font-medium text-amber-100 hover:bg-amber-500/20" onClick={() => setOpen(true)} title="Pin this region on your map with a colour and keep private notes on it">
+        <span aria-hidden>✎</span> Mark this region and add notes
       </button>
     );
   }
