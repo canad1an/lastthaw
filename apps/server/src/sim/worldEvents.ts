@@ -273,7 +273,7 @@ async function raiseHorde(tx: Tx, m: MatchRow, now: Date, day: number, rng: () =
     await notify(tx, m.id, owner, "scout", `${horde.name} is on the march near your border, heading for ${targetName}.`, { regionId: best.target.regionId, horde: true });
   }
   await tx.insert(events).values({ matchId: m.id, at: now, kind: "horde.sighted", payload: { camp: best.camp, regionId: best.target.regionId, playerId: best.target.ownerPlayerId, size, day } });
-  await placeBounty(tx, m, { kind: "region", regionId: best.camp, amount: balance.events.bounty.hordeCamp, reason: `the camp of ${horde.name}` }, now);
+  await placeBounty(tx, m, { kind: "region", regionId: best.camp, amount: balance.events.bounty.hordeCamp, reason: `the camp of ${horde.name}`, grow: balance.events.bounty.hordeGrow }, now);
   const targetOwner = best.target.ownerPlayerId!;
   const targetId = best.target.regionId;
   after(() => publisher.toPlayer(m.id, targetOwner, "army.incoming", { targetRegionId: targetId, arrivesAt: arrivesAt.toISOString() }));

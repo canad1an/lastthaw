@@ -1,7 +1,7 @@
 import { and, eq, gt, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { availableBuildings, availableTechs, buildingBlockedBy, availableUnits, balance, buildingById, buildingCost, dayCostMultiplier, effectsOf, freezeDayForLatitude, distanceKm, regionById, seededRng, techById, techCost, normalizeAssignment, type Cost, techEffectsOf, haulerCount, unitById, TECHS, breachOf, wallBonusAgainst } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
-import { armies, jobs, marketOrders, matchRegions, mercenaryOffers, playerTechs, players, refugeeOffers, pacts } from "../db/schema.js";
+import { armies, bounties, jobs, marketOrders, matchRegions, mercenaryOffers, playerTechs, players, refugeeOffers, pacts } from "../db/schema.js";
 import { hireMercenaries } from "./worldEvents.js";
 import { lastStand } from "./lastStand.js";
 import type { Publisher } from "../realtime/publish.js";
@@ -130,6 +130,15 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
   const queueLen = (regionId: string) => pendingJobs.filter((j) => j.regionId === regionId).length;
   const ownedIds = owned.map((r) => r.regionId);
   const matchDay = ((now.getTime() - m.startsAt.getTime()) / 86400_000) * m.speed;
+  // Where this tribe stands: hard tribes that fall behind the leader take more risks (raids, expeditions, hired swords).
+  const standings = await db.select({ owner: matchRegions.ownerPlayerId, n: sql<number>`count(*)::int` }).from(matchRegions).where(and(eq(matchRegions.matchId, m.id), sql`${matchRegions.ownerPlayerId} is not null`)).groupBy(matchRegions.ownerPlayerId);
+  const leader = Math.max(...standings.map((s) => s.n), 1);
+  const isBehind = tier.scoresTargets && leader - owned.length > 2;
+  const behind = isBehind ? 1.5 : 1;
+  const leaderId = standings.length ? [...standings].sort((a, b) => b.n - a.n)[0]!.owner : null;
+  // The tech that opens the next age, and what it costs today: the economy and the market keep it in view.
+  const ageTech = TECHS.find((t) => t.advancesTo === p.age + 1);
+  const ageTechCost = ageTech ? techCost(ageTech, matchDay) : null;
 
   // Threats: hostile armies heading for my regions (medium and hard react).
   const threatened = new Set<string>();
@@ -147,30 +156,34 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
     const capital = owned.find((r) => r.regionId === p.capitalRegionId);
     if (capital && rng() < 0.5) {
       const iron = stockOf(capital).iron ?? 0;
-      const budget = threatened.size > 0 ? iron * 0.8 : iron * 0.3;
+      const budget = threatened.size > 0 || isBehind ? iron * 0.8 : iron * 0.3;
       const offers = await db
         .select()
         .from(mercenaryOffers)
         .where(and(eq(mercenaryOffers.matchId, m.id), isNull(mercenaryOffers.hiredBy), gt(mercenaryOffers.expiresAt, now)))
         .orderBy(mercenaryOffers.iron);
       const offer = offers.find((o) => o.iron >= 1 && o.iron <= budget);
-      if (offer && (threatened.size > 0 || iron > 200)) await attempt(() => db.transaction((tx) => hireMercenaries(tx, m, p, offer.id, now)));
+      if (offer && (threatened.size > 0 || isBehind || iron > 200)) await attempt(() => db.transaction((tx) => hireMercenaries(tx, m, p, offer.id, now)));
     }
-    if (difficulty === "hard" && rng() < 0.06) {
+    if (difficulty === "hard" && rng() < (isBehind ? 0.15 : 0.06)) {
       const strongest = [...owned].sort((a, b) => b.popSoldiers - a.popSoldiers)[0];
-      if (strongest && (strongest.units.warrior ?? 0) >= 9) {
-        // Three hops out, somewhere unseen: the command refuses scouted land, so a few tries are cheap.
+      // Whatever soldiers the age has (warriors early, legionaries later): three of the most numerous kind go.
+      const soldierKinds = strongest ? Object.entries(strongest.units).filter(([id, n]) => n > 0 && !unitById.get(id)?.civilian && !unitById.get(id)?.naval && !unitById.get(id)?.hauler).sort((a, b) => b[1] - a[1]) : [];
+      const [scoutKind, scoutHave] = soldierKinds[0] ?? ["", 0];
+      if (strongest && scoutHave >= 9) {
+        // Three to five hops out, somewhere unseen: the command refuses scouted land, so a few tries are cheap.
         let ring = new Set<string>([strongest.regionId]);
         const seen = new Set<string>(ring);
-        for (let i = 0; i < 3; i++) {
+        const far: string[] = [];
+        for (let i = 0; i < 5; i++) {
           const next = new Set<string>();
           for (const id of ring) for (const n of regionById(id)!.neighbors) if (!seen.has(n)) { seen.add(n); next.add(n); }
           ring = next;
+          if (i >= 2) for (const id of ring) if (!ownedIds.includes(id)) far.push(id);
         }
-        const far = [...ring].filter((id) => !ownedIds.includes(id));
-        for (let tries = 0; tries < 3 && far.length; tries++) {
+        for (let tries = 0; tries < 6 && far.length; tries++) {
           const target = far[Math.floor(rng() * far.length)]!;
-          if (await attempt(() => sendArmy(ctx, strongest.regionId, { mission: "expedition", targetRegionId: target, units: { warrior: 3 }, people: 0, cargo: {} }))) break;
+          if (await attempt(() => sendArmy(ctx, strongest.regionId, { mission: "expedition", targetRegionId: target, units: { [scoutKind]: 3 }, people: 0, cargo: {} }))) break;
         }
       }
     }
@@ -234,6 +247,8 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
     }
 
     // Economy: hard tribes steer workers toward what the next building needs; others use a fixed split.
+    // Hard tribes with nothing to build steer toward the next age instead of a fixed split, so a quiet tribe never stalls at age 2.
+    if (tier.adaptiveResearch && !wanted && ageTechCost && !techs.has(ageTech!.id)) wanted = ageTechCost;
     const want = tier.adaptiveEconomy && wanted ? steerToward(economy, rates, wanted) : rates.food < 0 || economy.food < 60 ? { food: 0.7, wood: 0.2, stone: 0.1 } : { food: 0.3, wood: 0.4, stone: 0.3 };
     const cur = normalizeAssignment(row.assignment);
     if (Math.abs(cur.food - want.food) > 0.05 || Math.abs(cur.stone - want.stone) > 0.05 || Math.abs(cur.wood - want.wood) > 0.05) {
@@ -290,7 +305,6 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
     const avail = availableTechs(p.age, known).filter((t) => !queuedTechs.has(t.id));
     const ids = new Set(avail.map((t) => t.id));
     // Every tier works toward the next age along the tree; the age tech itself waits for its day, its prerequisites do not.
-    const ageTech = TECHS.find((t) => t.advancesTo === p.age + 1);
     let next: string | undefined;
     if (ageTech) {
       const want: string[] = [];
@@ -336,17 +350,13 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
   }
 
   // Ore for sale: a tribe sitting on more ore than it needs lists half of it for wood.
-  await sellOre(ctx, owned, now);
+  await sellOre(ctx, owned, now, matchDay);
   // Ore to buy: short of the ore the next age needs, buy the cheapest open offer with the capital's wood.
   if (!tier.hoards) await buyOre(ctx, owned, matchDay);
 
   // Aggression: raid or conquer a weak neighbour. Hard tribes get hungrier when they fall behind.
-  const standings = await db.select({ owner: matchRegions.ownerPlayerId, n: sql<number>`count(*)::int` }).from(matchRegions).where(and(eq(matchRegions.matchId, m.id), sql`${matchRegions.ownerPlayerId} is not null`)).groupBy(matchRegions.ownerPlayerId);
-  const leader = Math.max(...standings.map((s) => s.n), 1);
-  const behind = tier.scoresTargets && leader - owned.length > 2 ? 1.5 : 1;
   const raidChance = (balance.ai.raidChance[temperament] ?? 0.15) * tier.aggression * behind * persona.aggression;
   const conquerChance = (balance.ai.conquerChance[temperament] ?? 0.2) * tier.aggression * behind * persona.aggression;
-  const leaderId = standings.length ? [...standings].sort((a, b) => b.n - a.n)[0]!.owner : null;
   const inFlight = await db
     .select({ id: armies.id })
     .from(armies)
@@ -361,15 +371,27 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
       const strong = [...owned].sort((a, b) => b.popSoldiers - a.popSoldiers)[0]!;
       const soldiers = Object.values(strong.units).reduce((a, b) => a + b, 0);
       if (soldiers >= 6) {
+        // Open bounties: a priced region or head is worth more, and hard tribes will go two hops further for one.
+        const openBounties = await db.select().from(bounties).where(and(eq(bounties.matchId, m.id), isNull(bounties.claimedBy), sql`(${bounties.expiresAt} is null or ${bounties.expiresAt} > ${now.toISOString()}::timestamptz)`));
+        const bountyOnRegion = new Map<string, number>();
+        const bountyOnPlayer = new Map<string, number>();
+        for (const b of openBounties) {
+          const worth = Object.values(b.amount as Record<string, number>).reduce((a, v) => a + v, 0);
+          if (b.regionId) bountyOnRegion.set(b.regionId, (bountyOnRegion.get(b.regionId) ?? 0) + worth);
+          if (b.playerId) bountyOnPlayer.set(b.playerId, (bountyOnPlayer.get(b.playerId) ?? 0) + worth);
+        }
         const reach = tier.reach + (matchDay >= 10 ? 1 : 0);
+        const extra = tier.scoresTargets && bountyOnRegion.size > 0 ? 2 : 0;
         let ring = new Set<string>([strong.regionId]);
         const seen = new Set<string>(ring);
-        for (let i = 0; i < reach; i++) {
+        const within = new Set<string>(ring);
+        for (let i = 0; i < reach + extra; i++) {
           const next = new Set<string>();
           for (const id of ring) for (const n of regionById(id)!.neighbors) if (!seen.has(n)) { seen.add(n); next.add(n); }
           ring = next;
+          for (const id of ring) if (i < reach || bountyOnRegion.has(id)) within.add(id);
         }
-        const candidatesIds = [...seen].filter((id) => !ownedIds.includes(id));
+        const candidatesIds = [...within].filter((id) => !ownedIds.includes(id));
         const rows = await db
           .select()
           .from(matchRegions)
@@ -407,7 +429,9 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
           // Grudge: the leader's land looks sweeter to tribes that resent being behind.
           const grudge = owner && owner === leaderId && owner !== p.id ? 1 + persona.grudge : 1;
           const human = o && !o.isAi ? 1 + persona.grudge * 0.5 : 1;
-          const score = tier.scoresTargets || boldStrike ? ((wantConquer ? regionById(n)!.value * 1000 : loot) / (defenders + 1) / (1 + dist / 1000)) * grudge * human * (wantConquer ? playerLand : 1) : -defenders * (2 - grudge * human);
+          // A bounty counts as loot for a raid and as a reason to go for a conquest; every tier sees it.
+          const bounty = (bountyOnRegion.get(n) ?? 0) + (owner ? bountyOnPlayer.get(owner) ?? 0 : 0);
+          const score = tier.scoresTargets || boldStrike ? ((wantConquer ? regionById(n)!.value * 1000 + bounty * 2 : loot + bounty) / (defenders + 1) / (1 + dist / 1000)) * grudge * human * (wantConquer ? playerLand : 1) : -defenders * (2 - grudge * human) + bounty / 20;
           candidates.push({ id: n, defenders, score, siegeNeed });
         }
         candidates.sort((a, b) => b.score - a.score);
@@ -516,8 +540,13 @@ async function freeFrontier(db: Db, matchId: string, ownedIds: string[], ok: (id
 }
 
 /** List surplus ore on the market so other tribes (and humans) can buy their way into the next age. */
-async function sellOre(ctx: CommandContext, owned: MatchRegionRow[], now: Date): Promise<void> {
+async function sellOre(ctx: CommandContext, owned: MatchRegionRow[], now: Date, matchDay: number): Promise<void> {
   const { db, m, p } = ctx;
+  // The next age costs ore too: that much stays home across the realm, so a peaceful tribe does not sell the iron it needs for Drill.
+  const next = availableTechs(p.age, ctx.techs).find((t) => t.advancesTo !== undefined) ?? TECHS.find((t) => t.advancesTo === p.age + 1);
+  const reserve: Record<string, number> = next ? techCost(next, matchDay) : {};
+  const pooled: Record<string, number> = {};
+  for (const r of owned) for (const [k, v] of Object.entries(r.special as Record<string, number>)) pooled[k] = (pooled[k] ?? 0) + v;
   const open = await db
     .select({ offer: marketOrders.offerResource })
     .from(marketOrders)
@@ -530,7 +559,10 @@ async function sellOre(ctx: CommandContext, owned: MatchRegionRow[], now: Date):
       if (listed.has(ore)) continue;
       const have = (row.special as Record<string, number>)[ore] ?? 0;
       if (have <= balance.ai.oreListAbove) continue;
-      const amount = Math.floor(have / 2);
+      const spare = Math.max(0, (pooled[ore] ?? 0) - (reserve[ore] ?? 0));
+      const amount = Math.min(Math.floor(have / 2), Math.floor(spare));
+      if (amount < 1) continue;
+      pooled[ore] = (pooled[ore] ?? 0) - amount;
       try {
         await db.transaction(async (tx) => {
           const locked = await settleAndLockRegion(tx, m.id, row.regionId, now, m.speed);

@@ -198,9 +198,9 @@ function regionNameOf(id: string): string {
 
 /**
  * Overflow to the capital: a region whose food, wood or stone has reached its
- * storage cap sends a quarter of that cap to the owner's capital by caravan.
- * One overflow convoy per region at a time; idle caravans are fetched from
- * elsewhere when the region has none.
+ * storage cap sends `overflowShare` of that cap to the owner's capital by caravan.
+ * One overflow convoy per region at a time and at most one every `overflowEveryHours`;
+ * idle caravans are fetched from elsewhere when the region has none.
  */
 export async function runOverflow(db: Db, publisher: Publisher, log: pino.Logger): Promise<number> {
   if (!balance.trade.overflowToCapital) return 0;
@@ -213,10 +213,12 @@ export async function runOverflow(db: Db, publisher: Publisher, log: pino.Logger
       .select()
       .from(matchRegions)
       .where(and(eq(matchRegions.matchId, m.id), sql`${matchRegions.ownerPlayerId} is not null`, eq(matchRegions.isCapital, false), sql`${matchRegions.frozenAt} is null`));
+    // One convoy out at a time, and none within `overflowEveryHours` of the last: a few big loads, not a stream of small ones.
+    const recentCutoff = new Date(now.getTime() - (balance.trade.overflowEveryHours * 3600_000) / m.speed);
     const outbound = await db
       .select({ origin: armies.originRegionId })
       .from(armies)
-      .where(and(eq(armies.matchId, m.id), eq(armies.mission, "transport"), eq(armies.status, "outbound")));
+      .where(and(eq(armies.matchId, m.id), eq(armies.mission, "transport"), sql`(${armies.status} = 'outbound' or ${armies.departsAt} > ${recentCutoff.toISOString()}::timestamptz)`));
     const busy = new Set(outbound.map((a) => a.origin));
     for (const p of ps) {
       const capital = p.capitalRegionId!;

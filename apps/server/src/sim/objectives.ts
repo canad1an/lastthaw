@@ -18,9 +18,14 @@ const dayMs = (m: MatchRow) => 86400_000 / m.speed;
 
 /** Choose the day's objective and announce it. */
 export async function pickObjective(tx: Tx, m: MatchRow, day: number, rng: () => number): Promise<void> {
-  const keys = Object.keys(OBJECTIVES);
+  const keys = objectiveKeysFor(day);
   const key = keys[Math.floor(rng() * keys.length)]!;
   await tx.insert(dailyObjectives).values({ matchId: m.id, day, key }).onConflictDoNothing();
+}
+
+/** The objectives a day may draw: late in the match nobody finishes a tech in a day, so that one retires. */
+export function objectiveKeysFor(day: number): string[] {
+  return Object.keys(OBJECTIVES).filter((k) => k !== "techs" || day < balance.events.objective.techsUntilDay);
 }
 
 /** Settle yesterday's objective: find the best player, give them the daily bonus, tell everyone. */
@@ -94,9 +99,23 @@ export function objectiveWinner(scores: Array<{ playerId: string; value: number 
 // ---------------------------------------------------------------- bounties
 
 /** Put a price on a region or a player's head; whoever beats them in battle collects at their capital. */
-export async function placeBounty(tx: Tx, m: MatchRow, b: { kind: "region" | "player"; regionId?: string; playerId?: string; amount: Record<string, number>; reason: string; hours?: number }, at: Date): Promise<void> {
+export async function placeBounty(tx: Tx, m: MatchRow, b: { kind: "region" | "player"; regionId?: string; playerId?: string; amount: Record<string, number>; reason: string; hours?: number; grow?: number }, at: Date): Promise<void> {
   const total = Object.values(b.amount).reduce((a, v) => a + v, 0);
   if (total < 1) return;
+  // With `grow`, a second bounty for the same reason on the same head raises the open one instead of stacking a new row beside it.
+  if (b.grow) {
+    const [open] = await tx
+      .select()
+      .from(bounties)
+      .where(and(eq(bounties.matchId, m.id), eq(bounties.kind, b.kind), isNull(bounties.claimedBy), eq(bounties.reason, b.reason), b.regionId ? eq(bounties.regionId, b.regionId) : eq(bounties.playerId, b.playerId!), sql`(${bounties.expiresAt} is null or ${bounties.expiresAt} > ${at.toISOString()}::timestamptz)`))
+      .limit(1);
+    if (open) {
+      const amount = Object.fromEntries(Object.entries(open.amount as Record<string, number>).map(([k, v]) => [k, Math.round(v * b.grow!)]));
+      await tx.update(bounties).set({ amount }).where(eq(bounties.id, open.id));
+      await tx.insert(events).values({ matchId: m.id, at, kind: "bounty.placed", payload: { regionId: b.regionId ?? null, playerId: b.playerId ?? null, reason: b.reason, amount, grown: true } });
+      return;
+    }
+  }
   const expiresAt = b.hours ? new Date(at.getTime() + (b.hours * 3600_000) / m.speed) : null;
   await tx.insert(bounties).values({ matchId: m.id, kind: b.kind, regionId: b.regionId ?? null, playerId: b.playerId ?? null, amount: b.amount, reason: b.reason, expiresAt });
   await tx.insert(events).values({ matchId: m.id, at, kind: "bounty.placed", payload: { regionId: b.regionId ?? null, playerId: b.playerId ?? null, reason: b.reason, amount: b.amount } });

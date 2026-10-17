@@ -4,7 +4,7 @@ import { balance, matchStateView, regionById } from "@lastthaw/shared";
 import { buildApp } from "../src/api/app.js";
 import { createDb, type Db } from "../src/db/client.js";
 import { armies, bounties, dailyObjectives, jobs, matchMilestones, matchRegions, matches, mercenaryOffers, messages, pacts, players, refugeeOffers, transfers, users } from "../src/db/schema.js";
-import { claimBounties, objectiveWinner, pickObjective, placeBounty, resolveObjective } from "../src/sim/objectives.js";
+import { claimBounties, objectiveWinner, pickObjective, placeBounty, resolveObjective, objectiveKeysFor, OBJECTIVES } from "../src/sim/objectives.js";
 import { finishMatch } from "../src/sim/endgame.js";
 import { tributeDemand } from "../src/sim/ai.js";
 import { settleFrozenCapitals } from "../src/sim/ice.js";
@@ -272,6 +272,25 @@ describe("world events", () => {
     const state = matchStateView.parse((await call("GET", `/api/matches/${matchId}/state`)).json());
     expect(state.objective?.day).toBe(0);
     expect(state.bounties.length).toBe(0);
+  });
+
+  it("a repeated horde bounty grows instead of stacking, and the techs objective retires late in the match", async () => {
+    const [m] = await db.select().from(matches).where(eq(matches.id, matchId));
+    const [me] = await db.select().from(players).where(and(eq(players.matchId, matchId), eq(players.isAi, false)));
+    const camp = regionById(me!.capitalRegionId!)!.neighbors[1]!;
+    const now = new Date();
+    await db.transaction((tx) => placeBounty(tx, m!, { kind: "region", regionId: camp, amount: { food: 300, wood: 200, stone: 150 }, reason: "the camp of The Horde", grow: 1.5 }, now));
+    await db.transaction((tx) => placeBounty(tx, m!, { kind: "region", regionId: camp, amount: { food: 300, wood: 200, stone: 150 }, reason: "the camp of The Horde", grow: 1.5 }, now));
+    const rows = await db.select().from(bounties).where(and(eq(bounties.matchId, matchId), eq(bounties.regionId, camp)));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.amount).toEqual({ food: 450, wood: 300, stone: 225 });
+    // A different reason on the same region is its own bounty.
+    await db.transaction((tx) => placeBounty(tx, m!, { kind: "region", regionId: camp, amount: { food: 10 }, reason: "rebellion", grow: 1.5 }, now));
+    expect(await db.select().from(bounties).where(and(eq(bounties.matchId, matchId), eq(bounties.regionId, camp)))).toHaveLength(2);
+    await db.delete(bounties).where(and(eq(bounties.matchId, matchId), eq(bounties.regionId, camp)));
+    expect(objectiveKeysFor(5)).toContain("techs");
+    expect(objectiveKeysFor(20)).not.toContain("techs");
+    expect(objectiveKeysFor(26)).toHaveLength(Object.keys(OBJECTIVES).length - 1);
   });
 
   it("the leader competes for objectives at a handicap and tribute is sized to the victim", () => {

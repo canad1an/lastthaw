@@ -312,7 +312,7 @@ export const TECHS: readonly TechDef[] = [
   { id: "provincial_administration", name: "Provincial administration", age: 3, description: "Provinces with their own courts and tax rolls.", cost: {food: 15000, stone: 10000}, baseSeconds: 5400, requires: ["civil_service"], effect: {loyalty: 0.1} },
   { id: "currency", name: "Currency", age: 3, description: "A common coin across the realm: far bigger stores.", cost: {stone: 12000, copper: 60}, baseSeconds: 4320, requires: ["coinage"], effect: {storage: 0.2} },
   { id: "heavy_plough", name: "Heavy plough", age: 3, description: "Turns heavy soils that hoes never could.", cost: {wood: 15000, iron: 80}, baseSeconds: 5400, requires: ["crop_rotation", "carpentry"], effect: {yield: {food: 0.2}} },
-  { id: "chivalry", name: "Chivalry", age: 3, description: "Knights and castles. Enters the Medieval Age.", cost: {food: 150000, wood: 80000, iron: 1500}, baseSeconds: 28800, requires: ["engineering", "steel"], advancesTo: 4, earliestDay: 14 },
+  { id: "chivalry", name: "Chivalry", age: 3, description: "Knights and castles. Enters the Medieval Age.", cost: {food: 90000, wood: 50000, iron: 1000}, baseSeconds: 21600, requires: ["engineering", "steel"], advancesTo: 4, earliestDay: 14 },
   // Medieval
   { id: "three_field_system", name: "Three-field system", age: 4, description: "A third of the land rests while two thirds feed.", cost: {food: 40000, wood: 25000}, baseSeconds: 8640, requires: ["heavy_plough"], effect: {yield: {food: 0.2}} },
   { id: "water_mills", name: "Water mills", age: 4, description: "Rivers drive the saws and hammers.", cost: {wood: 20000, stone: 15000}, baseSeconds: 7200, requires: ["engineering"], effect: {yield: {wood: 0.1, stone: 0.1}} },

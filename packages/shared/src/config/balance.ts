@@ -179,7 +179,9 @@ export const balance = {
     fetchCaravans: true,
     /** A region whose stock hits its cap sends this share of the cap to the capital by caravan, automatically. */
     overflowToCapital: true,
-    overflowShare: 0.25,
+    overflowShare: 0.5,
+    /** A region sends at most one overflow convoy per this many game hours, so the stores go in a few big loads instead of a stream of small ones. */
+    overflowEveryHours: 8,
     /** Upgrading one hauler into the next kind costs this per unit (on top of needing the tech). */
     convertCost: {} as Record<string, Record<string, number>>,
     /** Finishing these techs rebuilds the whole fleet (at home or on the road) as the better hauler. */
@@ -341,10 +343,10 @@ export const balance = {
     mercenaries: { chance: 0.5, offerHours: 12, hours: 48, ironPerUnit: { sellsword: 12, free_company: 30 } },
     /** The last stand: once, when the ice is a day from the capital, everything marches south at double speed. */
     lastStand: { withinDays: 1, speedMult: 2 },
-    /** Daily objectives: the match's score leader competes at this fraction of their value, so the prize spreads around. */
-    objective: { leaderHandicap: 0.6 },
-    /** Bounties: a rebel region is worth `rebelPerValue` x its value in each of food, wood and stone; a horde camp pays `hordeCamp`; a refused tribute puts `tributeShare` of the refuser's capital stock on their head for `tributeHours`. */
-    bounty: { rebelPerValue: 10, hordeCamp: { food: 300, wood: 200, stone: 150 } as Record<string, number>, tributeShare: 0.05, tributeHours: 24 },
+    /** Daily objectives: the score leader competes at a handicap so the prize spreads around; the techs objective retires after `techsUntilDay`, when nobody finishes a tech in a day. */
+    objective: { leaderHandicap: 0.6, techsUntilDay: 20 },
+    /** Bounties: a rebel region is worth `rebelPerValue` x its value in each of food, wood and stone; a horde camp pays `hordeCamp`, growing by `hordeGrow` each time the horde comes down from the same camp unclaimed; a refused tribute puts `tributeShare` of the refuser's capital stock on their head for `tributeHours`. */
+    bounty: { rebelPerValue: 10, hordeCamp: { food: 300, wood: 200, stone: 150 } as Record<string, number>, hordeGrow: 1.5, tributeShare: 0.05, tributeHours: 24 },
   },
   win: {
     regionShareForEarlyWin: 0.6,
