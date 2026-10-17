@@ -26,12 +26,12 @@ interface Props {
   onClearTarget: () => void;
 }
 
-type Tab = "overview" | "build" | "train" | "units";
+export type RegionTab = "overview" | "build" | "train" | "units";
+type Tab = RegionTab;
 
+/** The desktop card: a header with the name and a close button around the shared body. */
 export function RegionPanel({ matchId, state, regionId, clockOffsetMs, onClose, target, onPickTarget, onClearTarget }: Props) {
   const region = regionById(regionId);
-  const owned = state.owned.find((o) => o.regionId === regionId) ?? null;
-  const sighted = state.sighted.find((s) => s.regionId === regionId) ?? null;
   const myNote = state.notes.find((n) => n.regionId === regionId) ?? null;
   const [tab, setTab] = useState<Tab>("overview");
   useEffect(() => setTab("overview"), [regionId]);
@@ -55,47 +55,63 @@ export function RegionPanel({ matchId, state, regionId, clockOffsetMs, onClose, 
           ✕
         </button>
       </div>
-      <p className="text-sm text-slate-300">
-        Resources: <span className="text-slate-100">{region.resources.map((r) => r.replace("_", " ")).join(", ")}</span>
-      </p>
-      <RegionNotes matchId={matchId} state={state} regionId={regionId} />
-      {owned ? (
-        <>
-          <nav className="flex gap-1 overflow-x-auto border-b border-slate-800 text-sm">
-            {(["overview", "build", "train", "units"] as Tab[]).map((t) => (
-              <button
-                key={t}
-                onClick={() => setTab(t)}
-                className={`shrink-0 px-3 py-2.5 capitalize sm:py-1.5 ${tab === t ? "border-b-2 border-sky-400 text-white" : "text-slate-400 hover:text-slate-200"}`}
-              >
-                {t}
-              </button>
-            ))}
-          </nav>
-          {tab === "overview" && (
-            <>
-              <OwnedDetails matchId={matchId} state={state} owned={owned} clockOffsetMs={clockOffsetMs} speed={state.match.speed} />
-              <EvacuatePanel matchId={matchId} state={state} owned={owned} matchDay={Math.max(0, ((Date.now() + clockOffsetMs - Date.parse(state.match.startsAt)) / 86400_000) * state.match.speed)} />
-            </>
-          )}
-          {tab === "build" && <BuildTab matchId={matchId} state={state} owned={owned} clockOffsetMs={clockOffsetMs} />}
-          {tab === "train" && <TrainTab matchId={matchId} state={state} owned={owned} clockOffsetMs={clockOffsetMs} />}
-          {tab === "units" && (
-            <>
-              <ArmyTab matchId={matchId} owned={owned} state={state} />
-              <SendArmy matchId={matchId} state={state} owned={owned} target={target} onPickTarget={onPickTarget} onClearTarget={onClearTarget} clockOffsetMs={clockOffsetMs} />
-            </>
-          )}
-          <QueueList matchId={matchId} state={state} regionId={regionId} clockOffsetMs={clockOffsetMs} />
-        </>
-      ) : state.frontier.includes(regionId) ? (
-        <ColonizePanel matchId={matchId} state={state} regionId={regionId} />
-      ) : sighted ? (
-        <SightedDetails s={sighted} />
-      ) : (
-        <p className="text-sm text-slate-400">You have no recent information about this region. Send a scout to learn more.</p>
-      )}
+      <RegionBody matchId={matchId} state={state} regionId={regionId} clockOffsetMs={clockOffsetMs} tab={tab} onTab={setTab} target={target} onPickTarget={onPickTarget} onClearTarget={onClearTarget} />
     </Card>
+  );
+}
+
+/**
+ * What a region shows once you are looking at it: resources, notes, and for your own land the overview, build, train
+ * and units tabs with the queue beneath. The desktop wraps it in a card; a phone gives it a whole screen.
+ */
+export function RegionBody({ matchId, state, regionId, clockOffsetMs, tab, onTab, target, onPickTarget, onClearTarget }: Omit<Props, "onClose"> & { tab: RegionTab; onTab: (t: RegionTab) => void }) {
+  const region = regionById(regionId);
+  const owned = state.owned.find((o) => o.regionId === regionId) ?? null;
+  const sighted = state.sighted.find((s) => s.regionId === regionId) ?? null;
+  if (!region) return null;
+  return (
+    <>
+    <p className="text-sm text-slate-300">
+      Resources: <span className="text-slate-100">{region.resources.map((r) => r.replace("_", " ")).join(", ")}</span>
+    </p>
+    <RegionNotes matchId={matchId} state={state} regionId={regionId} />
+    {owned ? (
+      <>
+        <nav className="flex gap-1 overflow-x-auto border-b border-slate-800 text-sm">
+          {(["overview", "build", "train", "units"] as Tab[]).map((t) => (
+            <button
+              key={t}
+              onClick={() => onTab(t)}
+              className={`shrink-0 px-3 py-2.5 capitalize sm:py-1.5 ${tab === t ? "border-b-2 border-sky-400 text-white" : "text-slate-400 hover:text-slate-200"}`}
+            >
+              {t}
+            </button>
+          ))}
+        </nav>
+        {tab === "overview" && (
+          <>
+            <OwnedDetails matchId={matchId} state={state} owned={owned} clockOffsetMs={clockOffsetMs} speed={state.match.speed} />
+            <EvacuatePanel matchId={matchId} state={state} owned={owned} matchDay={Math.max(0, ((Date.now() + clockOffsetMs - Date.parse(state.match.startsAt)) / 86400_000) * state.match.speed)} />
+          </>
+        )}
+        {tab === "build" && <BuildTab matchId={matchId} state={state} owned={owned} clockOffsetMs={clockOffsetMs} />}
+        {tab === "train" && <TrainTab matchId={matchId} state={state} owned={owned} clockOffsetMs={clockOffsetMs} />}
+        {tab === "units" && (
+          <>
+            <ArmyTab matchId={matchId} owned={owned} state={state} />
+            <SendArmy matchId={matchId} state={state} owned={owned} target={target} onPickTarget={onPickTarget} onClearTarget={onClearTarget} clockOffsetMs={clockOffsetMs} />
+          </>
+        )}
+        <QueueList matchId={matchId} state={state} regionId={regionId} clockOffsetMs={clockOffsetMs} />
+      </>
+    ) : state.frontier.includes(regionId) ? (
+      <ColonizePanel matchId={matchId} state={state} regionId={regionId} />
+    ) : sighted ? (
+      <SightedDetails s={sighted} />
+    ) : (
+      <p className="text-sm text-slate-400">You have no recent information about this region. Send a scout to learn more.</p>
+    )}
+    </>
   );
 }
 

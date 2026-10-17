@@ -2,12 +2,19 @@ import type React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePageMeta, useSlugAddress } from "../seo.js";
 import { Link, Navigate, useNavigate, useParams } from "@tanstack/react-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, useRef } from "react";
 import { balance, formatCountdown, iceLatitudeOnDay, regionById, type MapRegion, type MatchStateView, loyaltyBand, wallOf, unitById } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { useMatchRealtime } from "../api/realtime.js";
 import { RegionPanel, ageName } from "../components/RegionPanel.js";
 import { ageTheme, ageVars } from "../ageTheme.js";
+import { usePhone } from "../hooks/usePhone.js";
+import { PhoneShell } from "../components/phone/PhoneShell.js";
+import { PhoneTabBar } from "../components/phone/PhoneTabBar.js";
+import { tabOf, type Screen } from "../components/phone/screens.js";
+import { AgeChip, useMenuData } from "../components/TopMenu.js";
+import { Ticker } from "../components/Ticker.js";
+import type { RegionTab } from "../components/RegionPanel.js";
 import { ResearchPanel } from "../components/ResearchPanel.js";
 import { TopMenu } from "../components/TopMenu.js";
 import { BottomSheet, type SheetStop } from "../components/BottomSheet.js";
@@ -297,12 +304,47 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
   const [target, setTarget] = useState<string | null>(null);
   // Phone layout: the side panel is a bottom sheet. Selecting a region opens it halfway; tapping the same region again opens it fully.
   const [sheet, setSheet] = useState<SheetStop>("half");
+  // Phones: the map is the home screen and everything else is a screen pushed over it, so Back always makes sense.
+  const phone = usePhone();
+  const [stack, setStack] = useState<Screen[]>([{ kind: "map" }]);
+  const screen = stack[stack.length - 1] ?? { kind: "map" };
+  const push = useCallback((sc: Screen) => setStack((st) => [...st, sc]), []);
+  const pop = useCallback(() => setStack((st) => (st.length > 1 ? st.slice(0, -1) : st)), []);
+  const openRegion = useCallback((id: string) => {
+    setSelected(id);
+    setTarget(null);
+    setStack([{ kind: "map" }, { kind: "region", id, tab: "overview" }]);
+  }, []);
+  const setRegionTab = useCallback((tab: RegionTab) => setStack((st) => st.map((sc, i) => (i === st.length - 1 && sc.kind === "region" ? { ...sc, tab } : sc))), []);
+  // Picking a target on a phone drops back to the map; the pick returns to the region's units tab.
+  const returnTo = useRef<Screen | null>(null);
+  const onPickTarget = useCallback(
+    (p: boolean) => {
+      setPicking(p);
+      if (p && phone && selected) {
+        returnTo.current = { kind: "region", id: selected, tab: "units" };
+        setStack([{ kind: "map" }]);
+      }
+    },
+    [phone, selected],
+  );
+  const cancelPick = () => {
+    setPicking(false);
+    if (returnTo.current) push(returnTo.current);
+    returnTo.current = null;
+  };
   const onMapSelect = useCallback(
     (id: string | null) => {
       if (picking && id) {
         setTarget(id);
         setPicking(false);
         setSheet("half");
+        if (phone && returnTo.current) {
+          push(returnTo.current);
+          returnTo.current = null;
+        }
+      } else if (phone) {
+        if (id) openRegion(id);
       } else if (id && id === selected) {
         setSheet("full");
       } else {
@@ -312,8 +354,17 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
         setSheet(id ? "half" : "peek");
       }
     },
-    [picking, selected],
+    [picking, selected, phone, openRegion, push],
   );
+  const onTab = (t: ReturnType<typeof tabOf>) => {
+    if (t === "map") setStack([{ kind: "map" }]);
+    else if (t === "region") {
+      const id = selected ?? state.me.capitalRegionId;
+      if (id) openRegion(id);
+    } else if (t === "empire") setStack([{ kind: "map" }, { kind: "panel", id: "empire" }]);
+    else if (t === "research") setStack([{ kind: "map" }, { kind: "panel", id: "research" }]);
+    else setStack([{ kind: "map" }, { kind: "menu" }]);
+  };
   // Server-time offset, captured once per state fetch. Recomputing it every render
   // would pin countdowns to the moment the snapshot was taken.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -323,6 +374,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
   const matchDay = Math.min(balance.match.lengthDays, Math.max(0, ((now + clockOffsetMs - Date.parse(state.match.startsAt)) / 86400_000) * state.match.speed));
   const ice = useMemo(() => ({ latitude: iceLatitudeOnDay(matchDay), forecast, day: matchDay }), [matchDay, forecast]);
   const { enabled: overlays, toggle: toggleOverlay } = useOverlays();
+  const menu = useMenuData(matchId, state, overlays, phone && screen.kind === "panel" && screen.id === "messages");
   const hideHaulers = overlays.has("hidehaulers");
   const shownArmies = useMemo(
     () => (hideHaulers ? state.armies.filter((a) => a.mission === "relocate" || !Object.entries(a.units).every(([id, n]) => n <= 0 || unitById.get(id)?.hauler)) : state.armies),
@@ -406,7 +458,16 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
 
   return (
     <div className="age-screen flex h-[calc(100dvh-3rem)] flex-col bg-slate-950" style={ageVars(state.me.age) as React.CSSProperties} data-age={state.me.age}>
-      <TopMenu matchId={matchId} state={state} selectedRegionId={selected} colorOf={colorOf} overlays={overlays} onToggleOverlay={toggleOverlay} onSelectRegion={setSelected} clockOffsetMs={clockOffsetMs} />
+      {!phone && <TopMenu matchId={matchId} state={state} selectedRegionId={selected} colorOf={colorOf} overlays={overlays} onToggleOverlay={toggleOverlay} onSelectRegion={setSelected} clockOffsetMs={clockOffsetMs} />}
+      {phone && (
+        <div className="age-bar flex h-10 shrink-0 items-center gap-2 border-b border-slate-800 bg-slate-950/90 px-2">
+          <AgeChip age={state.me.age} compact />
+          <div className="min-w-0 flex-1">
+            <Ticker matchId={matchId} nudge={state.match.now} onSelectRegion={openRegion} />
+          </div>
+          <span className="shrink-0 text-xs text-slate-400">day {Math.min(balance.match.lengthDays, Math.floor(matchDay) + 1)}</span>
+        </div>
+      )}
       {finished && night && state.match.finishedAt && (
         <MatchNight
           finishedAt={state.match.finishedAt}
@@ -437,7 +498,16 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
           storms={state.storms}
           thaws={state.thaws}
         />
-        {picking && <div className="pointer-events-none absolute inset-x-0 top-2 text-center text-sm text-amber-300">Tap a region to target it</div>}
+        {picking && (
+          <div className="pointer-events-none absolute inset-x-0 top-14 flex items-center justify-center gap-3 text-sm text-amber-300 lg:top-2">
+            <span className="rounded bg-slate-950/80 px-3 py-1">Tap a region to target it</span>
+            {phone && (
+              <button className="pointer-events-auto rounded border border-slate-600 bg-slate-950/90 px-3 py-1 text-slate-200" onClick={cancelPick}>
+                Cancel
+              </button>
+            )}
+          </div>
+        )}
         <div className="pointer-events-none absolute bottom-2 left-2 hidden flex-wrap gap-2 text-xs lg:flex">
           <Badge>{state.match.name}</Badge>
           <Badge>{state.match.speed}x</Badge>
@@ -456,7 +526,30 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
             Ice forecast
           </button>
         </div>
+        {phone && (
+          <PhoneShell
+            matchId={matchId}
+            state={state}
+            screen={screen}
+            push={push}
+            pop={pop}
+            openRegion={openRegion}
+            setRegionTab={setRegionTab}
+            clockOffsetMs={clockOffsetMs}
+            colorOf={colorOf}
+            overlays={overlays}
+            onToggleOverlay={toggleOverlay}
+            target={target}
+            onPickTarget={onPickTarget}
+            onClearTarget={() => setTarget(null)}
+            finished={finished}
+            eliminated={eliminated}
+            onOpenSummary={() => setSummaryOpen(true)}
+            menu={menu}
+          />
+        )}
       </div>
+      {!phone && (
       <BottomSheet
         stop={sheet}
         onStop={setSheet}
@@ -485,7 +578,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
         <RefugeePanel matchId={matchId} state={state} clockOffsetMs={clockOffsetMs} onSelect={setSelected} />
         <ActivityPanel matchId={matchId} state={state} clockOffsetMs={clockOffsetMs} onSelect={setSelected} />
         {selected ? (
-          <RegionPanel matchId={matchId} state={state} regionId={selected} clockOffsetMs={clockOffsetMs} onClose={() => setSelected(null)} target={target} onPickTarget={setPicking} onClearTarget={() => setTarget(null)} />
+          <RegionPanel matchId={matchId} state={state} regionId={selected} clockOffsetMs={clockOffsetMs} onClose={() => setSelected(null)} target={target} onPickTarget={onPickTarget} onClearTarget={() => setTarget(null)} />
         ) : (
           <Card>
             <p className="text-sm text-slate-400">Tap a region to see it. Your regions are in your colour, the flag marks your capital, and dashed outlines are unclaimed land you can settle.</p>
@@ -495,7 +588,16 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
         <ResearchPanel matchId={matchId} state={state} clockOffsetMs={clockOffsetMs} />
         <DevTools matchId={matchId} />
       </BottomSheet>
+      )}
       </div>
+      {phone && (
+        <PhoneTabBar
+          active={tabOf(screen)}
+          onChange={onTab}
+          badges={{ map: state.incoming.length + state.refugees.length || undefined, more: menu.alerts || undefined, region: selected && state.jobs.some((j) => j.regionId === selected && j.waitingFor) ? "!" : undefined }}
+          disabled={{ region: !selected && !state.me.capitalRegionId }}
+        />
+      )}
     </div>
   );
 }

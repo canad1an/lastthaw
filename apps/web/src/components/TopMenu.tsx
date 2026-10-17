@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type ReactNode } from "react";
 import { ageTheme } from "../ageTheme.js";
 import { TECHS, regionById, type MatchStateView } from "@lastthaw/shared";
-import { api, keys } from "../api/client.js";
+import { api, keys, type MessageView } from "../api/client.js";
 import { MessagesList, isImportant, messageIcon, useMessageToast } from "./Messages.js";
 import { AlliancePanel } from "./AlliancePanel.js";
 import { Chat } from "./Chat.js";
@@ -16,7 +16,64 @@ import { TechTreePanel } from "./TechTreePanel.js";
 import { Ticker } from "./Ticker.js";
 import { DiplomacyPanel } from "./DiplomacyPanel.js";
 
-type Menu = "messages" | "alliance" | "chat" | "market" | "players" | "leaderboard" | "view" | "empire" | "logistics" | "tech" | "menu";
+export type MenuId = "messages" | "alliance" | "chat" | "market" | "players" | "leaderboard" | "view" | "empire" | "logistics" | "tech";
+type Menu = MenuId | "menu";
+
+export interface MenuEntry {
+  id: MenuId;
+  label: string;
+  badge?: string | number | undefined;
+  tone?: "alert" | undefined;
+}
+export interface MenuData {
+  entries: MenuEntry[];
+  /** How many of the entries want attention right now. */
+  alerts: number;
+  messages: MessageView[];
+  newest: MessageView | null;
+  toast: { kind: string; subject: string } | null;
+  clearToast: () => void;
+}
+
+/**
+ * The numbers behind the menu: unread mail, open market offers, logistics trouble, pacts to answer.
+ * Both layouts read it, the desktop bar and the phone's tab bar and menu grid.
+ */
+export function useMenuData(matchId: string, state: MatchStateView, overlays: Set<string>, inboxOpen: boolean): MenuData {
+  const qc = useQueryClient();
+  const { q, toast, clearToast } = useMessageToast(matchId, inboxOpen);
+  const markRead = useMutation({ mutationFn: () => api.markMessagesRead(matchId), onSuccess: () => void qc.invalidateQueries({ queryKey: keys.messages(matchId) }) });
+  // Only important unread messages count toward the alert badge; the rest sit quietly in the inbox.
+  const unread = (q.data?.messages ?? []).filter((m) => !m.readAt && isImportant(m)).length;
+  const newest = q.data?.messages[0] ?? null;
+  const invites = state.me.allianceId ? 0 : (state as { invites?: unknown[] }).invites?.length ?? 0;
+  const proposals = state.pacts.filter((p) => p.status === "proposed" && p.bPlayerId === state.me.playerId).length;
+  // Routes waiting on haulers plus builds waiting on materials: the number that needs attention.
+  const logisticsBadge =
+    state.routes.filter((r) => r.enabled && (r.lastResult ?? "").startsWith("no haulers at home")).length + state.jobs.filter((j) => j.kind === "build" && j.waitingFor).length || undefined;
+  // Open offers on the market (everyone's, including mine), refreshed every half minute.
+  const marketQ = useQuery({ queryKey: keys.market(matchId), queryFn: () => api.market(matchId), refetchInterval: 30_000 });
+  const marketOpen = (marketQ.data?.open.length ?? 0) + (marketQ.data?.mine.filter((o) => o.status === "open" && !marketQ.data?.open.some((x) => x.id === o.id)).length ?? 0);
+  // Whatever opened the inbox (the menu, the badge, the toast), reading it clears the unread count.
+  useEffect(() => {
+    if (inboxOpen && (q.data?.messages ?? []).some((m) => !m.readAt) && !markRead.isPending) markRead.mutate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inboxOpen, q.data]);
+  const entries: MenuEntry[] = [
+    { id: "messages", label: "Messages", badge: unread ? `${unread} new` : undefined, tone: "alert" },
+    { id: "alliance", label: "Alliance", badge: proposals ? `${proposals} to answer` : state.me.allianceTag ? `[${state.me.allianceTag}]` : invites ? `${invites} invite` : undefined, tone: proposals ? "alert" : undefined },
+    { id: "chat", label: "Chat" },
+    { id: "market", label: "Market", badge: marketOpen || undefined },
+    { id: "players", label: "Players", badge: state.players.length },
+    { id: "leaderboard", label: "Leaderboard" },
+    { id: "empire", label: "Resources", badge: state.owned.length },
+    { id: "logistics", label: "Logistics", badge: logisticsBadge, tone: logisticsBadge ? "alert" : undefined },
+    { id: "tech", label: "Tech", badge: `${state.me.techs.length}/${TECHS.length}` },
+    { id: "view", label: "View", badge: overlays.size || undefined },
+  ];
+  const alerts = (unread ? 1 : 0) + (logisticsBadge ? 1 : 0) + (invites ? 1 : 0) + (proposals ? 1 : 0);
+  return { entries, alerts, messages: q.data?.messages ?? [], newest, toast, clearToast };
+}
 
 /**
  * Slim menu bar above the map: Messages (with a 5-second toast for new ones),
@@ -41,31 +98,12 @@ export function TopMenu({
   onSelectRegion: (regionId: string) => void;
   clockOffsetMs: number;
 }) {
-  const qc = useQueryClient();
   const [open, setOpen] = useState<Menu | null>(null);
-  const { q, toast, clearToast } = useMessageToast(matchId, open === "messages");
-  const markRead = useMutation({ mutationFn: () => api.markMessagesRead(matchId), onSuccess: () => void qc.invalidateQueries({ queryKey: keys.messages(matchId) }) });
-  // Only important unread messages count toward the alert badge; the rest sit quietly in the inbox.
-  const unread = (q.data?.messages ?? []).filter((m) => !m.readAt && isImportant(m)).length;
-  const newest = q.data?.messages[0] ?? null;
-  const invites = state.me.allianceId ? 0 : (state as { invites?: unknown[] }).invites?.length ?? 0;
-  const proposals = state.pacts.filter((p) => p.status === "proposed" && p.bPlayerId === state.me.playerId).length;
-
-  // Routes waiting on haulers plus builds waiting on materials: the number that needs attention.
-  const logisticsBadge =
-    state.routes.filter((r) => r.enabled && (r.lastResult ?? "").startsWith("no haulers at home")).length + state.jobs.filter((j) => j.kind === "build" && j.waitingFor).length || undefined;
-  // Open offers on the market (everyone's, including mine), refreshed every half minute.
-  const marketQ = useQuery({ queryKey: keys.market(matchId), queryFn: () => api.market(matchId), refetchInterval: 30_000 });
-  const marketOpen = (marketQ.data?.open.length ?? 0) + (marketQ.data?.mine.filter((o) => o.status === "open" && !marketQ.data?.open.some((x) => x.id === o.id)).length ?? 0);
+  const { entries, alerts, messages, newest, toast, clearToast } = useMenuData(matchId, state, overlays, open === "messages");
   const toggle = (m: Menu) => {
     setOpen((o) => (o === m ? null : m));
     clearToast();
   };
-  // Whatever opened the inbox (the menu, the badge, the toast), reading it clears the unread count.
-  useEffect(() => {
-    if (open === "messages" && (q.data?.messages ?? []).some((m) => !m.readAt) && !markRead.isPending) markRead.mutate();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, q.data]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(null);
     window.addEventListener("keydown", onKey);
@@ -84,19 +122,6 @@ export function TopMenu({
     </button>
   );
 
-  const entries: Array<{ id: Menu; label: string; badge?: string | number | undefined; tone?: "alert" | undefined }> = [
-    { id: "messages", label: "Messages", badge: unread ? `${unread} new` : undefined, tone: "alert" },
-    { id: "alliance", label: "Alliance", badge: proposals ? `${proposals} to answer` : state.me.allianceTag ? `[${state.me.allianceTag}]` : invites ? `${invites} invite` : undefined, tone: proposals ? "alert" : undefined },
-    { id: "chat", label: "Chat" },
-    { id: "market", label: "Market", badge: marketOpen || undefined },
-    { id: "players", label: "Players", badge: state.players.length },
-    { id: "leaderboard", label: "Leaderboard" },
-    { id: "empire", label: "Resources", badge: state.owned.length },
-    { id: "logistics", label: "Logistics", badge: logisticsBadge, tone: logisticsBadge ? "alert" : undefined },
-    { id: "tech", label: "Tech", badge: `${state.me.techs.length}/${TECHS.length}` },
-    { id: "view", label: "View", badge: overlays.size || undefined },
-  ];
-  const alerts = (unread ? 1 : 0) + (logisticsBadge ? 1 : 0) + (invites ? 1 : 0) + (proposals ? 1 : 0);
   const latest = toast ? (
     <button className="min-w-0 flex-1 truncate text-left text-sm text-slate-100" onClick={() => toggle("messages")}>
       <span className="mr-2">{messageIcon(toast.kind)}</span>
@@ -141,113 +166,154 @@ export function TopMenu({
               ))}
             </div>
           )}
-          {open === "messages" && <MessagesList messages={q.data?.messages ?? []} />}
-          {open === "alliance" && (
-            <div className="p-3">
-              <AlliancePanel matchId={matchId} state={state} />
-              <div className="mt-4 border-t border-slate-800 pt-3">
-                <DiplomacyPanel matchId={matchId} state={state} clockOffsetMs={clockOffsetMs} />
-              </div>
-            </div>
-          )}
-          {open === "chat" && (
-            <div className="p-3">
-              <Chat matchId={matchId} state={state} />
-            </div>
-          )}
-          {open === "market" && (
-            <div className="p-3">
-              <MarketPanel matchId={matchId} state={state} selectedRegionId={selectedRegionId} />
-            </div>
-          )}
-          {open === "leaderboard" && (
-            <div className="overflow-x-auto">
-              <LeaderboardTable matchId={matchId} compact />
-            </div>
-          )}
-          {open === "tech" && <TechTreePanel matchId={matchId} state={state} clockOffsetMs={clockOffsetMs} />}
-          {open === "logistics" && (
-            <LogisticsPanel
+          {open !== "menu" && (
+            <MenuPanelBody
+              menu={open}
+              matchId={matchId}
               state={state}
-              onSelect={(id) => {
+              selectedRegionId={selectedRegionId}
+              colorOf={colorOf}
+              overlays={overlays}
+              onToggleOverlay={onToggleOverlay}
+              onSelectRegion={(id) => {
                 onSelectRegion(id);
                 setOpen(null);
               }}
+              clockOffsetMs={clockOffsetMs}
+              messages={messages}
             />
-          )}
-          {open === "empire" && (
-            <EmpirePanel
-              state={state}
-              onSelect={(id) => {
-                onSelectRegion(id);
-                setOpen(null);
-              }}
-            />
-          )}
-          {open === "view" && (
-            <div className="space-y-1 p-3 text-sm">
-              <p className="mb-2 text-xs text-slate-400">Map overlays. Each marks your regions with a badge; several can be on at once.</p>
-              {OVERLAYS.map((o) => (
-                <label key={o.id} className="flex cursor-pointer items-start gap-2 rounded px-1 py-1 hover:bg-slate-900">
-                  <input type="checkbox" checked={overlays.has(o.id)} onChange={() => onToggleOverlay(o.id)} className="mt-1 accent-sky-400" />
-                  <span className="mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-slate-950" style={{ background: o.colour }}>
-                    {o.glyph}
-                  </span>
-                  <span>
-                    <span className="text-slate-100">{o.label}</span>
-                    <span className="block text-xs text-slate-400">{o.description}</span>
-                  </span>
-                </label>
-              ))}
-              <p className="pt-1 text-xs text-slate-500">{OVERLAY_HINT}</p>
-            </div>
-          )}
-          {open === "players" && (state.objective || state.bounties.length > 0) && (
-            <div className="space-y-1 border-b border-slate-800 px-3 py-2 text-xs text-slate-300">
-              {state.objective && (
-                <p>
-                  🎯 <b className="text-slate-200">Day {state.objective.day}:</b> {state.objective.label} <span className="text-emerald-300">+100</span>
-                  {state.objective.yesterday && (
-                    <span className="text-slate-500">
-                      {" "}
-                      · yesterday: {state.objective.yesterday.playerId ? (state.players.find((p) => p.id === state.objective?.yesterday?.playerId)?.name ?? "someone") : "nobody"}
-                    </span>
-                  )}
-                </p>
-              )}
-              {state.bounties.map((b) => (
-                <p key={b.id}>
-                  💰 <b className="text-amber-200">{b.regionId ? (regionById(b.regionId)?.name ?? b.regionId) : (state.players.find((p) => p.id === b.playerId)?.name ?? "a player")}</b>: {b.reason}. Pays{" "}
-                  {Object.entries(b.amount)
-                    .map(([k, v]) => `${Math.round(v)} ${k}`)
-                    .join(", ")}{" "}
-                  to whoever wins a battle there.
-                </p>
-              ))}
-            </div>
-          )}
-          {open === "players" && (
-            <ul className="divide-y divide-slate-900 text-sm">
-              {[...state.players]
-                .sort((a, b) => b.score - a.score || b.regions - a.regions)
-                .map((p, i) => (
-                  <li key={p.id} className="flex items-center gap-2 px-3 py-1.5 text-slate-300">
-                    <span className="w-5 text-right text-xs tabular-nums text-slate-500">{i + 1}</span>
-                    <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: colorOf(p.id) }} />
-                    <span className={p.id === state.me.playerId ? "text-white" : ""}>{p.name}</span>
-                    <span className="text-xs text-slate-500">
-                      {ageName(p.age)}
-                      {p.aiLevel ? ` · AI ${p.aiLevel}` : ""}
-                    </span>
-                    <span className="ml-auto tabular-nums text-slate-500">{p.regions} regions</span>
-                    <span className="w-16 text-right tabular-nums text-slate-400">{p.score} pts</span>
-                  </li>
-                ))}
-            </ul>
           )}
         </Dropdown>
       )}
     </div>
+  );
+}
+
+/** One menu's contents, the same on the desktop's dropdown and a phone's screen. */
+export function MenuPanelBody({
+  menu,
+  matchId,
+  state,
+  selectedRegionId,
+  colorOf,
+  overlays,
+  onToggleOverlay,
+  onSelectRegion,
+  clockOffsetMs,
+  messages,
+}: {
+  menu: MenuId;
+  matchId: string;
+  state: MatchStateView;
+  selectedRegionId: string | null;
+  colorOf: (id: string) => string;
+  overlays: Set<string>;
+  onToggleOverlay: (id: string) => void;
+  onSelectRegion: (regionId: string) => void;
+  clockOffsetMs: number;
+  messages: MessageView[];
+}) {
+  return (
+    <>
+        {menu === "messages" && <MessagesList messages={messages} />}
+        {menu === "alliance" && (
+          <div className="p-3">
+            <AlliancePanel matchId={matchId} state={state} />
+            <div className="mt-4 border-t border-slate-800 pt-3">
+              <DiplomacyPanel matchId={matchId} state={state} clockOffsetMs={clockOffsetMs} />
+            </div>
+          </div>
+        )}
+        {menu === "chat" && (
+          <div className="p-3">
+            <Chat matchId={matchId} state={state} />
+          </div>
+        )}
+        {menu === "market" && (
+          <div className="p-3">
+            <MarketPanel matchId={matchId} state={state} selectedRegionId={selectedRegionId} />
+          </div>
+        )}
+        {menu === "leaderboard" && (
+          <div className="overflow-x-auto">
+            <LeaderboardTable matchId={matchId} compact />
+          </div>
+        )}
+        {menu === "tech" && <TechTreePanel matchId={matchId} state={state} clockOffsetMs={clockOffsetMs} />}
+        {menu === "logistics" && (
+          <LogisticsPanel
+            state={state}
+            onSelect={onSelectRegion}
+          />
+        )}
+        {menu === "empire" && (
+          <EmpirePanel
+            state={state}
+            onSelect={onSelectRegion}
+          />
+        )}
+        {menu === "view" && (
+          <div className="space-y-1 p-3 text-sm">
+            <p className="mb-2 text-xs text-slate-400">Map overlays. Each marks your regions with a badge; several can be on at once.</p>
+            {OVERLAYS.map((o) => (
+              <label key={o.id} className="flex cursor-pointer items-start gap-2 rounded px-1 py-1 hover:bg-slate-900">
+                <input type="checkbox" checked={overlays.has(o.id)} onChange={() => onToggleOverlay(o.id)} className="mt-1 accent-sky-400" />
+                <span className="mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-slate-950" style={{ background: o.colour }}>
+                  {o.glyph}
+                </span>
+                <span>
+                  <span className="text-slate-100">{o.label}</span>
+                  <span className="block text-xs text-slate-400">{o.description}</span>
+                </span>
+              </label>
+            ))}
+            <p className="pt-1 text-xs text-slate-500">{OVERLAY_HINT}</p>
+          </div>
+        )}
+        {menu === "players" && (state.objective || state.bounties.length > 0) && (
+          <div className="space-y-1 border-b border-slate-800 px-3 py-2 text-xs text-slate-300">
+            {state.objective && (
+              <p>
+                🎯 <b className="text-slate-200">Day {state.objective.day}:</b> {state.objective.label} <span className="text-emerald-300">+100</span>
+                {state.objective.yesterday && (
+                  <span className="text-slate-500">
+                    {" "}
+                    · yesterday: {state.objective.yesterday.playerId ? (state.players.find((p) => p.id === state.objective?.yesterday?.playerId)?.name ?? "someone") : "nobody"}
+                  </span>
+                )}
+              </p>
+            )}
+            {state.bounties.map((b) => (
+              <p key={b.id}>
+                💰 <b className="text-amber-200">{b.regionId ? (regionById(b.regionId)?.name ?? b.regionId) : (state.players.find((p) => p.id === b.playerId)?.name ?? "a player")}</b>: {b.reason}. Pays{" "}
+                {Object.entries(b.amount)
+                  .map(([k, v]) => `${Math.round(v)} ${k}`)
+                  .join(", ")}{" "}
+                to whoever wins a battle there.
+              </p>
+            ))}
+          </div>
+        )}
+        {menu === "players" && (
+          <ul className="divide-y divide-slate-900 text-sm">
+            {[...state.players]
+              .sort((a, b) => b.score - a.score || b.regions - a.regions)
+              .map((p, i) => (
+                <li key={p.id} className="flex items-center gap-2 px-3 py-1.5 text-slate-300">
+                  <span className="w-5 text-right text-xs tabular-nums text-slate-500">{i + 1}</span>
+                  <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: colorOf(p.id) }} />
+                  <span className={p.id === state.me.playerId ? "text-white" : ""}>{p.name}</span>
+                  <span className="text-xs text-slate-500">
+                    {ageName(p.age)}
+                    {p.aiLevel ? ` · AI ${p.aiLevel}` : ""}
+                  </span>
+                  <span className="ml-auto tabular-nums text-slate-500">{p.regions} regions</span>
+                  <span className="w-16 text-right tabular-nums text-slate-400">{p.score} pts</span>
+                </li>
+              ))}
+          </ul>
+        )}
+    </>
   );
 }
 
