@@ -64,7 +64,10 @@ const errs: Record<string, number> = {};
 let requests = 0;
 function record(kind: string, r: { status: number; ms: number }) {
   requests += 1;
-  (lat[kind] ??= []).push(r.ms);
+  const xs = (lat[kind] ??= []);
+  xs.push(r.ms);
+  // Keep the last 100k samples per kind: enough for percentiles, bounded memory over a night.
+  if (xs.length > 120_000) xs.splice(0, xs.length - 100_000);
   if (r.status >= 500 || r.status === 429) errs[`${kind}:${r.status}`] = (errs[`${kind}:${r.status}`] ?? 0) + 1;
 }
 function pct(xs: number[], p: number): number {
@@ -99,7 +102,7 @@ async function report(label: string) {
     at: new Date().toISOString(),
     label,
     requests,
-    latencyMs: Object.fromEntries(Object.entries(lat).map(([k, v]) => [k, { n: v.length, p50: pct(v, 50), p95: pct(v, 95), p99: pct(v, 99), max: Math.round(Math.max(...v)) }])),
+    latencyMs: Object.fromEntries(Object.entries(lat).map(([k, v]) => [k, { n: v.length, p50: pct(v, 50), p95: pct(v, 95), p99: pct(v, 99), max: Math.round(v.reduce((a, b) => (b > a ? b : a), 0)) }])),
     errors: errs,
     ...health,
     memMb: Math.round(process.memoryUsage().rss / 1048576),
