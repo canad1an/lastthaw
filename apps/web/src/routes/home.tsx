@@ -4,6 +4,7 @@ import { usePageMeta } from "../seo.js";
 import { Link } from "@tanstack/react-router";
 import { AGES, balance, formatCountdown } from "@lastthaw/shared";
 import { useMe } from "../api/auth.js";
+import { api, keys } from "../api/client.js";
 import { HeroMap } from "../components/HeroMap.js";
 import { SignupForm } from "../components/SignupForm.js";
 import { fmt } from "../components/ui.js";
@@ -12,6 +13,7 @@ import { SocialIcons } from "../components/social.js";
 
 export interface PublicMatch {
   id: string;
+  slug?: string;
   name: string;
   status: "lobby" | "running" | "finished";
   speed: number;
@@ -271,6 +273,9 @@ function Pillar({ icon, title, body }: { icon: React.ReactNode; title: string; b
 }
 
 export function MatchCard({ m, now }: { m: PublicMatch; now: number }) {
+  const me = useMe();
+  const mine = useQuery({ queryKey: keys.matches, queryFn: () => api.matches(), enabled: !!me.data, staleTime: 30_000 });
+  const joined = !!mine.data?.some((x) => x.id === m.id && x.joined);
   const startsIn = (Date.parse(m.startsAt) - now) / 1000;
   const endsIn = (Date.parse(m.endsAt) - now) / 1000;
   const frozenShare = Math.min(1, Math.max(0, (72 - m.iceLatitude) / (72 - 28)));
@@ -314,9 +319,16 @@ export function MatchCard({ m, now }: { m: PublicMatch; now: number }) {
           ))}
         </ol>
       )}
-      <Link to="/matches" className="btn-ice inline-block rounded-md px-3 py-1.5 text-sm">
-        {m.status === "lobby" ? "Join in the lobby" : "View standings"}
-      </Link>
+      {/* Standings while a match runs are for its players; for them the button opens the match's own table. Anyone else already sees the top three above. */}
+      {m.status === "lobby" ? (
+        <Link to="/matches" className="btn-ice inline-block rounded-md px-3 py-1.5 text-sm">
+          Join in the lobby
+        </Link>
+      ) : joined ? (
+        <Link to="/match/$matchId/leaderboard" params={{ matchId: m.slug || m.id }} className="btn-ice inline-block rounded-md px-3 py-1.5 text-sm">
+          View standings
+        </Link>
+      ) : null}
     </div>
   );
 }
