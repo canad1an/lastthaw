@@ -70,6 +70,19 @@ export async function resolveObjective(tx: Tx, m: MatchRow, day: number, now: Da
 }
 
 /**
+ * The match is over: settle every objective still waiting on its day's end,
+ * so the final day's prize is awarded instead of silently lapsing.
+ */
+export async function resolvePendingObjectives(tx: Tx, m: MatchRow, now: Date): Promise<void> {
+  const open = await tx
+    .select({ day: dailyObjectives.day })
+    .from(dailyObjectives)
+    .where(and(eq(dailyObjectives.matchId, m.id), isNull(dailyObjectives.winnerPlayerId), isNull(dailyObjectives.value)))
+    .orderBy(dailyObjectives.day);
+  for (const o of open) await resolveObjective(tx, m, o.day, now);
+}
+
+/**
  * The best value takes the day, but the match's score leader competes at a
  * handicap so the daily prize spreads around instead of snowballing.
  */

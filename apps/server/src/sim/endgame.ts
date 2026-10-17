@@ -6,6 +6,7 @@ import type { Publisher } from "../realtime/publish.js";
 import type { Tx } from "./regions.js";
 import type { JobRow, MatchRow } from "../worker/jobs.js";
 import { notify } from "../worker/jobs.js";
+import { resolvePendingObjectives } from "./objectives.js";
 
 /** Score for one player from territory, population and age. */
 export function scoreOf(regions: number, population: number, age: number): number {
@@ -173,6 +174,8 @@ export async function finishMatch(tx: Tx, m: MatchRow, at: Date, publisher: Publ
   const winKind = kind ?? (winnerPlayerId ? "hold" : balance.win.survival ? "survival" : "score");
   const ms = (m.settings ?? {}) as { kind?: string; weekly?: boolean };
   const isRanked = ms.kind === "tournament" || ms.weekly === true;
+  // The last day's objective is settled now rather than at a day's end that never comes.
+  await resolvePendingObjectives(tx, m, at);
   const standings = await updateScores(tx, m);
   await recordOwnershipFrame(tx, m, at);
   const ps = await tx.select().from(players).where(and(eq(players.matchId, m.id), eq(players.hidden, false)));

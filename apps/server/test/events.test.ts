@@ -5,6 +5,7 @@ import { buildApp } from "../src/api/app.js";
 import { createDb, type Db } from "../src/db/client.js";
 import { armies, bounties, dailyObjectives, jobs, matchMilestones, matchRegions, matches, mercenaryOffers, messages, pacts, players, refugeeOffers, transfers, users } from "../src/db/schema.js";
 import { claimBounties, objectiveWinner, pickObjective, placeBounty, resolveObjective } from "../src/sim/objectives.js";
+import { finishMatch } from "../src/sim/endgame.js";
 import { tributeDemand } from "../src/sim/ai.js";
 import { settleFrozenCapitals } from "../src/sim/ice.js";
 import { Publisher } from "../src/realtime/publish.js";
@@ -319,5 +320,25 @@ describe("world events", () => {
     const [gone] = await db.select().from(players).where(eq(players.id, me!.id));
     expect(gone?.eliminatedAt).not.toBeNull();
     expect(gone?.capitalRegionId).toBeNull();
+  });
+
+  it("finishing the match settles the last day's objective instead of letting it lapse", async () => {
+    const [m] = await db.select().from(matches).where(eq(matches.id, matchId));
+    const [ai] = await db.select().from(players).where(and(eq(players.matchId, matchId), eq(players.isAi, true), eq(players.hidden, false)));
+    expect(ai?.capitalRegionId).toBeTruthy();
+    // The final day's objective is announced but its day's end is the match's end.
+    const lastDay = balance.match.lengthDays - 1;
+    await db.transaction((tx) => pickObjective(tx, m!, lastDay, () => 0.4));
+    await db.update(dailyObjectives).set({ key: "food" }).where(and(eq(dailyObjectives.matchId, matchId), eq(dailyObjectives.day, lastDay)));
+    await db.update(matchRegions).set({ food: 99_999 }).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, ai!.capitalRegionId!)));
+    const publisher = new Publisher(createRedis());
+    const at = new Date(m!.startsAt.getTime() + (balance.match.lengthDays * 86400_000) / m!.speed);
+    await db.transaction((tx) => finishMatch(tx, m!, at, publisher, () => {}, null));
+    const [finished] = await db.select().from(matches).where(eq(matches.id, matchId));
+    expect(finished?.status).toBe("finished");
+    const [obj] = await db.select().from(dailyObjectives).where(and(eq(dailyObjectives.matchId, matchId), eq(dailyObjectives.day, lastDay)));
+    expect(obj?.winnerPlayerId).toBe(ai!.id);
+    const [ms] = await db.select().from(matchMilestones).where(and(eq(matchMilestones.matchId, matchId), eq(matchMilestones.key, `day_${lastDay}`)));
+    expect(ms?.playerId).toBe(ai!.id);
   });
 });
