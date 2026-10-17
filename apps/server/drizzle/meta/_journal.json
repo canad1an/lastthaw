@@ -253,6 +253,13 @@
       "when": 1792193975447,
       "tag": "0035_unknown_ser_duncan",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1792195350714,
+      "tag": "0036_region_notes",
+      "breakpoints": true
     }
   ]
 }

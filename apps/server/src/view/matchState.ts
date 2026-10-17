@@ -2,7 +2,7 @@ import { and, asc, eq, inArray, isNull, or, sql, gt } from "drizzle-orm";
 import { parseProfile } from "../sim/ai.js";
 import { emptySpecial, regionById, type ArmyView, type IncomingView, type JobView, type MatchStateView, type OwnedRegionView, type SightedRegionView, techEffectsOf, allRegions, wallOf, balance, freezeDayForLatitude } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
-import { allianceMembers, alliances, armies, jobs, matchRegions, matches, playerTechs, players, regionSightings, tradeRoutes, refugeeOffers, pacts, mercenaryOffers, dailyObjectives, bounties } from "../db/schema.js";
+import { allianceMembers, alliances, armies, jobs, matchRegions, matches, playerTechs, players, regionSightings, tradeRoutes, refugeeOffers, pacts, mercenaryOffers, dailyObjectives, bounties, regionNotes } from "../db/schema.js";
 import { OBJECTIVES } from "../sim/objectives.js";
 import { matchNow } from "../sim/clock.js";
 import { alliesOf } from "../sim/alliances.js";
@@ -252,6 +252,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
   // Weather and thaw pockets are common knowledge; migrant columns are mine alone.
   const stormRows = await db.select({ regionId: matchRegions.regionId }).from(matchRegions).where(and(eq(matchRegions.matchId, matchId), gt(matchRegions.stormUntil, now)));
   const thawRows = await db.select({ regionId: matchRegions.regionId, thawUntil: matchRegions.thawUntil }).from(matchRegions).where(and(eq(matchRegions.matchId, matchId), gt(matchRegions.thawUntil, now)));
+  const noteRows = await db.select().from(regionNotes).where(and(eq(regionNotes.matchId, matchId), eq(regionNotes.playerId, me.id)));
   const offerRows = await db.select().from(refugeeOffers).where(and(eq(refugeeOffers.playerId, me.id), isNull(refugeeOffers.decidedAt), gt(refugeeOffers.expiresAt, now))).orderBy(asc(refugeeOffers.expiresAt));
   const pactRows = await db
     .select()
@@ -324,6 +325,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
     lastStand: { eligible: lastStandEligible, used: !!me.lastStandAt },
     objective,
     bounties: bountyRows.map((b) => ({ id: b.id, kind: b.kind as "region" | "player", regionId: b.regionId, playerId: b.playerId, amount: b.amount, reason: b.reason, expiresAt: b.expiresAt?.toISOString() ?? null })),
+    notes: noteRows.map((n) => ({ regionId: n.regionId, text: n.text, colour: n.colour as "red" | "amber" | "green" | "blue" | "purple" | null, updatedAt: n.updatedAt.toISOString() })),
     routes: routeRows.map((r) => ({
       id: r.id,
       fromRegionId: r.fromRegionId,

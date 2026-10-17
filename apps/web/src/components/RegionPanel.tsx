@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { AGES, availableBuildings, availableUnits, buildingBlockedBy, balance, buildingById, buildingCost, matchDayOf, buildingSeconds, canAfford, computeRates, normalizeAssignment, realSeconds, regionById, settle, totalPopulation, trainSeconds, unitById, unitCost, formatCountdown, type MatchStateView, type OwnedRegionView, type RegionEconomy, type SightedRegionView, type SpecialResource, loyaltyBand, loyaltyOutlook, HAULER_IDS, haulerCarry, type AgeIndex } from "@lastthaw/shared";
+import { AGES, availableBuildings, availableUnits, buildingBlockedBy, balance, buildingById, buildingCost, matchDayOf, buildingSeconds, canAfford, computeRates, normalizeAssignment, realSeconds, regionById, settle, totalPopulation, trainSeconds, unitById, unitCost, formatCountdown, type MatchStateView, type OwnedRegionView, type RegionEconomy, type SightedRegionView, type SpecialResource, NOTE_COLOURS, type NoteColour, loyaltyBand, loyaltyOutlook, HAULER_IDS, haulerCarry, type AgeIndex } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { useNow } from "../hooks/useNow.js";
 import { Button, Card, ErrorText, fmt, signed } from "./ui.js";
@@ -54,6 +54,7 @@ export function RegionPanel({ matchId, state, regionId, clockOffsetMs, onClose, 
       <p className="text-sm text-slate-300">
         Resources: <span className="text-slate-100">{region.resources.map((r) => r.replace("_", " ")).join(", ")}</span>
       </p>
+      <RegionNotes matchId={matchId} state={state} regionId={regionId} />
       {owned ? (
         <>
           <nav className="flex gap-1 overflow-x-auto border-b border-slate-800 text-sm">
@@ -91,6 +92,87 @@ export function RegionPanel({ matchId, state, regionId, clockOffsetMs, onClose, 
         <p className="text-sm text-slate-400">You have no recent information about this region. Send a scout to learn more.</p>
       )}
     </Card>
+  );
+}
+
+export const NOTE_HEX: Record<NoteColour, string> = { red: "#f43f5e", amber: "#f59e0b", green: "#22c55e", blue: "#38bdf8", purple: "#a78bfa" };
+
+/** The player's own marker and notes on this region: pick a colour to pin it on the map, write what you know. Nobody else sees it. */
+function RegionNotes({ matchId, state, regionId }: { matchId: string; state: MatchStateView; regionId: string }) {
+  const qc = useQueryClient();
+  const note = state.notes.find((n) => n.regionId === regionId) ?? null;
+  const [open, setOpen] = useState(!!note);
+  const [text, setText] = useState(note?.text ?? "");
+  const [colour, setColour] = useState<NoteColour | null>(note?.colour ?? null);
+  useEffect(() => {
+    setText(note?.text ?? "");
+    setColour(note?.colour ?? null);
+    setOpen(!!note);
+  }, [regionId, note?.text, note?.colour]);
+  const save = useMutation({
+    mutationFn: (b: { text: string; colour: NoteColour | null }) => api.setNote(matchId, regionId, b),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matchState(matchId) }),
+  });
+  const dirty = text.trim() !== (note?.text ?? "") || colour !== (note?.colour ?? null);
+  if (!open) {
+    return (
+      <button className="text-xs text-slate-400 hover:text-slate-200" onClick={() => setOpen(true)}>
+        + Mark this region or add a note
+      </button>
+    );
+  }
+  return (
+    <div className="space-y-2 rounded border border-slate-800 bg-slate-900/60 p-2">
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-slate-400">Marker</span>
+        {NOTE_COLOURS.map((c) => (
+          <button
+            key={c}
+            aria-label={`${c} marker`}
+            title={c}
+            onClick={() => {
+              const next = colour === c ? null : c;
+              setColour(next);
+              save.mutate({ text: text.trim(), colour: next });
+            }}
+            className={`h-5 w-5 rounded-full border-2 ${colour === c ? "border-white" : "border-transparent opacity-60 hover:opacity-100"}`}
+            style={{ background: NOTE_HEX[c] }}
+          />
+        ))}
+      </div>
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value.slice(0, 500))}
+        placeholder="Your notes on this region: who holds it, what you saw, what you plan. Only you can read them."
+        rows={2}
+        className="w-full rounded border border-slate-700 bg-slate-950 px-2 py-1 text-sm text-slate-100 placeholder:text-slate-500"
+      />
+      <div className="flex items-center gap-2">
+        <Button onClick={() => save.mutate({ text: text.trim(), colour })} disabled={!dirty || save.isPending}>
+          Save note
+        </Button>
+        {note && (
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setText("");
+              setColour(null);
+              save.mutate({ text: "", colour: null });
+            }}
+            disabled={save.isPending}
+          >
+            Remove
+          </Button>
+        )}
+        {!note && (
+          <Button variant="ghost" onClick={() => setOpen(false)}>
+            Cancel
+          </Button>
+        )}
+        {save.isSuccess && !dirty && <span className="text-xs text-slate-500">Saved</span>}
+      </div>
+      <ErrorText>{save.error?.message}</ErrorText>
+    </div>
   );
 }
 

@@ -308,6 +308,21 @@ export const trainBody = z.object({ unitId: z.string(), qty: z.number().int().mi
 export const researchBody = z.object({ techId: z.string() });
 
 /** What a player knows about a region they do not own. */
+export const NOTE_COLOURS = ["red", "amber", "green", "blue", "purple"] as const;
+export type NoteColour = (typeof NOTE_COLOURS)[number];
+export const regionNoteView = z.object({
+  regionId: z.string(),
+  text: z.string(),
+  colour: z.enum(NOTE_COLOURS).nullable(),
+  updatedAt: z.string(),
+});
+export type RegionNoteView = z.infer<typeof regionNoteView>;
+export const regionNoteBody = z.object({
+  text: z.string().max(500).default(""),
+  colour: z.enum(NOTE_COLOURS).nullable().default(null),
+});
+export type RegionNoteBody = z.infer<typeof regionNoteBody>;
+
 export const sightedRegionView = z.object({
   regionId: z.string(),
   ownerPlayerId: z.string().nullable(),
@@ -426,6 +441,8 @@ export const matchStateView = z.object({
   objective: z.object({ day: z.number(), label: z.string(), yesterday: z.object({ label: z.string(), playerId: z.string().nullable(), value: z.number() }).nullable() }).nullable().default(null),
   /** Open bounties anyone can claim by winning a battle against the region or player. */
   bounties: z.array(z.object({ id: z.string(), kind: z.enum(["region", "player"]), regionId: z.string().nullable(), playerId: z.string().nullable(), amount: z.record(z.string(), z.number()), reason: z.string(), expiresAt: z.string().nullable() })).default([]),
+  /** My private notes and markers on regions. */
+  notes: z.array(regionNoteView).default([]),
   /** My automated caravan routes. */
   routes: z.array(tradeRouteView).default([]),
   /** Player ids of my alliance mates (their regions are always visible). */

@@ -92,6 +92,7 @@ export const api = {
   endPact: (id: string, pactId: string) => request<{ ok: true }>("POST", `/api/matches/${id}/pacts/${pactId}/end`, {}),
   payTribute: (id: string, pactId: string) => request<{ ok: true }>("POST", `/api/matches/${id}/pacts/${pactId}/pay`, {}),
   hireMercenaries: (id: string, offerId: string) => request<{ ok: true; qty: number; company: string }>("POST", `/api/matches/${id}/mercenaries/${offerId}/hire`, {}),
+  setNote: (id: string, regionId: string, b: { text: string; colour: string | null }) => request<{ ok: true }>("PUT", `/api/matches/${id}/notes/${regionId}`, b),
   lastStand: (id: string, targetRegionId: string) => request<{ ok: true; arrivesAt: string }>("POST", `/api/matches/${id}/last-stand`, { targetRegionId }),
   decideRefugees: (id: string, offerId: string, accept: boolean) => request<{ ok: true; accepted: boolean }>("POST", `/api/matches/${id}/refugees/${offerId}`, { accept }),
   nameSuggestion: () => request<{ name: string }>("GET", "/api/matches/name-suggestion"),

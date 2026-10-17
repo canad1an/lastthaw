@@ -25,7 +25,7 @@ type App = Awaited<ReturnType<typeof buildApp>>;
 class Client {
   cookie = "";
   constructor(private readonly app: App) {}
-  async call(method: "GET" | "POST" | "PATCH" | "DELETE", url: string, body?: Record<string, unknown>) {
+  async call(method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE", url: string, body?: Record<string, unknown>) {
     const res = await this.app.inject({ method, url, ...(body ? { payload: body } : {}), headers: { cookie: this.cookie, ...(body ? { "content-type": "application/json" } : {}) } });
     const jar = new Map(this.cookie.split("; ").filter(Boolean).map((c) => [c.split("=")[0]!, c]));
     for (const c of ([] as string[]).concat(res.headers["set-cookie"] ?? [])) {
@@ -361,6 +361,31 @@ describe("api routes", () => {
     expect((await Out.call("GET", `${base}/summary`)).statusCode).toBeGreaterThanOrEqual(403);
     expect((await Ann.call("GET", `${base}/replay`)).statusCode).toBe(403);
     expect((await A.call("GET", `${base}/replay`)).statusCode).toBe(200);
+  });
+
+  it("region notes: a player marks a region and writes a note only they can read", async () => {
+    const base = `/api/matches/${gameId}`;
+    const state = matchStateView.parse((await Ann.call("GET", `${base}/state`)).json());
+    const cap = state.me.capitalRegionId!;
+    const annId = await idOf(ann.email);
+    const actionsBefore = (await db.select().from(playerActions).where(eq(playerActions.userId, annId))).length;
+    expect((await Ann.call("PUT", `${base}/notes/no-such-region`, { text: "x" })).statusCode).toBe(404);
+    expect((await Out.call("PUT", `${base}/notes/${cap}`, { text: "x" })).statusCode).toBeGreaterThanOrEqual(400);
+    expect((await Ann.call("PUT", `${base}/notes/${cap}`, { text: "x", colour: "pink" })).statusCode).toBe(400);
+    const put = await Ann.call("PUT", `${base}/notes/${cap}`, { text: "  Ben scouted this on day 2  ", colour: "red" });
+    expect(put.statusCode, JSON.stringify(put.json())).toBe(200);
+    let notes = matchStateView.parse((await Ann.call("GET", `${base}/state`)).json()).notes;
+    expect(notes).toEqual([expect.objectContaining({ regionId: cap, text: "Ben scouted this on day 2", colour: "red" })]);
+    // Ben sees nothing of it.
+    expect(matchStateView.parse((await Ben.call("GET", `${base}/state`)).json()).notes).toEqual([]);
+    // Saving again replaces, never duplicates; a marker alone is kept; empty text and no marker removes it.
+    expect((await Ann.call("PUT", `${base}/notes/${cap}`, { text: "", colour: "blue" })).statusCode).toBe(200);
+    notes = matchStateView.parse((await Ann.call("GET", `${base}/state`)).json()).notes;
+    expect(notes).toEqual([expect.objectContaining({ regionId: cap, text: "", colour: "blue" })]);
+    expect((await Ann.call("PUT", `${base}/notes/${cap}`, { text: "", colour: null })).statusCode).toBe(200);
+    expect(matchStateView.parse((await Ann.call("GET", `${base}/state`)).json()).notes).toEqual([]);
+    // Notes are not game commands: they never count toward the per-minute cap.
+    expect((await db.select().from(playerActions).where(eq(playerActions.userId, annId))).length).toBe(actionsBefore);
   });
 
   it("pause and resume are admin-only and freeze the match clock", async () => {

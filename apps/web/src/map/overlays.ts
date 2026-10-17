@@ -54,6 +54,15 @@ export function useOverlays(): { enabled: Set<string>; toggle: (id: string) => v
   return { enabled, toggle };
 }
 
+const NOTE_HEX: Record<string, string> = { red: "#f43f5e", amber: "#f59e0b", green: "#22c55e", blue: "#38bdf8", purple: "#a78bfa" };
+
+/** The player's own markers: every region with a coloured note gets a pin, whatever overlays are on. */
+export function noteBadges(state: MatchStateView): OverlayBadge[] {
+  return state.notes
+    .filter((n) => n.colour)
+    .map((n) => ({ regionId: n.regionId, colour: NOTE_HEX[n.colour!] ?? "#f8fafc", glyph: "✎", label: `${regionById(n.regionId)?.name ?? n.regionId}${n.text ? `: ${n.text}` : ""}` }));
+}
+
 /** Badges for the enabled overlays, from the current match state. */
 export function overlayBadges(state: MatchStateView, enabled: Set<string>, matchDay: number): OverlayBadge[] {
   if (enabled.size === 0) return [];

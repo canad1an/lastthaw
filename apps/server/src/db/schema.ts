@@ -732,6 +732,25 @@ export const regionSightings = pgTable(
   (t) => [primaryKey({ columns: [t.matchId, t.playerId, t.regionId] })],
 );
 
+/** A player's private notes on a region: a colour to mark it on the map and free text ("Ryan's capital, walls up"). */
+export const regionNotes = pgTable(
+  "region_notes",
+  {
+    matchId: uuid("match_id")
+      .notNull()
+      .references(() => matches.id, { onDelete: "cascade" }),
+    playerId: uuid("player_id")
+      .notNull()
+      .references(() => players.id, { onDelete: "cascade" }),
+    regionId: text("region_id").notNull(),
+    text: text("text").notNull().default(""),
+    /** Marker colour name (red, amber, green, blue, purple) or null for no marker. */
+    colour: text("colour"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.matchId, t.playerId, t.regionId] })],
+);
+
 export const messages = pgTable(
   "messages",
   {

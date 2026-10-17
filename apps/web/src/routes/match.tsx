@@ -13,7 +13,7 @@ import { MatchSummary, useSummaryOpen } from "../components/MatchSummary.js";
 import { MatchNight, useWinterNight } from "../components/MatchNight.js";
 import { MatchIntro, useIntroOpen } from "../components/MatchIntro.js";
 import { RefugeePanel } from "../components/RefugeePanel.js";
-import { overlayBadges, useOverlays } from "../map/overlays.js";
+import { noteBadges, overlayBadges, useOverlays } from "../map/overlays.js";
 import { IncomingWarnings } from "../components/ArmyPanel.js";
 import { ActivityPanel } from "../components/ActivityPanel.js";
 import { ChatChannel } from "../components/Chat.js";
@@ -341,7 +341,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
   }, [state.players]);
   const ownedSet = useMemo(() => new Set(state.owned.map((o) => o.regionId)), [state.owned]);
   const ownedById = useMemo(() => new Map(state.owned.map((o) => [o.regionId, o])), [state.owned]);
-  const badges = useMemo(() => overlayBadges(state, overlays, matchDay), [state, overlays, matchDay]);
+  const badges = useMemo(() => [...noteBadges(state), ...overlayBadges(state, overlays, matchDay)], [state, overlays, matchDay]);
   const sightedBy = useMemo(() => new Map(state.sighted.map((s) => [s.regionId, s])), [state.sighted]);
 
   const incomingSet = useMemo(() => new Set(state.incoming.map((i) => i.targetRegionId)), [state.incoming]);
