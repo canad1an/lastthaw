@@ -14,7 +14,8 @@ export function PhoneScreen({ title, onBack, right, children, flush }: { title: 
         <h2 className="min-w-0 flex-1 truncate text-base font-semibold text-white">{title}</h2>
         {right && <span className="flex shrink-0 items-center gap-1 pr-1">{right}</span>}
       </div>
-      <div className={`min-h-0 flex-1 overflow-y-auto overscroll-contain ${flush ? "" : "space-y-3 p-3"}`}>{children}</div>
+      {/* Sideways overflow is clipped: a phone screen scrolls down, never across, whatever a row inside tries. */}
+      <div className={`min-h-0 w-full max-w-full flex-1 overflow-x-hidden overflow-y-auto overscroll-contain break-words [&_*]:min-w-0 ${flush ? "" : "space-y-3 p-3"}`}>{children}</div>
     </div>
   );
 }

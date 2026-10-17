@@ -263,7 +263,7 @@ function OwnedDetails({ matchId, state, owned, clockOffsetMs, speed }: { matchId
       {owned.thawUntil && <span className="ml-2 inline-block rounded bg-amber-400/20 px-1.5 py-0.5 text-xs text-amber-200" title="A warm pocket: the ice passes this region by until then">Thaw pocket · {formatCountdown(Math.max(0, (Date.parse(owned.thawUntil) - Date.now() - clockOffsetMs) / 1000))}</span>}
       {owned.boom && <span className="ml-2 inline-block rounded bg-emerald-500/20 px-1.5 py-0.5 text-xs text-emerald-200" title="Output of this resource is doubled">Rich {owned.boom.resource} · {formatCountdown(Math.max(0, (Date.parse(owned.boom.until) - Date.now() - clockOffsetMs) / 1000))}</span>}
       {!owned.isCapital && !owned.frozen && <MakeCapital matchId={matchId} state={state} regionId={owned.regionId} clockOffsetMs={clockOffsetMs} />}
-      <dl className="grid grid-cols-[auto_1fr_auto] gap-x-3 gap-y-1 text-sm">
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)_auto] gap-x-3 gap-y-1 text-sm">
         <Row label="People" value={`${fmt(pop)} / ${fmt(live.e.capacity)}`} rate={perHour(live.rates.population)} />
         <dt className="text-slate-500">of which</dt>
         <dd className="col-span-2 text-xs text-slate-400">
@@ -377,7 +377,7 @@ function AssignmentEditor({ matchId, owned, workers }: { matchId: string; owned:
     <div className="space-y-2 border-t border-slate-800 pt-3">
       <h3 className="text-sm font-medium">Workers ({fmt(workers)})</h3>
       {(["food", "wood", "stone"] as const).map((k) => (
-        <label key={k} className="grid grid-cols-[4rem_1fr_3rem] items-center gap-2 text-sm">
+        <label key={k} className="grid grid-cols-[4rem_minmax(0,1fr)_3rem] items-center gap-2 text-sm">
           <span className="capitalize text-slate-300">{k}</span>
           <input type="range" min={0} max={100} value={Math.round(shares[k] * 100)} onChange={(e) => set(k, Number(e.target.value) / 100)} className="accent-sky-500" />
           <span className="text-right tabular-nums text-slate-400">{Math.round(norm[k] * 100)}%</span>
