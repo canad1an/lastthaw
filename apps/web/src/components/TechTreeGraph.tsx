@@ -10,6 +10,8 @@ import { AGES, BUILDINGS, TECHS, UNITS, buildingSeconds, formatCountdown, techSe
 
 type Kind = "tech" | "building" | "unit";
 interface Node {
+  /** Names of what this opens directly, shown on the box and in the detail card. */
+  unlocks: string[];
   id: string;
   kind: Kind;
   name: string;
@@ -20,8 +22,8 @@ interface Node {
   y: number;
 }
 
-const W = 128;
-const H = 50;
+const W = 140;
+const H = 66;
 const GAP_X = 14;
 const LINE_H = H + 34;
 const LEFT = 118;
@@ -41,10 +43,12 @@ const cost = (c: Cost) =>
 
 function buildNodes(perRow: number): { nodes: Node[]; byId: Map<string, Node>; bands: Array<{ y: number; h: number }> } {
   const nodes: Node[] = [];
-  for (const t of TECHS) nodes.push({ id: t.id, kind: "tech", name: t.name, age: t.age, parents: [...(t.requires ?? [])], tip: `${t.name} (tech, ${AGES[t.age]} Age)\n${t.description}\nCost: ${cost(t.cost)} · Time: ${formatCountdown(techSeconds(t))}${t.advancesTo !== undefined ? `\nAdvances to the ${AGES[t.advancesTo]} Age` : ""}`, x: 0, y: 0 });
-  for (const b of BUILDINGS) nodes.push({ id: b.id, kind: "building", name: b.name, age: b.age, parents: [b.requires, b.requiresBuilding].filter((x): x is string => !!x), tip: `${b.name} (building, ${AGES[b.age]} Age)\n${b.description}\nCost: ${cost(b.cost)} · Time: ${formatCountdown(buildingSeconds(b, 1))} · up to level ${b.maxLevel}`, x: 0, y: 0 });
-  for (const u of UNITS) if (!u.hidden) nodes.push({ id: u.id, kind: "unit", name: u.name, age: u.age, parents: [u.requires, u.needsBuilding].filter((x): x is string => !!x), tip: `${u.name} (unit, ${AGES[u.age]} Age)\n${u.description}\nAttack ${u.attack} · Defence ${u.defense}${u.breach ? ` · Siege ${u.breach}` : ""} · Speed ${u.speed} · Carry ${u.carry}\nCost: ${cost(u.cost)} each · Time: ${u.baseSeconds > 0 ? formatCountdown(trainSeconds(u, 1)) : "not trained"}`, x: 0, y: 0 });
+  for (const t of TECHS) nodes.push({ id: t.id, kind: "tech", name: t.name, age: t.age, parents: [...(t.requires ?? [])], unlocks: [], tip: `${t.name} (tech, ${AGES[t.age]} Age)\n${t.description}\nCost: ${cost(t.cost)} · Time: ${formatCountdown(techSeconds(t))}${t.advancesTo !== undefined ? `\nAdvances to the ${AGES[t.advancesTo]} Age` : ""}`, x: 0, y: 0 });
+  for (const b of BUILDINGS) nodes.push({ id: b.id, kind: "building", name: b.name, age: b.age, parents: [b.requires, b.requiresBuilding].filter((x): x is string => !!x), unlocks: [], tip: `${b.name} (building, ${AGES[b.age]} Age)\n${b.description}\nCost: ${cost(b.cost)} · Time: ${formatCountdown(buildingSeconds(b, 1))} · up to level ${b.maxLevel}`, x: 0, y: 0 });
+  for (const u of UNITS) if (!u.hidden) nodes.push({ id: u.id, kind: "unit", name: u.name, age: u.age, parents: [u.requires, u.needsBuilding].filter((x): x is string => !!x), unlocks: [], tip: `${u.name} (unit, ${AGES[u.age]} Age)\n${u.description}\nAttack ${u.attack} · Defence ${u.defense}${u.breach ? ` · Siege ${u.breach}` : ""} · Speed ${u.speed} · Carry ${u.carry}\nCost: ${cost(u.cost)} each · Time: ${u.baseSeconds > 0 ? formatCountdown(trainSeconds(u, 1)) : "not trained"}`, x: 0, y: 0 });
   const byId = new Map(nodes.map((n) => [n.id, n]));
+  // What each node opens: the children that name it as a parent. Shown on the box, so the tree reads "this gives you that".
+  for (const n of nodes) for (const p of n.parents) byId.get(p)?.unlocks.push(n.name);
   // Layout: a band per age, wrapped into rows of `perRow` so the tree fits the page width; within a band,
   // children follow their parents' order, roots go first by kind.
   const kindOrder: Record<Kind, number> = { building: 0, unit: 1, tech: 2 };
@@ -72,6 +76,11 @@ function buildNodes(perRow: number): { nodes: Node[]; byId: Map<string, Node>; b
     y += h;
   }
   return { nodes, byId, bands };
+}
+
+/** Cut a line to `max` characters with an ellipsis; the detail card carries the full text. */
+function fitText(text: string, max: number): string {
+  return text.length <= max ? text : text.slice(0, max - 1).trimEnd() + "…";
 }
 
 function wrap(name: string): [string, string | undefined] {
@@ -173,8 +182,23 @@ export function TechTreeGraph({ progress, height: boxHeight = "70vh" }: { progre
           )}
         </span>
       </div>
+      {selected && byId.get(selected) && (() => {
+        const n = byId.get(selected)!;
+        const [head, ...rest] = n.tip.split("\n");
+        const needs = n.parents.map((p) => byId.get(p)?.name ?? p);
+        return (
+          <div className="rounded-lg border border-amber-400/40 bg-slate-900/80 p-3 text-xs text-slate-300">
+            <p className="text-sm font-semibold text-white">{COLORS[n.kind].icon} {head}</p>
+            {rest.map((l) => (
+              <p key={l} className="mt-0.5">{l}</p>
+            ))}
+            <p className="mt-1 text-slate-200"><span className="text-slate-400">Unlocks:</span> {n.unlocks.length ? n.unlocks.join(", ") : "nothing further; its effects apply at once"}</p>
+            <p className="mt-0.5"><span className="text-slate-400">Needs:</span> {needs.length ? needs.join(", ") : "nothing"}</p>
+          </div>
+        );
+      })()}
       <p className="text-xs text-slate-500">
-        A line runs from each thing to what it opens. Click a node to light up its whole line; hover for its numbers; the buttons zoom, and you can drag the picture about when zoomed in.
+        Each box names what it opens; click one for its full numbers and to light up its whole line. The buttons zoom, and you can drag the picture about when zoomed in.
         {progress ? " Researched techs carry a tick, what you can research now has a white edge, queued ones a dashed edge, and what is still locked is faded." : ""}
       </p>
       <div ref={box} style={boxHeight === "none" ? undefined : { maxHeight: boxHeight }} className="relative cursor-grab touch-none select-none overflow-auto rounded-lg border border-slate-800 bg-slate-950/70 active:cursor-grabbing" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp} onWheel={onWheel}>
@@ -230,6 +254,10 @@ ${st === "done" ? (n.kind === "tech" ? "Researched" : "Available to you") : st =
                     {l2}
                   </text>
                 )}
+                {/* What it opens leads; the cost waits in the detail card. */}
+                <text x={9} y={H - 9} fontSize={9.5} fill="#cbd5e1">
+                  {n.unlocks.length ? `→ ${fitText(n.unlocks.join(", "), 24)}` : n.kind === "tech" ? "→ its effects" : ""}
+                </text>
               </g>
             );
           })}

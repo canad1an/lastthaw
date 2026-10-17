@@ -1,3 +1,4 @@
+import type React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePageMeta, useSlugAddress } from "../seo.js";
 import { Link, Navigate, useNavigate, useParams } from "@tanstack/react-router";
@@ -6,6 +7,7 @@ import { balance, formatCountdown, iceLatitudeOnDay, regionById, type MapRegion,
 import { api, keys } from "../api/client.js";
 import { useMatchRealtime } from "../api/realtime.js";
 import { RegionPanel, ageName } from "../components/RegionPanel.js";
+import { ageTheme, ageVars } from "../ageTheme.js";
 import { ResearchPanel } from "../components/ResearchPanel.js";
 import { TopMenu } from "../components/TopMenu.js";
 import { BottomSheet, type SheetStop } from "../components/BottomSheet.js";
@@ -403,7 +405,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
   );
 
   return (
-    <div className="flex h-[calc(100dvh-3rem)] flex-col bg-slate-950">
+    <div className="age-screen flex h-[calc(100dvh-3rem)] flex-col bg-slate-950" style={ageVars(state.me.age) as React.CSSProperties} data-age={state.me.age}>
       <TopMenu matchId={matchId} state={state} selectedRegionId={selected} colorOf={colorOf} overlays={overlays} onToggleOverlay={toggleOverlay} onSelectRegion={setSelected} clockOffsetMs={clockOffsetMs} />
       {finished && night && state.match.finishedAt && (
         <MatchNight
@@ -442,7 +444,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
           {state.match.pausedAt && <Badge>paused</Badge>}
           <Badge>{finished ? "finished" : `Day ${Math.min(balance.match.lengthDays, Math.floor(matchDay) + 1)} of ${balance.match.lengthDays} · ends in ${formatCountdown(endsIn)}`}</Badge>
           <Badge>{state.owned.length} regions · {fmt(totals.pop)} people</Badge>
-          <Badge>{ageName(state.me.age)} Age</Badge>
+          <Badge accent>{ageTheme(state.me.age).emblem} {ageName(state.me.age)} Age</Badge>
           <Badge>ice beyond {ice.latitude.toFixed(0)}°</Badge>
           <Badge muted={rtStatus !== "open"}>{rtStatus === "open" ? "live" : rtStatus === "closed" ? "reconnecting…" : "connecting…"}</Badge>
         </div>
@@ -498,8 +500,12 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
   );
 }
 
-function Badge({ children, muted }: { children: React.ReactNode; muted?: boolean }) {
-  return <span className={`rounded bg-slate-950/80 px-2 py-1 ${muted ? "text-amber-300" : "text-slate-200"}`}>{children}</span>;
+function Badge({ children, muted, accent }: { children: React.ReactNode; muted?: boolean; accent?: boolean }) {
+  return (
+    <span className={`rounded border border-transparent bg-slate-950/80 px-2 py-1 ${muted ? "text-amber-300" : "text-slate-200"}`} style={accent ? { borderColor: "var(--age-accent)", background: "var(--age-soft)", color: "var(--age-text)" } : undefined}>
+      {children}
+    </span>
+  );
 }
 
 /** "Start now" is for admins and dev servers; time skips only exist when the server runs with DEV_TOOLS=true. */

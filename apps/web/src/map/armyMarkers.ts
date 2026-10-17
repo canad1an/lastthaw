@@ -113,11 +113,12 @@ export function armyMarkers(armies: ArmyView[], incoming: IncomingView[], nowMs:
   const placed: Array<{ x: number; y: number }> = [];
   for (const mk of out) {
     let k = 0;
-    while (placed.some((p) => Math.hypot(p.x - mk.x, p.y - mk.y) < 6) && k < 12) {
+    // Spacing follows the marker size (the map draws them 1.75x): closer than 10 units overlaps, rings step 13 units out.
+    while (placed.some((p) => Math.hypot(p.x - mk.x, p.y - mk.y) < 10) && k < 12) {
       const angle = (k * Math.PI) / 3;
-      const r = 8 * (1 + Math.floor(k / 6));
-      mk.x += Math.cos(angle) * r - (k > 0 ? Math.cos(((k - 1) * Math.PI) / 3) * (8 * (1 + Math.floor((k - 1) / 6))) : 0);
-      mk.y += Math.sin(angle) * r - (k > 0 ? Math.sin(((k - 1) * Math.PI) / 3) * (8 * (1 + Math.floor((k - 1) / 6))) : 0);
+      const r = 13 * (1 + Math.floor(k / 6));
+      mk.x += Math.cos(angle) * r - (k > 0 ? Math.cos(((k - 1) * Math.PI) / 3) * (13 * (1 + Math.floor((k - 1) / 6))) : 0);
+      mk.y += Math.sin(angle) * r - (k > 0 ? Math.sin(((k - 1) * Math.PI) / 3) * (13 * (1 + Math.floor((k - 1) / 6))) : 0);
       k += 1;
     }
     placed.push({ x: mk.x, y: mk.y });

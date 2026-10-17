@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { AGES, TECHS, type AgeIndex, availableTechs, formatCountdown, matchDayOf, realSeconds, techById, techCost, techSeconds, type MatchStateView, type TechDef } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { CostLine } from "./Countdown.js";
@@ -35,16 +35,40 @@ export function TechTreePanel({ matchId, state, clockOffsetMs }: { matchId: stri
   const depthOf = (t: TechDef, seen = new Set<string>()): number => (t.requires ?? []).reduce((d, r) => (seen.has(r) ? d : Math.max(d, 1 + depthOf(techById.get(r)!, new Set([...seen, r])))), 0);
   const byAge = AGES.map((name, i) => ({ name, i, techs: TECHS.filter((t) => t.age === i).sort((a, b) => depthOf(a) - depthOf(b) || Number(a.advancesTo !== undefined) - Number(b.advancesTo !== undefined)) }));
   const doneCount = TECHS.filter((t) => done.has(t.id)).length;
+  // Two views of the same tree, both complete: the graph shows the lines, the list shows every number. The choice sticks on this device.
+  const [view, setView] = useState<"graph" | "list">(() => {
+    try {
+      return localStorage.getItem("lt_techview") === "list" ? "list" : "graph";
+    } catch {
+      return "graph";
+    }
+  });
+  const pick = (v: "graph" | "list") => {
+    setView(v);
+    try {
+      localStorage.setItem("lt_techview", v);
+    } catch {
+      // ignore
+    }
+  };
 
   return (
     <div className="p-3 text-sm">
-      <div className="mb-3">
-        <TechTreeGraph progress={{ done, queued, age: state.me.age }} height="52vh" />
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <span className="inline-flex overflow-hidden rounded-md border border-slate-700 text-xs">
+          {(["graph", "list"] as const).map((v) => (
+            <button key={v} onClick={() => pick(v)} className={`px-3 py-1.5 capitalize ${view === v ? "bg-sky-500/20 text-sky-100" : "text-slate-400 hover:text-slate-200"}`}>
+              {v}
+            </button>
+          ))}
+        </span>
+        <p className="text-xs text-slate-400">
+          {doneCount} of {TECHS.length} techs researched · {AGES[state.me.age as AgeIndex] ?? "Unknown"} Age · day {Math.floor(day) + 1}. Ages have an earliest day; everything else needs only its prerequisites and the resources.
+          {view === "list" && <span className="sm:hidden"> Swipe sideways for other ages.</span>}
+        </p>
       </div>
-      <p className="mb-2 text-xs text-slate-400">
-        {doneCount} of {TECHS.length} techs researched · {AGES[state.me.age as AgeIndex] ?? "Unknown"} Age · day {Math.floor(day) + 1}. Ages have an earliest day; everything else needs only its prerequisites and the resources.<span className="sm:hidden"> Swipe sideways for other ages.</span>
-      </p>
-      <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2 sm:snap-none">
+      {view === "graph" && <TechTreeGraph progress={{ done, queued, age: state.me.age }} height="60vh" />}
+      <div className={`flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2 sm:snap-none ${view === "list" ? "" : "hidden"}`}>
         {byAge.map((col) => (
           <div key={col.i} className={`w-[86vw] shrink-0 snap-center rounded-md border p-2 sm:w-64 ${col.i === state.me.age ? "border-sky-500/40 bg-sky-500/5" : col.i < state.me.age ? "border-slate-800 bg-slate-900/40" : "border-slate-800"}`}>
             <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">
@@ -69,12 +93,13 @@ export function TechTreePanel({ matchId, state, clockOffsetMs }: { matchId: stri
                         {st === "done" ? "done" : st === "queued" ? "queued" : st === "available" ? (locked ? `from day ${t.earliestDay! + 1}` : formatCountdown(secs)) : missing.length ? `needs ${missing.map((r) => techById.get(r)?.name ?? r).join(", ")}` : col.i > state.me.age ? "later age" : "locked"}
                       </span>
                     </div>
+                    {/* What it gives comes first: that is the exciting part. The price follows in smaller type. */}
+                    {unlocks.length > 0 && <p className={`mt-0.5 ${st === "locked" ? "text-slate-500" : "text-slate-300"}`}>{unlocks.join(" · ")}</p>}
                     {st !== "done" && (
-                      <p className="mt-0.5">
+                      <p className="mt-0.5 text-[11px] text-slate-500">
                         <CostLine cost={cost} stock={pooled} />
                       </p>
                     )}
-                    {unlocks.length > 0 && <p className="mt-0.5 text-slate-500">{unlocks.join(" · ")}</p>}
                     {st === "available" && !locked && (
                       <Button variant="ghost" disabled={research.isPending} onClick={() => research.mutate(t.id)}>
                         Research

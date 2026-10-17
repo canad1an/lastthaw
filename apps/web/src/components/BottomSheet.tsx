@@ -46,7 +46,7 @@ export function BottomSheet({ stop, onStop, summary, children, className = "" }:
       className={`flex flex-col border-slate-800 bg-slate-950 max-lg:fixed max-lg:inset-x-0 max-lg:bottom-0 max-lg:z-20 max-lg:h-[var(--sheet-h)] max-lg:rounded-t-2xl max-lg:border-t max-lg:shadow-[0_-8px_24px_rgba(0,0,0,0.5)] max-lg:transition-[height] max-lg:duration-200 lg:w-96 lg:border-l ${className}`}
     >
       <div className="touch-none select-none px-4 pt-2 lg:hidden" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={() => (drag.current = null)}>
-        <div className="mx-auto mb-2 h-1.5 w-12 rounded-full bg-slate-600" aria-hidden />
+        <div className="mx-auto mb-2 h-1.5 w-12 rounded-full bg-slate-600" style={{ background: "var(--age-accent, #475569)" }} aria-hidden />
         <div className="flex min-h-10 items-center justify-between gap-2 text-sm">
           <div className="min-w-0 flex-1 truncate text-slate-200">{summary}</div>
           {/* Explicit controls beside the drag handle: the buttons stop the handle's own tap-to-step so a tap never doubles up. */}

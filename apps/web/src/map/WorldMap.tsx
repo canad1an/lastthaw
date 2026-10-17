@@ -64,6 +64,10 @@ interface View {
 }
 
 const MIN_K = 1;
+/** Moving units are drawn this much larger than their base art: caravans and settlers must read at a glance on a phone. */
+const MARKER_SCALE = 1.75;
+/** Overlay badges (soldiers, caravans, notes) grow a little less, so several on one region still fit. */
+const BADGE_SCALE = 1.4;
 const MAX_K = 14;
 
 /**
@@ -268,7 +272,7 @@ export function WorldMap({ paint, selected, onSelect, focus, className = "", ice
             if (!r) return null;
             // Fan several badges on one region around its centre so each stays visible.
             const k = badges.slice(0, i).filter((x) => x.regionId === b.regionId).length;
-            const s = unitsPerPx / view.k;
+            const s = (unitsPerPx / view.k) * BADGE_SCALE;
             const dx = 9 + k * 11;
             return (
               <g key={`${b.regionId}-${i}`} transform={`translate(${r.x} ${r.y}) scale(${s})`} pointerEvents="auto">
@@ -301,7 +305,7 @@ export function WorldMap({ paint, selected, onSelect, focus, className = "", ice
               <g
                 key={a.id}
                 data-army={a.id}
-                transform={`translate(${a.x} ${a.y}) scale(${s})`}
+                transform={`translate(${a.x} ${a.y}) scale(${s * MARKER_SCALE})`}
                 className="cursor-pointer"
                 onPointerEnter={() => setHoverArmy(a.id)}
                 onPointerLeave={() => setHoverArmy((h) => (h === a.id ? null : h))}
@@ -342,7 +346,7 @@ export function WorldMap({ paint, selected, onSelect, focus, className = "", ice
         const sy = ((a.y * view.k + view.y) / world.height) * 100;
         return (
           <foreignObject x={0} y={0} width={world.width} height={world.height} pointerEvents="none">
-            <div style={{ position: "absolute", left: `${sx}%`, top: `${sy}%`, transform: "translate(12px, -50%)" }} className="pointer-events-none w-max max-w-[16rem] rounded-md border border-slate-700 bg-slate-950/95 px-2 py-1.5 text-xs text-slate-200 shadow-xl">
+            <div style={{ position: "absolute", left: `${sx}%`, top: `${sy}%`, transform: "translate(21px, -50%)" }} className="pointer-events-none w-max max-w-[16rem] rounded-md border border-slate-700 bg-slate-950/95 px-2 py-1.5 text-xs text-slate-200 shadow-xl">
               <p className="font-medium">{a.title}</p>
               {a.lines.map((l) => (
                 <p key={l} className="text-slate-400">

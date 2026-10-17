@@ -77,6 +77,9 @@ export function MatchIntro({ open, onClose, matchName, speed }: { open: boolean;
                 <li>
                   <b className="text-slate-100">Fight, or wall up.</b> Raid for loot or Conquer with soldiers and five Settlers. Walls are near-impregnable to men alone, so bring siege engines. Lose your capital and you are out.
                 </li>
+                <li>
+                  <b className="text-slate-100">Raid the neutrals first.</b> While other players are protected, the neutral tribes are not: each holds a hoard of copper, tin or iron behind a few warriors. A dozen early soldiers bring home the metal that opens the next age.
+                </li>
               </ol>
             </section>
 

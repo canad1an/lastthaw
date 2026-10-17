@@ -265,6 +265,7 @@ const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
 ];
 
 export function HowToPlayPage() {
+  const [techView, setTechView] = useState<"graph" | "list">("graph");
   const [tab, setTab] = useState<Tab>(() => (typeof window !== "undefined" && TABS.some((t) => t.id === window.location.hash.slice(1)) ? (window.location.hash.slice(1) as Tab) : "basics"));
   useEffect(() => {
     if (typeof window !== "undefined") window.history.replaceState(null, "", tab === "basics" ? window.location.pathname : `#${tab}`);
@@ -327,7 +328,8 @@ export function HowToPlayPage() {
       <section className="space-y-3">
         <h2 className="display text-xl font-semibold text-white">Good to know</h2>
         <ul className="list-disc space-y-1 pl-5 text-sm text-slate-300">
-          <li>Soldiers eat three times what a worker eats. A big standing army is the fastest way to burn a food surplus.</li>
+          <li>Soldiers eat three times what a worker eats. A big standing army is the fastest way to burn a food surplus. They still count as people in your score, so a garrison is never wasted points.</li>
+          <li>Early soldiers have a job before anyone can touch you: the neutral tribes hold {balance.ai.neutralOre.min} to {balance.ai.neutralOre.max} copper, tin or iron each, guarded by a handful of warriors, and they can be raided from day one. That ore is the Bronze and Iron Ages arriving early.</li>
           <li>New players cannot be attacked for the first {balance.match.protectionDays} days (scaled by match speed). Attacking someone ends your own protection.</li>
           <li>Storehouses and Granaries hide part of your stock from raiders; the rest can be moved out with a Send resources mission before a raid lands.</li>
           <li>Metals come from a Mine on a region that has copper, tin or iron, and horses from Stables on a region with horses. Otherwise trade or raid for them.</li>
@@ -346,13 +348,17 @@ export function HowToPlayPage() {
       {tab === "advanced" && <AdvancedSection open />}
       {tab === "techs" && (
         <>
-          <TechTreeGraph height="none" />
-          <details className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
-            <summary className="cursor-pointer text-sm font-medium text-slate-200">Every tech by age, with costs, times and what it gives</summary>
-            <div className="mt-3">
-              <TechTree />
-            </div>
-          </details>
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="inline-flex overflow-hidden rounded-md border border-slate-700 text-sm">
+              {(["graph", "list"] as const).map((v) => (
+                <button key={v} onClick={() => setTechView(v)} className={`px-3 py-1.5 capitalize ${techView === v ? "bg-sky-500/20 text-sky-100" : "text-slate-400 hover:text-slate-200"}`}>
+                  {v}
+                </button>
+              ))}
+            </span>
+            <p className="text-sm text-slate-400">The graph shows what leads to what; the list shows every number. Both carry every tech.</p>
+          </div>
+          {techView === "graph" ? <TechTreeGraph height="none" /> : <TechTree />}
         </>
       )}
       {tab === "buildings" && <BuildingList />}

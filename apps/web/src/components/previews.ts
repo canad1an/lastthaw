@@ -1,4 +1,4 @@
-import { BUILDINGS, UNITS, balance, computeRates, effectsOf, regionById, storageCaps, techById, type BuildingDef, type RegionEconomy, type TechDef, type UnitDef, AGES } from "@lastthaw/shared";
+import { BUILDINGS, TECHS, UNITS, balance, computeRates, effectsOf, regionById, storageCaps, techById, type BuildingDef, type RegionEconomy, type TechDef, type UnitDef, AGES } from "@lastthaw/shared";
 import type { Delta } from "./Tooltip.js";
 import { fmt, signed } from "./ui.js";
 
@@ -103,10 +103,21 @@ export function unitPreview(def: UnitDef): { summary: string; rows: Delta[] } {
   return { summary: `${def.description} Each unit takes one worker out of the fields.${needs ? ` ${needs[0]!.toUpperCase()}${needs.slice(1)}.` : ""}`, rows };
 }
 
+/** Everything that needs this tech directly: child techs, buildings and units, by name. The tree and the lists all read from here. */
+export function techUnlocks(id: string): { techs: string[]; buildings: string[]; units: string[] } {
+  return {
+    techs: TECHS.filter((t) => t.requires?.includes(id)).map((t) => t.name),
+    buildings: BUILDINGS.filter((b) => b.requires === id).map((b) => b.name),
+    units: UNITS.filter((u) => u.requires === id && !u.hidden).map((u) => u.name),
+  };
+}
+
 export function techPreview(def: TechDef): { summary: string; unlocks: string[] } {
   const unlocks: string[] = [];
-  for (const b of BUILDINGS) if (b.requires === def.id) unlocks.push(`${b.name} (building)`);
-  for (const u of UNITS) if (u.requires === def.id && !u.hidden) unlocks.push(`${u.name} (unit)`);
+  const kids = techUnlocks(def.id);
+  for (const b of kids.buildings) unlocks.push(`${b} (building)`);
+  for (const u of kids.units) unlocks.push(`${u} (unit)`);
+  for (const t of kids.techs) unlocks.push(`${t} (tech)`);
   if (def.advancesTo !== undefined) unlocks.push(`advance to the ${AGES[def.advancesTo]} Age: all its buildings, units and techs${def.earliestDay !== undefined ? ` (from day ${def.earliestDay + 1})` : ""}`);
   if (def.id === balance.travel.seaTech) unlocks.push("armies may cross sea routes");
   const carry = balance.trade.caravanCarryTechs[def.id];

@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type ReactNode } from "react";
+import { ageTheme } from "../ageTheme.js";
 import { TECHS, regionById, type MatchStateView } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { MessagesList, isImportant, messageIcon, useMessageToast } from "./Messages.js";
@@ -106,16 +107,19 @@ export function TopMenu({
   );
 
   return (
-    <div className="relative z-30 border-b border-slate-800 bg-slate-950/90 backdrop-blur">
+    <div className="age-bar relative z-30 border-b border-slate-800 bg-slate-950/90 backdrop-blur">
       {/* Phones: one Menu button and the latest message on its own row. Wider screens: the full tab row. */}
       <div className="flex h-11 items-center gap-2 px-2 sm:hidden">
         <button onClick={() => toggle("menu")} className={`flex h-9 shrink-0 items-center gap-2 rounded-md border border-slate-700 px-3 text-sm ${open ? "bg-slate-800 text-white" : "text-slate-200"}`}>
           <span aria-hidden>☰</span> Menu
           {alerts > 0 && <span className="rounded bg-rose-500/30 px-1.5 py-0.5 text-xs text-rose-200">{alerts}</span>}
         </button>
+        <AgeChip age={state.me.age} compact />
         {latest}
       </div>
       <div className="hidden h-10 items-center gap-1 overflow-x-auto px-2 sm:flex">
+        <AgeChip age={state.me.age} />
+        <div className="mx-1 h-5 w-px bg-slate-800" />
         {entries.map((e) => (
           <Tab key={e.id} id={e.id} label={e.label} badge={e.badge} tone={e.tone} />
         ))}
@@ -266,5 +270,16 @@ function Dropdown({ children, onClose, title }: { children: ReactNode; onClose: 
         <div className="min-h-0 flex-1 overflow-auto">{children}</div>
       </div>
     </div>
+  );
+}
+
+/** The age's emblem and name in its colour: the one thing on the bar that changes as the match goes on. */
+export function AgeChip({ age, compact }: { age: number; compact?: boolean }) {
+  const t = ageTheme(age);
+  return (
+    <span className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border px-2 text-xs font-medium" style={{ borderColor: "var(--age-accent)", background: "var(--age-soft)", color: "var(--age-text)" }} title={`${t.name} Age`}>
+      <span aria-hidden>{t.emblem}</span>
+      {!compact && <span>{t.name} Age</span>}
+    </span>
   );
 }

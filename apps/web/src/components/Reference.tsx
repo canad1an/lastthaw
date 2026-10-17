@@ -1,3 +1,4 @@
+import { techUnlocks } from "./previews.js";
 import { useState } from "react";
 import { AGES, BUILDINGS, BUILDING_CATEGORIES, TECHS, UNITS, buildingById, buildingSeconds, formatCountdown, techById, techSeconds, trainSeconds, type AgeIndex, type BuildingDef, type Cost, type TechDef, type UnitDef } from "@lastthaw/shared";
 
@@ -65,10 +66,10 @@ function techEffects(t: TechDef): string[] {
   if (e.loyalty) out.push(`+${Math.round(e.loyalty * 100)} loyalty`);
   if (e.vision) out.push(`+${e.vision} sight`);
   if (e.plagueResist) out.push(e.plagueResist >= 1 ? "no plague" : `${pct(-e.plagueResist)} plague risk`);
-  const unlocksB = BUILDINGS.filter((b) => b.requires === t.id).map((b) => b.name);
-  const unlocksU = UNITS.filter((u) => u.requires === t.id && !u.hidden).map((u) => u.name);
-  if (unlocksB.length) out.push(`unlocks ${unlocksB.join(", ")}`);
-  if (unlocksU.length) out.push(`unlocks ${unlocksU.join(", ")}`);
+  const kids = techUnlocks(t.id);
+  if (kids.buildings.length) out.push(`unlocks ${kids.buildings.join(", ")}`);
+  if (kids.units.length) out.push(`unlocks ${kids.units.join(", ")}`);
+  if (kids.techs.length) out.push(`leads to ${kids.techs.join(", ")}`);
   return out;
 }
 
@@ -128,10 +129,10 @@ export function TechTree() {
             description={t.description}
             badge={t.advancesTo !== undefined ? `to ${AGES[t.advancesTo]}` : undefined}
             rows={[
+              ["gives", techEffects(t).join("; ") || "opens the way"],
               ["needs", (t.requires ?? []).map(name).join(", ") + (t.earliestDay ? ` (from day ${t.earliestDay + 1})` : "") || "nothing"],
               ["cost", costText(t.cost)],
               ["time", formatCountdown(techSeconds(t))],
-              ["gives", techEffects(t).join("; ") || "opens the way"],
             ]}
           />
         ))}

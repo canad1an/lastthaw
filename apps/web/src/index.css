@@ -81,6 +81,19 @@ body {
   background: linear-gradient(90deg, transparent, rgba(224, 242, 254, 0.7) 30%, rgba(224, 242, 254, 0.9) 50%, rgba(224, 242, 254, 0.7) 70%, transparent);
 }
 
+/* The match screen carries its age: a stripe on the bars and a tint on the panels' edges (see ageTheme.ts). */
+.age-screen {
+  --age-accent: #a8a29e;
+  --age-soft: rgba(168, 162, 158, 0.14);
+  --age-text: #e7e5e4;
+}
+.age-bar {
+  border-top: 3px solid var(--age-accent, transparent);
+}
+.age-screen .glass {
+  border-color: color-mix(in srgb, var(--age-accent) 35%, rgba(148, 163, 184, 0.18));
+}
+
 /* Glass panels for content that sits on the scene. */
 .glass {
   background: rgba(7, 17, 31, 0.72);
