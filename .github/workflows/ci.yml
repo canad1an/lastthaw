@@ -38,6 +38,7 @@ jobs:
       - run: npm audit --omit=dev --audit-level=high
       - run: npm run typecheck
       - run: npm run db:migrate
+      - run: npx playwright install --with-deps chromium webkit
       - run: npm test
       - run: npm run test:game -w apps/server
       - run: npm run build
