@@ -120,8 +120,8 @@ function RegionNotes({ matchId, state, regionId }: { matchId: string; state: Mat
   const dirty = text.trim() !== (note?.text ?? "") || colour !== (note?.colour ?? null);
   if (!open) {
     return (
-      <button className="flex w-full items-center gap-2 rounded border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-sm font-medium text-amber-100 hover:bg-amber-500/20" onClick={() => setOpen(true)} title="Pin this region on your map with a colour and keep private notes on it">
-        <span aria-hidden>✎</span> Mark this region and add notes
+      <button type="button" className="rounded-md border border-amber-400/40 bg-amber-400/10 px-2 py-0.5 text-xs font-medium text-amber-200 hover:bg-amber-400/20" onClick={() => setOpen(true)} title="Pin this region on your map with a colour and keep private notes on it">
+        ✎ Mark region and add notes
       </button>
     );
   }
