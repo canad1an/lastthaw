@@ -1,0 +1,8 @@
+# The server's crontab for ubuntu@lastthaw-prod. deploy/deploy.sh installs this whole file on every deploy
+# (`crontab deploy/crontab`), so add or change jobs here, never with `crontab -e` or `echo ... | crontab -`
+# on the box: a line installed by hand is gone on the next deploy, and once (2026-10-16) a hand-installed
+# Matomo line replaced the whole crontab and the nightly backups silently stopped.
+# Times are UTC. Logs go to ~/backups.
+15 3 * * *    cd ~/lastthaw && bash deploy/backup.sh >> ~/backups/backup.log 2>&1
+0 4 1 * *     cd ~/lastthaw && bash deploy/restore-check.sh >> ~/backups/backup.log 2>&1
+*/15 * * * *  cd ~/lastthaw && docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T matomo php console core:archive --url=https://stats.lastthaw.com >> ~/backups/matomo-archive.log 2>&1

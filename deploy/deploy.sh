@@ -36,6 +36,12 @@ for c in $($COMPOSE ps -q api); do
     sleep 2
   done
 done
+# The crontab (nightly backup, monthly restore check, Matomo archiving) lives in the repo and is installed whole,
+# so a job added by hand on the box does not survive and cannot replace the others.
+mkdir -p "$HOME/backups"
+if ! crontab -l 2>/dev/null | diff -q - deploy/crontab >/dev/null 2>&1; then
+  crontab deploy/crontab && echo "crontab installed from deploy/crontab"
+fi
 # The Caddyfile is a bind mount: a changed file needs a reload, not a recreate.
 $COMPOSE exec -T caddy caddy reload --config /etc/caddy/Caddyfile >/dev/null 2>&1 || true
 $COMPOSE --profile app ps

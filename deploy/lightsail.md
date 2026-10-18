@@ -59,12 +59,10 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml exec postgres ps
 `deploy/backup.sh` runs nightly from cron on the server: `pg_dump`, gzip, AES-256 encryption with the key in
 `~/.backup.key`, upload to the private S3 bucket named by `BACKUP_BUCKET` in `.env` (objects expire after 30 days).
 `deploy/restore-check.sh` runs monthly: it pulls the newest backup, restores it into a scratch database and fails loudly
-if it looks empty. Cron lines on the server:
-
-```
-15 3 * * *  cd ~/lastthaw && bash deploy/backup.sh >> ~/backups/backup.log 2>&1
-0 4 1 * *   cd ~/lastthaw && bash deploy/restore-check.sh >> ~/backups/backup.log 2>&1
-```
+if it looks empty. Both run from `deploy/crontab`, which `deploy/deploy.sh` installs whole on every deploy
+(`crontab deploy/crontab`), together with the Matomo archiving job. Add or change cron jobs in that file and deploy;
+never edit the crontab on the box by hand, because the next deploy replaces it (and a hand-installed line once replaced
+the whole crontab and stopped the backups for two days).
 
 Keep a copy of `~/.backup.key` off the server (Matt has one in `~/.ssh/lastthaw-backup.key`). The upload uses the
 `lastthaw-backup` IAM user, which can only write to that bucket.
