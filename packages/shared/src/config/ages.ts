@@ -195,7 +195,7 @@ export const BUILDINGS: readonly BuildingDef[] = [
   // Modern
   { id: "power_plant", category: "production", name: "Power plant", age: 6, description: "Electricity for every workshop and field.", maxLevel: 10, cost: { stone: 8000, iron: 400 }, baseSeconds: 4000, effect: { yield: { food: 0.15, wood: 0.15, stone: 0.15 }, capacity: 20 }, requires: "electricity" },
   { id: "bunker", category: "defense", name: "Bunker", age: 6, description: "Concrete and steel: the strongest defence there is. Built once, on top of a Castle.", maxLevel: 1, cost: { stone: 80000, iron: 5000 }, baseSeconds: 7200, effect: { defense: 3.0 }, requiresBuilding: "castle" },
-  { id: "great_hearth", category: "wonder", name: "Great Hearth", age: 4, description: "A hall of fire and stone where a whole people can wait out the ice. Only the capital can raise it; it takes three days and the wealth of an empire, and every rival hears when the first stone is laid. Finish it and you win.", maxLevel: 1, cost: { wood: 80000, stone: 80000, food: 40000, iron: 6000 }, baseSeconds: 3 * 86400, effect: {}, requires: "engineering", capitalOnly: true, wonder: true },
+  { id: "great_hearth", category: "wonder", name: "Great Hearth", age: 4, description: "A hall of fire and stone where a whole people can wait out the ice. Only the capital can raise it; it takes three days and the wealth of an empire, and every rival hears when the first stone is laid. Finish it and you win.", maxLevel: 1, cost: { wood: 40000, stone: 40000, food: 30000, iron: 3000 }, baseSeconds: 3 * 86400, effect: {}, requires: "engineering", capitalOnly: true, wonder: true },
   { id: "university", category: "training", name: "University", age: 4, description: "The fastest research in the land.", maxLevel: 5, cost: { wood: 1200, stone: 1200 }, baseSeconds: 2600, effect: { researchSpeed: 0.15 } },
 ];
 
@@ -329,7 +329,7 @@ export const TECHS: readonly TechDef[] = [
   { id: "siege_engines", name: "Siege engines", age: 4, description: "Trebuchets.", cost: {wood: 3000, iron: 200}, baseSeconds: 5400, requires: ["siegecraft", "engineering"] },
   { id: "scholasticism", name: "Scholasticism", age: 4, description: "Universities: research goes much faster.", cost: {wood: 2500, stone: 2500}, baseSeconds: 5400, requires: ["literature"], effect: {researchSpeed: 0.3} },
   { id: "printing_press", name: "Printing press", age: 4, description: "Movable type: every discovery spreads at once.", cost: {wood: 30000, iron: 300}, baseSeconds: 8640, requires: ["scholasticism"], effect: {researchSpeed: 0.2} },
-  { id: "industrialisation", name: "Industrialisation", age: 4, description: "Coal, iron and machines. Enters the Industrial Age.", cost: {food: 300000, wood: 200000, iron: 3000}, baseSeconds: 28800, requires: ["railways", "blast_furnace"], advancesTo: 5, earliestDay: 19 },
+  { id: "industrialisation", name: "Industrialisation", age: 4, description: "Coal, iron and machines. Enters the Industrial Age.", cost: {food: 150000, wood: 100000, iron: 2000}, baseSeconds: 21600, requires: ["railways", "blast_furnace"], advancesTo: 5, earliestDay: 18 },
   // Industrial
   { id: "coal_mining", name: "Coal mining", age: 5, description: "Deep pits and pumps: fuel for the furnaces.", cost: {stone: 40000, iron: 600}, baseSeconds: 7200, requires: ["blast_furnace"], effect: {extract: 0.3} },
   { id: "steam_power", name: "Steam power", age: 5, description: "Engines that never tire: more wood and stone, and unlocks the Factory, Cannon and Ironclad.", cost: {stone: 50000, wood: 40000, iron: 800}, baseSeconds: 8640, requires: ["coal_mining"], effect: {yield: {wood: 0.3, stone: 0.3}} },
@@ -345,7 +345,7 @@ export const TECHS: readonly TechDef[] = [
   { id: "vaccination", name: "Vaccination", age: 5, description: "Far fewer die of disease.", cost: {food: 80000, stone: 20000}, baseSeconds: 6480, requires: ["public_schools"], effect: {growth: 0.4, plagueResist: 1} },
   { id: "sanitation", name: "Sanitation", age: 5, description: "Sewers and clean water in every town.", cost: {stone: 60000, iron: 500}, baseSeconds: 7200, requires: ["vaccination"], effect: {growth: 0.2, plagueResist: 1} },
   { id: "internal_combustion", name: "Internal combustion", age: 5, description: "Engines that run on oil: lorries on every road.", cost: {iron: 2000, wood: 50000}, baseSeconds: 10800, requires: ["steel_mills"], effect: {travel: 0.2} },
-  { id: "electronics", name: "Electronics", age: 5, description: "Circuits and radio. Enters the Modern Age.", cost: {food: 600000, wood: 400000, iron: 6000}, baseSeconds: 28800, requires: ["telegraph", "steam_power"], advancesTo: 6, earliestDay: 24 },
+  { id: "electronics", name: "Electronics", age: 5, description: "Circuits and radio. Enters the Modern Age.", cost: {food: 300000, wood: 200000, iron: 4000}, baseSeconds: 21600, requires: ["telegraph", "steam_power"], advancesTo: 6, earliestDay: 24 },
   // Modern
   { id: "electricity", name: "Electricity", age: 6, description: "Power for everything: unlocks the Power plant.", cost: {iron: 3000, stone: 80000}, baseSeconds: 8640, effect: {yield: {food: 0.25, wood: 0.25, stone: 0.25}} },
   { id: "radio", name: "Radio", age: 6, description: "Voices through the air: research goes faster.", cost: {iron: 2000, wood: 40000}, baseSeconds: 6480, effect: {researchSpeed: 0.2} },

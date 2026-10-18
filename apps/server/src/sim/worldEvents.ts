@@ -167,19 +167,23 @@ export async function stormFactorFor(tx: Tx, matchId: string, path: readonly str
 
 // ---------------------------------------------------------------- plague
 
-async function spreadPlague(tx: Tx, m: MatchRow, now: Date, day: number, rng: () => number): Promise<void> {
+export async function spreadPlague(tx: Tx, m: MatchRow, now: Date, day: number, rng: () => number): Promise<void> {
   const c = balance.events.plague;
   const rows = await ownedRows(tx, m.id);
   const fxByOwner = new Map<string, Awaited<ReturnType<typeof ownerTechEffects>>>();
   const until = new Date(now.getTime() + hoursMs(m, c.hours));
+  // One outbreak per tribe a day: a wide empire has more crowded towns, not more bad luck.
+  const struck = new Set<string>();
   for (const r of rows) {
     if (r.plagueUntil && r.plagueUntil > now) continue;
+    if (struck.has(r.ownerPlayerId!)) continue;
     const fx = fxByOwner.get(r.ownerPlayerId!) ?? fxByOwner.set(r.ownerPlayerId!, await ownerTechEffects(tx, r.ownerPlayerId)).get(r.ownerPlayerId!)!;
     if (fx.plagueResist >= 1) continue;
     const capacity = balance.economy.baseCapacity + applyTechEffects(effectsOf(r.buildings), fx).capacity;
     const pop = r.popWorkers + r.popSoldiers + r.popOccupiers;
     if (pop <= capacity * c.crowding) continue;
     if (rng() >= c.chance * (1 - fx.plagueResist)) continue;
+    struck.add(r.ownerPlayerId!);
     await settleAndLockRegion(tx, m.id, r.regionId, now, m.speed);
     await tx.update(matchRegions).set({ plagueUntil: until }).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, r.regionId)));
     const name = regionById(r.regionId)?.name ?? r.regionId;
@@ -237,14 +241,21 @@ async function raiseHorde(tx: Tx, m: MatchRow, now: Date, day: number, rng: () =
   const camps = band.filter((r) => !takenIds.has(r.id));
   if (camps.length === 0) return;
   // Aim at the most populous empire region within reach of some camp: the richest prey in the north.
+  // The horde spreads its attention: whoever it struck last looks less tempting, and a sprawling empire is not
+  // prey in proportion to its size, so the widest realm does not take every raid.
+  const [lastHit] = await tx.select({ payload: events.payload }).from(events).where(and(eq(events.matchId, m.id), eq(events.kind, "horde.sighted"))).orderBy(sql`${events.at} desc`).limit(1);
+  const lastTarget = (lastHit?.payload as { playerId?: string | null } | undefined)?.playerId ?? null;
+  const regionsOf = new Map<string, number>();
+  for (const r of owned) regionsOf.set(r.ownerPlayerId!, (regionsOf.get(r.ownerPlayerId!) ?? 0) + 1);
   let best: { camp: string; target: MatchRegionRow; dist: number } | null = null;
   for (const t of owned) {
     const pop = t.popWorkers + t.popSoldiers + t.popOccupiers;
     if (pop < 20) continue;
+    const spread = (t.ownerPlayerId === lastTarget ? c.repeatFactor : 1) / Math.sqrt(1 + (regionsOf.get(t.ownerPlayerId!) ?? 1) / c.sprawlRegions);
     for (const camp of camps) {
       const d = distanceKm(camp.id, t.regionId);
       if (d > c.reachKm) continue;
-      const score = pop / (1 + d / 500);
+      const score = (pop / (1 + d / 500)) * spread;
       if (!best || score > best.dist) best = { camp: camp.id, target: t, dist: score };
     }
   }

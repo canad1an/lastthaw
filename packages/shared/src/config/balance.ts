@@ -328,11 +328,12 @@ export const balance = {
     /** Thaw pockets: a region that should freeze stays open `extraDays` longer, at most `max` times a match. */
     thaw: { fromDay: 10, toDay: 27, chance: 0.3, max: 2, extraDays: 3 },
     /** Plague: a region over `crowding` × capacity may fall sick; no growth and `deathPerHour` of its people lost for `hours`. */
+    /** Plague: a region over `crowding` x capacity rolls `chance` each day; at most one outbreak per tribe a day. */
     plague: { crowding: 1.2, chance: 0.25, hours: 48, deathPerHour: 0.02 },
     /** Migrant columns: this share of a freezing region's people reach the nearest empire within `hops`, who has `hours` to take them in. */
     refugees: { share: 0.6, hops: 2, hours: 24, foodPerPerson: 20 },
-    /** The Northern Horde: from `fromDay`, raids out of the ice line against the richest region in reach. */
-    horde: { fromDay: 14, chance: 0.5, lateDay: 21, lateChance: 0.8, base: 20, perDay: 6, catapultsFromDay: 18, bandDeg: 6, reachKm: 1500, name: "The Northern Horde" },
+    /** The Northern Horde: from `fromDay`, raids out of the ice line against the richest region in reach; the tribe it hit last counts `repeatFactor`, and a realm's appeal is divided by the square root of 1 + regions / `sprawlRegions`. */
+    horde: { fromDay: 14, chance: 0.5, lateDay: 21, lateChance: 0.8, base: 20, perDay: 6, catapultsFromDay: 18, bandDeg: 6, reachKm: 1500, name: "The Northern Horde", repeatFactor: 0.3, sprawlRegions: 10 },
     /** Rich finds: a mine, quarry or camp doubles its output for `hours`, and the neighbours hear. */
     boom: { chance: 0.4, hours: 48, mult: 2 },
     /** Expeditions: three or more hops into the unknown with three or more soldiers; outcome odds must sum to 1. */

@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { handleRegionLost } from "../src/sim/missions.js";
+import { spreadPlague } from "../src/sim/worldEvents.js";
 import { balance, matchStateView, regionById } from "@lastthaw/shared";
 import { buildApp } from "../src/api/app.js";
 import { createDb, type Db } from "../src/db/client.js";
@@ -381,6 +382,22 @@ describe("world events", () => {
     await db.transaction((tx) => handleRegionLost(tx, m!, me!.id, n1!, at));
     const [neutral] = await db.select().from(matchRegions).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, n2!)));
     expect(neutral?.ownerPlayerId).toBeNull();
+  });
+
+  it("plague strikes a tribe at most once a day however many crowded towns it has", async () => {
+    const [m] = await db.select().from(matches).where(eq(matches.id, matchId));
+    const [ai] = await db.select().from(players).where(and(eq(players.matchId, matchId), eq(players.isAi, true), eq(players.hidden, false))).limit(1);
+    const rows = await db.select({ regionId: matchRegions.regionId }).from(matchRegions).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.ownerPlayerId, ai!.id))).limit(3);
+    expect(rows.length).toBeGreaterThanOrEqual(2);
+    // Every one of them far over capacity, and a die that always says yes.
+    await db.update(matchRegions).set({ plagueUntil: null }).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.ownerPlayerId, ai!.id)));
+    await db.update(matchRegions).set({ popWorkers: 5000, plagueUntil: null }).where(and(eq(matchRegions.matchId, matchId), inArray(matchRegions.regionId, rows.map((r) => r.regionId))));
+    const now = new Date();
+    await db.transaction((tx) => spreadPlague(tx, m!, now, 5, () => 0));
+    // Only the towns set up here count: an earlier case may have left another of this tribe's regions sick.
+    const sick = await db.select({ regionId: matchRegions.regionId }).from(matchRegions).where(and(eq(matchRegions.matchId, matchId), inArray(matchRegions.regionId, rows.map((r) => r.regionId)), sql`${matchRegions.plagueUntil} > now()`));
+    expect(sick.length).toBe(1);
+    await db.update(matchRegions).set({ popWorkers: 30, plagueUntil: null }).where(and(eq(matchRegions.matchId, matchId), inArray(matchRegions.regionId, rows.map((r) => r.regionId))));
   });
 
   it("finishing the match settles the last day's objective instead of letting it lapse", async () => {

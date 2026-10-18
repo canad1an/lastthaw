@@ -16,7 +16,7 @@ import type { MatchRow } from "../worker/jobs.js";
 export type Difficulty = "easy" | "medium" | "hard";
 export type Temperament = "peaceful" | "balanced" | "raider";
 
-const BUILD_ORDER = ["huts", "hunting_grounds", "lumber_camp", "storehouse", "quarry", "farm", "palisade", "granary", "mine", "stables", "walls", "barracks", "roads", "railway", "temple", "forge", "market", "aqueduct", "fort", "library", "harbor", "windmill", "castle", "guild_hall", "university", "cathedral", "factory", "arsenal", "power_plant", "bunker"];
+const BUILD_ORDER = ["huts", "hunting_grounds", "lumber_camp", "storehouse", "quarry", "farm", "palisade", "granary", "mine", "stables", "walls", "barracks", "roads", "railway", "temple", "forge", "market", "aqueduct", "fort", "library", "harbor", "windmill", "castle", "guild_hall", "university", "cathedral", "factory", "arsenal", "power_plant", "bunker", "great_hearth"];
 const RESEARCH_ORDER = [
   "fire_making", "flint_tools", "agriculture", "fishing_nets", "stone_axes", "animal_husbandry", "weaving", "bronze_working",
   "mining", "irrigation", "writing", "the_wheel", "wagon_building", "pottery", "herbal_medicine", "road_building", "bronze_weapons", "iron_working",
@@ -36,7 +36,7 @@ export function tributeDemand(stock: Record<string, number>, resource: string): 
 
 /** What each difficulty is allowed to do. Harder tiers never cheat; they just decide better and more often. */
 const TIER = {
-  easy: { cadence: { min: 90, max: 180 }, buildCap: (age: number) => 6 + age * 2, aggression: 0.5, reactsToThreat: false, iceRetreatDays: 1, adaptiveEconomy: false, adaptiveResearch: false, conquersHumans: false, scoresTargets: false, hoards: true, reach: 1, settles: false },
+  easy: { cadence: { min: 60, max: 120 }, buildCap: (age: number) => 8 + age * 3, aggression: 0.7, reactsToThreat: false, iceRetreatDays: 1, adaptiveEconomy: false, adaptiveResearch: false, conquersHumans: false, scoresTargets: false, hoards: true, reach: 1, settles: true },
   medium: { cadence: { min: 40, max: 90 }, buildCap: (age: number) => 10 + age * 3, aggression: 1, reactsToThreat: true, iceRetreatDays: 2, adaptiveEconomy: false, adaptiveResearch: false, conquersHumans: true, scoresTargets: false, hoards: false, reach: 2, settles: true },
   hard: { cadence: { min: 20, max: 45 }, buildCap: (age: number) => 14 + age * 4, aggression: 1.4, reactsToThreat: true, iceRetreatDays: 4, adaptiveEconomy: true, adaptiveResearch: true, conquersHumans: true, scoresTargets: true, hoards: false, reach: 3, settles: true },
 } as const;
@@ -165,7 +165,8 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
       const offer = offers.find((o) => o.iron >= 1 && o.iron <= budget);
       if (offer && (threatened.size > 0 || isBehind || iron > 200)) await attempt(() => db.transaction((tx) => hireMercenaries(tx, m, p, offer.id, now)));
     }
-    if (difficulty === "hard" && rng() < (isBehind ? 0.15 : 0.06)) {
+    // Expeditions: hard tribes often, medium tribes now and then; a tribe that is behind sends more.
+    if (rng() < (difficulty === "hard" ? (isBehind ? 0.15 : 0.06) : 0.03)) {
       const strongest = [...owned].sort((a, b) => b.popSoldiers - a.popSoldiers)[0];
       // Whatever soldiers the age has (warriors early, legionaries later): three of the most numerous kind go.
       const soldierKinds = strongest ? Object.entries(strongest.units).filter(([id, n]) => n > 0 && !unitById.get(id)?.civilian && !unitById.get(id)?.naval && !unitById.get(id)?.hauler).sort((a, b) => b[1] - a[1]) : [];
@@ -226,6 +227,8 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
     let slots = balance.queue.slotsPerRegion - queueLen(row.regionId);
     const avail = new Map(availableBuildings(p.age, techs).map((b) => [b.id, b]));
     const order = [...BUILD_ORDER];
+    // The race for the wonder: once the age allows it, a hard tribe's capital builds the Great Hearth before anything else.
+    if (row.isCapital && difficulty === "hard" && p.age >= (buildingById.get(balance.win.wonderBuilding)?.age ?? 99)) order.unshift(balance.win.wonderBuilding);
     if (underThreat) order.unshift("walls", "palisade");
     if (pop / economy.capacity > 0.75) order.unshift("huts");
     if (economy.food > economy.storage.food * 0.85 || economy.wood > economy.storage.wood * 0.85) order.unshift("storehouse");
@@ -327,7 +330,8 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
     for (const id of order) {
       if (tries >= 3) break;
       const def = techById.get(id)!;
-      if (tier.hoards && !comfortablyAffordable(economy, techCost(def, matchDay))) continue;
+      // Hoarders wait for a cushion on side techs, never on the path to the next age: an easy tribe still leaves the Bronze Age.
+      if (tier.hoards && id !== next && !comfortablyAffordable(economy, techCost(def, matchDay))) continue;
       tries += 1;
       if (await attempt(() => queueResearch(ctx, id))) break;
     }
