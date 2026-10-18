@@ -534,7 +534,7 @@ function TrainTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
   const renderRows = (units: UnitDef[]) => (
     <>
         {units.map((u) => {
-          const n = Math.max(qty, u.minBatch ?? 1);
+          const n = Math.max(qty, 1, u.minBatch ?? 1);
           const cost = unitCost(u, n, matchDayOf(state, clockOffsetMs));
           const needs = (u.needsResource && !region.resources.includes(u.needsResource)) || (u.naval && !region.coastal) || (u.needsBuilding && (owned.buildings[u.needsBuilding] ?? 0) < 1);
           const ok = !queueFull && !needs && canAfford(stock, cost) && live.e.popWorkers >= n;
@@ -582,7 +582,18 @@ function TrainTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
     <div className="space-y-2">
       <label className="flex items-center gap-2 text-sm">
         <span className="text-slate-400">Batch size</span>
-        <input type="number" min={1} max={1000} value={qty} onChange={(e) => setQty(Math.max(1, Number(e.target.value)))} className="w-20 rounded border border-slate-700 bg-slate-900 px-2 py-1" />
+        <input
+          type="number"
+          inputMode="numeric"
+          min={1}
+          max={1000}
+          value={qty === 0 ? "" : qty}
+          onFocus={(e) => e.target.select()}
+          onChange={(e) => setQty(e.target.value === "" ? 0 : Math.min(1000, Math.max(0, Math.floor(Number(e.target.value)) || 0)))}
+          onBlur={() => setQty((q) => Math.max(1, q))}
+          className="w-20 rounded border border-slate-700 bg-slate-900 px-2 py-1"
+          aria-label="Batch size"
+        />
         <span className="text-xs text-slate-500">free workers {fmt(live.e.popWorkers)}</span>
       </label>
       {queueFull && <p className="text-xs text-amber-300">Queue full.</p>}
@@ -665,6 +676,7 @@ function ArmyTab({ matchId, owned, state }: { matchId: string; owned: OwnedRegio
                   min={0}
                   max={n}
                   value={disbanding[id] ?? 0}
+                  onFocus={(e) => e.target.select()}
                   onChange={(e) => setDisbanding((d) => ({ ...d, [id]: Math.max(0, Math.min(n, Number(e.target.value) || 0)) }))}
                   className="w-16 rounded border border-slate-700 bg-slate-900 px-1 py-0.5 text-right"
                   aria-label={`Disband ${unitById.get(id)?.name ?? id}`}

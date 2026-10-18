@@ -488,6 +488,19 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
       })
       .returning();
     await tx.insert(jobs).values({ matchId: m.id, playerId: p.id, regionId: body.targetRegionId, kind: "mission", refId: a!.id, startsAt: now, endsAt: arrivesAt });
+    // The defender hears of it at once: a message in their inbox (the bar shows it and chimes), with the arrival time.
+    if (targetOwner && targetOwner !== p.id && HOSTILE.has(body.mission)) {
+      const size = Object.values(units).reduce((s, n) => s + n, 0);
+      const targetName = regionById(body.targetRegionId)?.name ?? body.targetRegionId;
+      const hours = Math.max(1, Math.round((seconds / 3600) * m.speed));
+      await tx.insert(messages).values({
+        matchId: m.id,
+        playerId: targetOwner,
+        kind: "battle",
+        subject: `${p.name} is marching on ${targetName}: about ${size} units, arriving in ${hours} game hour${hours === 1 ? "" : "s"}. Garrison it, wall it, or move the stock out.`,
+        payload: { regionId: body.targetRegionId, arrivesAt: arrivesAt.toISOString(), incoming: true, from: p.id },
+      });
+    }
     return { army: a!, targetOwner, route };
   });
   // A beaten escort is committed (the ships are gone) and then reported as a refusal.

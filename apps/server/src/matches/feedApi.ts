@@ -29,7 +29,7 @@ export function feedText(kind: string, p: Record<string, unknown>, nameOf: (id: 
     case "win.hold.started": return `${p.kind === "alliance" ? "An alliance" : nameOf(p.id)} holds ${p.regions} regions: the match ends in two days unless they are pushed back.`;
     case "win.hold.cancelled": return "The hold on the world is broken.";
     case "match.finished": return `The match is over. ${nameOf(p.winnerPlayerId)} wins.`;
-    case "player.eliminated": return `${nameOf(p.playerId)} is out of the match.`;
+    case "player.eliminated": return p.by ? `${nameOf(p.playerId)} has been eliminated by ${nameOf(p.by)}: the capital fell and the whole realm is theirs.` : `${nameOf(p.playerId)} is out of the match.`;
     case "storm.warning": return `A blizzard gathers over ${region(p.centre)}: ${p.regions} regions will be in it by tomorrow.`;
     case "storm.hit": return `The blizzard over ${region(p.centre)} is blowing: half production, double travel across ${p.regions} regions.`;
     case "thaw.pocket": return `A warm pocket lingers over ${region(p.regionId)}; the ice passes it by for now.`;
@@ -44,7 +44,7 @@ export function feedText(kind: string, p: Record<string, unknown>, nameOf: (id: 
     case "tribute.paid": return `${nameOf(p.from)} paid tribute to ${nameOf(p.to)}.`;
     case "tribute.refused": return `${nameOf(p.from)} refused tribute to ${nameOf(p.to)}. There is cause for war.`;
     case "capital.moved": return `${nameOf(p.playerId)} moved their capital to ${region(p.regionId)}${p.ice ? " ahead of the ice" : ""}.`;
-    case "player.eliminated": return `${nameOf(p.playerId)} is out of the match.`;
+    case "player.eliminated": return p.by ? `${nameOf(p.playerId)} has been eliminated by ${nameOf(p.by)}: the capital fell and the whole realm is theirs.` : `${nameOf(p.playerId)} is out of the match.`;
     case "bounty.placed": return p.grown ? `The bounty on ${p.regionId ? region(p.regionId) : nameOf(p.playerId)} grows: ${p.reason}.` : `A bounty is placed on ${p.regionId ? region(p.regionId) : nameOf(p.playerId)}: ${p.reason}.`;
     case "bounty.claimed": return `${nameOf(p.by)} claimed the bounty on ${p.regionId ? region(p.regionId) : nameOf(p.playerId)}.`;
     case "objective.won": return `Day ${p.day}'s objective (${p.label}) goes to ${nameOf(p.playerId)}.`;

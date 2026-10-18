@@ -1,3 +1,4 @@
+import { chime } from "../components/chatAlert.js";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { wsServerMessage, type WsClientMessage } from "@lastthaw/shared";
@@ -43,6 +44,11 @@ export function useMatchRealtime(matchId: string | null) {
           }
           if (msg.kind === "match.started" || msg.kind === "match.finished" || msg.kind === "player.joined" || msg.kind === "match.paused" || msg.kind === "match.resumed") {
             void qc.invalidateQueries({ queryKey: keys.matches });
+          }
+          if (msg.kind === "army.incoming") {
+            // Someone is marching on you: a chime now, and the inbox line follows.
+            chime();
+            void qc.invalidateQueries({ queryKey: keys.messages(msg.matchId) });
           }
           if (msg.kind === "chat.message") {
             const ch = (msg.payload as { channel?: string } | null)?.channel;

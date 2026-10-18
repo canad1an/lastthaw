@@ -10,7 +10,7 @@ const schema = z.object({
   SMTP_PORT: z.coerce.number().int().default(1025),
   SMTP_USER: z.string().default(""),
   SMTP_PASS: z.string().default(""),
-  MAIL_FROM: z.string().default("Last Thaw <noreply@lastthaw.com>"),
+  MAIL_FROM: z.string().default("Last Thaw <admin@lastthaw.com>"),
   PUBLIC_URL: z.string().url().default("http://localhost:5173"),
   /** Discord webhook the AI tribes post through during tournaments; unset means they stay quiet. */
   DISCORD_WEBHOOK_URL: z

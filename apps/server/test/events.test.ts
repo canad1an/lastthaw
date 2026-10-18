@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
+import { handleRegionLost } from "../src/sim/missions.js";
 import { balance, matchStateView, regionById } from "@lastthaw/shared";
 import { buildApp } from "../src/api/app.js";
 import { createDb, type Db } from "../src/db/client.js";
@@ -339,6 +340,47 @@ describe("world events", () => {
     const [gone] = await db.select().from(players).where(eq(players.id, me!.id));
     expect(gone?.eliminatedAt).not.toBeNull();
     expect(gone?.capitalRegionId).toBeNull();
+  });
+
+  it("a capital taken by a player eliminates its owner and hands the whole realm to the conqueror", async () => {
+    const [m] = await db.select().from(matches).where(eq(matches.id, matchId));
+    const [me] = await db.select().from(players).where(and(eq(players.matchId, matchId), eq(players.isAi, false)));
+    const [ai] = await db.select().from(players).where(and(eq(players.matchId, matchId), eq(players.isAi, true), eq(players.hidden, false))).limit(1);
+    const at = new Date();
+    // The human holds a capital and two more regions; the AI's army has just taken the capital.
+    const aiCap = ai!.capitalRegionId!;
+    const base = regionById(aiCap)!.neighbors[0]!;
+    // Two more regions the match has rows for (rows exist only for land someone has touched), anywhere on the map.
+    const present = await db
+      .select({ regionId: matchRegions.regionId })
+      .from(matchRegions)
+      .where(and(eq(matchRegions.matchId, matchId), sql`${matchRegions.regionId} not in (${aiCap}, ${base})`, sql`${matchRegions.ownerPlayerId} is distinct from ${ai!.id}`))
+      .limit(2);
+    const [n1, n2] = present.map((r) => r.regionId);
+    expect(n2, "two nearby regions to hand over").toBeTruthy();
+    await db.update(players).set({ eliminatedAt: null, capitalRegionId: base }).where(eq(players.id, me!.id));
+    for (const r of [base, n1!, n2!]) await db.update(matchRegions).set({ ownerPlayerId: me!.id, isCapital: r === base, frozenAt: null, popWorkers: 20 }).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, r)));
+    await db.update(matchRegions).set({ ownerPlayerId: ai!.id, isCapital: false, conquered: true }).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, base)));
+    await db.transaction((tx) => handleRegionLost(tx, m!, me!.id, base, at, ai!.id));
+    const [gone] = await db.select().from(players).where(eq(players.id, me!.id));
+    expect(gone?.eliminatedAt).not.toBeNull();
+    const rows = await db.select().from(matchRegions).where(and(eq(matchRegions.matchId, matchId), inArray(matchRegions.regionId, [n1!, n2!])));
+    expect(rows.map((r) => r.ownerPlayerId)).toEqual([ai!.id, ai!.id]);
+    expect(rows.every((r) => r.conquered && r.loyalty === balance.conquest.startingLoyalty)).toBe(true);
+    const feed = (await call("GET", `/api/matches/${matchId}/feed`)).json() as { items: { kind: string; text: string }[] };
+    const line = feed.items.find((i) => i.kind === "player.eliminated");
+    expect(line?.text).toContain(`eliminated by ${ai!.name}`);
+    // The other tribes were told; the fallen one was not told about itself twice.
+    const told = await db.select().from(messages).where(and(eq(messages.matchId, matchId), eq(messages.kind, "battle"), sql`${messages.payload}->>'eliminated' = ${me!.id}`));
+    expect(told.length).toBeGreaterThan(0);
+    expect(told.some((t) => t.playerId === me!.id)).toBe(false);
+    // Without a conqueror (ice, rebellion), the realm goes neutral as before.
+    await db.update(players).set({ eliminatedAt: null, capitalRegionId: n1! }).where(eq(players.id, me!.id));
+    await db.update(matchRegions).set({ ownerPlayerId: me!.id, isCapital: true }).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, n1!)));
+    await db.update(matchRegions).set({ ownerPlayerId: me!.id, isCapital: false }).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, n2!)));
+    await db.transaction((tx) => handleRegionLost(tx, m!, me!.id, n1!, at));
+    const [neutral] = await db.select().from(matchRegions).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, n2!)));
+    expect(neutral?.ownerPlayerId).toBeNull();
   });
 
   it("finishing the match settles the last day's objective instead of letting it lapse", async () => {

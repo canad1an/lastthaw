@@ -622,7 +622,7 @@ async function battle(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher: P
 
   if (conquered) {
     await tx.update(armies).set({ status: "done", units: survivors }).where(eq(armies.id, army.id));
-    if (defenderId) await handleRegionLost(tx, m, defenderId, army.targetRegionId, at);
+    if (defenderId) await handleRegionLost(tx, m, defenderId, army.targetRegionId, at, army.playerId);
   } else {
     await sendHome(tx, m, army, at, settlersAlong > 0 ? { ...survivors, settler: settlersAlong } : survivors, { ...loot, people: army.cargo.people ?? 0 });
   }
@@ -636,8 +636,8 @@ async function battle(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher: P
   if (conquered) after(() => publisher.toMatch(m.id, "region.conquered", { regionId: army.targetRegionId, by: pid }));
 }
 
-/** A player lost a region: move the capital if needed, eliminate if nothing is left. */
-export async function handleRegionLost(tx: Tx, m: MatchRow, playerId: string, regionId: string, at: Date): Promise<void> {
+/** A player lost a region: move the capital if needed, eliminate if nothing is left. A capital taken by a player hands them the whole realm. */
+export async function handleRegionLost(tx: Tx, m: MatchRow, playerId: string, regionId: string, at: Date, byPlayerId: string | null = null): Promise<void> {
   const [p] = await tx.select().from(players).where(eq(players.id, playerId)).for("update");
   if (!p) return;
   const remaining = await tx
@@ -652,18 +652,29 @@ export async function handleRegionLost(tx: Tx, m: MatchRow, playerId: string, re
     return;
   }
   if (p.capitalRegionId === regionId) {
-    // Lose the capital, lose the game: the rest of the realm falls apart into neutral tribes.
-    await eliminatePlayer(tx, m, playerId, at, `Your capital, ${regionById(regionId)?.name ?? regionId}, has fallen. The realm is lost.`);
+    // Lose the capital, lose the game. Taken by a player, the whole realm goes to them; frozen or rebelled, it falls apart into neutral tribes.
+    await eliminatePlayer(tx, m, playerId, at, `Your capital, ${regionById(regionId)?.name ?? regionId}, has fallen. The realm is lost.`, byPlayerId);
   }
 }
 
-/** Knock a player out: their regions go neutral, their queues and routes stop, their armies disband where they stand. */
-export async function eliminatePlayer(tx: Tx, m: MatchRow, playerId: string, at: Date, reason: string): Promise<void> {
+/**
+ * Knock a player out: their queues and routes stop and their armies disband where they stand. Their regions go to
+ * the conqueror as newly taken land (loyalty starts low, so it wants garrisons), or turn neutral when nobody took the capital.
+ */
+export async function eliminatePlayer(tx: Tx, m: MatchRow, playerId: string, at: Date, reason: string, byPlayerId: string | null = null): Promise<void> {
   const { tradeRoutes, marketOrders, events } = await import("../db/schema.js");
+  const [loser] = await tx.select({ name: players.name }).from(players).where(eq(players.id, playerId)).limit(1);
+  const [winner] = byPlayerId ? await tx.select({ id: players.id, name: players.name, hidden: players.hidden }).from(players).where(eq(players.id, byPlayerId)).limit(1) : [];
+  // The horde is nobody's realm: land it takes goes neutral like any other fall.
+  const by = winner && !winner.hidden ? winner : null;
   await tx.update(players).set({ eliminatedAt: at, capitalRegionId: null }).where(eq(players.id, playerId));
   await tx
     .update(matchRegions)
-    .set({ ownerPlayerId: null, isCapital: false, conquered: false, popOccupiers: 0, loyalty: 1 })
+    .set(
+      by
+        ? { ownerPlayerId: by.id, isCapital: false, conquered: true, popOccupiers: 0, loyalty: balance.conquest.startingLoyalty, assignment: { ...balance.start.assignment } }
+        : { ownerPlayerId: null, isCapital: false, conquered: false, popOccupiers: 0, loyalty: 1 },
+    )
     .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.ownerPlayerId, playerId)));
   await tx
     .update(jobs)
@@ -672,6 +683,12 @@ export async function eliminatePlayer(tx: Tx, m: MatchRow, playerId: string, at:
   await tx.update(armies).set({ status: "done" }).where(and(eq(armies.matchId, m.id), eq(armies.playerId, playerId), inArray(armies.status, ["outbound", "returning"])));
   await tx.delete(tradeRoutes).where(and(eq(tradeRoutes.matchId, m.id), eq(tradeRoutes.playerId, playerId)));
   await tx.update(marketOrders).set({ status: "cancelled" }).where(and(eq(marketOrders.matchId, m.id), eq(marketOrders.playerId, playerId), eq(marketOrders.status, "open")));
-  await tx.insert(events).values({ matchId: m.id, at, kind: "player.eliminated", payload: { playerId, reason } });
+  await tx.insert(events).values({ matchId: m.id, at, kind: "player.eliminated", payload: { playerId, reason, by: by?.id ?? null } });
   await notify(tx, m.id, playerId, "system", `${reason} You can watch the rest of the match and join the next one.`, {});
+  if (by) {
+    // Everyone hears it: the fall of a realm is the news of the day.
+    const line = `${loser?.name ?? "A tribe"} has been eliminated by ${by.name}: the capital fell and the whole realm is theirs now.`;
+    const others = await tx.select({ id: players.id }).from(players).where(and(eq(players.matchId, m.id), eq(players.hidden, false), isNull(players.eliminatedAt), sql`${players.id} <> ${playerId}`));
+    for (const o of others) await notify(tx, m.id, o.id, "battle", line, { eliminated: playerId, by: by.id, realm: true });
+  }
 }
