@@ -1,17 +1,25 @@
-import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, keys, type MessageView } from "../api/client.js";
 
 const KIND_ICON: Record<string, string> = { battle: "⚔", scout: "👁", build: "🔨", research: "📜", trade: "⚖", system: "ℹ", alliance: "🤝" };
 const TOAST_MS = 5000;
 
 /** Recent messages list used inside the top menu dropdown. */
-export function MessagesList({ messages }: { messages: MessageView[] }) {
+export function MessagesList({ messages, matchId, pinned }: { messages: MessageView[]; matchId?: string | undefined; pinned?: ReactNode }) {
+  // Whatever opened the inbox, being on screen is reading it: unread messages are marked read here as well as by the menu.
+  const qc = useQueryClient();
+  const anyUnread = messages.some((m) => !m.readAt);
+  useEffect(() => {
+    if (!matchId || !anyUnread) return;
+    void api.markMessagesRead(matchId).then(() => qc.invalidateQueries({ queryKey: keys.messages(matchId) })).catch(() => {});
+  }, [matchId, anyUnread, qc]);
   const [selected, setSelected] = useState<string | null>(null);
   const [onlyImportant, setOnlyImportant] = useState(true);
   const shown = onlyImportant ? messages.filter(isImportant) : messages;
   return (
     <ul className="divide-y divide-slate-900">
+      {pinned && <li className="px-3 py-2">{pinned}</li>}
       <li className="flex items-center justify-between px-3 py-1.5 text-xs text-slate-400">
         <span>{onlyImportant ? `${shown.length} important of ${messages.length}` : `${messages.length} messages`}</span>
         <label className="flex items-center gap-1">
@@ -48,7 +56,7 @@ export const messageIcon = (kind: string) => KIND_ICON[kind] ?? "•";
 export function isImportant(m: MessageView): boolean {
   if (m.kind === "battle" || m.kind === "alliance" || m.kind === "scout") return true;
   const p = (m.payload ?? {}) as Record<string, unknown>;
-  if (p.storm || p.thaw || p.plague || p.horde || p.refugees || p.boom || p.wonder) return true;
+  if (p.storm || p.thaw || p.plague || p.horde || p.refugees || p.boom || p.wonder || p.objective) return true;
   if (m.kind === "system") {
     const s = m.subject;
     return !(s.startsWith("Troops arrived") || s.startsWith("Army returned") || /joined the occupiers|are on their way there|founded a new home/.test(s));

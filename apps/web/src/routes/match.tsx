@@ -12,7 +12,7 @@ import { usePhone } from "../hooks/usePhone.js";
 import { PhoneShell } from "../components/phone/PhoneShell.js";
 import { PhoneTabBar } from "../components/phone/PhoneTabBar.js";
 import { tabOf, type Screen } from "../components/phone/screens.js";
-import { AgeChip, useMenuData } from "../components/TopMenu.js";
+import { AgeChip, ObjectiveChip, useMenuData } from "../components/TopMenu.js";
 import { Ticker } from "../components/Ticker.js";
 import type { RegionTab } from "../components/RegionPanel.js";
 import { ResearchPanel } from "../components/ResearchPanel.js";
@@ -462,6 +462,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
       {phone && (
         <div className="age-bar flex h-10 shrink-0 items-center gap-2 border-b border-slate-800 bg-slate-950/90 px-2">
           <AgeChip age={state.me.age} compact />
+          <ObjectiveChip state={state} compact onOpen={() => setStack([{ kind: "map" }, { kind: "panel", id: "players" }])} />
           <div className="min-w-0 flex-1">
             {menu.chatToast ? (
               <button className="block w-full truncate text-left text-sm text-slate-100" onClick={() => setStack([{ kind: "map" }, { kind: "panel", id: "chat" }])}>

@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type ReactNode } from "react";
 import { ageTheme } from "../ageTheme.js";
 import { useChatWatch, type ChatToast } from "./chatWatch.js";
-import { TECHS, regionById, type MatchStateView } from "@lastthaw/shared";
+import { TECHS, balance, regionById, type MatchStateView } from "@lastthaw/shared";
 import { api, keys, type MessageView } from "../api/client.js";
 import { MessagesList, isImportant, messageIcon, useMessageToast } from "./Messages.js";
 import { AlliancePanel } from "./AlliancePanel.js";
@@ -155,6 +155,7 @@ export function TopMenu({
       </div>
       <div className="hidden h-10 items-center gap-1 overflow-x-auto px-2 sm:flex">
         <AgeChip age={state.me.age} />
+        <ObjectiveChip state={state} onOpen={() => toggle("players")} />
         <div className="mx-1 h-5 w-px bg-slate-800" />
         {entries.map((e) => (
           <Tab key={e.id} id={e.id} label={e.label} badge={e.badge} tone={e.tone} />
@@ -226,7 +227,7 @@ export function MenuPanelBody({
 }) {
   return (
     <>
-        {menu === "messages" && <MessagesList messages={messages} />}
+        {menu === "messages" && <MessagesList messages={messages} matchId={matchId} pinned={<ObjectiveCard state={state} />} />}
         {menu === "alliance" && (
           <div className="p-3">
             <AlliancePanel matchId={matchId} state={state} />
@@ -358,5 +359,40 @@ export function AgeChip({ age, compact }: { age: number; compact?: boolean }) {
       <span aria-hidden>{t.emblem}</span>
       {!compact && <span>{t.name} Age</span>}
     </span>
+  );
+}
+
+/** Today's objective and what it pays, in the bar where nobody can miss it; a tap opens the standings with the details. */
+export function ObjectiveChip({ state, onOpen, compact }: { state: MatchStateView; onOpen: () => void; compact?: boolean }) {
+  const o = state.objective;
+  if (!o) return null;
+  const prize = balance.win.milestones.daily ?? 100;
+  const yesterday = o.yesterday ? `Yesterday (${o.yesterday.label}): ${o.yesterday.playerId ? (state.players.find((p) => p.id === o.yesterday?.playerId)?.name ?? "someone") : "nobody"}` : "";
+  return (
+    <button
+      onClick={onOpen}
+      className="inline-flex h-7 min-w-0 shrink items-center gap-1 rounded-md border border-amber-400/40 bg-amber-400/10 px-2 text-xs font-medium text-amber-100 hover:bg-amber-400/20"
+      title={`Day ${o.day}'s objective: ${o.label}. The best player at the day's end scores +${prize}. ${yesterday}`}
+    >
+      <span aria-hidden>🎯</span>
+      <span className="truncate">{compact ? o.label.replace(/ at day's end| in the day/i, "") : `Today: ${o.label}`}</span>
+      <span className="shrink-0 text-emerald-300">+{prize}</span>
+    </button>
+  );
+}
+
+/** Today's goal, pinned at the top of the inbox: what it is, what it pays, who took yesterday's. */
+export function ObjectiveCard({ state }: { state: MatchStateView }) {
+  const o = state.objective;
+  if (!o) return null;
+  const prize = balance.win.milestones.daily ?? 100;
+  const winner = o.yesterday?.playerId ? (state.players.find((p) => p.id === o.yesterday?.playerId)?.name ?? "someone") : null;
+  return (
+    <div className="rounded-md border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-sm">
+      <p className="font-medium text-amber-100">
+        🎯 Day {o.day}'s goal: {o.label} <span className="text-emerald-300">+{prize}</span>
+      </p>
+      <p className="mt-0.5 text-xs text-amber-200/80">The best tribe at the day's end takes the points. {o.yesterday ? `Yesterday (${o.yesterday.label}): ${winner ?? "nobody"}.` : ""}</p>
+    </div>
   );
 }

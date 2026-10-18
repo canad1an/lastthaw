@@ -249,6 +249,9 @@ describe("world events", () => {
     const now = new Date();
     // Day 0's objective is picked by the seeded rng; force a stock objective so the result is deterministic.
     await db.transaction((tx) => pickObjective(tx, m!, 0, () => 0.4));
+    const told = await db.select().from(messages).where(and(eq(messages.matchId, matchId), eq(messages.playerId, me!.id), sql`${messages.payload}->>'objective' = 'true'`));
+    expect(told.length).toBeGreaterThanOrEqual(1);
+    expect(told[0]!.subject).toMatch(/^Day 1's goal: /);
     await db.update(dailyObjectives).set({ key: "food" }).where(and(eq(dailyObjectives.matchId, matchId), eq(dailyObjectives.day, 0)));
     await db.update(matchRegions).set({ food: 99_999 }).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, capital)));
     await db.transaction((tx) => resolveObjective(tx, m!, 0, now));

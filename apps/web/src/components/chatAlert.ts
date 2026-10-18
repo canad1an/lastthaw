@@ -1,11 +1,41 @@
 import { useEffect, useRef } from "react";
 
-/** Two short tones, generated on the spot so there is no file to load. Silent until the user has interacted with the page (browser rule). */
-export function chime() {
+/**
+ * One audio context for the page, opened on the first tap or key and kept: iPhones only let a context made inside
+ * a user gesture make sound, and a context made later on a timer stays silent for good.
+ */
+let audio: AudioContext | null = null;
+function openAudio(): AudioContext | null {
   try {
     const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!Ctx) return;
-    const ctx = new Ctx();
+    if (!Ctx) return null;
+    audio ??= new Ctx();
+    if (audio.state === "suspended") void audio.resume();
+    return audio;
+  } catch {
+    return null;
+  }
+}
+if (typeof window !== "undefined") {
+  const prime = () => {
+    openAudio();
+    window.removeEventListener("pointerdown", prime);
+    window.removeEventListener("keydown", prime);
+  };
+  window.addEventListener("pointerdown", prime, { passive: true });
+  window.addEventListener("keydown", prime);
+}
+
+/** Two short tones, generated on the spot so there is no file to load, and a short buzz where the device can. Silent until the user has touched the page (browser rule). */
+export function chime() {
+  try {
+    if ("vibrate" in navigator) navigator.vibrate?.(120);
+  } catch {
+    /* no vibration: fine */
+  }
+  try {
+    const ctx = openAudio();
+    if (!ctx) return;
     const at = ctx.currentTime;
     for (const [i, freq] of [660, 880].entries()) {
       const osc = ctx.createOscillator();
@@ -19,7 +49,6 @@ export function chime() {
       osc.start(at + i * 0.14);
       osc.stop(at + i * 0.14 + 0.15);
     }
-    setTimeout(() => void ctx.close(), 600);
   } catch {
     /* no audio: fine */
   }

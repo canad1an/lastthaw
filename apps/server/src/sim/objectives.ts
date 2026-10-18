@@ -20,7 +20,12 @@ const dayMs = (m: MatchRow) => 86400_000 / m.speed;
 export async function pickObjective(tx: Tx, m: MatchRow, day: number, rng: () => number): Promise<void> {
   const keys = objectiveKeysFor(day);
   const key = keys[Math.floor(rng() * keys.length)]!;
-  await tx.insert(dailyObjectives).values({ matchId: m.id, day, key }).onConflictDoNothing();
+  const [row] = await tx.insert(dailyObjectives).values({ matchId: m.id, day, key }).onConflictDoNothing().returning({ day: dailyObjectives.day });
+  if (!row) return;
+  // The goal lands in every inbox the moment it is set: a line in the bar, a chime, and a pinned card at the top of the messages.
+  const prize = balance.win.milestones.daily ?? 100;
+  const ps = await tx.select({ id: players.id }).from(players).where(and(eq(players.matchId, m.id), eq(players.hidden, false), isNull(players.eliminatedAt)));
+  for (const p of ps) await notify(tx, m.id, p.id, "system", `Day ${day + 1}'s goal: ${OBJECTIVES[key] ?? key}. +${prize} score to the best tribe at the day's end.`, { objective: true, day, key });
 }
 
 /** The objectives a day may draw: late in the match nobody finishes a tech in a day, so that one retires. */
