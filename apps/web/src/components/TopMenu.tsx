@@ -286,7 +286,7 @@ export function MenuPanelBody({
           <div className="space-y-1 border-b border-slate-800 px-3 py-2 text-xs text-slate-300">
             {state.objective && (
               <p>
-                🎯 <b className="text-slate-200">Day {state.objective.day}:</b> {state.objective.label} <span className="text-emerald-300">+100</span>
+                🎯 <b className="text-slate-200">Day {state.objective.day}:</b> {state.objective.label} <span className="text-emerald-300">+{balance.win.milestones.daily ?? 100}</span>
                 {state.objective.yesterday && (
                   <span className="text-slate-500">
                     {" "}
@@ -392,7 +392,9 @@ export function ObjectiveCard({ state }: { state: MatchStateView }) {
       <p className="font-medium text-amber-100">
         🎯 Day {o.day}'s goal: {o.label} <span className="text-emerald-300">+{prize}</span>
       </p>
-      <p className="mt-0.5 text-xs text-amber-200/80">The best tribe at the day's end takes the points. {o.yesterday ? `Yesterday (${o.yesterday.label}): ${winner ?? "nobody"}.` : ""}</p>
+      <p className="mt-0.5 text-xs text-amber-200/80">
+        The best tribe at the day's end takes the points. {o.yesterday ? `Yesterday (${o.yesterday.label}): ${winner ?? "nobody"}${o.yesterday.value ? ` with ${o.yesterday.value}` : ""}.` : ""}
+      </p>
     </div>
   );
 }

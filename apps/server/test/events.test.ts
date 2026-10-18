@@ -298,16 +298,15 @@ describe("world events", () => {
     expect(objectiveKeysFor(26)).toHaveLength(Object.keys(OBJECTIVES).length - 1);
   });
 
-  it("the leader competes for objectives at a handicap and tribute is sized to the victim", () => {
+  it("the best figure takes the day's objective outright, and tribute is sized to the victim", () => {
     const scores = [
       { playerId: "leader", value: 100 },
       { playerId: "second", value: 70 },
       { playerId: "third", value: 10 },
     ];
-    expect(objectiveWinner(scores, "leader", 0.6)?.playerId).toBe("second");
-    expect(objectiveWinner(scores, "leader", 1)?.playerId).toBe("leader");
-    expect(objectiveWinner(scores, "second", 0.6)?.playerId).toBe("leader");
-    expect(objectiveWinner([{ playerId: "leader", value: 0 }], "leader", 0.6)).toBeUndefined();
+    expect(objectiveWinner(scores)?.playerId).toBe("leader");
+    expect(objectiveWinner([...scores].reverse())?.playerId).toBe("leader");
+    expect(objectiveWinner([{ playerId: "leader", value: 0 }])).toBeUndefined();
     const c = balance.ai;
     expect(tributeDemand({ wood: 10_000 }, "wood")).toBe(Math.floor(10_000 * c.tributeShare));
     expect(tributeDemand({ wood: 10 }, "wood")).toBe(c.tributeMin);

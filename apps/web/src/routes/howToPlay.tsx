@@ -211,7 +211,7 @@ const ADVANCED: Array<{ title: string; body: React.ReactNode }> = [
           <b>The last stand</b>: once per match, when the ice is {ev.lastStand.withinDays} day from your capital, everything in it marches at {ev.lastStand.speedMult}x speed to a region of yours nearer the equator, carry limits ignored. The capital moves when the column arrives.
         </li>
         <li>
-          <b>Daily objectives</b>: each day has a prize of {balance.win.milestones.daily} score for the best tribe at it (most regions, people, food, coastal land, techs finished or battles won). The match's score leader competes at {pct(ev.objective.leaderHandicap)} of their value, so the prize spreads around.
+          <b>Daily objectives</b>: each day has a prize of {balance.win.milestones.daily} score for the best tribe at it (most regions, people, food, coastal land, techs finished or battles won).
         </li>
         <li>
           <b>Bounties</b>: a region that rebels is worth {ev.bounty.rebelPerValue}x its value in food, wood and stone; a horde camp pays {ev.bounty.hordeCamp.food} food, {ev.bounty.hordeCamp.wood} wood and {ev.bounty.hordeCamp.stone} stone; a tribe that refuses tribute carries {pct(ev.bounty.tributeShare)} of its capital stock on its head for {ev.bounty.tributeHours} hours. Win a battle against the region or the player and the reward lands in your capital.

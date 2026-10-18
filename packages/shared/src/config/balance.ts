@@ -344,8 +344,8 @@ export const balance = {
     mercenaries: { chance: 0.5, offerHours: 12, hours: 48, ironPerUnit: { sellsword: 12, free_company: 30 } },
     /** The last stand: once, when the ice is a day from the capital, everything marches south at double speed. */
     lastStand: { withinDays: 1, speedMult: 2 },
-    /** Daily objectives: the score leader competes at a handicap so the prize spreads around; the techs objective retires after `techsUntilDay`, when nobody finishes a tech in a day. */
-    objective: { leaderHandicap: 0.6, techsUntilDay: 20 },
+    /** Daily objectives: the techs objective retires after `techsUntilDay`, when nobody finishes a tech in a day. */
+    objective: { techsUntilDay: 20 },
     /** Bounties: a rebel region is worth `rebelPerValue` x its value in each of food, wood and stone; a horde camp pays `hordeCamp`, growing by `hordeGrow` each time the horde comes down from the same camp unclaimed; a refused tribute puts `tributeShare` of the refuser's capital stock on their head for `tributeHours`. */
     bounty: { rebelPerValue: 10, hordeCamp: { food: 300, wood: 200, stone: 150 } as Record<string, number>, hordeGrow: 1.5, tributeShare: 0.05, tributeHours: 24 },
   },
