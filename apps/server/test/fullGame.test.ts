@@ -176,7 +176,10 @@ describe("a complete match", () => {
     expect(board.match.status).toBe("finished");
     expect(board.match.winnerPlayerId).toBe(m!.winnerPlayerId);
     expect(board.players.map((p) => p.id)).not.toContain(horde[0]!.id);
-    expect(board.players[0]!.id).toBe(m!.winnerPlayerId);
+    // A survival or score win goes to the leaderboard's top; a wonder or a hold is won by whoever did it, wherever they rank.
+    if (m!.winKind === "survival" || m!.winKind === "score") expect(board.players[0]!.id).toBe(m!.winnerPlayerId);
+    else expect(board.players.map((p) => p.id)).toContain(m!.winnerPlayerId);
+    console.log(`full game: won by ${m!.winKind}`);
     expect((await c.call("GET", `/api/matches/${matchId}/summary`)).statusCode).toBe(200);
     expect((await c.call("GET", `/api/matches/${matchId}/replay`)).statusCode).toBe(200);
     const feed = (await c.call("GET", `/api/matches/${matchId}/feed`)).json() as { items: { kind: string; text: string }[] };

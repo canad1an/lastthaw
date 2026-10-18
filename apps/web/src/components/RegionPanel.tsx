@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { AGES, availableBuildings, availableUnits, buildingBlockedBy, balance, buildingById, buildingCost, matchDayOf, buildingSeconds, canAfford, computeRates, normalizeAssignment, realSeconds, regionById, settle, totalPopulation, trainSeconds, unitById, unitCost, formatCountdown, type MatchStateView, type OwnedRegionView, type RegionEconomy, type SightedRegionView, type SpecialResource, NOTE_COLOURS, type NoteColour, loyaltyBand, loyaltyOutlook, HAULER_IDS, haulerCarry, type AgeIndex } from "@lastthaw/shared";
+import { AGES, availableBuildings, availableUnits, buildingBlockedBy, balance, buildingById, buildingCost, matchDayOf, buildingSeconds, canAfford, computeRates, normalizeAssignment, realSeconds, regionById, settle, totalPopulation, trainSeconds, unitById, unitCost, formatCountdown, type MatchStateView, type OwnedRegionView, type RegionEconomy, type SightedRegionView, type SpecialResource, distanceKm, NOTE_COLOURS, type NoteColour, loyaltyBand, loyaltyOutlook, HAULER_IDS, haulerCarry, type AgeIndex } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { useNow } from "../hooks/useNow.js";
 import { Button, Card, ErrorText, fmt, signed } from "./ui.js";
@@ -109,9 +109,53 @@ export function RegionBody({ matchId, state, regionId, clockOffsetMs, tab, onTab
     ) : sighted ? (
       <SightedDetails s={sighted} />
     ) : (
-      <p className="text-sm text-slate-400">You have no recent information about this region. Send a scout to learn more.</p>
+      <ScoutHere matchId={matchId} state={state} regionId={regionId} />
     )}
     </>
+  );
+}
+
+/**
+ * An unknown region: the hint, and if Scouts are standing in a region of yours, a one-tap scout from the nearest few.
+ */
+function ScoutHere({ matchId, state, regionId }: { matchId: string; state: MatchStateView; regionId: string }) {
+  const qc = useQueryClient();
+  const options = useMemo(() => {
+    const out: Array<{ from: string; unitId: string; km: number }> = [];
+    for (const r of state.owned) {
+      if (r.frozen) continue;
+      if ((r.units[balance.scoutUnit] ?? 0) <= 0) continue;
+      out.push({ from: r.regionId, unitId: balance.scoutUnit, km: distanceKm(r.regionId, regionId) });
+    }
+    return out.sort((a, b) => a.km - b.km).slice(0, 3);
+  }, [state.owned, regionId]);
+  const send = useMutation({
+    mutationFn: (o: { from: string; unitId: string }) => api.sendArmy(matchId, o.from, { mission: "scout", targetRegionId: regionId, units: { [o.unitId]: 1 }, people: 0, cargo: {} }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matchState(matchId) }),
+  });
+  const already = state.armies.some((a) => a.mission === "scout" && a.targetRegionId === regionId);
+  return (
+    <div className="space-y-2">
+      <p className="text-sm text-slate-400">You have no recent information about this region. Send a scout to learn more.</p>
+      {already ? (
+        <p className="text-sm text-emerald-300">A scout of yours is on the way.</p>
+      ) : options.length > 0 ? (
+        <div className="space-y-1">
+          {options.map((o) => (
+            <Button key={o.from} variant="ghost" className="w-full justify-between text-left" disabled={send.isPending} onClick={() => send.mutate(o)} title="One unit rides there, looks around and comes home; what it sees goes into your notes on the region">
+              <span>
+                Scout with a {unitById.get(o.unitId)?.name ?? o.unitId} from {regionById(o.from)?.name ?? o.from}
+              </span>
+              <span className="text-xs text-slate-400">{Math.round(o.km)} km</span>
+            </Button>
+          ))}
+          {send.isSuccess && <p className="text-xs text-emerald-300">Sent.</p>}
+          <ErrorText>{send.error?.message}</ErrorText>
+        </div>
+      ) : (
+        <p className="text-xs text-slate-500">No Scouts at home. Train some under a region's Train tab: fast and cheap, and the only unit that can scout.</p>
+      )}
+    </div>
   );
 }
 

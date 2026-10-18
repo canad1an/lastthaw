@@ -310,6 +310,7 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
   }
   const civilians = Object.keys(units).filter((id) => unitById.get(id)?.civilian && !(body.mission === "conquer" && id === "settler"));
   if ((HOSTILE.has(body.mission) || body.mission === "scout") && civilians.length) throw httpError(400, "caravans cannot raid, conquer or scout; settlers only go along to occupy a conquest");
+  if (body.mission === "scout" && Object.keys(units).some((id) => id !== balance.scoutUnit)) throw httpError(400, "only Scouts can scout an unknown region; train some first");
   if (body.mission === "relocate") throw httpError(400, "move the capital from the region panel");
   if (body.mission === "expedition") {
     const x = balance.events.expedition;

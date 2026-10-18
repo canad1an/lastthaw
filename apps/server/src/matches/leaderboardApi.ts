@@ -44,6 +44,8 @@ export async function leaderboardRoutes(app: FastifyInstance, opts: { db: Db }) 
     const member = await isMember(matchId, user.id);
     if (m.status !== "finished" && !member && !user.isAdmin) throw httpError(403, "only players in this match can see its standings while it runs");
     const ps = await db.select().from(players).where(and(eq(players.matchId, matchId), eq(players.hidden, false))).orderBy(desc(players.score));
+    // Once the match is over the winner stands first whatever the score says (a survival win goes by people alive, a wonder by who built it), as the final ranks do.
+    if (m.winnerPlayerId) ps.sort((a, b) => Number(b.id === m.winnerPlayerId) - Number(a.id === m.winnerPlayerId) || b.score - a.score);
     const stats = await db
       .select({
         owner: matchRegions.ownerPlayerId,

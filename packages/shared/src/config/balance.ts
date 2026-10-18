@@ -349,6 +349,8 @@ export const balance = {
     /** Bounties: a rebel region is worth `rebelPerValue` x its value in each of food, wood and stone; a horde camp pays `hordeCamp`, growing by `hordeGrow` each time the horde comes down from the same camp unclaimed; a refused tribute puts `tributeShare` of the refuser's capital stock on their head for `tributeHours`. */
     bounty: { rebelPerValue: 10, hordeCamp: { food: 300, wood: 200, stone: 150 } as Record<string, number>, hordeGrow: 1.5, tributeShare: 0.05, tributeHours: 24 },
   },
+  /** The one unit allowed on a scout mission. */
+  scoutUnit: "tracker",
   win: {
     regionShareForEarlyWin: 0.6,
     holdHours: 48,

@@ -260,10 +260,15 @@ describe("milestone 1 flow", () => {
       }
     }
 
+    // Only Scouts scout; warriors are refused. Train two, then send one and recall it.
+    expect((await a.call("POST", `/api/matches/${matchId}/regions/${aPick}/send`, { mission: "scout", targetRegionId: neighbour, units: { warrior: 1 }, people: 0, cargo: {} })).statusCode).toBe(400);
+    const scoutJob = await a.call("POST", `/api/matches/${matchId}/regions/${aPick}/train`, { unitId: "tracker", qty: 2 });
+    expect(scoutJob.statusCode, JSON.stringify(scoutJob.json())).toBe(200);
+    await skipTo((scoutJob.json() as { endsAt: string }).endsAt);
     // Recall: an outbound army can be turned around and comes home with everything it carried.
     {
-      const warriorsBefore = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json()).owned.find((o) => o.regionId === neighbour)!.units.warrior ?? 0;
-      const out = await a.call("POST", `/api/matches/${matchId}/regions/${neighbour}/send`, { mission: "scout", targetRegionId: aPick, units: { warrior: 1 }, people: 0, cargo: {} });
+      const warriorsBefore = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json()).owned.find((o) => o.regionId === aPick)!.units.tracker ?? 0;
+      const out = await a.call("POST", `/api/matches/${matchId}/regions/${aPick}/send`, { mission: "scout", targetRegionId: neighbour, units: { tracker: 1 }, people: 0, cargo: {} });
       expect(out.statusCode, JSON.stringify(out.json())).toBe(200);
       const { armyId } = out.json() as { armyId: string };
       const recalled = await a.call("POST", `/api/matches/${matchId}/armies/${armyId}/recall`, {});
@@ -275,7 +280,22 @@ describe("milestone 1 flow", () => {
       await skipTo(army.returnsAt!);
       state = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json());
       expect(state.armies.find((x) => x.id === armyId)).toBeUndefined();
-      expect(state.owned.find((o) => o.regionId === neighbour)!.units.warrior).toBe(warriorsBefore);
+      expect(state.owned.find((o) => o.regionId === aPick)!.units.tracker).toBe(warriorsBefore);
+    }
+
+    // Scouting: the report is written into the scout's notes on the region, dated.
+    {
+      const out = await a.call("POST", `/api/matches/${matchId}/regions/${aPick}/send`, { mission: "scout", targetRegionId: neighbour, units: { tracker: 1 }, people: 0, cargo: {} });
+      expect(out.statusCode, JSON.stringify(out.json())).toBe(200);
+      const { arrivesAt } = out.json() as { arrivesAt: string };
+      await skipTo(arrivesAt);
+      state = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json());
+      const note = state.notes.find((n) => n.regionId === neighbour);
+      expect(note?.text).toMatch(/^\[Day \d+ · \d\d:\d\d UTC\] Scouted: /);
+      expect(note?.text).toContain("people");
+      // Home again before the next step, which looks at the armies in flight.
+      const scoutArmy = state.armies.find((x) => x.mission === "scout");
+      if (scoutArmy?.returnsAt) await skipTo(scoutArmy.returnsAt);
     }
 
     // Settling: five settlers claim an empty frontier region and become its workers.
@@ -448,11 +468,13 @@ describe("milestone 1 flow", () => {
       const lat = Math.abs(regionById(r.regionId)!.lat);
       if (lat >= finalLat) expect(r.frozenAt).not.toBeNull();
     }
-    const board = (await a.call("GET", `/api/matches/${matchId}/leaderboard`)).json() as { match: { status: string; winnerPlayerId: string | null }; players: { rank: number; score: number }[] };
+    const board = (await a.call("GET", `/api/matches/${matchId}/leaderboard`)).json() as { match: { status: string; winnerPlayerId: string | null }; players: { id: string; rank: number; score: number }[] };
     expect(board.match.status).toBe("finished");
     expect(board.match.winnerPlayerId).toBeTruthy();
+    // The winner stands first whatever the score (a survival win goes by people alive); the rest follow by score.
     expect(board.players[0]!.rank).toBe(1);
-    expect(board.players[0]!.score).toBeGreaterThanOrEqual(board.players[1]!.score);
+    expect(board.players[0]!.id).toBe(board.match.winnerPlayerId);
+    for (let i = 2; i < board.players.length; i++) expect(board.players[i - 1]!.score).toBeGreaterThanOrEqual(board.players[i]!.score);
     const history = (await a.call("GET", "/api/me/history")).json() as { history: { matchId: string; rank: number }[]; played: number };
     expect(history.played).toBe(1);
     expect(history.history[0]!.matchId).toBe(matchId);

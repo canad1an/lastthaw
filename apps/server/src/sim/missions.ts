@@ -2,6 +2,7 @@ import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { claimBounties } from "./objectives.js";
 import { tribeBattleTalk } from "./tribeVoice.js";
 import { balance, effectsOf, emptySpecial, storageCaps, regionById, resolveCombat, carryCapacity, travelSeconds, findRoute, armySpeed, type UnitCounts, HAULER_IDS, haulerCount, unitById, laneName, applyTechEffects, wallBonusAgainst, breachOf, buildingById, seededRng, availableTechs } from "@lastthaw/shared";
+import { matchDayAt } from "./clock.js";
 import { armies, battles, jobs, matchRegions, players, regionSightings, playerTechs, tradeRoutes, events } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
 import { settleAndLockRegion, type MatchRegionRow, type Tx, setCapital, ownerTechEffects, waySetsFor, stockOf } from "./regions.js";
@@ -479,6 +480,36 @@ async function deliverCargo(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publis
   after(() => publisher.toPlayer(m.id, pid, "army.arrived", { armyId: army.id }));
 }
 
+/** One line of what a scout saw: owner, people, soldiers and the defences. */
+export function describeSighting(s: { ownerName: string | null; population: number; units: Record<string, number>; buildings: Record<string, number>; frozen: boolean }): string {
+  const soldiers = Object.entries(s.units).reduce((a, [id, n]) => a + (unitById.get(id)?.civilian ? 0 : n), 0);
+  const defences = Object.entries(s.buildings)
+    .filter(([id]) => (buildingById.get(id)?.effect.defense ?? 0) > 0)
+    .map(([id, lvl]) => `${buildingById.get(id)?.name ?? id} ${lvl}`)
+    .join(", ");
+  return `Scouted: ${s.frozen ? "frozen, " : ""}${s.ownerName ? `held by ${s.ownerName}` : "nobody's"}, ${s.population} people, ${soldiers} soldiers${defences ? `, ${defences}` : ""}.`;
+}
+
+/** Add a dated line to a player's notes on a region (creating the note), keeping the newest lines when it grows long. */
+export async function appendRegionNote(tx: Tx, m: MatchRow, playerId: string, regionId: string, at: Date, line: string): Promise<void> {
+  const { regionNotes } = await import("../db/schema.js");
+  const day = Math.floor(matchDayAt(m, at)) + 1;
+  const hh = String(at.getUTCHours()).padStart(2, "0");
+  const mm = String(at.getUTCMinutes()).padStart(2, "0");
+  const stamped = `[Day ${day} · ${hh}:${mm} UTC] ${line}`;
+  const [cur] = await tx.select().from(regionNotes).where(and(eq(regionNotes.matchId, m.id), eq(regionNotes.playerId, playerId), eq(regionNotes.regionId, regionId))).limit(1);
+  let text = cur?.text ? `${cur.text}\n${stamped}` : stamped;
+  const lines = text.split("\n");
+  while (text.length > 1500 && lines.length > 1) {
+    lines.shift();
+    text = lines.join("\n");
+  }
+  await tx
+    .insert(regionNotes)
+    .values({ matchId: m.id, playerId, regionId, text, colour: null, updatedAt: at })
+    .onConflictDoUpdate({ target: [regionNotes.matchId, regionNotes.playerId, regionNotes.regionId], set: { text, updatedAt: at } });
+}
+
 async function scout(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher: Publisher, after: After): Promise<void> {
   const target = await lockRegion(tx, m, army.targetRegionId, at);
   const ownerName = target.ownerPlayerId ? await playerName(tx, target.ownerPlayerId) : null;
@@ -496,6 +527,8 @@ async function scout(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher: Pu
     .onConflictDoUpdate({ target: [regionSightings.matchId, regionSightings.playerId, regionSightings.regionId], set: { seenAt: at, snapshot } });
   const name = regionById(army.targetRegionId)?.name ?? army.targetRegionId;
   await notify(tx, m.id, army.playerId, "scout", `Scout report: ${name}`, { regionId: army.targetRegionId, ...snapshot });
+  // The report also goes into the scout's own notes on the region, dated, so what was learned keeps its moment even after things change there.
+  await appendRegionNote(tx, m, army.playerId, army.targetRegionId, at, describeSighting(snapshot));
   if (target.ownerPlayerId && target.ownerPlayerId !== army.playerId) {
     await notify(tx, m.id, target.ownerPlayerId, "scout", `Scouts from ${await playerName(tx, army.playerId)} were seen in ${name}`, { regionId: army.targetRegionId });
   }
