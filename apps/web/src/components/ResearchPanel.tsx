@@ -121,7 +121,7 @@ function TechList({
                   </div>
                   <p className="truncate text-xs text-slate-400">{t.description}</p>
                   <p>
-                    <CostLine cost={cost} stock={stock} suffix={locked ? `from day ${t.earliestDay! + 1}` : formatCountdown(secs)} />
+                    <CostLine cost={cost} stock={stock} suffix={locked ? `from day ${t.earliestDay! + 1}` : formatCountdown(secs)} suffixWarn={locked} />
                   </p>
                 </div>
               }

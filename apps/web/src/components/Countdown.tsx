@@ -14,7 +14,7 @@ export function Countdown({ to, clockOffsetMs, prefix = "" }: { to: string; cloc
 }
 
 /** Cost list where only the resources you lack are red. */
-export function CostLine({ cost, stock, suffix }: { cost: Record<string, number | undefined>; stock: Record<string, number>; suffix?: string }) {
+export function CostLine({ cost, stock, suffix, suffixWarn }: { cost: Record<string, number | undefined>; stock: Record<string, number>; suffix?: string; suffixWarn?: boolean }) {
   const parts = Object.entries(cost).filter(([, v]) => v);
   return (
     <span className="text-xs">
@@ -24,7 +24,7 @@ export function CostLine({ cost, stock, suffix }: { cost: Record<string, number 
           {v} {k.replace("_", " ")}
         </span>
       ))}
-      {suffix && <span className="text-slate-400"> · {suffix}</span>}
+      {suffix && <span className={suffixWarn ? "text-rose-400" : "text-slate-400"}> · {suffix}</span>}
     </span>
   );
 }
