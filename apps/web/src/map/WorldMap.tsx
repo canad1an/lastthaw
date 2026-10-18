@@ -299,13 +299,25 @@ export function WorldMap({ paint, selected, onSelect, focus, className = "", ice
           })}
         </g>
         <g>
-          {armies.map((a) => {
+          {armies.map((a, i) => {
             const s = unitsPerPx / view.k;
+            // Markers closer than a marker's width on screen are fanned out in a small ring, in screen pixels, so none
+            // drifts off its route however far the map is zoomed.
+            const pxPer = (view.k / unitsPerPx) || 1;
+            let k = 0;
+            for (let j = 0; j < i; j++) {
+              const b = armies[j]!;
+              if (Math.hypot(b.x - a.x, b.y - a.y) * pxPer < 18) k += 1;
+            }
+            const ring = k === 0 ? 0 : 16 * (1 + Math.floor((k - 1) / 6));
+            const ang = ((k - 1) * Math.PI) / 3;
+            const dx = k === 0 ? 0 : Math.cos(ang) * ring;
+            const dy = k === 0 ? 0 : Math.sin(ang) * ring;
             return (
               <g
                 key={a.id}
                 data-army={a.id}
-                transform={`translate(${a.x} ${a.y}) scale(${s * MARKER_SCALE})`}
+                transform={`translate(${a.x} ${a.y}) scale(${s * MARKER_SCALE}) translate(${dx / MARKER_SCALE} ${dy / MARKER_SCALE})`}
                 className="cursor-pointer"
                 onPointerEnter={() => setHoverArmy(a.id)}
                 onPointerLeave={() => setHoverArmy((h) => (h === a.id ? null : h))}
