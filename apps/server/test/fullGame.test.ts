@@ -1,6 +1,9 @@
+import { appendFileSync, mkdirSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { and, eq, inArray, isNotNull, isNull } from "drizzle-orm";
-import { balance, matchStateView } from "@lastthaw/shared";
+import { balance, matchStateView, AGES } from "@lastthaw/shared";
 import { buildApp } from "../src/api/app.js";
 import { createDb, type Db } from "../src/db/client.js";
 import { chatMessages, dailyObjectives, events, jobs, matches, players, userMatchResults, users } from "../src/db/schema.js";
@@ -42,6 +45,8 @@ class Client {
  * done, no failed jobs, a daily objective for every day and a feed full of
  * world events.
  */
+const here = path.dirname(fileURLToPath(import.meta.url));
+
 describe("a complete match", () => {
   let app: App;
   let db: Db;
@@ -179,7 +184,30 @@ describe("a complete match", () => {
     // A survival or score win goes to the leaderboard's top; a wonder or a hold is won by whoever did it, wherever they rank.
     if (m!.winKind === "survival" || m!.winKind === "score") expect(board.players[0]!.id).toBe(m!.winnerPlayerId);
     else expect(board.players.map((p) => p.id)).toContain(m!.winnerPlayerId);
-    console.log(`full game: won by ${m!.winKind}`);
+    // Vitest keeps console output to itself, so the report is appended to a file as well.
+    const report = (line: string) => {
+      console.log(line);
+      try {
+        mkdirSync(path.resolve(here, "../test-results"), { recursive: true });
+        appendFileSync(path.resolve(here, "../test-results/full-game.log"), `${new Date().toISOString()} ${line}
+`);
+      } catch {
+        // a report that cannot be written is not a failed match
+      }
+    };
+    report(`full game: won by ${m!.winKind}`);
+    // Age pacing: the day each age was first reached and how many tribes got there by the end.
+    const ages = await db.select().from(events).where(and(eq(events.matchId, matchId), eq(events.kind, "age.advanced"))).orderBy(events.at);
+    const dayOf = (at: Date) => ((at.getTime() - m!.startsAt!.getTime()) / 86400_000) * m!.speed;
+    const first = new Map<number, number>();
+    const reached = new Map<number, Set<string>>();
+    for (const e of ages) {
+      const p = e.payload as { playerId: string; age: number };
+      if (!first.has(p.age)) first.set(p.age, dayOf(e.at));
+      (reached.get(p.age) ?? reached.set(p.age, new Set()).get(p.age)!).add(p.playerId);
+    }
+    const pace = [...first.keys()].sort((a, b) => a - b).map((a) => `age ${a} (${AGES[a]}): first on day ${first.get(a)!.toFixed(1)}, reached by ${reached.get(a)!.size}`).join("; ");
+    report(`age pacing [NO_AGE_DAYS=${process.env.NO_AGE_DAYS ?? "unset"}]: ${pace}`);
     expect((await c.call("GET", `/api/matches/${matchId}/summary`)).statusCode).toBe(200);
     expect((await c.call("GET", `/api/matches/${matchId}/replay`)).statusCode).toBe(200);
     const feed = (await c.call("GET", `/api/matches/${matchId}/feed`)).json() as { items: { kind: string; text: string }[] };

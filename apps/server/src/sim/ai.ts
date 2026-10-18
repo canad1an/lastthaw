@@ -317,7 +317,7 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
         want.push(id);
       };
       walk(ageTech.id);
-      next = want.find((id) => ids.has(id) && (techById.get(id)?.earliestDay ?? 0) <= matchDay);
+      next = want.find((id) => ids.has(id) && (process.env.NO_AGE_DAYS === "1" || (techById.get(id)?.earliestDay ?? 0) <= matchDay));
     }
     // Research never idles: if the tech on the path cannot be paid for yet, the cheapest other tech is researched meanwhile.
     const order: string[] = [];

@@ -14,3 +14,4 @@ apps/web/dist/
 # Playwright phone tests
 apps/web/test-results/
 apps/web/playwright-report/
+apps/server/test-results/
