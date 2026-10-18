@@ -275,7 +275,7 @@ describe("world events", () => {
     expect(feed.items.some((i) => i.kind === "bounty.claimed")).toBe(true);
     // Titles and the objective show up on the public surfaces.
     const state = matchStateView.parse((await call("GET", `/api/matches/${matchId}/state`)).json());
-    expect(state.objective?.day).toBe(0);
+    expect(state.objective?.day).toBe(1);
     expect(state.bounties.length).toBe(0);
   });
 

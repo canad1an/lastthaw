@@ -47,7 +47,7 @@ export function feedText(kind: string, p: Record<string, unknown>, nameOf: (id: 
     case "player.eliminated": return p.by ? `${nameOf(p.playerId)} has been eliminated by ${nameOf(p.by)}: the capital fell and the whole realm is theirs.` : `${nameOf(p.playerId)} is out of the match.`;
     case "bounty.placed": return p.grown ? `The bounty on ${p.regionId ? region(p.regionId) : nameOf(p.playerId)} grows: ${p.reason}.` : `A bounty is placed on ${p.regionId ? region(p.regionId) : nameOf(p.playerId)}: ${p.reason}.`;
     case "bounty.claimed": return `${nameOf(p.by)} claimed the bounty on ${p.regionId ? region(p.regionId) : nameOf(p.playerId)}.`;
-    case "objective.won": return `Day ${p.day}'s objective (${p.label}) goes to ${nameOf(p.playerId)}.`;
+    case "objective.won": return `Day ${Number(p.day) + 1}'s objective (${p.label}) goes to ${nameOf(p.playerId)}.`;
     case "mercenaries.hired": return `${nameOf(p.playerId)} has hired ${p.company}.`;
     case "last.stand": return `${nameOf(p.playerId)} makes a last stand: everything marches south to ${region(p.regionId)}.`;
     default: return kind;

@@ -18,7 +18,7 @@ async function objectiveOf(db: Db, m: { id: string; startsAt: Date; speed: numbe
     .where(and(eq(dailyObjectives.matchId, m.id), inArray(dailyObjectives.day, [dayIdx, dayIdx - 1])));
   const today = rows.find((r) => r.o.day === dayIdx);
   const yday = rows.find((r) => r.o.day === dayIdx - 1);
-  return today ? { day: today.o.day, label: OBJECTIVES[today.o.key] ?? today.o.key, yesterday: yday ? { label: OBJECTIVES[yday.o.key] ?? yday.o.key, winnerName: yday.name, value: yday.o.value ?? 0 } : null } : null;
+  return today ? { day: today.o.day + 1, label: OBJECTIVES[today.o.key] ?? today.o.key, yesterday: yday ? { label: OBJECTIVES[yday.o.key] ?? yday.o.key, winnerName: yday.name, value: yday.o.value ?? 0 } : null } : null;
 }
 import { milestoneLabel, milestonePoints } from "../sim/endgame.js";
 import { requireUser } from "../auth/session.js";

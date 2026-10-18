@@ -266,7 +266,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
   const objRows = await db.select().from(dailyObjectives).where(and(eq(dailyObjectives.matchId, matchId), inArray(dailyObjectives.day, [dayIdx, dayIdx - 1])));
   const today = objRows.find((o) => o.day === dayIdx);
   const yday = objRows.find((o) => o.day === dayIdx - 1);
-  const objective = today ? { day: today.day, label: OBJECTIVES[today.key] ?? today.key, yesterday: yday ? { label: OBJECTIVES[yday.key] ?? yday.key, playerId: yday.winnerPlayerId, value: yday.value ?? 0 } : null } : null;
+  const objective = today ? { day: today.day + 1, label: OBJECTIVES[today.key] ?? today.key, yesterday: yday ? { label: OBJECTIVES[yday.key] ?? yday.key, playerId: yday.winnerPlayerId, value: yday.value ?? 0 } : null } : null;
   const bountyRows = await db.select().from(bounties).where(and(eq(bounties.matchId, matchId), isNull(bounties.claimedBy), or(isNull(bounties.expiresAt), gt(bounties.expiresAt, now)))).orderBy(asc(bounties.createdAt));
   const lastStandEligible = !!me.capitalRegionId && !me.lastStandAt && (freezeDayForLatitude(capLat) ?? 999) - matchDayNow <= balance.events.lastStand.withinDays;
   const stormSet = new Set(stormRows.map((r) => r.regionId));

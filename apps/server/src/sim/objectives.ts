@@ -75,7 +75,7 @@ export async function resolveObjective(tx: Tx, m: MatchRow, day: number, now: Da
     return;
   }
   await tx.update(dailyObjectives).set({ winnerPlayerId: best.playerId, value: Math.round(best.value) }).where(and(eq(dailyObjectives.matchId, m.id), eq(dailyObjectives.day, day)));
-  await awardMilestone(tx, m, `day_${day}`, best.playerId, now, `Day ${day}: ${OBJECTIVES[row.key] ?? row.key}`);
+  await awardMilestone(tx, m, `day_${day}`, best.playerId, now, `Day ${day + 1}: ${OBJECTIVES[row.key] ?? row.key}`);
   await tx.insert(events).values({ matchId: m.id, at: now, kind: "objective.won", payload: { day, key: row.key, label: OBJECTIVES[row.key] ?? row.key, playerId: best.playerId, value: Math.round(best.value) } });
 }
 
