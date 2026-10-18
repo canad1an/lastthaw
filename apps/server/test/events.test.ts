@@ -386,8 +386,20 @@ describe("world events", () => {
 
   it("plague strikes a tribe at most once a day however many crowded towns it has", async () => {
     const [m] = await db.select().from(matches).where(eq(matches.id, matchId));
-    const [ai] = await db.select().from(players).where(and(eq(players.matchId, matchId), eq(players.isAi, true), eq(players.hidden, false))).limit(1);
-    const rows = await db.select({ regionId: matchRegions.regionId }).from(matchRegions).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.ownerPlayerId, ai!.id))).limit(3);
+    // The AI tribe with the most land, so there are several towns to crowd.
+    const [top] = await db
+      .select({ owner: matchRegions.ownerPlayerId, n: sql<number>`count(*)::int` })
+      .from(matchRegions)
+      .innerJoin(players, eq(players.id, matchRegions.ownerPlayerId))
+      .where(and(eq(matchRegions.matchId, matchId), eq(players.isAi, true), eq(players.hidden, false), sql`${matchRegions.frozenAt} is null`))
+      .groupBy(matchRegions.ownerPlayerId)
+      .orderBy(sql`count(*) desc`)
+      .limit(1);
+    const [ai] = await db.select().from(players).where(eq(players.id, top!.owner!));
+    // Lend the tribe two unowned towns for the test: early in a match every tribe holds one region.
+    const spare = await db.select({ regionId: matchRegions.regionId }).from(matchRegions).where(and(eq(matchRegions.matchId, matchId), sql`${matchRegions.ownerPlayerId} is null`, sql`${matchRegions.frozenAt} is null`)).limit(2);
+    await db.update(matchRegions).set({ ownerPlayerId: ai!.id }).where(and(eq(matchRegions.matchId, matchId), inArray(matchRegions.regionId, spare.map((r) => r.regionId))));
+    const rows = await db.select({ regionId: matchRegions.regionId }).from(matchRegions).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.ownerPlayerId, ai!.id), sql`${matchRegions.frozenAt} is null`)).limit(3);
     expect(rows.length).toBeGreaterThanOrEqual(2);
     // Every one of them far over capacity, and a die that always says yes.
     await db.update(matchRegions).set({ plagueUntil: null }).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.ownerPlayerId, ai!.id)));
@@ -398,6 +410,7 @@ describe("world events", () => {
     const sick = await db.select({ regionId: matchRegions.regionId }).from(matchRegions).where(and(eq(matchRegions.matchId, matchId), inArray(matchRegions.regionId, rows.map((r) => r.regionId)), sql`${matchRegions.plagueUntil} > now()`));
     expect(sick.length).toBe(1);
     await db.update(matchRegions).set({ popWorkers: 30, plagueUntil: null }).where(and(eq(matchRegions.matchId, matchId), inArray(matchRegions.regionId, rows.map((r) => r.regionId))));
+    await db.update(matchRegions).set({ ownerPlayerId: null }).where(and(eq(matchRegions.matchId, matchId), inArray(matchRegions.regionId, spare.map((r) => r.regionId))));
   });
 
   it("finishing the match settles the last day's objective instead of letting it lapse", async () => {
