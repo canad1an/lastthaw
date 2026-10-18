@@ -6,7 +6,7 @@ const KIND_ICON: Record<string, string> = { battle: "⚔", scout: "👁", build:
 const TOAST_MS = 5000;
 
 /** Recent messages list used inside the top menu dropdown. */
-export function MessagesList({ messages, matchId, pinned }: { messages: MessageView[]; matchId?: string | undefined; pinned?: ReactNode }) {
+export function MessagesList({ messages, matchId, pinned, onSelectRegion }: { messages: MessageView[]; matchId?: string | undefined; pinned?: ReactNode; onSelectRegion?: ((regionId: string) => void) | undefined }) {
   // Whatever opened the inbox, being on screen is reading it: unread messages are marked read here as well as by the menu.
   const qc = useQueryClient();
   const anyUnread = messages.some((m) => !m.readAt);
@@ -30,11 +30,23 @@ export function MessagesList({ messages, matchId, pinned }: { messages: MessageV
       {shown.length === 0 && <li className="px-3 py-2 text-slate-400">Nothing yet.</li>}
       {shown.map((m) => (
         <li key={m.id}>
-          <button className={`w-full px-3 py-1.5 text-left hover:bg-slate-900 ${m.readAt ? "text-slate-400" : "text-slate-100"}`} onClick={() => setSelected(selected === m.id ? null : m.id)}>
-            <span className="mr-2">{KIND_ICON[m.kind] ?? "•"}</span>
-            {m.subject}
-            <span className="ml-2 text-xs text-slate-500">{new Date(m.createdAt).toLocaleTimeString()}</span>
-          </button>
+          <div className={`flex w-full items-start gap-1 px-3 py-1.5 hover:bg-slate-900 ${m.readAt ? "text-slate-400" : "text-slate-100"}`}>
+            <button className="min-w-0 flex-1 text-left" onClick={() => setSelected(selected === m.id ? null : m.id)}>
+              <span className="mr-2">{KIND_ICON[m.kind] ?? "•"}</span>
+              {m.subject}
+              <span className="ml-2 text-xs text-slate-500">{new Date(m.createdAt).toLocaleTimeString()}</span>
+            </button>
+            {/* A message about a region opens that region, notes and all, with one tap. */}
+            {onSelectRegion && typeof (m.payload as { regionId?: unknown }).regionId === "string" && (
+              <button
+                className="shrink-0 rounded border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-xs text-sky-200 hover:bg-sky-500/20"
+                onClick={() => onSelectRegion((m.payload as { regionId: string }).regionId)}
+                title="Open this region on the map, with your notes on it"
+              >
+                Open region →
+              </button>
+            )}
+          </div>
           {selected === m.id && (
             <div className="px-3 pb-2">
               <MessageBody m={m} />

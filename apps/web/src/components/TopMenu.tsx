@@ -227,7 +227,7 @@ export function MenuPanelBody({
 }) {
   return (
     <>
-        {menu === "messages" && <MessagesList messages={messages} matchId={matchId} pinned={<ObjectiveCard state={state} />} />}
+        {menu === "messages" && <MessagesList messages={messages} matchId={matchId} pinned={<ObjectiveCard state={state} />} onSelectRegion={onSelectRegion} />}
         {menu === "alliance" && (
           <div className="p-3">
             <AlliancePanel matchId={matchId} state={state} />
