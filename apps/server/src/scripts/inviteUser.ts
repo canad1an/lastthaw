@@ -3,13 +3,15 @@
  * and no usable password, then mail them a link to set one. After logging in
  * they pick their tribe name once on the profile page.
  *
- *   node dist/scripts/inviteUser.js "kyle@example.com" "Kyle Adam"     (production, inside the api image)
- *   npx tsx src/scripts/inviteUser.ts "kyle@example.com" "Kyle Adam"   (local)
+ *   node dist/scripts/inviteUser.js "kyle@example.com" "Kyle Adam"                  (production, inside the api image)
+ *   node dist/scripts/inviteUser.js "kyle@example.com" "Kyle Adam" 4903C504         (and a private game's invite code)
+ *   node dist/scripts/inviteUser.js "kyle@example.com" "Kyle Adam" 2026-10-frozen-vanguard  (and registration for a tournament, by slug)
+ *   npx tsx src/scripts/inviteUser.ts "kyle@example.com" "Kyle Adam"                (local)
  */
 import { randomBytes } from "node:crypto";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { createDb, type Db } from "../db/client.js";
-import { matches, users } from "../db/schema.js";
+import { matches, users, tournamentRegistrations } from "../db/schema.js";
 import { hashPassword } from "../auth/password.js";
 import { issueToken } from "../auth/routes.js";
 import { inviteMail, sendMail } from "../mail.js";
@@ -45,9 +47,19 @@ if (arg.endsWith("/inviteUser.js") || arg.endsWith("/inviteUser.ts")) {
   }
   const db = createDb();
   const r = await inviteUser(db, email, name);
-  // A private game's invite code goes in the mail with the game's name.
+  // A tournament slug registers them for it and the mail says when it starts; a private game's invite code goes in the mail with the game's name.
   let game: { name: string; code: string } | undefined;
-  if (code) {
+  let tournament: { name: string; startsAt: Date } | undefined;
+  if (code && /^\d{4}-\d{2}-[a-z0-9-]+$/.test(code)) {
+    const [mm] = await db.select().from(matches).where(and(eq(matches.slug, code), eq(matches.status, "lobby"))).limit(1);
+    if (!mm) {
+      console.error(`no tournament in its waiting room has the address ${code}`);
+      await db.close();
+      process.exit(2);
+    }
+    await db.insert(tournamentRegistrations).values({ matchId: mm.id, userId: r.id }).onConflictDoNothing();
+    tournament = { name: mm.name, startsAt: mm.startsAt };
+  } else if (code) {
     const [mm] = await db.select({ name: matches.name }).from(matches).where(sql`upper(${matches.settings}->>'inviteCode') = ${code.toUpperCase()} and ${matches.status} = 'lobby'`).limit(1);
     if (!mm) {
       console.error(`no open private game has the invite code ${code}`);
@@ -56,7 +68,7 @@ if (arg.endsWith("/inviteUser.js") || arg.endsWith("/inviteUser.ts")) {
     }
     game = { name: mm.name, code: code.toUpperCase() };
   }
-  const mail = inviteMail(name, r.token, INVITE_DAYS, game);
+  const mail = inviteMail(name, r.token, INVITE_DAYS, game, tournament);
   await sendMail(email.trim().toLowerCase(), mail.subject, mail.text, mail.html);
   console.log(JSON.stringify({ id: r.id, created: r.created, mailed: true }));
   await db.close();

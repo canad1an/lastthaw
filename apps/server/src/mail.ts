@@ -170,19 +170,24 @@ export function resetMail(displayName: string, token: string) {
   });
 }
 
-export function inviteMail(displayName: string, token: string, days: number, game?: { name: string; code: string }) {
+export function inviteMail(displayName: string, token: string, days: number, game?: { name: string; code: string }, tournament?: { name: string; startsAt: Date }) {
   const site = config().PUBLIC_URL;
   const url = `${site}/reset?token=${encodeURIComponent(token)}`;
   return renderMail({
-    subject: game ? `You are invited: ${game.name}` : "You are invited to Last Thaw",
-    preheader: "Matt has opened a Last Thaw account for you. Set your password and pick your tribe.",
+    subject: game ? `You are invited: ${game.name}` : tournament ? `You are invited: ${tournament.name}` : "You are invited to Last Thaw",
+    preheader: "Matt Adam has opened a Last Thaw account for you. Set your password and pick your tribe.",
     greeting: `Hi ${displayName}`,
     paragraphs: [
-      "Matt has opened a Last Thaw account for you. Thirty days, a real map, and the ice closing in from the poles.",
+      "Matt Adam has opened an account for you on Last Thaw, a game he created: thirty days of strategy on a real map of the world, with the ice closing in from the poles a little further every day.",
       "Set your password with the button below, then log in and pick your tribe name on your profile. You choose it once; it is how the other players know you in every match.",
       ...(game ? [`There is a private game waiting for you: "${game.name}". On the Matches page, enter the invite code to join it.`] : []),
+      ...(tournament
+        ? [
+            `You are already registered for the tournament "${tournament.name}", which starts ${whenUtc(tournament.startsAt)}. The lobby opens an hour before the start: that is when you join from the Matches page, pick your capital on the map, and meet the others in the chat. Miss the start and you can still join for a while after; the ice waits for nobody, but the first days are quiet.`,
+          ]
+        : []),
     ],
-    ...(game ? { facts: [{ label: "Game", value: game.name }, { label: "Invite code", value: game.code }] } : {}),
+    ...(game ? { facts: [{ label: "Game", value: game.name }, { label: "Invite code", value: game.code }] } : tournament ? { facts: [{ label: "Tournament", value: tournament.name }, { label: "Starts", value: whenUtc(tournament.startsAt) }, { label: "Lobby opens", value: "one hour before" }] } : {}),
     cta: { label: "Set my password", url },
     note: `The link is valid for ${days} days. The field manual at ${site}/how-to-play takes ten minutes.`,
   });
