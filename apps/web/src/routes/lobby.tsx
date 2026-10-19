@@ -117,7 +117,7 @@ export function LobbyPage() {
       <div className="space-y-3">
         {matches.isLoading && <p className="text-slate-400">Loading tournaments...</p>}
         {matches.data?.filter((m) => m.kind === "tournament").length === 0 && !matches.isLoading && <p className="text-slate-400">No tournament is open right now.</p>}
-        {matches.data?.filter((m) => m.kind === "tournament").map((m) => <MatchRow key={m.id} m={m} canJoin={!!me.data?.approved} />)}
+        {matches.data?.filter((m) => m.kind === "tournament").map((m) => <MatchRow key={m.id} m={m} canJoin={!!me.data?.approved} admin={!!me.data?.isAdmin} />)}
       </div>
 
       <section className="space-y-3">
@@ -129,7 +129,7 @@ export function LobbyPage() {
           {me.data?.emailVerified && me.data.approved && <JoinByCode />}
         </div>
         {matches.data?.filter((m) => m.kind !== "tournament").length === 0 && <p className="text-sm text-slate-500">No games open. Create one below.</p>}
-        {matches.data?.filter((m) => m.kind !== "tournament").map((m) => <MatchRow key={m.id} m={m} canJoin={!!me.data?.approved} />)}
+        {matches.data?.filter((m) => m.kind !== "tournament").map((m) => <MatchRow key={m.id} m={m} canJoin={!!me.data?.approved} admin={!!me.data?.isAdmin} />)}
       </section>
 
       {me.data?.emailVerified && (me.data.approved || me.data.isAdmin || info.data?.devTools) && <CreateMatch admin={!!me.data.isAdmin} />}
@@ -250,7 +250,7 @@ function JoinByCode() {
   );
 }
 
-function MatchRow({ m, canJoin }: { m: MatchSummary; canJoin: boolean }) {
+function MatchRow({ m, canJoin, admin }: { m: MatchSummary; canJoin: boolean; admin: boolean }) {
   const qc = useQueryClient();
   const now = useNow(1000);
   const [copied, setCopied] = useState(false);
@@ -315,14 +315,18 @@ function MatchRow({ m, canJoin }: { m: MatchSummary; canJoin: boolean }) {
             {m.status === "lobby" ? (m.capitalRegionId ? "Lobby" : "Pick your start") : "Play"}
           </Link>
         ) : registering ? (
-          <Button variant={m.registered ? "ghost" : "primary"} onClick={() => register.mutate()} disabled={!canJoin || register.isPending} title={canJoin ? (m.registered ? "You will get a reminder a day ahead and when the lobby opens" : "We mail you a day ahead and when the lobby opens") : "Verify your email and ask for beta access first"}>
+          <Button variant={m.registered ? "ghost" : "primary"} onClick={() => register.mutate()} disabled={!canJoin || register.isPending} title={canJoin ? (m.registered ? "You will get a reminder a day ahead and when the lobby opens" : "We mail you a day ahead and when the lobby opens") : "Verify your email first"}>
             {m.registered ? "Registered ✓" : "Register"}
           </Button>
+        ) : m.status === "lobby" ? (
+          <Button onClick={() => join.mutate()} disabled={!canJoin || join.isPending} title={canJoin ? "" : "Verify your email first"}>
+            Join
+          </Button>
         ) : (
-          m.status === "lobby" && (
-            <Button onClick={() => join.mutate()} disabled={!canJoin || join.isPending} title={canJoin ? "" : "Verify your email first"}>
-              Join
-            </Button>
+          admin && (
+            <Link to="/match/$matchId" params={{ matchId: m.slug || m.id }} className="btn-ice rounded-md px-3 py-2 text-sm font-semibold" title="Admin view: every region, army and march, read-only">
+              Watch
+            </Link>
           )
         )}
         <ErrorText>{join.error?.message ?? register.error?.message}</ErrorText>
