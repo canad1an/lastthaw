@@ -238,6 +238,12 @@ describe("milestone 1 flow", () => {
     const aliceInbox = (await a.call("GET", `/api/matches/${matchId}/messages`)).json() as { messages: { kind: string; payload: { report?: { attackerWon: boolean; conquered: boolean } } }[] };
     const battleMsg = aliceInbox.messages.find((x) => x.kind === "battle");
     expect(battleMsg?.payload.report).toMatchObject({ attackerWon: true, conquered: true });
+    // The battle is in the attacker's notes on the region: what was brought, how it ended.
+    {
+      const st = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json());
+      const note = st.notes.find((n) => n.regionId === neighbour);
+      expect(note?.text).toMatch(/Battle: .*3 Warrior.*the region was taken/);
+    }
 
     // Raid Bob if he is reachable by land from the new region; the warning must show on his side.
     const bobCapital = bState.owned[0]!.regionId;
@@ -292,7 +298,7 @@ describe("milestone 1 flow", () => {
       await skipTo(arrivesAt);
       state = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json());
       const note = state.notes.find((n) => n.regionId === neighbour);
-      expect(note?.text).toMatch(/^\[Day \d+ · \d\d:\d\d UTC\] Scouted: /);
+      expect(note?.text).toMatch(/\[Day \d+ · \d\d:\d\d UTC\] Scouted: /);
       expect(note?.text).toContain("people");
       // Home again before the next step, which looks at the armies in flight.
       const scoutArmy = state.armies.find((x) => x.mission === "scout");

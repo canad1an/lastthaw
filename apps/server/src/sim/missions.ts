@@ -652,6 +652,20 @@ async function battle(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher: P
   const verb = army.mission === "raid" ? "Raid on" : "Attack on";
   await notify(tx, m.id, army.playerId, "battle", `${verb} ${region.name}: ${result.attackerWon ? "victory" : "defeat"}${conquered ? ", region conquered" : ""}`, { report });
   if (defenderId) await notify(tx, m.id, defenderId, "battle", `${attackerName} ${army.mission === "raid" ? "raided" : "attacked"} ${region.name}: ${result.attackerWon ? "they won" : "we held"}${conquered ? ", region lost" : ""}`, { report });
+  // Both sides keep the battle in their notes on the region: what each brought, what it cost, how it ended.
+  {
+    const unitsText = (u: UnitCounts) =>
+      Object.entries(u)
+        .filter(([, n]) => n > 0)
+        .map(([id, n]) => `${n} ${unitById.get(id)?.name ?? id}`)
+        .join(", ") || "nothing";
+    const lost = (u: UnitCounts) => Object.values(u).reduce((a, b) => a + b, 0);
+    const verb = army.mission === "raid" ? "raided" : "attacked";
+    const outcome = conquered ? "the region was taken" : result.attackerWon ? "the attackers won" : "the defenders held";
+    const line = `Battle: ${attackerName} ${verb} with ${unitsText(army.units)} against ${defenderName}'s ${unitsText(defenderUnits)}; ${outcome}. Attackers lost ${lost(result.attackerLosses)}, defenders ${lost(result.defenderLosses)}.`;
+    await appendRegionNote(tx, m, army.playerId, army.targetRegionId, at, line);
+    if (defenderId) await appendRegionNote(tx, m, defenderId, army.targetRegionId, at, line);
+  }
 
   if (conquered) {
     await tx.update(armies).set({ status: "done", units: survivors }).where(eq(armies.id, army.id));
