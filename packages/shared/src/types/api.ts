@@ -337,6 +337,8 @@ export const sightedRegionView = z.object({
   wall: z.string().nullable().default(null),
   /** A blizzard is blowing there now. */
   storm: z.boolean().default(false),
+  /** The units standing there right now: seen from a Watchtower of yours next door. */
+  units: z.record(z.string(), z.number()).optional(),
 });
 
 export const pactView = z.object({

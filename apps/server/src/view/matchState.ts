@@ -128,6 +128,39 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
     }
   }
 
+  // Watchtowers: every region next to a tower of mine is in plain view, units and all, as of now.
+  {
+    const mineIds = new Set(ownedRows.map((r) => r.regionId));
+    const watched = new Set<string>();
+    for (const r of ownedRows) if ((r.buildings.watchtower ?? 0) >= 1) for (const n of regionById(r.regionId)?.neighbors ?? []) if (!mineIds.has(n)) watched.add(n);
+    if (watched.size) {
+      const rows = await db
+        .select()
+        .from(matchRegions)
+        .where(and(eq(matchRegions.matchId, matchId), inArray(matchRegions.regionId, [...watched])));
+      const ownerIds = [...new Set(rows.map((r) => r.ownerPlayerId).filter((x): x is string => !!x))];
+      const names = new Map(ownerIds.length ? (await db.select({ id: players.id, name: players.name }).from(players).where(inArray(players.id, ownerIds))).map((p) => [p.id, p.name]) : []);
+      for (const row of rows) {
+        const { economy } = projectRegion(row, now, m.speed);
+        const units = Object.fromEntries(Object.entries(row.units as Record<string, number>).filter(([, n]) => n > 0));
+        const view: SightedRegionView = {
+          regionId: row.regionId,
+          ownerPlayerId: row.ownerPlayerId,
+          ownerName: row.ownerPlayerId ? (names.get(row.ownerPlayerId) ?? null) : null,
+          population: economy.popWorkers + economy.popSoldiers + economy.popOccupiers,
+          seenAt: now.toISOString(),
+          roads: ((row.buildings as Record<string, number>).roads ?? 0) >= 1,
+          wall: wallOf(row.buildings as Record<string, number>),
+          storm: false,
+          units,
+        };
+        const i = sighted.findIndex((s) => s.regionId === row.regionId);
+        if (i >= 0) sighted[i] = view;
+        else sighted.push(view);
+      }
+    }
+  }
+
   // Radar and satellites: live sight of regions near (or everywhere beyond) my borders.
   if (myTechFx.vision > 0) {
     const mineIds = new Set(ownedRows.map((r) => r.regionId));
@@ -163,7 +196,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
           storm: false,
         };
         const i = sighted.findIndex((s) => s.regionId === row.regionId);
-        if (i >= 0) sighted[i] = view;
+        if (i >= 0) sighted[i] = { ...view, ...(sighted[i]!.units ? { units: sighted[i]!.units } : {}) };
         else {
           sighted.push(view);
           seen.add(row.regionId);

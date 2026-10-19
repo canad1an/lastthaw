@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { balance, matchStateView, regionById } from "@lastthaw/shared";
 import { buildApp } from "../src/api/app.js";
 import { createDb, type Db } from "../src/db/client.js";
-import { emailTokens, fairplayFlags, matches, playerActions, players, users } from "../src/db/schema.js";
+import { emailTokens, fairplayFlags, matches, playerActions, players, users, matchRegions } from "../src/db/schema.js";
 import { detectAutomation } from "../src/fairplay/detect.js";
 import { createRedis } from "../src/redis.js";
 import { newToken } from "../src/auth/password.js";
@@ -370,6 +370,22 @@ describe("api routes", () => {
     expect((await Out.call("GET", `${base}/summary`)).statusCode).toBeGreaterThanOrEqual(403);
     expect((await Ann.call("GET", `${base}/replay`)).statusCode).toBe(403);
     expect((await A.call("GET", `${base}/replay`)).statusCode).toBe(200);
+  });
+
+  it("a watchtower keeps the regions next to it in plain view, units and all", async () => {
+    const base = `/api/matches/${gameId}`;
+    const before = matchStateView.parse((await Ann.call("GET", `${base}/state`)).json());
+    const cap = before.me.capitalRegionId!;
+    const neighbours = regionById(cap)!.neighbors;
+    await db.update(matchRegions).set({ buildings: sql`${matchRegions.buildings} || '{"watchtower": 1}'::jsonb` }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
+    const rows = await db.select({ regionId: matchRegions.regionId }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), inArray(matchRegions.regionId, neighbours), sql`${matchRegions.ownerPlayerId} is distinct from ${before.me.playerId}`));
+    const after = matchStateView.parse((await Ann.call("GET", `${base}/state`)).json());
+    for (const r of rows) {
+      const s = after.sighted.find((x) => x.regionId === r.regionId);
+      expect(s, `${r.regionId} in view`).toBeTruthy();
+      expect(s!.units, `${r.regionId} units seen`).toBeDefined();
+    }
+    await db.update(matchRegions).set({ buildings: sql`${matchRegions.buildings} - 'watchtower'` }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
   });
 
   it("region notes: a player marks a region and writes a note only they can read", async () => {

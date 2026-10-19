@@ -246,6 +246,16 @@ function SightedDetails({ s }: { s: SightedRegionView }) {
       <p>Owner: {s.ownerName ?? "nobody"}</p>
       {s.wall && <p>Defences: {buildingById.get(s.wall)?.name ?? s.wall}</p>}
       <p>Population: {s.population === null ? "unknown" : fmt(s.population)}</p>
+      {s.units && (
+        <p title="Seen live from a Watchtower of yours next door">
+          Units there now:{" "}
+          {Object.entries(s.units).length
+            ? Object.entries(s.units)
+                .map(([id, n]) => `${n} ${unitById.get(id)?.name ?? id}`)
+                .join(", ")
+            : "none"}
+        </p>
+      )}
       {!s.ownerName && (s.population ?? 0) > 0 && (
         <p className="mt-1 rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs text-amber-100" title="Neutral tribes are never under protection">
           A neutral tribe: a few warriors guarding a hoard of copper, tin or iron. Raid it from day one; no protection applies.
