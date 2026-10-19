@@ -61,6 +61,41 @@ describe("world map", () => {
     }
   });
 
+  it("draws every region's point inside its own shape, so routes and markers land on the right region", () => {
+    // Salamat's centroid used to land in Batha, so a route to it ended next door. The anchor pass in tools/mapgen fixes such regions.
+    type Point = [number, number];
+    const rings = (d: string): Point[][] => {
+      const out: Point[][] = [];
+      let cur: Point[] = [];
+      for (const m of d.matchAll(/([MLZ])([^MLZ]*)/g)) {
+        if (m[1] === "M" && cur.length) {
+          out.push(cur);
+          cur = [];
+        }
+        if (m[1] === "Z") {
+          if (cur.length) out.push(cur);
+          cur = [];
+          continue;
+        }
+        const nums = m[2]!.trim().split(/[\s,]+/).filter(Boolean).map(Number);
+        for (let i = 0; i + 1 < nums.length; i += 2) cur.push([nums[i]!, nums[i + 1]!]);
+      }
+      if (cur.length) out.push(cur);
+      return out;
+    };
+    const inRing = (p: Point, ring: Point[]) => {
+      let c = false;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const [xi, yi] = ring[i]!;
+        const [xj, yj] = ring[j]!;
+        if (yi > p[1] !== yj > p[1] && p[0] < ((xj - xi) * (p[1] - yi)) / (yj - yi) + xi) c = !c;
+      }
+      return c;
+    };
+    const outside = world.regions.filter((r) => !rings(r.path).some((ring) => inRing([r.x, r.y], ring))).map((r) => r.name);
+    expect(outside).toEqual([]);
+  });
+
   it("exposes helpers", () => {
     const first = allRegions()[0]!;
     expect(regionById(first.id)).toBe(first);

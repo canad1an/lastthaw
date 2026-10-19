@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, keys, type MessageView } from "../api/client.js";
 
-const KIND_ICON: Record<string, string> = { battle: "⚔", scout: "👁", build: "🔨", research: "📜", trade: "⚖", system: "ℹ", alliance: "🤝" };
+const KIND_ICON: Record<string, string> = { battle: "⚔", scout: "🔭", build: "🔨", research: "📜", trade: "⚖", system: "ℹ", alliance: "🤝" };
 const TOAST_MS = 5000;
 
 /** Recent messages list used inside the top menu dropdown. */

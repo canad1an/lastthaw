@@ -5,7 +5,7 @@
   "type": "module",
   "description": "One-time world map generator for Last Thaw (Natural Earth admin-1 -> ~400 regions)",
   "scripts": {
-    "generate": "tsx src/generate.ts && tsx src/extents.ts",
+    "generate": "tsx src/generate.ts && tsx src/anchors.ts && tsx src/extents.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

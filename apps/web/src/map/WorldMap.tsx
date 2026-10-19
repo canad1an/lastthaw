@@ -365,6 +365,13 @@ export function WorldMap({ paint, selected, onSelect, focus, flyTo, className = 
                       <path d="M-3.6 0.6L-0.6 3.6" />
                       <path d="M-4.2 4.2l-0.8 0.8" strokeWidth={2} />
                     </g>
+                  ) : a.mission === "scout" ? (
+                    // Binoculars: two barrels with a bridge.
+                    <g fill="#0b1a2b" stroke="#0b1a2b" strokeWidth={0.8} strokeLinejoin="round">
+                      <rect x={-4.4} y={-1.2} width={3.4} height={4} rx={0.8} />
+                      <rect x={1} y={-1.2} width={3.4} height={4} rx={0.8} />
+                      <rect x={-2.2} y={-3.2} width={4.4} height={2.4} rx={0.6} />
+                    </g>
                   ) : (
                     <path d={a.mission === "transport" ? "M-3.5 -1h7v4h-7z M-2 -3h4v2h-4z" : a.mission === "settle" ? "M-4 2h8v1h-8z M-3 2v-4l3-2 3 2v4" : "M-3 3L3 -3 M3 -3h-2.5 M3 -3v2.5"} fill={a.mission === "transport" || a.mission === "settle" ? "#0b1a2b" : "none"} stroke="#0b1a2b" strokeWidth={1.4} strokeLinecap="round" />
                   ))}
