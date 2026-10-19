@@ -1,9 +1,11 @@
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, isNull, sql } from "drizzle-orm";
 import { allRegions, balance, distanceKm, seededRng } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { events, jobs, matchRegions, matches, players, tournamentRegistrations } from "../db/schema.js";
 import { foundCapital, type Tx } from "../sim/regions.js";
-import { matchNow } from "../sim/clock.js";
+import { matchDayAt, matchNow } from "../sim/clock.js";
+import { isTournament } from "./registrations.js";
+import { notify } from "../worker/jobs.js";
 import type { Publisher } from "../realtime/publish.js";
 import { startOptionsFor } from "./startOptions.js";
 import { logger } from "../logger.js";
@@ -146,4 +148,44 @@ async function placeNeutralTribes(tx: Tx, matchId: string, capitals: string[], c
       })
       .onConflictDoNothing();
   }
+}
+
+/**
+ * A running tournament's registered players who are not in it yet (a start that ran before enrolment existed, or a
+ * registration the start missed) come in during the first days: a player row, a free starting region, fresh
+ * protection. Returns how many were enrolled; `onlyUserId` restricts it to one person (the join route).
+ */
+export async function enrolRegistered(db: Db, matchId: string, onlyUserId?: string): Promise<number> {
+  return db.transaction(async (tx) => {
+    const [m] = await tx.select().from(matches).where(eq(matches.id, matchId)).for("update");
+    if (!m || m.status !== "running" || !isTournament(m.settings)) return 0;
+    const now = matchNow(m);
+    if (matchDayAt(m, now) > balance.schedule.lateJoinDays) return 0;
+    const joined = new Set((await tx.select({ userId: players.userId }).from(players).where(eq(players.matchId, matchId))).map((p) => p.userId).filter((x): x is string => !!x));
+    const registered = await tx
+      .select({ userId: users.id, name: users.displayName })
+      .from(tournamentRegistrations)
+      .innerJoin(users, eq(users.id, tournamentRegistrations.userId))
+      .where(and(eq(tournamentRegistrations.matchId, matchId), isNull(users.suspendedAt), ...(onlyUserId ? [eq(users.id, onlyUserId)] : [])));
+    const taken = (await tx.select({ capital: players.capitalRegionId }).from(players).where(eq(players.matchId, matchId))).map((p) => p.capital).filter((x): x is string => !!x);
+    const protectionUntil = new Date(now.getTime() + (balance.match.protectionDays * 86400 * 1000) / m.speed);
+    let n = 0;
+    for (const r of registered) {
+      if (joined.has(r.userId) || joined.size + n >= balance.match.maxHumanPlayers) continue;
+      const [p] = await tx.insert(players).values({ matchId, userId: r.userId, name: r.name, protectionUntil }).returning();
+      const capital = startOptionsFor(m.seed, p!.id, taken)[0];
+      if (!capital) {
+        logger.warn({ matchId, playerId: p!.id }, "no capital available for a late-enrolled player");
+        continue;
+      }
+      taken.push(capital);
+      await tx.update(players).set({ capitalRegionId: capital }).where(eq(players.id, p!.id));
+      await foundCapital(tx, matchId, p!.id, capital, now);
+      await notify(tx, matchId, p!.id, "system", `You are in "${m.name}". A starting region was chosen for you; your five families are at work there now, and nobody can attack you for the first ${balance.match.protectionDays} days.`, { regionId: capital });
+      await tx.insert(events).values({ matchId, at: now, kind: "player.joined", payload: { playerId: p!.id, name: r.name, late: true } });
+      n += 1;
+    }
+    void sql;
+    return n;
+  });
 }

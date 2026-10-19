@@ -488,6 +488,15 @@ describe("api routes", () => {
     const [benPlayer] = await db.select().from(players).where(and(eq(players.matchId, cupId), eq(players.userId, benId2)));
     expect(benPlayer?.capitalRegionId).toBeTruthy();
     expect(await db.select().from(players).where(and(eq(players.matchId, cupId), eq(players.userId, annId2)))).toHaveLength(1);
+    // A registered player left out of a start that already happened comes in during the first days, with a capital of their own.
+    await db.delete(players).where(and(eq(players.matchId, cupId), eq(players.userId, benId2)));
+    const late = await Ben.call("POST", `/api/matches/${cupId}/join`, {});
+    expect(late.statusCode, JSON.stringify(late.json())).toBe(201);
+    const [benAgain] = await db.select().from(players).where(and(eq(players.matchId, cupId), eq(players.userId, benId2)));
+    expect(benAgain?.capitalRegionId).toBeTruthy();
+    expect(benAgain?.protectionUntil && benAgain.protectionUntil.getTime()).toBeGreaterThan(Date.now());
+    // Not registered: still refused once it runs.
+    expect((await Out.call("POST", `/api/matches/${cupId}/join`, {})).statusCode).toBeGreaterThanOrEqual(400);
     expect(((await Ann.call("GET", "/api/matches")).json() as Array<{ id: string; registered: boolean }>).find((m) => m.id === cupId)!.registered).toBe(false);
   });
 

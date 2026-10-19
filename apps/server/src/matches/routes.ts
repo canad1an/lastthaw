@@ -12,7 +12,7 @@ import type { Publisher } from "../realtime/publish.js";
 import { matchNow } from "../sim/clock.js";
 import { settleAndLockRegion } from "../sim/regions.js";
 import { buildMatchState } from "../view/matchState.js";
-import { startMatch, matchLengthSeconds } from "./start.js";
+import { startMatch, matchLengthSeconds, enrolRegistered } from "./start.js";
 import { farEnough, startOptionsFor } from "./startOptions.js";
 import { pickMatchName } from "../worker/weekly.js";
 import { idParams, regionParams } from "./params.js";
@@ -172,8 +172,20 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
     const { inviteCode } = joinMatchBody.parse(req.body ?? {});
     const [m] = await db.select().from(matches).where(eq(matches.id, matchId)).limit(1);
     if (!m) throw httpError(404, "match not found");
-    if (m.status !== "lobby") throw httpError(409, "the match has already started");
     if (!user.approved) throw httpError(403, "Last Thaw is in private beta: ask Matt for access before joining a match");
+    // A registered player who is not in a tournament that has already started comes in during its first days.
+    if (m.status === "running" && isTournament(m.settings)) {
+      const already = await myPlayer(matchId, user.id);
+      if (already) return { playerId: already.id };
+      const [reg] = await db.select({ id: tournamentRegistrations.id }).from(tournamentRegistrations).where(and(eq(tournamentRegistrations.matchId, matchId), eq(tournamentRegistrations.userId, user.id))).limit(1);
+      if (reg && (await enrolRegistered(db, matchId, user.id)) > 0) {
+        const p = await myPlayer(matchId, user.id);
+        await publisher.toMatch(matchId, "player.joined", { name: user.displayName });
+        return reply.code(201).send({ playerId: p!.id });
+      }
+      throw httpError(409, reg ? `the first ${balance.schedule.lateJoinDays} days have passed; the next tournament is open for registration` : "the match has already started");
+    }
+    if (m.status !== "lobby") throw httpError(409, "the match has already started");
     const s = (m.settings ?? {}) as { kind?: string; inviteCode?: string; createdBy?: string };
     if (s.kind === "private" && s.createdBy !== user.id && (inviteCode ?? "").toUpperCase() !== (s.inviteCode ?? "").toUpperCase()) throw httpError(403, "this is a private game: enter its invite code");
     // Tournaments: register any time, join once the lobby opens an hour before the start (admins may always join).

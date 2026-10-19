@@ -241,6 +241,8 @@ export const balance = {
     upcoming: 6,
     /** Tournaments take registrations from the start; joining (and the lobby itself) opens this many hours before the start. */
     joinOpensHours: 1,
+    /** A registered player who is somehow not in when the tournament starts may still come in during its first days. */
+    lateJoinDays: 3,
     /** 0 = Sunday ... 6 = Saturday. */
     weekday: 1,
     hourUtc: 0,

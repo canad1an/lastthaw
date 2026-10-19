@@ -339,7 +339,7 @@ export function HowToPlayPage() {
           <li>
             <b>House rules.</b> One account per person, and play by hand. Scripts, bots and browser agents that play for you are not allowed: the game logs every command and flags accounts whose play has a machine's rhythm, and those accounts are suspended.
           </li>
-          <li>Tournaments are the scheduled weekly matches at 1x and the only ranked ones: they count toward the Hall of Fame and its titles (Survivor, Conqueror, Builder, Explorer). Register any time; you are enrolled when it starts whether or not you come to the lobby, which opens an hour before so you can pick your capital. Skip it and a starting region is picked for you. Anyone approved can create a public or private game at up to {balance.match.maxGameSpeed}x, which is the whole match in about four hours; private games need an invite code to join.</li>
+          <li>Tournaments are the scheduled weekly matches at 1x and the only ranked ones: they count toward the Hall of Fame and its titles (Survivor, Conqueror, Builder, Explorer). Register any time; you are enrolled when it starts whether or not you come to the lobby, which opens an hour before so you can pick your capital. Skip it and a starting region is picked for you; and if you were registered but are somehow not in, Join still works during the first three days. Anyone approved can create a public or private game at up to {balance.match.maxGameSpeed}x, which is the whole match in about four hours; private games need an invite code to join.</li>
           <li>When day 30 ends the map falls into the winter night for two hours: the ice has stopped, the winner is named, and the final report is one click away.</li>
         </ul>
       </section>

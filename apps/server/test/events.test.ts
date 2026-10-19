@@ -216,13 +216,16 @@ describe("world events", () => {
     const seen = new Set([capital]);
     let ring = [capital];
     let far: string | null = null;
-    for (let h = 0; h < 4; h++) {
+    // Three or more hops out; some capitals sit on small landmasses, so the search goes on until it finds one.
+    for (let h = 0; h < 10 && !far; h++) {
       const next: string[] = [];
       for (const id of ring) for (const n of regionById(id)!.neighbors) if (!seen.has(n)) { seen.add(n); next.push(n); }
-      if (h >= 2 && next.length) far = next[0]!;
+      // The rule counts "at least minHops out" as beyond the minHops-th ring: the first ring past it will do.
+      if (h >= balance.events.expedition.minHops && next.length) far = next[0]!;
       ring = next;
+      if (ring.length === 0) break;
     }
-    expect(far).toBeTruthy();
+    expect(far, "a region three hops from the capital").toBeTruthy();
     expect((await call("POST", `/api/matches/${matchId}/regions/${capital}/send`, { mission: "expedition", targetRegionId: capR.neighbors[0]!, units: { warrior: 3 }, people: 0, cargo: {} })).statusCode).toBe(400);
     const exp = await call("POST", `/api/matches/${matchId}/regions/${capital}/send`, { mission: "expedition", targetRegionId: far!, units: { warrior: 3 }, people: 0, cargo: {} });
     expect(exp.statusCode, JSON.stringify(exp.json())).toBe(200);
