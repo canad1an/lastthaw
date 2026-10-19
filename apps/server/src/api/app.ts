@@ -34,6 +34,7 @@ function isCommand(method: string, url: string): boolean {
   return method !== "GET" && method !== "HEAD" && method !== "OPTIONS" && COMMAND_PATH.test(url.split("?")[0]!);
 }
 import { publicRoutes } from "../matches/publicApi.js";
+import { matchPageRoutes } from "../matches/pageHtml.js";
 import { tradeRouteRoutes } from "../matches/tradeApi.js";
 import { registerWebsocket } from "./ws.js";
 
@@ -124,6 +125,7 @@ export async function buildApp(deps: AppDeps = {}) {
   await app.register(adminRoutes, { db, publisher, redis });
   await app.register(registrationRoutes, { db, redis });
   await app.register(publicRoutes, { db });
+  await app.register(matchPageRoutes, { db });
   await app.register(tradeRouteRoutes, { db, publisher });
   await app.register(feedRoutes, { db });
   await app.register(eventRoutes, { db, publisher });

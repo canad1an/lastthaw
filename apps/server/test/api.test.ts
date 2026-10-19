@@ -633,6 +633,29 @@ describe("api routes", () => {
     expect(await detectAutomation(db)).toBe(0);
   });
 
+  it("match pages are served with their own head: title, description, sharing card and structured data", async () => {
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "lt-web-"));
+    writeFileSync(join(dir, "index.html"), '<!doctype html><html><head><meta name="description" content="generic" /><meta property="og:title" content="g" /><meta property="og:description" content="g" /><title>Last Thaw</title></head><body></body></html>');
+    const before = process.env.WEB_DIST;
+    process.env.WEB_DIST = dir;
+    try {
+      const page = await Out.call("GET", `/match/${gameId}/report`);
+      expect(page.statusCode).toBe(200);
+      expect(page.headers["content-type"]).toContain("text/html");
+      expect(page.body).toContain("<title>");
+      expect(page.body).toContain('rel="canonical"');
+      // A match still running is kept out of the index; a finished one carries its structured data.
+      expect(page.body).toContain("noindex");
+      expect((await Out.call("GET", "/match/no-such-thing/report")).statusCode).toBe(200);
+    } finally {
+      if (before === undefined) delete process.env.WEB_DIST;
+      else process.env.WEB_DIST = before;
+    }
+  });
+
   it("public pages and histories answer without a session", async () => {
     for (const url of ["/api/public/matches", "/api/public/hall-of-fame", "/api/matches/past"]) {
       const res = await app.inject({ method: "GET", url });

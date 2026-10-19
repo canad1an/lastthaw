@@ -208,7 +208,13 @@ describe("a complete match", () => {
     }
     const pace = [...first.keys()].sort((a, b) => a - b).map((a) => `age ${a} (${AGES[a]}): first on day ${first.get(a)!.toFixed(1)}, reached by ${reached.get(a)!.size}`).join("; ");
     report(`age pacing [NO_AGE_DAYS=${process.env.NO_AGE_DAYS ?? "unset"}]: ${pace}`);
-    expect((await c.call("GET", `/api/matches/${matchId}/summary`)).statusCode).toBe(200);
+    const summary = (await c.call("GET", `/api/matches/${matchId}/summary`)).json() as { story: { paragraphs: string[]; howWon: string; leadChanges: unknown[] }; standings: Array<{ peakRank: number | null; battles: number; techs: number }> };
+    expect(summary.story.paragraphs.length).toBeGreaterThanOrEqual(3);
+    expect(summary.story.howWon).toContain("won");
+    expect(summary.story.leadChanges.length).toBeGreaterThanOrEqual(1);
+    expect(summary.standings.some((s) => (s.techs ?? 0) > 0)).toBe(true);
+    const feedAll = (await c.call("GET", `/api/matches/${matchId}/feed?all=1`)).json() as { items: unknown[] };
+    expect(feedAll.items.length).toBeGreaterThan(40);
     expect((await c.call("GET", `/api/matches/${matchId}/replay`)).statusCode).toBe(200);
     const feed = (await c.call("GET", `/api/matches/${matchId}/feed`)).json() as { items: { kind: string; text: string }[] };
     expect(feed.items.length).toBeGreaterThanOrEqual(20);

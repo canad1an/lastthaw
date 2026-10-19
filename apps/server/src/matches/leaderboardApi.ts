@@ -5,6 +5,8 @@ import { AGES, allRegions, balance, buildingById, iceLatitudeOnDay, regionById }
 import type { Db } from "../db/client.js";
 import { allianceMembers, alliances, jobs, matchMilestones, matchRegions, matches, players, userMatchResults, users, battles, scoreHistory, ownershipFrames, dailyObjectives } from "../db/schema.js";
 import { OBJECTIVES } from "../sim/objectives.js";
+import { buildStory, playerArcs } from "./story.js";
+import { isTournament } from "./registrations.js";
 import { titlesOf } from "./publicApi.js";
 
 /** Today's objective and yesterday's winner, for the leaderboard. */
@@ -158,10 +160,14 @@ export async function leaderboardRoutes(app: FastifyInstance, opts: { db: Db }) 
     const history: Record<string, Array<{ day: number; score: number; regions: number; population: number }>> = {};
     for (const h of hist) (history[h.playerId] ??= []).push({ day: h.day, score: h.score, regions: h.regions, population: h.population });
     const [bt] = await db.select({ n: sql<number>`count(*)::int` }).from(battles).where(eq(battles.matchId, matchId));
+    // The story of the match and each player's arc through it, for the written report and the sharing card.
+    const arcs = await playerArcs(db, matchId, ps);
+    const story = await buildStory(db, m, ps, standings);
     return {
-      match: { id: m.id, slug: m.slug ?? m.id, name: m.name, speed: m.speed, startsAt: m.startsAt.toISOString(), finishedAt: m.finishedAt?.toISOString() ?? null, winnerPlayerId: m.winnerPlayerId, winKind: m.winKind ?? null, wonderName: buildingById.get(balance.win.wonderBuilding)?.name ?? "wonder" },
+      match: { id: m.id, slug: m.slug ?? m.id, name: m.name, speed: m.speed, startsAt: m.startsAt.toISOString(), finishedAt: m.finishedAt?.toISOString() ?? null, winnerPlayerId: m.winnerPlayerId, winKind: m.winKind ?? null, wonderName: buildingById.get(balance.win.wonderBuilding)?.name ?? "wonder", tournament: isTournament(m.settings) },
       me: { playerId: me?.id ?? "", rank: me ? (standings.find((s) => s.id === me.id)?.rank ?? null) : null },
-      standings,
+      standings: standings.map((s) => ({ ...s, ...(arcs.get(s.id) ?? { peakRank: null, battles: 0, battlesWon: 0, conquests: 0, techs: 0 }) })),
+      story,
       milestones,
       objective: await objectiveOf(db, m),
       history,

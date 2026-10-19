@@ -61,6 +61,9 @@ services:
       DATABASE_URL: postgres://lastthaw:${POSTGRES_PASSWORD}@pgbouncer:6432/lastthaw
       DATABASE_URL_DIRECT: postgres://lastthaw:${POSTGRES_PASSWORD}@postgres:5432/lastthaw
       DB_POOL_MAX: "20"
+      WEB_DIST: /srv/web
+    volumes:
+      - webdist:/srv/web:ro
     depends_on:
       pgbouncer:
         condition: service_started

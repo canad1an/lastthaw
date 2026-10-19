@@ -17,6 +17,11 @@ interface Standing {
   population: number;
   eliminated: boolean;
   won: boolean;
+  peakRank?: number | null;
+  battles?: number;
+  battlesWon?: number;
+  conquests?: number;
+  techs?: number;
 }
 interface Point {
   day: number;
@@ -25,7 +30,18 @@ interface Point {
   population: number;
 }
 export interface Summary {
-  match: { id: string; slug?: string; name: string; speed: number; startsAt: string; finishedAt: string | null; winnerPlayerId: string | null; winKind: string | null; wonderName: string };
+  match: { id: string; slug?: string; name: string; speed: number; startsAt: string; finishedAt: string | null; winnerPlayerId: string | null; winKind: string | null; wonderName: string; tournament?: boolean };
+  story?: {
+    paragraphs: string[];
+    howWon: string;
+    leadChanges: Array<{ day: number; playerId: string; playerName: string }>;
+    biggestBattle: { day: number; regionName: string; attackerName: string; defenderName: string; losses: number; attackerWon: boolean; conquered: boolean } | null;
+    iceLatitude: number;
+    eliminated: number;
+    counts: Record<string, number>;
+    prev: { slug: string; name: string } | null;
+    next: { slug: string; name: string } | null;
+  };
   me: { playerId: string; rank: number | null };
   standings: Standing[];
   milestones: { key: string; label: string; playerId: string; playerName: string; points: number; at: string }[];
@@ -99,7 +115,12 @@ export function ReportPage() {
   const { matchId } = useParams({ from: "/match/$matchId/report" });
   const q = useSummary(matchId);
   useSlugAddress(matchId, q.data?.match?.slug, "/report");
-  usePageMeta({ title: q.data?.match ? `${q.data.match.name}: final report` : "Match report", description: q.data?.match ? `How ${q.data.match.name} was won: final standings, ages reached, battles fought and the winner's path through thirty days of ice. A Last Thaw match report.` : undefined, path: `/match/${q.data?.match?.slug || matchId}/report` });
+  const winnerName = q.data?.standings?.find((p) => p.won)?.name;
+  usePageMeta({
+    title: q.data?.match ? (winnerName ? `${q.data.match.name}: final report, won by ${winnerName}` : `${q.data.match.name}: final report`) : "Match report",
+    description: q.data?.story?.paragraphs[0] ?? (q.data?.match ? `How ${q.data.match.name} was won: final standings, ages reached, battles fought and the winner's path through thirty days of ice. A Last Thaw match report.` : undefined),
+    path: `/match/${q.data?.match?.slug || matchId}/report`,
+  });
   const colorOf = useMemo(() => {
     const ids = q.data?.standings?.map((p) => p.id) ?? [];
     return (id: string) => REPORT_COLORS[Math.max(0, ids.indexOf(id)) % REPORT_COLORS.length]!;
@@ -134,8 +155,8 @@ function ReportBody({ matchId, s, colorOf, onClose }: { matchId: string; s: Summ
         <div className="overflow-hidden rounded-2xl border border-amber-500/40 bg-slate-950 shadow-2xl">
           <div className="bg-gradient-to-b from-amber-500/20 to-transparent px-5 pb-4 pt-8 text-center">
             <p className="text-xs uppercase tracking-[0.3em] text-amber-300">{s?.match.name ?? "The match"} · the last thaw</p>
-            <h1 className="mt-2 text-4xl font-bold text-white sm:text-5xl">{!s ? "…" : running ? "Still being fought" : iWon ? "Victory!" : winner ? `${winner.name} wins` : "The match is over"}</h1>
-            {s && winner && !running && <p className="mt-3 text-base text-amber-100">{endedBy(s.match.winKind, winner.name, s.match.wonderName)}</p>}
+            <h1 className="mt-2 text-3xl font-bold text-white sm:text-5xl">{!s ? "…" : running ? `${s.match.name}: still being fought` : iWon ? `${s.match.name}: victory!` : winner ? `${s.match.name}: won by ${winner.name}` : `${s.match.name}: the match is over`}</h1>
+            {s && winner && !running && <p className="mt-3 text-base text-amber-100">{s.story?.howWon || endedBy(s.match.winKind, winner.name, s.match.wonderName)}</p>}
             {s && running && <p className="mt-3 text-sm text-slate-300">This page fills in when the match ends and stays here for good.</p>}
             {s && mine && !iWon && !running && (
               <p className="mt-2 text-sm text-slate-300">
@@ -151,6 +172,13 @@ function ReportBody({ matchId, s, colorOf, onClose }: { matchId: string; s: Summ
 
           {s && (
             <div className="space-y-6 px-5 pb-6">
+              {s.story && s.story.paragraphs.length > 0 && (
+                <section aria-label="How the match went" className="space-y-2 text-sm leading-relaxed text-slate-300">
+                  {s.story.paragraphs.map((p) => (
+                    <p key={p.slice(0, 40)}>{p}</p>
+                  ))}
+                </section>
+              )}
               <div className="grid grid-cols-2 gap-2 text-center text-xs sm:grid-cols-5">
                 <Stat label="players" value={`${s.totals.players}`} />
                 <Stat label="battles" value={fmt(s.totals.battles)} />
@@ -213,6 +241,24 @@ function ReportBody({ matchId, s, colorOf, onClose }: { matchId: string; s: Summ
                 </section>
               )}
 
+              <Arcs standings={s.standings} />
+              <Timeline matchId={matchId} finished={!running} />
+              {(s.story?.prev || s.story?.next) && (
+                <nav className="flex flex-wrap justify-between gap-2 text-sm" aria-label="Other tournaments">
+                  {s.story?.prev ? (
+                    <Link to="/match/$matchId/report" params={{ matchId: s.story.prev.slug }} className="text-sky-300 hover:underline">
+                      ← Previous tournament: {s.story.prev.name}
+                    </Link>
+                  ) : (
+                    <span />
+                  )}
+                  {s.story?.next && (
+                    <Link to="/match/$matchId/report" params={{ matchId: s.story.next.slug }} className="text-sky-300 hover:underline">
+                      Next tournament: {s.story.next.name} →
+                    </Link>
+                  )}
+                </nav>
+              )}
               <div className="flex flex-wrap justify-center gap-2">
                 <Button variant="ghost" onClick={share}>
                   {copied ? "Link copied" : "Share this report"}
@@ -222,6 +268,12 @@ function ReportBody({ matchId, s, colorOf, onClose }: { matchId: string; s: Summ
                 </Link>
                 <Link to="/match/$matchId/leaderboard" params={{ matchId }}>
                   <Button variant="ghost">Full leaderboard</Button>
+                </Link>
+                <Link to="/hall-of-fame">
+                  <Button variant="ghost">Hall of fame</Button>
+                </Link>
+                <Link to="/how-to-play" hash="winning">
+                  <Button variant="ghost">How matches are won</Button>
                 </Link>
                 <Link to="/">
                   <Button variant="ghost">Back to the lobby</Button>
@@ -340,4 +392,59 @@ export function useSummaryOpen(matchId: string, finished: boolean): [boolean, (v
     }
   };
   return [open, set];
+}
+
+/** Each tribe's arc in a line: best rank held, conquests, battles won, techs. */
+function Arcs({ standings }: { standings: Standing[] }) {
+  const rows = standings.filter((p) => p.peakRank !== undefined).slice(0, 12);
+  if (rows.length === 0) return null;
+  return (
+    <section>
+      <h2 className="mb-2 text-sm font-semibold text-slate-200">Every tribe's thirty days</h2>
+      <ul className="space-y-1 text-xs text-slate-400">
+        {rows.map((p) => (
+          <li key={p.id}>
+            <span className="text-slate-200">{p.name}</span>
+            {p.allianceTag ? ` [${p.allianceTag}]` : ""}: finished #{p.rank}
+            {p.peakRank ? `, best rank #${p.peakRank}` : ""}, {p.regions} region{p.regions === 1 ? "" : "s"} and {fmt(p.population)} people in the {AGES[p.age as AgeIndex]} Age
+            {p.conquests ? `, ${p.conquests} conquest${p.conquests === 1 ? "" : "s"}` : ""}
+            {p.battles ? `, ${p.battlesWon ?? 0} of ${p.battles} battle${p.battles === 1 ? "" : "s"} won` : ", no battles"}
+            {p.techs ? `, ${p.techs} tech${p.techs === 1 ? "" : "s"} researched` : ""}
+            {p.eliminated ? ". Eliminated." : "."}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** The match day by day: every public event from the feed, once the match is over. */
+function Timeline({ matchId, finished }: { matchId: string; finished: boolean }) {
+  const q = useQuery({
+    queryKey: ["match", matchId, "timeline"],
+    queryFn: () => fetch(`/api/matches/${matchId}/feed?all=1`, { credentials: "include" }).then((r) => (r.ok ? (r.json() as Promise<{ items: Array<{ at: string; kind: string; text: string }> }>) : Promise.reject(new Error("no feed")))),
+    enabled: finished,
+    staleTime: 10 * 60_000,
+  });
+  const [open, setOpen] = useState(false);
+  const items = q.data?.items ?? [];
+  if (!finished || items.length === 0) return null;
+  const shown = open ? items : items.slice(0, 12);
+  return (
+    <section>
+      <h2 className="mb-2 text-sm font-semibold text-slate-200">Day by day</h2>
+      <ol className="space-y-1 text-xs text-slate-400">
+        {shown.map((e, i) => (
+          <li key={`${e.at}-${i}`}>
+            <span className="tabular-nums text-slate-500">{new Date(e.at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span> {e.text}
+          </li>
+        ))}
+      </ol>
+      {items.length > 12 && (
+        <button className="mt-2 text-xs text-sky-300 hover:underline" onClick={() => setOpen((o) => !o)}>
+          {open ? "Show less" : `Show all ${items.length} events`}
+        </button>
+      )}
+    </section>
+  );
 }

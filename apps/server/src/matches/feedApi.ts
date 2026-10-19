@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { asc, and, desc, eq, inArray } from "drizzle-orm";
 import { AGES, buildingById, regionById, type AgeIndex } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { events, matches, players } from "../db/schema.js";
@@ -66,12 +66,14 @@ export async function feedRoutes(app: FastifyInstance, opts: { db: Db }) {
       const [p] = await db.select({ id: players.id }).from(players).where(and(eq(players.matchId, matchId), eq(players.userId, user.id))).limit(1);
       if (!p && !user.isAdmin) throw httpError(403, "only players in this match can read its feed while it runs");
     }
+    // `?all=1` on a finished match returns the whole timeline, oldest first, for the written report.
+    const all = m.status === "finished" && (req.query as { all?: string }).all === "1";
     const rows = await db
       .select()
       .from(events)
       .where(and(eq(events.matchId, matchId), inArray(events.kind, [...PUBLIC_KINDS])))
-      .orderBy(desc(events.at))
-      .limit(40);
+      .orderBy(all ? asc(events.at) : desc(events.at))
+      .limit(all ? 600 : 40);
     const ps = await db.select({ id: players.id, name: players.name }).from(players).where(eq(players.matchId, matchId));
     const names = new Map(ps.map((p) => [p.id, p.name]));
     const nameOf = (id: unknown) => (typeof id === "string" ? (names.get(id) ?? "someone") : "someone");
