@@ -353,6 +353,13 @@ export const balance = {
   },
   /** The one unit allowed on a scout mission. */
   scoutUnit: "tracker",
+  /**
+   * Scouting is not free: a scout slipping into a held region may be caught, and a caught scout files no report.
+   * Chance = catchBase + catchPerTenSoldiers per ten soldiers standing there (+ wallBonus behind a wall), doubled by a
+   * Watchtower in or beside the region, capped at catchCap. Rolled per scout; the report arrives if any survive.
+   * Nobody is caught where nobody lives: an empty, unheld region is safe.
+   */
+  scouting: { catchBase: 0.05, catchPerTenSoldiers: 0.01, catchCap: 0.4, watchtowerMult: 2, wallBonus: 0.1 },
   win: {
     regionShareForEarlyWin: 0.6,
     holdHours: 48,

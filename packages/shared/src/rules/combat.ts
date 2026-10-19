@@ -4,6 +4,29 @@ import { seededRng } from "./rng.js";
 
 export type UnitCounts = Record<string, number>;
 
+/**
+ * The chance one scout is caught in a region. `held`: someone owns it. `soldiers`: fighting units standing there.
+ * `watchtower`: a tower in the region or in a neighbour of the same owner. `wall`: any wall line.
+ * Nobody is caught where nobody is: an unheld region with no soldiers is safe.
+ */
+export function scoutCatchChance(o: { held: boolean; soldiers: number; watchtower: boolean; wall: boolean }): number {
+  const s = balance.scouting;
+  if (!o.held && o.soldiers <= 0) return 0;
+  let c = s.catchBase + Math.floor(Math.max(0, o.soldiers) / 10) * s.catchPerTenSoldiers + (o.wall ? s.wallBonus : 0);
+  if (o.watchtower) c *= s.watchtowerMult;
+  return Math.min(s.catchCap, c);
+}
+
+/** Fighting units in a region: everything that is not a civilian or a hauler. */
+export function soldierCount(units: UnitCounts): number {
+  let n = 0;
+  for (const [id, q] of Object.entries(units)) {
+    const d = unitById.get(id);
+    if (d && !d.civilian && !d.hauler) n += q;
+  }
+  return n;
+}
+
 export interface CombatSide {
   units: UnitCounts;
   /** Multiplicative bonus on strength (e.g. 0.25 for +25 %). */

@@ -213,7 +213,7 @@ export const UNITS: readonly UnitDef[] = [
   // Stone
   { id: "warrior", name: "Warrior", age: 0, description: "Club and courage.", attack: 3, defense: 3, speed: 5, carry: 15, cost: { food: 20, wood: 10 }, baseSeconds: 30 },
   { id: "slinger", name: "Slinger", age: 0, description: "Cheap ranged harassment.", attack: 4, defense: 1, speed: 5, carry: 10, cost: { food: 15, stone: 10 }, baseSeconds: 30 },
-  { id: "tracker", name: "Scout", age: 0, description: "Fast and light. The only unit that can scout an unknown region; it looks around and comes home with a report.", attack: 1, defense: 2, speed: 9, carry: 10, cost: { food: 25 }, baseSeconds: 25 },
+  { id: "tracker", name: "Scout", age: 0, description: "Fast and light. The only unit that can scout an unknown region; it looks around and comes home with a report. In a held region a scout may be caught: more soldiers, a wall or a Watchtower there make it likelier, and a caught scout files no report, so send two or three where it matters.", attack: 1, defense: 2, speed: 9, carry: 10, cost: { food: 25 }, baseSeconds: 25 },
   { id: "settler", name: "Settler", age: 0, description: "Families with tools and seed grain. A group of five can settle unclaimed land and become its first workers.", attack: 0, defense: 1, speed: 4, carry: 0, cost: { food: 60, wood: 60, stone: 25 }, baseSeconds: 600, minBatch: 5, civilian: true },
   { id: "caravan", name: "Caravan", age: 0, description: "Pack animals and drivers. Carries goods to your regions or an ally's, then walks back. Roads make it faster; Wagons and Trains carry more.", attack: 0, defense: 1, speed: 8, carry: 500, cost: { food: 40, wood: 60 }, baseSeconds: 300, civilian: true, hauler: true },
   // Bronze

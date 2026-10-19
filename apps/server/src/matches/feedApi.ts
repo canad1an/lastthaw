@@ -12,7 +12,7 @@ import { milestoneLabel } from "../sim/endgame.js";
 export const PUBLIC_KINDS = [
   "match.started", "ice.advanced", "age.advanced", "milestone", "wonder.started", "win.hold.started", "win.hold.cancelled", "match.finished", "player.eliminated",
   "storm.warning", "storm.hit", "thaw.pocket", "plague.outbreak", "refugees.arrived", "refugees.lost", "horde.sighted", "boom.found",
-  "expedition.returned", "pact.made", "pact.ending", "tribute.paid", "tribute.refused", "bounty.placed", "bounty.claimed", "objective.won", "mercenaries.hired", "last.stand", "capital.moved", "player.eliminated",
+  "scout.caught", "expedition.returned", "pact.made", "pact.ending", "tribute.paid", "tribute.refused", "bounty.placed", "bounty.claimed", "objective.won", "mercenaries.hired", "last.stand", "capital.moved", "player.eliminated",
 ] as const;
 
 export function feedText(kind: string, p: Record<string, unknown>, nameOf: (id: unknown) => string): string {
@@ -38,6 +38,7 @@ export function feedText(kind: string, p: Record<string, unknown>, nameOf: (id: 
     case "refugees.lost": return `A column of ${p.people} fleeing ${region(p.fromRegionId)} was lost to the ice.`;
     case "horde.sighted": return `The Northern Horde marches from ${region(p.camp)} on ${region(p.regionId)} (${nameOf(p.playerId)}).`;
     case "boom.found": return `A rich vein of ${p.resource} in ${region(p.regionId)} (${nameOf(p.playerId)}).`;
+    case "scout.caught": return `${nameOf(p.playerId)}'s ${Number(p.caught) === 1 ? "scout was" : `${p.caught} scouts were`} caught in ${region(p.regionId)}.`;
     case "expedition.returned": return `${nameOf(p.playerId)}'s expedition to ${region(p.regionId)} ${p.outcome}.`;
     case "pact.made": return `${nameOf(p.a)} and ${nameOf(p.b)} have agreed a ${p.kind === "ceasefire" ? "ceasefire" : "non-aggression pact"}.`;
     case "pact.ending": return `${nameOf(p.by)} has given notice: the pact with ${nameOf(p.other)} ends in a day.`;

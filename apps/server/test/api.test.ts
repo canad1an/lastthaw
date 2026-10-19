@@ -1,9 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
-import { balance, matchStateView, regionById } from "@lastthaw/shared";
+import { balance, matchStateView, regionById, scoutCatchChance, seededRng } from "@lastthaw/shared";
+import { Publisher } from "../src/realtime/publish.js";
+import { runDueJobs } from "../src/worker/jobs.js";
 import { buildApp } from "../src/api/app.js";
 import { createDb, type Db } from "../src/db/client.js";
-import { emailTokens, fairplayFlags, matches, playerActions, players, users, matchRegions } from "../src/db/schema.js";
+import { emailTokens, fairplayFlags, matches, playerActions, players, users, matchRegions, regionNotes } from "../src/db/schema.js";
 import { detectAutomation } from "../src/fairplay/detect.js";
 import { createRedis } from "../src/redis.js";
 import { newToken } from "../src/auth/password.js";
@@ -451,6 +453,60 @@ describe("api routes", () => {
     expect(god.sighted.every((s) => s.units !== undefined && s.ownerName !== null)).toBe(true);
     expect(god.players.length).toBeGreaterThan(0);
     expect((await A.call("GET", `${base}/messages`)).statusCode).toBe(200);
+  });
+
+  it("scouts into a garrisoned, towered region may be caught; the seeded roll decides, and both sides hear of it", async () => {
+    expect(scoutCatchChance({ held: false, soldiers: 0, watchtower: false, wall: false })).toBe(0);
+    expect(scoutCatchChance({ held: true, soldiers: 0, watchtower: false, wall: false })).toBeCloseTo(balance.scouting.catchBase, 6);
+    expect(scoutCatchChance({ held: true, soldiers: 200, watchtower: true, wall: true })).toBe(balance.scouting.catchCap);
+
+    // Ben scouts; Ann holds a garrison of 200 behind a palisade with a watchtower, next door to Ben's capital so the scouts can walk there.
+    const base = `/api/matches/${gameId}`;
+    const benState = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
+    const benCap = benState.me.capitalRegionId!;
+    const annPlayerId = matchStateView.parse((await Ann.call("GET", `${base}/state`)).json()).me.playerId;
+    const target = regionById(benCap)!.neighbors.find((n) => !benState.owned.some((o) => o.regionId === n))!;
+    await db
+      .insert(matchRegions)
+      .values({ matchId: gameId, regionId: target, assignment: { ...balance.start.assignment }, settledAt: new Date(), ownerPlayerId: annPlayerId, units: { warrior: 200 }, buildings: { watchtower: 1, palisade: 1 } })
+      .onConflictDoUpdate({ target: [matchRegions.matchId, matchRegions.regionId], set: { ownerPlayerId: annPlayerId, units: { warrior: 200 }, buildings: { watchtower: 1, palisade: 1 } } });
+    const [benRow] = await db.select({ units: matchRegions.units }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, benCap)));
+    await db.update(matchRegions).set({ units: { ...benRow!.units, tracker: 3 } }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, benCap)));
+
+    const out = await Ben.call("POST", `${base}/regions/${benCap}/send`, { mission: "scout", targetRegionId: target, units: { tracker: 3 }, people: 0, cargo: {} });
+    expect(out.statusCode, out.body).toBe(200);
+    const { armyId, arrivesAt } = out.json() as { armyId: string; arrivesAt: string };
+    const now = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json()).match.now;
+    // Dev tools are off in this suite, so the match clock is moved the way the time-skip route moves it.
+    await db.update(matches).set({ clockOffsetSeconds: sql`${matches.clockOffsetSeconds} + ${Math.ceil((Date.parse(arrivesAt) - Date.parse(now)) / 1000) + 5}` }).where(eq(matches.id, gameId));
+    const redis = createRedis();
+    await runDueJobs(db, new Publisher(redis), logger);
+    await redis.quit().catch(() => {});
+
+    // The same seeded roll the server made: the match seed and the army id decide who was caught.
+    const [m] = await db.select({ seed: matches.seed }).from(matches).where(eq(matches.id, gameId));
+    const rng = seededRng(`${m!.seed}:scout:${armyId}`);
+    let caught = 0;
+    for (let i = 0; i < 3; i++) if (rng() < balance.scouting.catchCap) caught += 1;
+    const name = regionById(target)!.name;
+    const benInbox = ((await Ben.call("GET", `${base}/messages`)).json() as { messages: Array<{ kind: string; subject: string; payload: { regionId?: string; caught?: number } }> }).messages;
+    const annInbox = ((await Ann.call("GET", `${base}/messages`)).json() as { messages: Array<{ kind: string; subject: string }> }).messages;
+    const state = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
+    if (caught === 3) {
+      expect(benInbox.find((x) => x.subject === `Your 3 scouts to ${name} never returned`)?.payload).toMatchObject({ regionId: target, caught: 3 });
+      expect(annInbox.some((x) => x.subject.startsWith("3 enemy scouts from") && x.subject.endsWith(`were caught in ${name}`))).toBe(true);
+      expect(state.armies.find((x) => x.id === armyId)).toBeUndefined();
+      expect(state.notes.find((n) => n.regionId === target)?.text).toContain("never returned");
+    } else {
+      const report = benInbox.find((x) => x.subject.startsWith(`Scout report: ${name}`));
+      expect(report?.payload).toMatchObject({ regionId: target, caught });
+      if (caught > 0) expect(report?.subject).toContain(`${caught} of 3 did not make it`);
+      const army = state.armies.find((x) => x.id === armyId)!;
+      expect(army.status).toBe("returning");
+      expect(army.units.tracker).toBe(3 - caught);
+    }
+    // The scouting wrote into Ben's notes; the notes test that follows starts from none.
+    await db.delete(regionNotes).where(and(eq(regionNotes.matchId, gameId), eq(regionNotes.playerId, benState.me.playerId)));
   });
 
   it("region notes: a player marks a region and writes a note only they can read", async () => {

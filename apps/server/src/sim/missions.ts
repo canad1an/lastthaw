@@ -1,7 +1,7 @@
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { claimBounties } from "./objectives.js";
 import { tribeBattleTalk } from "./tribeVoice.js";
-import { balance, effectsOf, emptySpecial, storageCaps, regionById, resolveCombat, carryCapacity, travelSeconds, findRoute, armySpeed, type UnitCounts, HAULER_IDS, haulerCount, unitById, laneName, applyTechEffects, wallBonusAgainst, breachOf, buildingById, seededRng, availableTechs } from "@lastthaw/shared";
+import { balance, effectsOf, emptySpecial, storageCaps, regionById, resolveCombat, carryCapacity, travelSeconds, findRoute, armySpeed, type UnitCounts, HAULER_IDS, haulerCount, unitById, laneName, applyTechEffects, wallBonusAgainst, breachOf, buildingById, seededRng, availableTechs, scoutCatchChance, soldierCount, wallOf } from "@lastthaw/shared";
 import { matchDayAt } from "./clock.js";
 import { armies, battles, jobs, matchRegions, players, regionSightings, playerTechs, tradeRoutes, events } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
@@ -513,6 +513,52 @@ export async function appendRegionNote(tx: Tx, m: MatchRow, playerId: string, re
 async function scout(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher: Publisher, after: After): Promise<void> {
   const target = await lockRegion(tx, m, army.targetRegionId, at);
   const ownerName = target.ownerPlayerId ? await playerName(tx, target.ownerPlayerId) : null;
+  const name = regionById(army.targetRegionId)?.name ?? army.targetRegionId;
+  const pid = army.playerId;
+
+  // The risk: in a held or garrisoned region each scout may be caught. Friends never catch you. The roll is seeded, so a replay agrees.
+  const friendly = !!target.ownerPlayerId && (target.ownerPlayerId === army.playerId || (await areAllied(tx, m.id, army.playerId, target.ownerPlayerId)));
+  const sent = sumUnits(army.units);
+  let caught = 0;
+  if (!friendly && sent > 0) {
+    let watchtower = effectsOf(target.buildings).watchtower;
+    if (!watchtower && target.ownerPlayerId) {
+      const near = regionById(army.targetRegionId)?.neighbors ?? [];
+      if (near.length) {
+        const rows = await tx
+          .select({ buildings: matchRegions.buildings })
+          .from(matchRegions)
+          .where(and(eq(matchRegions.matchId, m.id), inArray(matchRegions.regionId, near), eq(matchRegions.ownerPlayerId, target.ownerPlayerId)));
+        watchtower = rows.some((r) => effectsOf(r.buildings).watchtower);
+      }
+    }
+    const chance = scoutCatchChance({ held: !!target.ownerPlayerId, soldiers: soldierCount(target.units), watchtower, wall: wallOf(target.buildings) !== null });
+    if (chance > 0) {
+      const rng = seededRng(`${m.seed}:scout:${army.id}`);
+      for (let i = 0; i < sent; i++) if (rng() < chance) caught += 1;
+    }
+  }
+  if (caught >= sent && sent > 0) {
+    // Nobody made it: no report, and both sides hear of it.
+    const scoutName = await playerName(tx, army.playerId);
+    await notify(tx, m.id, army.playerId, "scout", `${sent === 1 ? "Your scout" : `Your ${sent} scouts`} to ${name} never returned`, { regionId: army.targetRegionId, caught: sent });
+    await appendRegionNote(tx, m, army.playerId, army.targetRegionId, at, `${sent === 1 ? "A scout" : `${sent} scouts`} sent here never returned.`);
+    if (target.ownerPlayerId) await notify(tx, m.id, target.ownerPlayerId, "scout", `${sent === 1 ? "An enemy scout" : `${sent} enemy scouts`} from ${scoutName} ${sent === 1 ? "was" : "were"} caught in ${name}`, { regionId: army.targetRegionId, caught: sent });
+    await tx.insert(events).values({ matchId: m.id, at, kind: "scout.caught", payload: { playerId: army.playerId, regionId: army.targetRegionId, caught: sent, ownerPlayerId: target.ownerPlayerId } });
+    await tx.update(armies).set({ status: "done", units: {} }).where(eq(armies.id, army.id));
+    after(() => publisher.toPlayer(m.id, pid, "army.arrived", { armyId: army.id }));
+    return;
+  }
+  const survivors: UnitCounts = {};
+  if (caught > 0) {
+    // Losses come off the party; the report is filed by whoever got through.
+    let left = caught;
+    for (const [id, q] of Object.entries(army.units)) {
+      const take = Math.min(q, left);
+      left -= take;
+      if (q - take > 0) survivors[id] = q - take;
+    }
+  }
   const snapshot = {
     ownerPlayerId: target.ownerPlayerId,
     ownerName,
@@ -525,15 +571,15 @@ async function scout(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher: Pu
     .insert(regionSightings)
     .values({ matchId: m.id, playerId: army.playerId, regionId: army.targetRegionId, seenAt: at, snapshot })
     .onConflictDoUpdate({ target: [regionSightings.matchId, regionSightings.playerId, regionSightings.regionId], set: { seenAt: at, snapshot } });
-  const name = regionById(army.targetRegionId)?.name ?? army.targetRegionId;
-  await notify(tx, m.id, army.playerId, "scout", `Scout report: ${name}`, { regionId: army.targetRegionId, ...snapshot });
+  const lost = caught > 0 ? `; ${caught} of ${sent} did not make it` : "";
+  await notify(tx, m.id, army.playerId, "scout", `Scout report: ${name}${lost}`, { regionId: army.targetRegionId, caught, ...snapshot });
   // The report also goes into the scout's own notes on the region, dated, so what was learned keeps its moment even after things change there.
-  await appendRegionNote(tx, m, army.playerId, army.targetRegionId, at, describeSighting(snapshot));
+  await appendRegionNote(tx, m, army.playerId, army.targetRegionId, at, describeSighting(snapshot) + (caught > 0 ? ` ${caught} of ${sent} scouts were caught.` : ""));
   if (target.ownerPlayerId && target.ownerPlayerId !== army.playerId) {
-    await notify(tx, m.id, target.ownerPlayerId, "scout", `Scouts from ${await playerName(tx, army.playerId)} were seen in ${name}`, { regionId: army.targetRegionId });
+    await notify(tx, m.id, target.ownerPlayerId, "scout", `Scouts from ${await playerName(tx, army.playerId)} were seen in ${name}${caught > 0 ? `; ${caught} caught` : ""}`, { regionId: army.targetRegionId, caught });
   }
-  await sendHome(tx, m, army, at, army.units, {});
-  const pid = army.playerId;
+  if (caught > 0) await tx.insert(events).values({ matchId: m.id, at, kind: "scout.caught", payload: { playerId: army.playerId, regionId: army.targetRegionId, caught, ownerPlayerId: target.ownerPlayerId } });
+  await sendHome(tx, m, army, at, caught > 0 ? survivors : army.units, {});
   after(() => publisher.toPlayer(m.id, pid, "army.arrived", { armyId: army.id }));
 }
 
