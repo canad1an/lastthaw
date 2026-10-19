@@ -480,6 +480,14 @@ describe("api routes", () => {
     // The lobby is open now: joining works, withdrawing a registration works too.
     expect((await Ann.call("POST", `/api/matches/${cupId}/join`, {})).statusCode).toBe(201);
     expect((await Ann.call("DELETE", `/api/matches/${cupId}/register`)).statusCode).toBe(200);
+    // Registered but never in the lobby: enrolled at the start with a starting region picked for them. Withdrawn: not in.
+    expect((await Ben.call("POST", `/api/matches/${cupId}/register`, {})).statusCode).toBe(201);
+    expect((await A.call("POST", `/api/matches/${cupId}/dev/start`, {})).statusCode).toBe(200);
+    const benId2 = await idOf(ben.email);
+    const annId2 = await idOf(ann.email);
+    const [benPlayer] = await db.select().from(players).where(and(eq(players.matchId, cupId), eq(players.userId, benId2)));
+    expect(benPlayer?.capitalRegionId).toBeTruthy();
+    expect(await db.select().from(players).where(and(eq(players.matchId, cupId), eq(players.userId, annId2)))).toHaveLength(1);
     expect(((await Ann.call("GET", "/api/matches")).json() as Array<{ id: string; registered: boolean }>).find((m) => m.id === cupId)!.registered).toBe(false);
   });
 

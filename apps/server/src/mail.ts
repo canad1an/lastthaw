@@ -183,7 +183,7 @@ export function inviteMail(displayName: string, token: string, days: number, gam
       ...(game ? [`There is a private game waiting for you: "${game.name}". On the Matches page, enter the invite code to join it.`] : []),
       ...(tournament
         ? [
-            `You are already registered for the tournament "${tournament.name}", which starts ${whenUtc(tournament.startsAt)}. The lobby opens an hour before the start: that is when you join from the Matches page, pick your capital on the map, and meet the others in the chat. Miss the start and you can still join for a while after; the ice waits for nobody, but the first days are quiet.`,
+            `You are already registered for the tournament "${tournament.name}", which starts ${whenUtc(tournament.startsAt)}, and you are in whether or not you make it to the lobby. The lobby opens an hour before the start: come then to pick your capital on the map and meet the others in the chat, or let the game choose a starting region for you.`,
           ]
         : []),
     ],
@@ -201,7 +201,7 @@ export function registrationMail(displayName: string, matchName: string, startsA
     greeting: `Hi ${displayName}`,
     paragraphs: [
       `You are registered for the tournament "${matchName}". Tournaments are the ranked matches: thirty real days against everyone who turns up, with the ice moving a little further toward the equator each day.`,
-      "The lobby opens an hour before the start. That is when you join, choose your capital on the map, and meet the others in the chat. We will remind you a day ahead, and again when the lobby opens.",
+      "You are in: registered players are enrolled the moment the tournament starts, whether or not they come to the lobby. The lobby opens an hour before the start; come then to choose your capital on the map and meet the others in the chat, or let the game pick a starting region for you. We will remind you a day ahead, and again when the lobby opens.",
     ],
     facts: [
       { label: "Tournament", value: matchName },
@@ -220,7 +220,7 @@ export function reminderMail(displayName: string, matchName: string, startsAt: D
       subject: `The lobby is open: ${matchName}`,
       preheader: `${matchName} starts in about an hour. Join now and pick your capital.`,
       greeting: `Hi ${displayName}`,
-      paragraphs: [`"${matchName}" starts in about an hour. The lobby is open now: join, choose where your five families begin, and see who else is in.`, "If you do not pick a capital, one of your options is chosen for you when the match starts."],
+      paragraphs: [`"${matchName}" starts in about an hour. The lobby is open now: join, choose where your five families begin, and see who else is in.`, "You are in either way: if you do not come, you are enrolled at the start and a starting region is picked for you."],
       facts: [
         { label: "Tournament", value: matchName },
         { label: "Starts", value: whenUtc(startsAt) },

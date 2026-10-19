@@ -1,7 +1,7 @@
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import { allRegions, balance, distanceKm, seededRng } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
-import { events, jobs, matchRegions, matches, players } from "../db/schema.js";
+import { events, jobs, matchRegions, matches, players, tournamentRegistrations } from "../db/schema.js";
 import { foundCapital, type Tx } from "../sim/regions.js";
 import { matchNow } from "../sim/clock.js";
 import type { Publisher } from "../realtime/publish.js";
@@ -49,6 +49,22 @@ export async function startMatch(db: Db, publisher: Publisher, matchId: string):
     const protectionUntil = new Date(now.getTime() + (balance.match.protectionDays * 86400 * 1000) / m.speed);
     const rng = seededRng(`${m.seed}:start`);
     const settings = (m.settings ?? {}) as { aiFillTo?: number; neutralTribes?: number; aiDifficulty?: string };
+
+    // Registered players are in whether or not they came to the lobby: anyone registered who has not joined is enrolled
+    // now, and takes a starting region at random below like anyone who joined without picking.
+    const joined = await tx.select({ userId: players.userId }).from(players).where(eq(players.matchId, matchId));
+    const joinedIds = new Set(joined.map((p) => p.userId).filter((x): x is string => !!x));
+    const registered = await tx
+      .select({ userId: users.id, name: users.displayName })
+      .from(tournamentRegistrations)
+      .innerJoin(users, eq(users.id, tournamentRegistrations.userId))
+      .where(and(eq(tournamentRegistrations.matchId, matchId), isNull(users.suspendedAt)));
+    let humanCount = joined.filter((p) => p.userId).length;
+    for (const r of registered) {
+      if (joinedIds.has(r.userId) || humanCount >= balance.match.maxHumanPlayers) continue;
+      await tx.insert(players).values({ matchId, userId: r.userId, name: r.name });
+      humanCount += 1;
+    }
 
     // Fill empty slots with AI tribes.
     const humans = await tx.select().from(players).where(eq(players.matchId, matchId));

@@ -68,7 +68,8 @@ const MIN_K = 1;
 const MARKER_SCALE = 1.75;
 /** Overlay badges (soldiers, caravans, notes) grow a little less, so several on one region still fit. */
 const BADGE_SCALE = 1.4;
-const MAX_K = 14;
+// Phones pinch in close to pick out one province among many; the limit used to stop well short of that.
+const MAX_K = 28;
 
 /**
  * SVG world map with pointer pan, wheel/pinch zoom and click selection.
