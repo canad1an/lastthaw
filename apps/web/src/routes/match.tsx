@@ -13,7 +13,7 @@ import { PhoneShell } from "../components/phone/PhoneShell.js";
 import { PhoneTabBar } from "../components/phone/PhoneTabBar.js";
 import { tabOf, type Screen } from "../components/phone/screens.js";
 import { AgeChip, ObjectiveChip, useMenuData } from "../components/TopMenu.js";
-import { messageIcon } from "../components/Messages.js";
+import { messageIcon, RealmTakenPopup } from "../components/Messages.js";
 import { Ticker } from "../components/Ticker.js";
 import type { RegionTab } from "../components/RegionPanel.js";
 import { ResearchPanel } from "../components/ResearchPanel.js";
@@ -474,6 +474,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
   return (
     <div className="age-screen flex h-[calc(100dvh-3rem)] flex-col bg-slate-950" style={ageVars(state.me.age) as React.CSSProperties} data-age={state.me.age}>
       {!phone && <TopMenu matchId={matchId} state={state} selectedRegionId={selected} colorOf={colorOf} overlays={overlays} onToggleOverlay={toggleOverlay} onSelectRegion={goToRegion} clockOffsetMs={clockOffsetMs} />}
+      {!state.observer && <RealmTakenPopup messages={menu.messages} onSelectRegion={goToRegion} />}
       {phone && (
         <div className="age-bar flex h-10 shrink-0 items-center gap-2 border-b border-slate-800 bg-slate-950/90 px-2">
           {state.observer ? <span className="inline-flex h-7 shrink-0 items-center rounded-md border border-violet-400/50 bg-violet-500/10 px-2 text-xs font-medium text-violet-100">Admin</span> : <AgeChip age={state.me.age} compact />}

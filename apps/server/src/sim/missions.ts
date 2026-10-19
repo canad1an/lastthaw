@@ -756,10 +756,20 @@ export async function handleRegionLost(tx: Tx, m: MatchRow, playerId: string, re
  */
 export async function eliminatePlayer(tx: Tx, m: MatchRow, playerId: string, at: Date, reason: string, byPlayerId: string | null = null): Promise<void> {
   const { tradeRoutes, marketOrders, events } = await import("../db/schema.js");
-  const [loser] = await tx.select({ name: players.name }).from(players).where(eq(players.id, playerId)).limit(1);
+  const [loser] = await tx.select({ name: players.name, capitalRegionId: players.capitalRegionId }).from(players).where(eq(players.id, playerId)).limit(1);
   const [winner] = byPlayerId ? await tx.select({ id: players.id, name: players.name, hidden: players.hidden }).from(players).where(eq(players.id, byPlayerId)).limit(1) : [];
   // The horde is nobody's realm: land it takes goes neutral like any other fall.
   const by = winner && !winner.hidden ? winner : null;
+  // What the realm holds, noted before it changes hands, so the conqueror can be shown every region that came with the capital.
+  // The capital itself has usually been handed over already by the battle, so it is fetched by id.
+  const capitalId = loser?.capitalRegionId ?? null;
+  const realmCols = { regionId: matchRegions.regionId, popWorkers: matchRegions.popWorkers, popSoldiers: matchRegions.popSoldiers, popOccupiers: matchRegions.popOccupiers, buildings: matchRegions.buildings };
+  const realmRows = await tx.select(realmCols).from(matchRegions).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.ownerPlayerId, playerId), isNull(matchRegions.frozenAt)));
+  if (capitalId && !realmRows.some((r) => r.regionId === capitalId)) {
+    const [cap] = await tx.select(realmCols).from(matchRegions).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, capitalId))).limit(1);
+    if (cap) realmRows.unshift(cap);
+  }
+  const realm = realmRows.map((r) => ({ ...r, isCapital: r.regionId === capitalId }));
   await tx.update(players).set({ eliminatedAt: at, capitalRegionId: null }).where(eq(players.id, playerId));
   await tx
     .update(matchRegions)
@@ -779,6 +789,11 @@ export async function eliminatePlayer(tx: Tx, m: MatchRow, playerId: string, at:
   await tx.insert(events).values({ matchId: m.id, at, kind: "player.eliminated", payload: { playerId, reason, by: by?.id ?? null } });
   await notify(tx, m.id, playerId, "system", `${reason} You can watch the rest of the match and join the next one.`, {});
   if (by) {
+    // The conqueror's own message carries the whole inheritance, region by region; the page pops it up.
+    const regions = realm
+      .map((r) => ({ id: r.regionId, name: regionById(r.regionId)?.name ?? r.regionId, people: Math.round(r.popWorkers + r.popSoldiers + r.popOccupiers), buildings: Object.values(r.buildings).reduce((a, b) => a + b, 0), capital: r.isCapital }))
+      .sort((a, b) => Number(b.capital) - Number(a.capital) || b.people - a.people);
+    await notify(tx, m.id, by.id, "battle", `You took ${loser?.name ?? "a tribe"}'s capital: ${regions.length} region${regions.length === 1 ? "" : "s"} and everyone in them are yours now`, { realmTaken: true, eliminated: playerId, loserName: loser?.name ?? null, regionId: capitalId ?? regions[0]?.id ?? null, regions });
     // Taking a capital is the biggest single prize in the game: a milestone worth balance.win.milestones.capital, once per capital that falls.
     const { awardMilestone } = await import("./endgame.js");
     await awardMilestone(tx, m, `capital_${playerId}`, by.id, at, `Took ${loser?.name ?? "a tribe"}'s capital`);

@@ -365,6 +365,8 @@ describe("world events", () => {
     const [n1, n2] = present.map((r) => r.regionId);
     expect(n2, "two nearby regions to hand over").toBeTruthy();
     await db.update(players).set({ eliminatedAt: null, capitalRegionId: base }).where(eq(players.id, me!.id));
+    // The capital must have a row (a real capital always does); the neighbour picked here may be untouched land.
+    await db.insert(matchRegions).values({ matchId, regionId: base, assignment: { ...balance.start.assignment }, settledAt: at }).onConflictDoNothing();
     for (const r of [base, n1!, n2!]) await db.update(matchRegions).set({ ownerPlayerId: me!.id, isCapital: r === base, frozenAt: null, popWorkers: 20 }).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, r)));
     await db.update(matchRegions).set({ ownerPlayerId: ai!.id, isCapital: false, conquered: true }).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, base)));
     await db.transaction((tx) => handleRegionLost(tx, m!, me!.id, base, at, ai!.id));
@@ -380,6 +382,12 @@ describe("world events", () => {
     const told = await db.select().from(messages).where(and(eq(messages.matchId, matchId), eq(messages.kind, "battle"), sql`${messages.payload}->>'eliminated' = ${me!.id}`));
     expect(told.length).toBeGreaterThan(0);
     expect(told.some((t) => t.playerId === me!.id)).toBe(false);
+    // The conqueror's own message lists every region that came with the capital, the capital first.
+    const [mine] = await db.select().from(messages).where(and(eq(messages.matchId, matchId), eq(messages.playerId, ai!.id), sql`${messages.payload}->>'realmTaken' = 'true'`));
+    const realm = (mine?.payload as { regions: Array<{ id: string; capital: boolean; people: number }>; regionId: string }) ?? { regions: [], regionId: "" };
+    expect(realm.regionId).toBe(base);
+    expect(realm.regions[0]).toMatchObject({ id: base, capital: true });
+    expect(realm.regions.map((r) => r.id).sort()).toEqual([base, n1!, n2!].sort());
     // The conqueror banks the capital milestone, worth its points on the leaderboard.
     const [ms] = await db.select().from(matchMilestones).where(and(eq(matchMilestones.matchId, matchId), eq(matchMilestones.key, `capital_${me!.id}`)));
     expect(ms?.playerId).toBe(ai!.id);
