@@ -473,6 +473,8 @@ export const wsClientMessage = z.discriminatedUnion("type", [
   z.object({ type: z.literal("subscribe"), matchId: z.string() }),
   z.object({ type: z.literal("unsubscribe"), matchId: z.string() }),
   z.object({ type: z.literal("ping") }),
+  /** The player touched the page in the last half minute; time online counts only around these. */
+  z.object({ type: z.literal("active") }),
 ]);
 export type WsClientMessage = z.infer<typeof wsClientMessage>;
 

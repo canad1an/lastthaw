@@ -20,6 +20,19 @@ export function useMatchRealtime(matchId: string | null) {
     let retry = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
 
+    // Time online counts only while the player is doing something: any touch of the page tells the server, at most every half minute.
+    let lastActiveSent = 0;
+    const sayActive = () => {
+      const ws = wsRef.current;
+      const t = Date.now();
+      if (document.visibilityState !== "visible" || t - lastActiveSent < 30_000 || ws?.readyState !== ws?.OPEN) return;
+      lastActiveSent = t;
+      ws?.send(JSON.stringify({ type: "active" } satisfies WsClientMessage));
+    };
+    const activityEvents = ["pointerdown", "keydown", "wheel", "touchstart", "scroll"] as const;
+    for (const ev of activityEvents) window.addEventListener(ev, sayActive, { passive: true });
+    document.addEventListener("visibilitychange", sayActive);
+
     const connect = () => {
       const proto = location.protocol === "https:" ? "wss" : "ws";
       const ws = new WebSocket(`${proto}://${location.host}/api/ws`);
@@ -31,6 +44,8 @@ export function useMatchRealtime(matchId: string | null) {
         retry = 0;
         setStatus("open");
         send({ type: "subscribe", matchId });
+        lastActiveSent = 0;
+        sayActive();
       };
       ws.onmessage = (ev) => {
         const parsed = wsServerMessage.safeParse(JSON.parse(ev.data as string));
@@ -81,6 +96,8 @@ export function useMatchRealtime(matchId: string | null) {
 
     return () => {
       closedByUs = true;
+      for (const ev of activityEvents) window.removeEventListener(ev, sayActive);
+      document.removeEventListener("visibilitychange", sayActive);
       clearInterval(ping);
       if (timer) clearTimeout(timer);
       wsRef.current?.close();

@@ -442,7 +442,7 @@ function PlayerStats({ enabled }: { enabled: boolean }) {
             <tr>
               <th className="px-2 py-2">Player</th>
               <th className="px-2 py-2">Device</th>
-              <Th k="hoursOnline" label="Hours" title="Time connected to the game, in hours" />
+              <Th k="hoursOnline" label="Hours" title="Active time in the game, in hours: an open tab stops counting five minutes after the last touch" />
               <Th k="sessions" label="Sessions" />
               <Th k="logins" label="Logins" />
               <Th k="played" label="Matches" />

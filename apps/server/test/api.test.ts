@@ -492,6 +492,24 @@ describe("api routes", () => {
     expect((await Ann.call("POST", `${base}/regions/${state.me.capitalRegionId}/build`, { buildingId: "huts" })).statusCode).toBe(200);
   });
 
+  it("time online is active time: an open tab stops counting five minutes after the last touch", async () => {
+    const { openClock, touch, drain, IDLE_MS } = await import("../src/stats/activeClock.js");
+    const min = 60_000;
+    const c = openClock(0);
+    // Touches every half minute for ten minutes: all ten count.
+    for (let t = 30_000; t <= 10 * min; t += 30_000) touch(c, t);
+    expect(drain(c, 10 * min).seconds).toBe(600);
+    // Then nothing for an hour: only the idle allowance after the last touch counts, and the gap never does.
+    expect(drain(c, 70 * min).seconds).toBe(IDLE_MS / 1000);
+    touch(c, 70 * min);
+    expect(drain(c, 70 * min).seconds).toBe(0);
+    // Back for two minutes, then the tab closes: the two minutes count, with the whole session's active time alongside.
+    touch(c, 72 * min);
+    const last = drain(c, 72 * min);
+    expect(last.seconds).toBe(120);
+    expect(last.sessionSeconds).toBe(600 + IDLE_MS / 1000 + 120);
+  });
+
   it("player statistics: logins and live sessions are counted per account, and only admins see the figures", async () => {
     const annId = await idOf(ann.email);
     const { recordLogin, recordSessionStart, recordOnline } = await import("../src/stats/userStats.js");

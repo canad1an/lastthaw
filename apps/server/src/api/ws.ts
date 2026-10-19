@@ -9,6 +9,7 @@ import { hostname } from "node:os";
 import { createRedis } from "../redis.js";
 import { logger } from "../logger.js";
 import { recordOnline, recordSessionStart } from "../stats/userStats.js";
+import { drain, openClock, touch, type ActiveClock } from "../stats/activeClock.js";
 
 /**
  * WebSocket hub. One Redis subscriber per API process fans events out to the
@@ -88,15 +89,16 @@ export async function registerWebsocket(app: FastifyInstance, opts: { db: Db }) 
     for (const ws of set) send(ws, { type: "event", matchId: ev.matchId, kind: ev.kind, at: ev.at, payload: ev.payload });
   });
 
-  // Time online per account: counted from connect to close, with long sessions flushed every ten minutes so a restart loses little.
-  const openedAt = new Map<WebSocket, { userId: string; startedAt: number; flushedAt: number }>();
+  // Time online per account: active time only. The browser says "active" while the player does things; the clock credits
+  // up to five minutes after the last touch and no more, so an open tab left alone stops counting. Written every ten minutes so a restart loses little.
+  const openedAt = new Map<WebSocket, { userId: string; clock: ActiveClock; flushedAt: number }>();
   const flushOnline = async (final: boolean) => {
     const now = Date.now();
     for (const [ws, s] of openedAt) {
-      const seconds = (now - s.flushedAt) / 1000;
-      if (!final && seconds < 600) continue;
+      if (!final && now - s.flushedAt < 600_000) continue;
       s.flushedAt = now;
-      await recordOnline(db, s.userId, seconds, (now - s.startedAt) / 1000).catch(() => {});
+      const { seconds, sessionSeconds } = drain(s.clock, now);
+      if (seconds > 0) await recordOnline(db, s.userId, seconds, sessionSeconds).catch(() => {});
       if (final) openedAt.delete(ws);
     }
   };
@@ -108,7 +110,7 @@ export async function registerWebsocket(app: FastifyInstance, opts: { db: Db }) 
     if (user) (byUser.get(user.id) ?? byUser.set(user.id, new Set()).get(user.id)!).add(socket);
     presence.set(socket, { userId: user?.id ?? null, mine });
     if (user) {
-      openedAt.set(socket, { userId: user.id, startedAt: Date.now(), flushedAt: Date.now() });
+      openedAt.set(socket, { userId: user.id, clock: openClock(Date.now()), flushedAt: Date.now() });
       void recordSessionStart(db, user.id, req.headers["user-agent"]).catch(() => {});
     }
     send(socket, { type: "hello", serverTime: new Date().toISOString() });
@@ -131,6 +133,11 @@ export async function registerWebsocket(app: FastifyInstance, opts: { db: Db }) 
       }
       if (msg.type === "ping") return send(socket, { type: "pong", serverTime: new Date().toISOString() });
       if (!user) return send(socket, { type: "error", message: "login required" });
+      if (msg.type === "active") {
+        const s = openedAt.get(socket);
+        if (s) touch(s.clock, Date.now());
+        return;
+      }
 
       if (msg.type === "subscribe") {
         const [p] = await opts.db
@@ -160,8 +167,8 @@ export async function registerWebsocket(app: FastifyInstance, opts: { db: Db }) 
       const s = openedAt.get(socket);
       if (s) {
         openedAt.delete(socket);
-        const now = Date.now();
-        void recordOnline(db, s.userId, (now - s.flushedAt) / 1000, (now - s.startedAt) / 1000).catch(() => {});
+        const { seconds, sessionSeconds } = drain(s.clock, Date.now());
+        if (seconds > 0) void recordOnline(db, s.userId, seconds, sessionSeconds).catch(() => {});
       }
       for (const ch of mine) void unsubscribe(socket, ch);
       if (user) {
