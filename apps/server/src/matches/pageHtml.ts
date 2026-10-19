@@ -1,9 +1,9 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { balance } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
-import { matches, players } from "../db/schema.js";
+import { matchRegions, matches, players } from "../db/schema.js";
 import { resolveMatchRef } from "./slug.js";
 import { buildStory } from "./story.js";
 import { config } from "../config.js";
@@ -74,7 +74,14 @@ export async function matchPageMeta(db: Db, ref: string, page: "report" | "repla
     return { title: page === "lobby" ? `${m.name}: waiting room` : `${m.name}`, description: `${m.name}, a Last Thaw match, ${when}. Thirty days on a real map with the ice closing in from the poles.`, url, noindex: true };
   }
   const ps = await db.select().from(players).where(and(eq(players.matchId, id), eq(players.hidden, false))).orderBy(desc(players.score));
-  const standings = ps.map((p) => ({ id: p.id, name: p.name, score: p.score, regions: 0, population: 0, age: p.age, eliminated: p.eliminatedAt !== null, won: p.id === m.winnerPlayerId }));
+  // Regions and people per tribe as they stood at the end, the same count the report shows.
+  const stats = await db
+    .select({ owner: matchRegions.ownerPlayerId, regions: sql<number>`count(*)::int`, pop: sql<number>`coalesce(sum(${matchRegions.popWorkers} + ${matchRegions.popSoldiers} + ${matchRegions.popOccupiers}), 0)::float` })
+    .from(matchRegions)
+    .where(and(eq(matchRegions.matchId, id), sql`${matchRegions.ownerPlayerId} is not null`, isNull(matchRegions.frozenAt)))
+    .groupBy(matchRegions.ownerPlayerId);
+  const statBy = new Map(stats.map((x) => [x.owner!, x]));
+  const standings = ps.map((p) => ({ id: p.id, name: p.name, score: p.score, regions: statBy.get(p.id)?.regions ?? 0, population: Math.round(statBy.get(p.id)?.pop ?? 0), age: p.age, eliminated: p.eliminatedAt !== null, won: p.id === m.winnerPlayerId }));
   const story = await buildStory(db, m, ps, standings);
   const winner = standings.find((s) => s.won) ?? standings[0];
   const first = story.paragraphs[0] ?? `${m.name}, a finished Last Thaw match.`;
