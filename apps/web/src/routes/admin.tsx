@@ -1,4 +1,4 @@
-import { Fragment, useState } from "react";
+import { Fragment, useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePageMeta } from "../seo.js";
 import { useMe } from "../api/auth.js";
@@ -185,7 +185,15 @@ async function post(url: string, body?: unknown) {
   return r.json();
 }
 
-/** Fair-play review queue. Flags are advisory: a human decides. */
+type AdminTab = "metrics" | "accounts" | "players" | "fairplay";
+const ADMIN_TABS: Array<{ id: AdminTab; label: string }> = [
+  { id: "metrics", label: "Right now" },
+  { id: "accounts", label: "Accounts" },
+  { id: "players", label: "Players" },
+  { id: "fairplay", label: "Fair play" },
+];
+
+/** The admin page: live metrics, accounts and beta access, per-player statistics, and the fair-play review queue, one tab each. */
 export function AdminPage() {
   usePageMeta({ title: "Admin", noindex: true });
   const me = useMe();
@@ -235,10 +243,27 @@ export function AdminPage() {
       )}
     </span>
   );
+  const [tab, setTab] = useState<AdminTab>(() => (ADMIN_TABS.some((t) => t.id === location.hash.slice(1)) ? (location.hash.slice(1) as AdminTab) : "metrics"));
+  useEffect(() => {
+    if (location.hash.slice(1) !== tab) history.replaceState(null, "", `#${tab}`);
+  }, [tab]);
   if (!me.data?.isAdmin) return <p className="p-6 text-slate-400">Not found.</p>;
   return (
-    <main className="mx-auto max-w-4xl space-y-6 px-4 py-6">
+    <main className="mx-auto max-w-6xl space-y-4 px-4 py-6">
+      <nav className="flex gap-1 overflow-x-auto border-b border-slate-800 text-sm" aria-label="Admin sections">
+        {ADMIN_TABS.map((t) => (
+          <button key={t.id} onClick={() => setTab(t.id)} className={`shrink-0 px-3 py-2 ${tab === t.id ? "border-b-2 border-sky-400 text-white" : "text-slate-400 hover:text-slate-200"}`}>
+            {t.label}
+          </button>
+        ))}
+      </nav>
+      {tab === "metrics" && (
+        <>
       <LiveMetrics />
+        </>
+      )}
+      {tab === "accounts" && (
+        <>
       <section className="space-y-2">
         <h1 className="text-2xl font-semibold">Beta access</h1>
         <p className="text-sm text-slate-400">Only approved accounts can join matches. New sign-ups wait here until you approve them.</p>
@@ -292,7 +317,15 @@ export function AdminPage() {
           </table>
         </Card>
       </section>
+        </>
+      )}
+      {tab === "players" && (
+        <>
       <PlayerStats enabled={!!me.data?.isAdmin} />
+        </>
+      )}
+      {tab === "fairplay" && (
+        <>
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Fair play review</h1>
         <Button variant="ghost" onClick={() => scan.mutate()} disabled={scan.isPending}>
@@ -334,6 +367,8 @@ export function AdminPage() {
           </div>
         </Card>
       ))}
+        </>
+      )}
     </main>
   );
 }
