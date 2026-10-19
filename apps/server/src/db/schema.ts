@@ -73,6 +73,23 @@ export const sessions = pgTable(
 );
 
 /** Match history per account: the spec's "keep a history of each player's past matches and finishes". */
+/** Per-account play statistics for the admin page: never shown to other players. Updated by logins and live connections. */
+export const userStats = pgTable("user_stats", {
+  userId: uuid("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  secondsOnline: integer("seconds_online").notNull().default(0),
+  longestSessionSeconds: integer("longest_session_seconds").notNull().default(0),
+  sessions: integer("sessions").notNull().default(0),
+  logins: integer("logins").notNull().default(0),
+  /** Counts by device key, e.g. {"Safari · iOS · phone": 12}. */
+  devices: jsonb("devices").notNull().default({}),
+  /** Sessions started by UTC hour of day, e.g. {"19": 4}. */
+  hours: jsonb("hours").notNull().default({}),
+  firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull().defaultNow(),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+});
+
 export const userMatchResults = pgTable(
   "user_match_results",
   {

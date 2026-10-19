@@ -8,6 +8,7 @@ import { channels, type PublishedEvent } from "../realtime/publish.js";
 import { hostname } from "node:os";
 import { createRedis } from "../redis.js";
 import { logger } from "../logger.js";
+import { recordOnline, recordSessionStart } from "../stats/userStats.js";
 
 /**
  * WebSocket hub. One Redis subscriber per API process fans events out to the
@@ -15,6 +16,7 @@ import { logger } from "../logger.js";
  * if the logged-in user has a player in it.
  */
 export async function registerWebsocket(app: FastifyInstance, opts: { db: Db }) {
+  const { db } = opts;
   const subscriber = createRedis();
   await subscriber.connect();
   const sockets = new Map<string, Set<WebSocket>>(); // channel -> sockets
@@ -86,11 +88,29 @@ export async function registerWebsocket(app: FastifyInstance, opts: { db: Db }) 
     for (const ws of set) send(ws, { type: "event", matchId: ev.matchId, kind: ev.kind, at: ev.at, payload: ev.payload });
   });
 
+  // Time online per account: counted from connect to close, with long sessions flushed every ten minutes so a restart loses little.
+  const openedAt = new Map<WebSocket, { userId: string; startedAt: number; flushedAt: number }>();
+  const flushOnline = async (final: boolean) => {
+    const now = Date.now();
+    for (const [ws, s] of openedAt) {
+      const seconds = (now - s.flushedAt) / 1000;
+      if (!final && seconds < 600) continue;
+      s.flushedAt = now;
+      await recordOnline(db, s.userId, seconds, (now - s.startedAt) / 1000).catch(() => {});
+      if (final) openedAt.delete(ws);
+    }
+  };
+  const onlineTimer = setInterval(() => void flushOnline(false), 60_000);
+
   app.get("/api/ws", { websocket: true }, (socket, req) => {
     const user = req.user;
     const mine = new Set<string>();
     if (user) (byUser.get(user.id) ?? byUser.set(user.id, new Set()).get(user.id)!).add(socket);
     presence.set(socket, { userId: user?.id ?? null, mine });
+    if (user) {
+      openedAt.set(socket, { userId: user.id, startedAt: Date.now(), flushedAt: Date.now() });
+      void recordSessionStart(db, user.id, req.headers["user-agent"]).catch(() => {});
+    }
     send(socket, { type: "hello", serverTime: new Date().toISOString() });
 
     // Ten messages a second is plenty for pings and subscriptions; more is a client gone wrong.
@@ -137,6 +157,12 @@ export async function registerWebsocket(app: FastifyInstance, opts: { db: Db }) 
 
     socket.on("close", () => {
       presence.delete(socket);
+      const s = openedAt.get(socket);
+      if (s) {
+        openedAt.delete(socket);
+        const now = Date.now();
+        void recordOnline(db, s.userId, (now - s.flushedAt) / 1000, (now - s.startedAt) / 1000).catch(() => {});
+      }
       for (const ch of mine) void unsubscribe(socket, ch);
       if (user) {
         const set = byUser.get(user.id);
@@ -149,6 +175,8 @@ export async function registerWebsocket(app: FastifyInstance, opts: { db: Db }) 
 
   app.addHook("onClose", async () => {
     clearInterval(presenceTimer);
+    clearInterval(onlineTimer);
+    await flushOnline(true);
     await presenceWriter.del(presenceKey).catch(() => {});
     await presenceWriter.quit().catch(() => {});
     await subscriber.quit();

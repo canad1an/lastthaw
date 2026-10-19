@@ -411,6 +411,30 @@ describe("api routes", () => {
     expect((await Ann.call("POST", `${base}/regions/${state.me.capitalRegionId}/build`, { buildingId: "huts" })).statusCode).toBe(200);
   });
 
+  it("player statistics: logins and live sessions are counted per account, and only admins see the figures", async () => {
+    const annId = await idOf(ann.email);
+    const { recordLogin, recordSessionStart, recordOnline } = await import("../src/stats/userStats.js");
+    await recordLogin(db, annId, "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1");
+    await recordSessionStart(db, annId, "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1", new Date("2026-10-18T19:30:00Z"));
+    await recordOnline(db, annId, 900, 900);
+    await recordOnline(db, annId, 300, 1200);
+    expect((await Ann.call("GET", "/api/admin/player-stats")).statusCode).toBeGreaterThanOrEqual(400);
+    const res = await A.call("GET", "/api/admin/player-stats");
+    expect(res.statusCode, res.body).toBe(200);
+    const mine = (res.json() as { players: Array<{ id: string; hoursOnline: number; sessions: number; logins: number; topDevice: string | null; longestSessionMinutes: number; activeHoursUtc: Array<{ hour: number; n: number }>; played: number; commands: number }> }).players.find((p) => p.id === annId)!;
+    expect(mine).toBeTruthy();
+    expect(mine.logins).toBeGreaterThanOrEqual(1);
+    expect(mine.sessions).toBeGreaterThanOrEqual(1);
+    expect(mine.hoursOnline).toBeCloseTo(0.3, 1);
+    expect(mine.longestSessionMinutes).toBe(20);
+    expect(mine.topDevice).toBe("Safari · iOS · phone");
+    expect(mine.activeHoursUtc[0]?.hour).toBe(19);
+    expect(mine.played).toBeGreaterThanOrEqual(0);
+    // The hall of fame carries wins, losses, ties and points for its champions.
+    const hof = (await Out.call("GET", "/api/public/hall-of-fame")).json() as { champions: Array<{ wins: number; losses: number; ties: number; score: number }> };
+    for (const c of hof.champions) expect(c.wins + c.losses + c.ties).toBeGreaterThan(0);
+  });
+
   it("admin oversight: matches, fair play and kicking a player", async () => {
     const list = await A.call("GET", "/api/admin/matches");
     expect(list.statusCode).toBe(200);

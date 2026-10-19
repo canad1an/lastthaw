@@ -260,6 +260,13 @@
       "when": 1792195350714,
       "tag": "0036_region_notes",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1792374653168,
+      "tag": "0037_user_stats",
+      "breakpoints": true
     }
   ]
 }

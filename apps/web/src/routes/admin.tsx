@@ -1,3 +1,4 @@
+import { Fragment, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePageMeta } from "../seo.js";
 import { useMe } from "../api/auth.js";
@@ -291,6 +292,7 @@ export function AdminPage() {
           </table>
         </Card>
       </section>
+      <PlayerStats enabled={!!me.data?.isAdmin} />
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Fair play review</h1>
         <Button variant="ghost" onClick={() => scan.mutate()} disabled={scan.isPending}>
@@ -333,5 +335,147 @@ export function AdminPage() {
         </Card>
       ))}
     </main>
+  );
+}
+
+
+interface PlayerStat {
+  id: string;
+  name: string;
+  email: string;
+  isAdmin: boolean;
+  approved: boolean;
+  suspended: boolean;
+  createdAt: string | null;
+  lastLoginAt: string | null;
+  lastSeenAt: string | null;
+  lastCommandAt: string | null;
+  hoursOnline: number;
+  longestSessionMinutes: number;
+  sessions: number;
+  logins: number;
+  topDevice: string | null;
+  devices: Array<{ key: string; n: number }>;
+  activeHoursUtc: Array<{ hour: number; n: number }>;
+  played: number;
+  ranked: number;
+  wins: number;
+  eliminated: number;
+  points: number;
+  bestRank: number | null;
+  avgRank: number | null;
+  commands: number;
+  messages: number;
+  battles: number;
+  battlesWon: number;
+  techs: number;
+  peakScore: number;
+  topAge: number;
+  tribes: number;
+}
+
+const AGE_NAMES = ["Stone", "Bronze", "Iron", "Classical", "Medieval", "Industrial", "Modern"];
+const ago = (iso: string | null) => (iso ? `${Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 3600_000))} h ago` : "never");
+
+/** Everything tracked per account. Only admins see this; players never see each other's figures. */
+function PlayerStats({ enabled }: { enabled: boolean }) {
+  const q = useQuery({
+    queryKey: ["admin", "player-stats"],
+    queryFn: () => fetch("/api/admin/player-stats", { credentials: "include" }).then((r) => (r.ok ? (r.json() as Promise<{ players: PlayerStat[] }>) : Promise.reject(new Error("forbidden")))),
+    enabled,
+    refetchInterval: 60_000,
+  });
+  const [open, setOpen] = useState<string | null>(null);
+  const [sort, setSort] = useState<keyof PlayerStat>("hoursOnline");
+  const rows = [...(q.data?.players ?? [])].sort((a, b) => Number(b[sort] ?? 0) - Number(a[sort] ?? 0));
+  const Th = ({ k, label, title }: { k: keyof PlayerStat; label: string; title?: string }) => (
+    <th className="px-2 py-2 text-right">
+      <button className={`hover:text-white ${sort === k ? "text-sky-300" : ""}`} onClick={() => setSort(k)} title={title ?? `Sort by ${label}`}>
+        {label}
+      </button>
+    </th>
+  );
+  return (
+    <section className="space-y-2">
+      <h1 className="text-2xl font-semibold">Players</h1>
+      <p className="text-sm text-slate-400">
+        Every account with everything tracked about it: time online, sessions and logins, the devices and browsers they play on, the hours they play, their matches, results and points, commands, chat, battles, techs and peak score. Click a column to sort; click a row for the device and hour breakdown. None of this is shown to players.
+      </p>
+      <Card className="overflow-x-auto p-0">
+        <table className="w-full text-xs">
+          <thead className="text-left uppercase tracking-wide text-slate-500">
+            <tr>
+              <th className="px-2 py-2">Player</th>
+              <th className="px-2 py-2">Device</th>
+              <Th k="hoursOnline" label="Hours" title="Time connected to the game, in hours" />
+              <Th k="sessions" label="Sessions" />
+              <Th k="logins" label="Logins" />
+              <Th k="played" label="Matches" />
+              <Th k="wins" label="Wins" />
+              <Th k="points" label="Points" />
+              <Th k="commands" label="Cmds" title="Game commands sent (last week kept)" />
+              <Th k="messages" label="Chat" />
+              <Th k="battles" label="Battles" />
+              <Th k="techs" label="Techs" />
+              <Th k="peakScore" label="Peak" title="Highest score in any match" />
+              <th className="px-2 py-2">Last seen</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((p) => (
+              <Fragment key={p.id}>
+                <tr className="cursor-pointer border-t border-slate-800 hover:bg-slate-900/60" onClick={() => setOpen(open === p.id ? null : p.id)}>
+                  <td className="px-2 py-1.5">
+                    <span className="text-slate-100">{p.name}</span>
+                    {p.isAdmin && <span className="ml-1 rounded bg-sky-500/20 px-1 text-[10px] text-sky-200">admin</span>}
+                    {p.suspended && <span className="ml-1 rounded bg-rose-500/20 px-1 text-[10px] text-rose-200">suspended</span>}
+                    <span className="block text-[10px] text-slate-500">{p.email}</span>
+                  </td>
+                  <td className="px-2 py-1.5 text-slate-300">{p.topDevice ?? "—"}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{p.hoursOnline}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{p.sessions}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{p.logins}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{p.played}{p.ranked ? <span className="text-slate-500"> ({p.ranked} ranked)</span> : null}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{p.wins}{p.eliminated ? <span className="text-rose-300"> / {p.eliminated} out</span> : null}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{p.points.toLocaleString()}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{p.commands}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{p.messages}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{p.battlesWon}/{p.battles}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{p.techs}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{p.peakScore.toLocaleString()}</td>
+                  <td className="px-2 py-1.5 text-slate-400">{ago(p.lastSeenAt ?? p.lastLoginAt)}</td>
+                </tr>
+                {open === p.id && (
+                  <tr className="border-t border-slate-900 bg-slate-950/60">
+                    <td colSpan={14} className="px-3 py-2 text-slate-300">
+                      <div className="grid gap-x-6 gap-y-1 sm:grid-cols-3">
+                        <p>
+                          <span className="text-slate-500">Devices:</span> {p.devices.length ? p.devices.map((d) => `${d.key} (${d.n})`).join(", ") : "none recorded yet"}
+                        </p>
+                        <p>
+                          <span className="text-slate-500">Plays at (UTC):</span> {p.activeHoursUtc.length ? p.activeHoursUtc.map((h) => `${String(h.hour).padStart(2, "0")}:00 (${h.n})`).join(", ") : "no sessions yet"}
+                        </p>
+                        <p>
+                          <span className="text-slate-500">Longest session:</span> {p.longestSessionMinutes} min
+                        </p>
+                        <p>
+                          <span className="text-slate-500">Ranks:</span> best {p.bestRank ?? "—"}, average {p.avgRank ?? "—"} across {p.played} matches; {p.tribes} tribes founded; highest age {AGE_NAMES[p.topAge] ?? p.topAge}
+                        </p>
+                        <p>
+                          <span className="text-slate-500">Joined:</span> {p.createdAt ? new Date(p.createdAt).toLocaleDateString() : "—"} · last login {ago(p.lastLoginAt)} · last command {ago(p.lastCommandAt)}
+                        </p>
+                        <p>
+                          <span className="text-slate-500">Battles won:</span> {p.battlesWon} of {p.battles} · chat messages {p.messages} · commands on record {p.commands}
+                        </p>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            ))}
+          </tbody>
+        </table>
+      </Card>
+    </section>
   );
 }

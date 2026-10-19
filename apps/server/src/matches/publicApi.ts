@@ -155,8 +155,19 @@ export async function publicRoutes(app: FastifyInstance, opts: { db: Db }) {
       });
     }
     // Most wins by account.
+    // A tie: not the winner, but level with the winner's score when the match ended. A loss is everything else.
+    const winnerScore = sql<number>`(select p.score from ${matches} mm join ${players} p on p.id = mm.winner_player_id where mm.id = ${userMatchResults.matchId})`;
     const champions = await db
-      .select({ userId: users.id, name: users.displayName, wins: sql<number>`count(*) filter (where ${userMatchResults.won})::int`, played: sql<number>`count(*)::int`, best: sql<number>`min(${userMatchResults.finalRank})::int`, score: sql<number>`coalesce(sum(${userMatchResults.score}), 0)::int` })
+      .select({
+        userId: users.id,
+        name: users.displayName,
+        wins: sql<number>`count(*) filter (where ${userMatchResults.won})::int`,
+        ties: sql<number>`count(*) filter (where not ${userMatchResults.won} and ${userMatchResults.score} >= coalesce(${winnerScore}, ${userMatchResults.score} + 1))::int`,
+        losses: sql<number>`count(*) filter (where not ${userMatchResults.won} and ${userMatchResults.score} < coalesce(${winnerScore}, ${userMatchResults.score} + 1))::int`,
+        played: sql<number>`count(*)::int`,
+        best: sql<number>`min(${userMatchResults.finalRank})::int`,
+        score: sql<number>`coalesce(sum(${userMatchResults.score}), 0)::int`,
+      })
       .from(userMatchResults)
       .innerJoin(users, eq(users.id, userMatchResults.userId))
       .where(eq(userMatchResults.ranked, true))

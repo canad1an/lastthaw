@@ -266,6 +266,95 @@ export async function adminRoutes(app: FastifyInstance, opts: { db: Db; publishe
     return { ok: true };
   });
 
+  /**
+   * Everything tracked per account, for the admin page only: time online, sessions, logins, devices and browsers,
+   * hours of the day, matches and results, commands, chat, battles, techs, peak score.
+   */
+  app.get("/api/admin/player-stats", async (req) => {
+    requireAdmin(req);
+    const rows = await db.execute(sql`
+      with results as (
+        select r.user_id,
+          count(*)::int as played,
+          count(*) filter (where r.ranked)::int as ranked,
+          count(*) filter (where r.won)::int as wins,
+          count(*) filter (where not r.won and r.eliminated_at is not null)::int as eliminated,
+          coalesce(sum(r.score), 0)::int as points,
+          min(r.final_rank)::int as best_rank,
+          round(avg(r.final_rank), 1)::float as avg_rank
+        from user_match_results r group by r.user_id
+      ),
+      acts as (select user_id, count(*)::int as commands, max(at) as last_command_at from player_actions group by user_id),
+      chats as (select p.user_id, count(*)::int as messages from chat_messages c join players p on p.id = c.player_id where p.user_id is not null group by p.user_id),
+      fights as (
+        select p.user_id,
+          count(*)::int as battles,
+          count(*) filter (where (b.attacker_player_id = p.id and (b.report->>'attackerWon')::boolean) or (b.defender_player_id = p.id and not (b.report->>'attackerWon')::boolean))::int as won
+        from battles b join players p on p.id = b.attacker_player_id or p.id = b.defender_player_id
+        where p.user_id is not null group by p.user_id
+      ),
+      techs as (select p.user_id, count(*)::int as techs from player_techs t join players p on p.id = t.player_id where p.user_id is not null group by p.user_id),
+      peak as (select user_id, max(score)::int as peak_score, max(age)::int as top_age, count(*)::int as tribes from players where user_id is not null group by user_id)
+      select u.id, u.display_name as name, u.email, u.created_at, u.last_login_at, u.is_admin, u.approved_at is not null as approved, u.suspended_at is not null as suspended,
+        coalesce(s.seconds_online, 0)::int as seconds_online, coalesce(s.longest_session_seconds, 0)::int as longest_session, coalesce(s.sessions, 0)::int as sessions, coalesce(s.logins, 0)::int as logins,
+        coalesce(s.devices, '{}'::jsonb) as devices, coalesce(s.hours, '{}'::jsonb) as hours, s.last_seen_at,
+        coalesce(r.played, 0) as played, coalesce(r.ranked, 0) as ranked, coalesce(r.wins, 0) as wins, coalesce(r.eliminated, 0) as eliminated, coalesce(r.points, 0) as points, r.best_rank, r.avg_rank,
+        coalesce(a.commands, 0) as commands, a.last_command_at, coalesce(c.messages, 0) as messages, coalesce(f.battles, 0) as battles, coalesce(f.won, 0) as battles_won,
+        coalesce(t.techs, 0) as techs, coalesce(k.peak_score, 0) as peak_score, coalesce(k.top_age, 0) as top_age, coalesce(k.tribes, 0) as tribes
+      from users u
+      left join user_stats s on s.user_id = u.id
+      left join results r on r.user_id = u.id
+      left join acts a on a.user_id = u.id
+      left join chats c on c.user_id = u.id
+      left join fights f on f.user_id = u.id
+      left join techs t on t.user_id = u.id
+      left join peak k on k.user_id = u.id
+      order by coalesce(s.seconds_online, 0) desc, u.created_at desc
+      limit 500`);
+    const list = (rows as unknown as { rows?: unknown[] }).rows ?? (rows as unknown as unknown[]);
+    return {
+      players: (list as Array<Record<string, unknown>>).map((r) => {
+        const devices = Object.entries((r.devices as Record<string, number>) ?? {}).sort((a, b) => b[1] - a[1]);
+        const hours = Object.entries((r.hours as Record<string, number>) ?? {}).sort((a, b) => b[1] - a[1]);
+        const toIso = (v: unknown) => (v instanceof Date ? v.toISOString() : typeof v === "string" ? v : null);
+        return {
+          id: r.id,
+          name: r.name,
+          email: r.email,
+          isAdmin: !!r.is_admin,
+          approved: !!r.approved,
+          suspended: !!r.suspended,
+          createdAt: toIso(r.created_at),
+          lastLoginAt: toIso(r.last_login_at),
+          lastSeenAt: toIso(r.last_seen_at),
+          lastCommandAt: toIso(r.last_command_at),
+          hoursOnline: Math.round((Number(r.seconds_online) / 3600) * 10) / 10,
+          longestSessionMinutes: Math.round(Number(r.longest_session) / 60),
+          sessions: Number(r.sessions),
+          logins: Number(r.logins),
+          topDevice: devices[0]?.[0] ?? null,
+          devices: devices.slice(0, 4).map(([key, n]) => ({ key, n: Number(n) })),
+          activeHoursUtc: hours.slice(0, 3).map(([h, n]) => ({ hour: Number(h), n: Number(n) })),
+          played: Number(r.played),
+          ranked: Number(r.ranked),
+          wins: Number(r.wins),
+          eliminated: Number(r.eliminated),
+          points: Number(r.points),
+          bestRank: r.best_rank === null ? null : Number(r.best_rank),
+          avgRank: r.avg_rank === null ? null : Number(r.avg_rank),
+          commands: Number(r.commands),
+          messages: Number(r.messages),
+          battles: Number(r.battles),
+          battlesWon: Number(r.battles_won),
+          techs: Number(r.techs),
+          peakScore: Number(r.peak_score),
+          topAge: Number(r.top_age),
+          tribes: Number(r.tribes),
+        };
+      }),
+    };
+  });
+
   app.get("/api/admin/matches", async (req) => {
     requireAdmin(req);
     const rows = await db.select().from(matches).orderBy(desc(matches.createdAt)).limit(50);

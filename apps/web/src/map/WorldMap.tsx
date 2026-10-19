@@ -189,6 +189,8 @@ export function WorldMap({ paint, selected, onSelect, focus, className = "", ice
           setHoverArmy((cur) => (cur === id && routeArmy === id ? null : id));
           return;
         }
+        setRouteArmy(null);
+        setHoverArmy(null);
         const target = (e.target as Element).closest("[data-region]");
         onSelect(target ? (target.getAttribute("data-region") ?? null) : null);
       }
@@ -196,6 +198,7 @@ export function WorldMap({ paint, selected, onSelect, focus, className = "", ice
   };
 
   return (
+    <>
     <svg
       ref={svgRef}
       viewBox={`0 0 ${W} ${H}`}
@@ -321,7 +324,7 @@ export function WorldMap({ paint, selected, onSelect, focus, className = "", ice
                 transform={`translate(${a.x} ${a.y}) scale(${s * MARKER_SCALE}) translate(${dx / MARKER_SCALE} ${dy / MARKER_SCALE})`}
                 className="cursor-pointer"
                 onPointerEnter={() => setHoverArmy(a.id)}
-                onPointerLeave={() => setHoverArmy((h) => (h === a.id ? null : h))}
+                onPointerLeave={() => setHoverArmy((h) => (h === a.id && routeArmy !== a.id ? null : h))}
               >
                 {a.hostile && <circle r={11} fill="none" stroke="#f43f5e" strokeWidth={1.5} className="animate-ping" />}
                 {a.mission === "relocate" ? (
@@ -352,13 +355,14 @@ export function WorldMap({ paint, selected, onSelect, focus, className = "", ice
           })}
         </g>
       </g>
+      {/* Desktop: a small card beside the marker while the pointer is on it. */}
       {hoverArmy && (() => {
         const a = armies.find((x) => x.id === hoverArmy);
         if (!a) return null;
         const sx = ((a.x * view.k + view.x) / world.width) * 100;
         const sy = ((a.y * view.k + view.y) / world.height) * 100;
         return (
-          <foreignObject x={0} y={0} width={world.width} height={world.height} pointerEvents="none">
+          <foreignObject x={0} y={0} width={world.width} height={world.height} pointerEvents="none" className="hidden lg:block">
             <div style={{ position: "absolute", left: `${sx}%`, top: `${sy}%`, transform: "translate(21px, -50%)" }} className="pointer-events-none w-max max-w-[16rem] rounded-md border border-slate-700 bg-slate-950/95 px-2 py-1.5 text-xs text-slate-200 shadow-xl">
               <p className="font-medium">{a.title}</p>
               {a.lines.map((l) => (
@@ -367,12 +371,42 @@ export function WorldMap({ paint, selected, onSelect, focus, className = "", ice
                 </p>
               ))}
               {a.routeNames.length > 1 && <p className="text-slate-500">via {a.routeNames.join(" → ")}</p>}
-              <p className="text-slate-500">{routeArmy === a.id ? "click to hide route" : "click to show route"}</p>
+              <p className="text-slate-500">{routeArmy === a.id ? "click to hide the route" : "click to show the route"}</p>
             </div>
           </foreignObject>
         );
       })()}
     </svg>
+    {/* Phones: a tapped unit's card sits along the bottom of the map, big enough to read, until closed or the map is tapped elsewhere. */}
+    {routeArmy && (() => {
+      const a = armies.find((x) => x.id === routeArmy);
+      if (!a) return null;
+      return (
+        <div className="absolute inset-x-2 bottom-2 z-20 rounded-lg border border-slate-600 bg-slate-950/95 p-3 text-slate-200 shadow-2xl lg:hidden" role="dialog" aria-label={a.title}>
+          <div className="flex items-start gap-2">
+            <p className="min-w-0 flex-1 text-base font-semibold text-white">{a.title}</p>
+            <button
+              className="-mr-1 -mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-lg text-slate-300 active:bg-slate-800"
+              onClick={() => {
+                setRouteArmy(null);
+                setHoverArmy(null);
+              }}
+              aria-label="Close"
+            >
+              ✕
+            </button>
+          </div>
+          {a.lines.filter(Boolean).map((l) => (
+            <p key={l} className="mt-0.5 text-sm text-slate-300">
+              {l}
+            </p>
+          ))}
+          {a.routeNames.length > 1 && <p className="mt-0.5 text-sm text-slate-400">via {a.routeNames.join(" → ")}</p>}
+          <p className="mt-1 text-xs text-slate-500">The route is drawn on the map. Tap the map elsewhere to close.</p>
+        </div>
+      );
+    })()}
+    </>
   );
 }
 

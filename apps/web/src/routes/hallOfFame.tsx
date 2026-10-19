@@ -12,7 +12,7 @@ interface Fame {
     winner: { name: string; isAi: boolean; age: string; score: number; regions: number } | null;
     top: Array<{ name: string; score: number; isAi: boolean; age: string }>;
   }>;
-  champions: Array<{ name: string; wins: number; played: number; best: number; score: number; titles: Array<{ title: string; n: number }> }>;
+  champions: Array<{ name: string; wins: number; losses: number; ties: number; played: number; best: number; score: number; titles: Array<{ title: string; n: number }> }>;
 }
 
 export function HallOfFamePage() {
@@ -38,7 +38,10 @@ export function HallOfFamePage() {
                 <tr>
                   <th className="px-3 py-2">Player</th>
                   <th className="px-3 py-2">Titles</th>
-                  <th className="px-3 py-2 text-right">Wins</th>
+                  <th className="px-3 py-2 text-right" title="Tournaments won">W</th>
+                  <th className="px-3 py-2 text-right" title="Tournaments lost">L</th>
+                  <th className="px-3 py-2 text-right" title="Level with the winner's score at the end, without the win">T</th>
+                  <th className="px-3 py-2 text-right" title="Score added up over every tournament">Points</th>
                   <th className="px-3 py-2 text-right">Played</th>
                   <th className="px-3 py-2 text-right">Best finish</th>
                 </tr>
@@ -55,7 +58,10 @@ export function HallOfFamePage() {
                         </span>
                       ))}
                     </td>
-                    <td className="px-3 py-1.5 text-right tabular-nums">{c.wins}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums text-emerald-300">{c.wins}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums text-slate-400">{c.losses}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums text-slate-400">{c.ties}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">{c.score.toLocaleString()}</td>
                     <td className="px-3 py-1.5 text-right tabular-nums">{c.played}</td>
                     <td className="px-3 py-1.5 text-right tabular-nums">#{c.best}</td>
                   </tr>

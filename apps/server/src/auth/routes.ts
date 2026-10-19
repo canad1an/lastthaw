@@ -1,3 +1,4 @@
+import { recordLogin } from "../stats/userStats.js";
 import type { FastifyInstance } from "fastify";
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { changePasswordBody, forgotBody, loginBody, registerBody, resetBody, updateProfileBody, verifyBody, type UserView } from "@lastthaw/shared";
@@ -95,6 +96,7 @@ export async function authRoutes(app: FastifyInstance, opts: { db: Db; redis: Re
     await redis.del(failKey);
     await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, u.id));
     await createSession(db, req, reply, u.id);
+    void recordLogin(db, u.id, req.headers["user-agent"]).catch(() => {});
     return toView(u);
   });
 
