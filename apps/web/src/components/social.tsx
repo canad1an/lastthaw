@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-/** Where the game lives off-site. Add X, Facebook and the rest here when the beta opens up; every place that shows icons reads this list. */
+/** Where the game lives off-site. Add X, Facebook and the rest here as they open; every place that shows icons reads this list. */
 export const SOCIAL_LINKS: Array<{ name: string; href: string; icon: ReactNode }> = [
   { name: "Discord", href: "https://discord.gg/5MTKKnh33U", icon: <DiscordIcon /> },
 ];

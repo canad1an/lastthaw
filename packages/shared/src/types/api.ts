@@ -50,7 +50,8 @@ export const updateProfileBody = z.object({
 export const changePasswordBody = z.object({ currentPassword: z.string().min(1), newPassword: z.string().min(8).max(200) });
 
 export const loginBody = z.object({ email: z.string().email(), password: z.string().min(1) });
-export const verifyBody = z.object({ token: z.string().min(10) });
+/** Either the link's token, or the six-digit code from the mail typed in while logged in. */
+export const verifyBody = z.object({ token: z.string().min(10).optional(), code: z.string().regex(/^\d{6}$/).optional() }).refine((b) => !!b.token || !!b.code, { message: "a token or a code is needed" });
 export const forgotBody = z.object({ email: z.string().email() });
 export const resetBody = z.object({ token: z.string().min(10), password: z.string().min(8).max(200) });
 
@@ -60,7 +61,7 @@ export const userView = z.object({
   displayName: z.string(),
   emailVerified: z.boolean(),
   isAdmin: z.boolean().default(false),
-  /** Private beta: approved accounts may join matches. */
+  /** May join and create matches: true once the email is verified. */
   approved: z.boolean().default(false),
   /** May still pick a tribe name (invited accounts, once). */
   canRename: z.boolean().default(false),
@@ -407,6 +408,9 @@ export const matchStateView = z.object({
     slug: z.string().default(""),
     finishedAt: z.string().nullable().default(null),
     winnerPlayerId: z.string().nullable().default(null),
+    /** You created this game (not a tournament), so you may end it early. */
+    createdByMe: z.boolean().default(false),
+    tournament: z.boolean().default(false),
   }),
   me: z.object({
     playerId: z.string(),
@@ -451,6 +455,8 @@ export const matchStateView = z.object({
   routes: z.array(tradeRouteView).default([]),
   /** Player ids of my alliance mates (their regions are always visible). */
   allies: z.array(z.string()),
+  /** An admin looking in from outside: every region, army and march is in view, and nothing can be done. */
+  observer: z.boolean().default(false),
 });
 export type MatchStateView = z.infer<typeof matchStateView>;
 

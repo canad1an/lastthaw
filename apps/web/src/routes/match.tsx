@@ -461,7 +461,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
       {!phone && <TopMenu matchId={matchId} state={state} selectedRegionId={selected} colorOf={colorOf} overlays={overlays} onToggleOverlay={toggleOverlay} onSelectRegion={setSelected} clockOffsetMs={clockOffsetMs} />}
       {phone && (
         <div className="age-bar flex h-10 shrink-0 items-center gap-2 border-b border-slate-800 bg-slate-950/90 px-2">
-          <AgeChip age={state.me.age} compact />
+          {state.observer ? <span className="inline-flex h-7 shrink-0 items-center rounded-md border border-violet-400/50 bg-violet-500/10 px-2 text-xs font-medium text-violet-100">Admin</span> : <AgeChip age={state.me.age} compact />}
           <ObjectiveChip state={state} compact onOpen={() => setStack([{ kind: "map" }, { kind: "panel", id: "players" }])} />
           <div className="min-w-0 flex-1">
             {menu.chatToast ? (

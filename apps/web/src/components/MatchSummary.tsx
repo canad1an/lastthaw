@@ -117,7 +117,7 @@ export function ReportPage() {
   useSlugAddress(matchId, q.data?.match?.slug, "/report");
   const winnerName = q.data?.standings?.find((p) => p.won)?.name;
   usePageMeta({
-    title: q.data?.match ? (winnerName ? `${q.data.match.name}: final report, won by ${winnerName}` : `${q.data.match.name}: final report`) : "Match report",
+    title: q.data?.match ? (q.data.match.winKind === "ended" ? `${q.data.match.name}: ended early` : winnerName ? `${q.data.match.name}: final report, won by ${winnerName}` : `${q.data.match.name}: final report`) : "Match report",
     description: q.data?.story?.paragraphs[0] ?? (q.data?.match ? `How ${q.data.match.name} was won: final standings, ages reached, battles fought and the winner's path through thirty days of ice. A Last Thaw match report.` : undefined),
     path: `/match/${q.data?.match?.slug || matchId}/report`,
   });
@@ -138,7 +138,7 @@ const REPORT_COLORS = ["#f59e0b", "#38bdf8", "#a78bfa", "#34d399", "#f472b6", "#
 
 function ReportBody({ matchId, s, colorOf, onClose }: { matchId: string; s: Summary | undefined; colorOf: (id: string) => string; onClose?: () => void }) {
   const [copied, setCopied] = useState(false);
-  const winner = s?.standings.find((p) => p.won) ?? s?.standings[0];
+  const winner = s?.match.winKind === "ended" ? undefined : (s?.standings.find((p) => p.won) ?? s?.standings[0]);
   const iWon = !!s && !!winner && !!s.me.playerId && winner.id === s.me.playerId;
   const mine = s?.standings.find((p) => s.me.playerId && p.id === s.me.playerId);
   const running = !!s && !s.match.finishedAt;
@@ -155,8 +155,9 @@ function ReportBody({ matchId, s, colorOf, onClose }: { matchId: string; s: Summ
         <div className="overflow-hidden rounded-2xl border border-amber-500/40 bg-slate-950 shadow-2xl">
           <div className="bg-gradient-to-b from-amber-500/20 to-transparent px-5 pb-4 pt-8 text-center">
             <p className="text-xs uppercase tracking-[0.3em] text-amber-300">{s?.match.name ?? "The match"} · the last thaw</p>
-            <h1 className="mt-2 text-3xl font-bold text-white sm:text-5xl">{!s ? "…" : running ? `${s.match.name}: still being fought` : iWon ? `${s.match.name}: victory!` : winner ? `${s.match.name}: won by ${winner.name}` : `${s.match.name}: the match is over`}</h1>
-            {s && winner && !running && <p className="mt-3 text-base text-amber-100">{s.story?.howWon || endedBy(s.match.winKind, winner.name, s.match.wonderName)}</p>}
+            <h1 className="mt-2 text-3xl font-bold text-white sm:text-5xl">{!s ? "…" : running ? `${s.match.name}: still being fought` : s.match.winKind === "ended" ? `${s.match.name}: ended early` : iWon ? `${s.match.name}: victory!` : winner ? `${s.match.name}: won by ${winner.name}` : `${s.match.name}: the match is over`}</h1>
+            {s && !running && s.match.winKind === "ended" && <p className="mt-3 text-base text-amber-100">The game was ended early by its creator. No winner was named; the standings are by score as they stood.</p>}
+            {s && winner && !running && s.match.winKind !== "ended" && <p className="mt-3 text-base text-amber-100">{s.story?.howWon || endedBy(s.match.winKind, winner.name, s.match.wonderName)}</p>}
             {s && running && <p className="mt-3 text-sm text-slate-300">This page fills in when the match ends and stays here for good.</p>}
             {s && mine && !iWon && !running && (
               <p className="mt-2 text-sm text-slate-300">

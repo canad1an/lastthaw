@@ -1,3 +1,4 @@
+import { useMe } from "../api/auth.js";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { usePageMeta } from "../seo.js";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
@@ -110,25 +111,67 @@ export function VerifyPage() {
   usePageMeta({ title: "Verify your email", noindex: true });
   const { token } = useSearch({ from: "/verify" });
   const qc = useQueryClient();
+  const me = useMe();
+  const [code, setCode] = useState("");
   const m = useMutation({
-    mutationFn: () => api.verify(token ?? ""),
+    mutationFn: (b: { token?: string; code?: string }) => api.verify(b),
     onSuccess: () => void qc.invalidateQueries({ queryKey: keys.me }),
   });
+  const resend = useMutation({ mutationFn: api.resendVerification });
   useEffect(() => {
-    if (token) m.mutate();
+    if (token) m.mutate({ token });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
+  const verified = m.isSuccess || !!me.data?.emailVerified;
   return (
     <Shell kicker="One last step" title="Verify your email">
-      {!token && <p className="text-slate-300">Open the link from your verification email.</p>}
-      {m.isPending && <p className="text-slate-300">Checking your link...</p>}
-      {m.isSuccess && (
+      {verified ? (
         <p className="text-slate-200">
           Your email is verified.{" "}
           <Link to="/matches" className="text-sky-300 hover:underline">
             Find a match
           </Link>
           .
+        </p>
+      ) : token ? (
+        <p className="text-slate-300">{m.isPending ? "Checking your link..." : "Checking your link."}</p>
+      ) : me.data ? (
+        <form
+          className="space-y-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (code.length === 6) m.mutate({ code });
+          }}
+        >
+          <p className="text-slate-300">
+            We sent a six-digit code to <b className="text-white">{me.data.email}</b>. Type it here, or open the link in that mail.
+          </p>
+          <Field label="Code">
+            <Input
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              placeholder="123456"
+              className="text-center text-2xl tracking-[0.4em]"
+              autoFocus
+            />
+          </Field>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button type="submit" disabled={code.length !== 6 || m.isPending}>
+              Verify
+            </Button>
+            <button type="button" className="text-sm text-slate-400 underline hover:text-white" onClick={() => resend.mutate()} disabled={resend.isPending}>
+              {resend.isSuccess ? "Sent again; check your inbox and spam" : "Send a new code"}
+            </button>
+          </div>
+        </form>
+      ) : (
+        <p className="text-slate-300">
+          <Link to="/login" className="text-sky-300 hover:underline">
+            Log in
+          </Link>{" "}
+          to enter your code, or open the link from your verification email.
         </p>
       )}
       <ErrorText>{m.error?.message}</ErrorText>

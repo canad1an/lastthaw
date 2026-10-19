@@ -5,8 +5,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 git pull -q --ff-only
-# The version is 0.<commits on main>: every commit moves it on by one (the leading 0 marks the beta).
-export APP_VERSION="0.$(git rev-list --count HEAD)"
+# The version is 1.<commits since early access began>, two digits at least: every commit moves it on by one.
+EARLY_ACCESS_BASE=239
+export APP_VERSION="1.$(printf '%02d' $(( $(git rev-list --count HEAD) - EARLY_ACCESS_BASE )))"
 echo "version $APP_VERSION"
 COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
 

@@ -193,7 +193,7 @@ const ADMIN_TABS: Array<{ id: AdminTab; label: string }> = [
   { id: "fairplay", label: "Fair play" },
 ];
 
-/** The admin page: live metrics, accounts and beta access, per-player statistics, and the fair-play review queue, one tab each. */
+/** The admin page: live metrics, accounts, per-player statistics, and the fair-play review queue, one tab each. */
 export function AdminPage() {
   usePageMeta({ title: "Admin", noindex: true });
   const me = useMe();
@@ -265,8 +265,8 @@ export function AdminPage() {
       {tab === "accounts" && (
         <>
       <section className="space-y-2">
-        <h1 className="text-2xl font-semibold">Beta access</h1>
-        <p className="text-sm text-slate-400">Only approved accounts can join matches. New sign-ups wait here until you approve them.</p>
+        <h1 className="text-2xl font-semibold">Accounts</h1>
+        <p className="text-sm text-slate-400">Every account. A verified email is all it takes to play; approve lets someone in before they verify, and suspend shuts them out.</p>
         <Card className="overflow-x-auto p-0">
           <table className="w-full min-w-max text-sm">
             <thead className="text-left text-xs uppercase tracking-wide text-slate-500">

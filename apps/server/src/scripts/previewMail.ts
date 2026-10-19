@@ -30,7 +30,7 @@ if (arg.endsWith("/previewMail.js") || arg.endsWith("/previewMail.ts")) {
   const who = "Canad1an";
   const mail =
     kind === "welcome"
-      ? verificationMail(who, "sample-token")
+      ? verificationMail(who, "sample-token", "123456")
       : kind === "reset"
         ? resetMail(who, "sample-token")
         : kind === "invite"

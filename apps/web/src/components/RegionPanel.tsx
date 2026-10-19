@@ -74,7 +74,7 @@ export function RegionBody({ matchId, state, regionId, clockOffsetMs, tab, onTab
     <p className="text-sm text-slate-300">
       Resources: <span className="text-slate-100">{region.resources.map((r) => r.replace("_", " ")).join(", ")}</span>
     </p>
-    <RegionNotes matchId={matchId} state={state} regionId={regionId} />
+    {!state.observer && <RegionNotes matchId={matchId} state={state} regionId={regionId} />}
     {owned ? (
       <>
         <nav className="flex gap-1 overflow-x-auto border-b border-slate-800 text-sm">
@@ -108,6 +108,8 @@ export function RegionBody({ matchId, state, regionId, clockOffsetMs, tab, onTab
       <ColonizePanel matchId={matchId} state={state} regionId={regionId} />
     ) : sighted ? (
       <SightedDetails s={sighted} />
+    ) : state.observer ? (
+      <p className="text-sm text-slate-400">Nobody holds this region.</p>
     ) : (
       <ScoutHere matchId={matchId} state={state} regionId={regionId} />
     )}

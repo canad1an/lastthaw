@@ -13,6 +13,7 @@ import { matchNow } from "../sim/clock.js";
 import { settleAndLockRegion } from "../sim/regions.js";
 import { buildMatchState } from "../view/matchState.js";
 import { startMatch, matchLengthSeconds, enrolRegistered } from "./start.js";
+import { finishMatch } from "../sim/endgame.js";
 import { farEnough, startOptionsFor } from "./startOptions.js";
 import { pickMatchName } from "../worker/weekly.js";
 import { idParams, regionParams } from "./params.js";
@@ -114,11 +115,11 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
     const body = createMatchBody.parse(req.body);
     const kind = body.kind ?? "public";
     if (kind === "tournament" && !devTools && !user.isAdmin) throw httpError(403, "only admins create tournaments");
-    if (!user.isAdmin && !user.approved) throw httpError(403, "Last Thaw is in private beta: ask Matt for access before creating a game");
+    if (!user.isAdmin && !user.approved) throw httpError(403, "verify your email first; the code is in your inbox");
     if (!user.isAdmin && body.speed > balance.match.maxGameSpeed) throw httpError(400, `games run at ${balance.match.maxGameSpeed}x at most (about four hours); tournaments are 1x`);
     if (!user.isAdmin) {
       const [open] = await db.select({ n: sql<number>`count(*)::int` }).from(matches).where(and(inArray(matches.status, ["lobby", "running"]), sql`${matches.settings}->>'createdBy' = ${user.id}`));
-      if ((open?.n ?? 0) >= 2) throw httpError(409, "you already have two games open; let one finish first");
+      if ((open?.n ?? 0) >= 1) throw httpError(409, "you already have a game open; let it finish, or end it, before creating another");
     }
     const inviteCode = kind === "private" ? randomBytes(4).toString("hex").toUpperCase() : undefined;
     const startsAt = body.startsAt ? new Date(body.startsAt) : new Date(Date.now() + body.startsInMinutes * 60_000);
@@ -151,7 +152,7 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
   /** A war-or-winter name no match has used, for the create form. */
   app.get("/api/matches/name-suggestion", async (req) => {
     const user = requireUser(req);
-    if (!devTools && !user.isAdmin && !user.approved) throw httpError(403, "Last Thaw is in private beta: ask Matt for access first");
+    if (!devTools && !user.isAdmin && !user.approved) throw httpError(403, "verify your email first; the code is in your inbox");
     const taken = new Set((await db.select({ name: matches.name }).from(matches)).map((r) => r.name.toLowerCase()));
     return { name: pickMatchName(taken, randomBytes(8).toString("hex")) };
   });
@@ -159,7 +160,7 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
   /** Find a private game by its invite code, so the joiner can enter it from the lobby. */
   app.post("/api/matches/join-code", async (req) => {
     const user = requireVerified(req);
-    if (!user.approved) throw httpError(403, "Last Thaw is in private beta: ask Matt for access first");
+    if (!user.approved) throw httpError(403, "verify your email first; the code is in your inbox");
     const { code } = joinByCodeBody.parse(req.body);
     const [m] = await db.select({ id: matches.id, name: matches.name }).from(matches).where(and(eq(matches.status, "lobby"), sql`upper(${matches.settings}->>'inviteCode') = ${code.toUpperCase()}`)).limit(1);
     if (!m) throw httpError(404, "no open game has that invite code");
@@ -172,7 +173,7 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
     const { inviteCode } = joinMatchBody.parse(req.body ?? {});
     const [m] = await db.select().from(matches).where(eq(matches.id, matchId)).limit(1);
     if (!m) throw httpError(404, "match not found");
-    if (!user.approved) throw httpError(403, "Last Thaw is in private beta: ask Matt for access before joining a match");
+    if (!user.approved) throw httpError(403, "verify your email first; the code is in your inbox");
     // A registered player who is not in a tournament that has already started comes in during its first days.
     if (m.status === "running" && isTournament(m.settings)) {
       const already = await myPlayer(matchId, user.id);
@@ -221,6 +222,22 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
     return { ok: true };
   });
 
+  /** The creator (or an admin) ends a running game early: it finishes now with no winner, and its report stays. */
+  app.post("/api/matches/:id/end", async (req) => {
+    const user = requireUser(req);
+    const matchId = idParams.parse(req.params).id;
+    const [m] = await db.select().from(matches).where(eq(matches.id, matchId)).limit(1);
+    if (!m) throw httpError(404, "match not found");
+    const s = (m.settings ?? {}) as { createdBy?: string };
+    if (isTournament(m.settings)) throw httpError(400, "tournaments run to the end");
+    if (s.createdBy !== user.id && !user.isAdmin) throw httpError(403, "only the game's creator can end it");
+    if (m.status !== "running") throw httpError(409, m.status === "lobby" ? "the game has not started; cancel it instead" : "the game is already over");
+    const after: Array<() => Promise<void>> = [];
+    await db.transaction((tx) => finishMatch(tx, m, matchNow(m), publisher, (fn) => void after.push(fn), null, "ended"));
+    for (const fn of after) await fn().catch(() => {});
+    return { ok: true };
+  });
+
   app.delete("/api/matches/:id", async (req) => {
     const { m } = await creatorsLobbyGame(req);
     await db.delete(matches).where(eq(matches.id, m.id));
@@ -260,7 +277,8 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
   app.get("/api/matches/:id/state", async (req) => {
     const user = requireUser(req);
     const matchId = idParams.parse(req.params).id;
-    const view = await buildMatchState(db, matchId, user.id);
+    // Admins may look into any match from outside: everything in view, nothing to do.
+    const view = await buildMatchState(db, matchId, user.id, { observer: user.isAdmin });
     if (!view) throw httpError(404, "you are not in that match");
     return view;
   });

@@ -230,7 +230,7 @@ export async function adminRoutes(app: FastifyInstance, opts: { db: Db; publishe
     return { ok: true };
   });
 
-  /** Beta access: every account, newest first, with approve and revoke. */
+  /** Every account, newest first, with approve (lets an account in before its email is verified) and revoke. */
   app.get("/api/admin/users", async (req) => {
     requireAdmin(req);
     const rows = await db

@@ -86,7 +86,7 @@ export async function matchPageMeta(db: Db, ref: string, page: "report" | "repla
   const winner = standings.find((s) => s.won) ?? standings[0];
   const first = story.paragraphs[0] ?? `${m.name}, a finished Last Thaw match.`;
   const description = (first.length > 300 ? `${first.slice(0, 297).trimEnd()}…` : first).replace(/\s+/g, " ");
-  const titles = { report: `${m.name}: final report, won by ${winner?.name ?? "nobody"}`, replay: `${m.name}: replay of all ${balance.match.lengthDays} days`, leaderboard: `${m.name}: final standings`, lobby: `${m.name}`, play: `${m.name}` };
+  const titles = { report: m.winKind === "ended" ? `${m.name}: ended early` : `${m.name}: final report, won by ${winner?.name ?? "nobody"}`, replay: `${m.name}: replay of all ${balance.match.lengthDays} days`, leaderboard: `${m.name}: final standings`, lobby: `${m.name}`, play: `${m.name}` };
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "Event",

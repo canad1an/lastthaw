@@ -110,7 +110,18 @@ describe("api routes", () => {
     expect((await Ann.call("POST", "/api/auth/verify", { token: t.token })).statusCode).toBe(400);
     // Already verified: resend is a no-op that still answers ok.
     expect((await Ann.call("POST", "/api/auth/resend-verification", {})).statusCode).toBe(200);
-    for (const u of [ben, outsider]) await db.update(users).set({ emailVerifiedAt: new Date() }).where(eq(users.email, u.email));
+    // The six-digit code from the mail works too, only for the account it was sent to, and only once.
+    const { issueCode } = await import("../src/auth/routes.js");
+    const code = await issueCode(db, uid, 1);
+    expect(code).toMatch(/^\d{6}$/);
+    expect((await Ann.call("POST", "/api/auth/verify", { code: "000000" })).statusCode).toBe(400);
+    expect((await Ben.call("POST", "/api/auth/verify", { code })).statusCode).toBe(400);
+    expect((await Out.call("POST", "/api/auth/verify", { code })).statusCode).toBe(400);
+    expect((await Ann.call("POST", "/api/auth/verify", { code })).statusCode).toBe(200);
+    expect((await Ann.call("POST", "/api/auth/verify", { code })).statusCode).toBe(400);
+    expect((await Ann.call("POST", "/api/auth/verify", {})).statusCode).toBe(400);
+    // Ben verifies; the outsider never does, so Out stands for an account that has not confirmed its email.
+    await db.update(users).set({ emailVerifiedAt: new Date() }).where(eq(users.email, ben.email));
   });
 
   it("forgot never reveals accounts; reset changes the password and ends every session", async () => {
@@ -139,12 +150,15 @@ describe("api routes", () => {
     expect((await app.inject({ method: "PATCH", url: "/api/me/profile", payload: { tagline: "nope" } })).statusCode).toBe(401);
   });
 
-  it("the beta gate: unapproved accounts see the lobby but cannot join or create; admins approve and revoke", async () => {
-    const list = await Ann.call("GET", "/api/matches");
+  it("the gate is a verified email: unverified accounts see the lobby but cannot join or create; admins may still approve and revoke", async () => {
+    const list = await Out.call("GET", "/api/matches");
     expect(list.statusCode).toBe(200);
     expect(Array.isArray(list.json())).toBe(true);
-    expect((await Ann.call("POST", "/api/matches", { name: `Gate ${suffix}`, speed: 10, startsInMinutes: 0 })).statusCode).toBe(403);
-    expect((await Ann.call("GET", "/api/matches/name-suggestion")).statusCode).toBe(403);
+    // Out has not verified: nothing opens. Ann verified earlier: she may create.
+    expect((await Out.call("POST", "/api/matches", { name: `Gate ${suffix}`, speed: 10, startsInMinutes: 0 })).statusCode).toBe(403);
+    expect((await Out.call("GET", "/api/matches/name-suggestion")).statusCode).toBe(403);
+    expect((await Ann.call("GET", "/api/matches/name-suggestion")).statusCode).toBe(200);
+    expect((await Ann.call("GET", "/api/auth/me")).json()).toMatchObject({ approved: true });
     // Admin routes are closed to everyone else.
     for (const [method, url] of [
       ["GET", "/api/admin/users"],
@@ -161,12 +175,13 @@ describe("api routes", () => {
     const usersList = await A.call("GET", "/api/admin/users");
     expect(usersList.statusCode).toBe(200);
     expect(JSON.stringify(usersList.json())).toContain(ann.displayName);
-    expect((await A.call("POST", `/api/admin/users/${annId}/approve`, {})).statusCode).toBe(200);
+    // An admin's approval lets an unverified account in (invited players); revoking takes that back.
+    const outId = await idOf(outsider.email);
+    expect((await A.call("POST", `/api/admin/users/${outId}/approve`, {})).statusCode).toBe(200);
+    expect((await Out.call("GET", "/api/auth/me")).json()).toMatchObject({ approved: true });
+    expect((await A.call("POST", `/api/admin/users/${outId}/revoke`, {})).statusCode).toBe(200);
+    expect((await Out.call("GET", "/api/auth/me")).json()).toMatchObject({ approved: false });
     expect((await A.call("POST", `/api/admin/users/${benId}/approve`, {})).statusCode).toBe(200);
-    expect((await Ann.call("GET", "/api/auth/me")).json()).toMatchObject({ approved: true });
-    expect((await Ann.call("GET", "/api/matches/name-suggestion")).statusCode).toBe(200);
-    expect((await A.call("POST", `/api/admin/users/${annId}/revoke`, {})).statusCode).toBe(200);
-    expect((await Ann.call("GET", "/api/auth/me")).json()).toMatchObject({ approved: false });
     expect((await A.call("POST", `/api/admin/users/${annId}/approve`, {})).statusCode).toBe(200);
     // Admin rights can be handed on and taken back, but never dropped by the last admin on themselves.
     expect((await Ann.call("POST", `/api/admin/users/${benId}/admin`, { admin: true })).statusCode).toBeGreaterThanOrEqual(400);
@@ -191,7 +206,7 @@ describe("api routes", () => {
 
   let gameId = "";
   let code = "";
-  it("games: a private game needs its invite code, speed and AI counts are capped, two open games at most", async () => {
+  it("games: a private game needs its invite code, speed and AI counts are capped, one open game at a time, and the creator may end it", async () => {
     const fast = await Ann.call("POST", "/api/matches", { name: `Fast ${suffix}`, speed: balance.match.maxGameSpeed + 1, startsInMinutes: 0, kind: "public" });
     expect(fast.statusCode, JSON.stringify(fast.json())).toBe(400);
     expect((await Ann.call("POST", "/api/matches", { name: `Crowd ${suffix}`, speed: 10, startsInMinutes: 0, kind: "public", aiFillTo: balance.match.maxAiTribes + 1 })).statusCode).toBe(400);
@@ -221,12 +236,30 @@ describe("api routes", () => {
     // Joining again is harmless.
     expect((await Ben.call("POST", `/api/matches/${gameId}/join`, { inviteCode: code })).statusCode).toBe(200);
     expect((await Out.call("POST", `/api/matches/${gameId}/join`, { inviteCode: code })).statusCode).toBe(403);
-    // Two open games per player.
-    const second = await Ann.call("POST", "/api/matches", { name: `Second ${suffix}`, speed: 10, startsInMinutes: 60, kind: "public" });
-    expect(second.statusCode).toBe(201);
-    created.push((second.json() as { id: string }).id);
-    expect((await Ann.call("POST", "/api/matches", { name: `Third ${suffix}`, speed: 10, startsInMinutes: 60, kind: "public" })).statusCode).toBe(409);
+    // One open game per player: Ann's private game is open, so a second is refused.
+    expect((await Ann.call("POST", "/api/matches", { name: `Second ${suffix}`, speed: 10, startsInMinutes: 60, kind: "public" })).statusCode).toBe(409);
     expect((await Ann.call("POST", `/api/matches/${"00000000-0000-0000-0000-000000000000"}/join`, {})).statusCode).toBe(404);
+    // The creator may end a running game early: it finishes with no winner, its report stays, and the creator is free to make another.
+    const ender = await Ben.call("POST", "/api/matches", { name: `Ender ${suffix}`, speed: 10, startsInMinutes: 60, kind: "public", aiFillTo: 2 });
+    expect(ender.statusCode, JSON.stringify(ender.json())).toBe(201);
+    const enderId = (ender.json() as { id: string }).id;
+    created.push(enderId);
+    expect((await Ben.call("POST", `/api/matches/${enderId}/join`, {})).statusCode).toBe(201);
+    expect((await Ben.call("POST", `/api/matches/${enderId}/end`, {})).statusCode).toBe(409);
+    expect((await A.call("POST", `/api/matches/${enderId}/dev/start`, {})).statusCode).toBe(200);
+    expect((await Ann.call("POST", `/api/matches/${enderId}/end`, {})).statusCode).toBe(403);
+    expect((await Ben.call("POST", `/api/matches/${enderId}/end`, {})).statusCode).toBe(200);
+    expect((await Ben.call("POST", `/api/matches/${enderId}/end`, {})).statusCode).toBe(409);
+    const [endedRow] = await db.select().from(matches).where(eq(matches.id, enderId));
+    expect(endedRow).toMatchObject({ status: "finished", winKind: "ended", winnerPlayerId: null });
+    const report = (await Out.call("GET", `/api/matches/${enderId}/summary`)).json() as { match: { winKind: string | null }; story: { howWon: string; paragraphs: string[] } };
+    expect(report.match.winKind).toBe("ended");
+    expect(report.story.howWon).toContain("ended early");
+    expect(report.story.paragraphs[0]).toContain("ended it early");
+    const again = await Ben.call("POST", "/api/matches", { name: `Again ${suffix}`, speed: 10, startsInMinutes: 60, kind: "public" });
+    expect(again.statusCode).toBe(201);
+    created.push((again.json() as { id: string }).id);
+    expect((await Ben.call("DELETE", `/api/matches/${(again.json() as { id: string }).id}`)).statusCode).toBe(200);
   });
 
   it("lobby: start options are far apart, picks are validated, and only admins start by hand", async () => {
@@ -388,6 +421,21 @@ describe("api routes", () => {
     await db.update(matchRegions).set({ buildings: sql`${matchRegions.buildings} - 'watchtower'` }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
   });
 
+  it("an admin looks into any match from outside and sees every region, army and march; others are refused", async () => {
+    const base = `/api/matches/${gameId}`;
+    expect((await Out.call("GET", `${base}/state`)).statusCode).toBe(404);
+    const res = await A.call("GET", `${base}/state`);
+    expect(res.statusCode, res.body).toBe(200);
+    const god = matchStateView.parse(res.json());
+    expect(god.observer).toBe(true);
+    expect(god.owned).toEqual([]);
+    const claimed = await db.select({ regionId: matchRegions.regionId }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), sql`${matchRegions.ownerPlayerId} is not null`));
+    expect(god.sighted.length).toBe(claimed.length);
+    expect(god.sighted.every((s) => s.units !== undefined && s.ownerName !== null)).toBe(true);
+    expect(god.players.length).toBeGreaterThan(0);
+    expect((await A.call("GET", `${base}/messages`)).statusCode).toBe(200);
+  });
+
   it("region notes: a player marks a region and writes a note only they can read", async () => {
     const base = `/api/matches/${gameId}`;
     const state = matchStateView.parse((await Ann.call("GET", `${base}/state`)).json());
@@ -541,23 +589,30 @@ describe("api routes", () => {
   });
 
   it("the creator of a game can start it at once or call it off; tournaments and other people's games are refused", async () => {
-    const second = ((await Ann.call("GET", "/api/matches")).json() as Array<{ id: string; name: string; createdByMe: boolean; status: string }>).find((m) => m.name === `Second ${suffix}`)!;
+    // Ben has no game open; Ann's private game is still running, so Ben is the creator here.
+    const secondRes = await Ben.call("POST", "/api/matches", { name: `Second ${suffix}`, speed: 10, startsInMinutes: 60, kind: "public" });
+    expect(secondRes.statusCode, JSON.stringify(secondRes.json())).toBe(201);
+    created.push((secondRes.json() as { id: string }).id);
+    const second = ((await Ben.call("GET", "/api/matches")).json() as Array<{ id: string; name: string; createdByMe: boolean; status: string }>).find((m) => m.name === `Second ${suffix}`)!;
     expect(second).toMatchObject({ createdByMe: true, status: "lobby" });
-    expect((await Ben.call("POST", `/api/matches/${second.id}/start-now`, {})).statusCode).toBe(403);
-    expect((await Ben.call("DELETE", `/api/matches/${second.id}`)).statusCode).toBe(403);
-    expect((await Ann.call("DELETE", `/api/matches/${second.id}`)).statusCode).toBe(200);
-    expect(((await Ann.call("GET", "/api/matches")).json() as Array<{ id: string }>).some((m) => m.id === second.id)).toBe(false);
-    const third = await Ann.call("POST", "/api/matches", { name: `Third ${suffix}`, speed: 10, startsInMinutes: 60, kind: "public", aiFillTo: 3 });
+    expect((await Ann.call("POST", `/api/matches/${second.id}/start-now`, {})).statusCode).toBe(403);
+    expect((await Ann.call("DELETE", `/api/matches/${second.id}`)).statusCode).toBe(403);
+    expect((await Ben.call("DELETE", `/api/matches/${second.id}`)).statusCode).toBe(200);
+    expect(((await Ben.call("GET", "/api/matches")).json() as Array<{ id: string }>).some((m) => m.id === second.id)).toBe(false);
+    const third = await Ben.call("POST", "/api/matches", { name: `Third ${suffix}`, speed: 10, startsInMinutes: 60, kind: "public", aiFillTo: 3 });
     expect(third.statusCode, JSON.stringify(third.json())).toBe(201);
     const thirdId = (third.json() as { id: string }).id;
     created.push(thirdId);
-    expect((await Ann.call("POST", `/api/matches/${thirdId}/join`, {})).statusCode).toBe(201);
-    expect((await Ann.call("POST", `/api/matches/${thirdId}/start-now`, {})).statusCode).toBe(200);
-    const st = matchStateView.parse((await Ann.call("GET", `/api/matches/${thirdId}/state`)).json());
+    expect((await Ben.call("POST", `/api/matches/${thirdId}/join`, {})).statusCode).toBe(201);
+    expect((await Ben.call("POST", `/api/matches/${thirdId}/start-now`, {})).statusCode).toBe(200);
+    const st = matchStateView.parse((await Ben.call("GET", `/api/matches/${thirdId}/state`)).json());
     expect(st.match.status).toBe("running");
+    expect(st.match).toMatchObject({ createdByMe: true, tournament: false });
     expect(st.players.length).toBe(3);
-    expect((await Ann.call("POST", `/api/matches/${thirdId}/start-now`, {})).statusCode).toBe(409);
-    expect((await Ann.call("DELETE", `/api/matches/${thirdId}`)).statusCode).toBe(409);
+    expect((await Ben.call("POST", `/api/matches/${thirdId}/start-now`, {})).statusCode).toBe(409);
+    expect((await Ben.call("DELETE", `/api/matches/${thirdId}`)).statusCode).toBe(409);
+    // Running and his: Ben ends it so he is free again, and the report records the early end.
+    expect((await Ben.call("POST", `/api/matches/${thirdId}/end`, {})).statusCode).toBe(200);
     const cup = ((await A.call("GET", "/api/matches")).json() as Array<{ id: string; name: string }>).find((m) => m.name === `Cup ${suffix}`);
     if (cup) expect((await A.call("POST", `/api/matches/${cup.id}/start-now`, {})).statusCode).toBe(400);
   });

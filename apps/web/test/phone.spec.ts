@@ -113,6 +113,7 @@ test.describe("the match page on a phone", () => {
     // The region screen and each of its tabs.
     await page.getByRole("button", { name: "Region" }).click();
     await expect(page.getByRole("button", { name: "Back" })).toBeVisible();
+    await page.waitForTimeout(500);
     await expectFits(page, "region-overview");
     for (const tab of ["build", "train", "units"]) {
       await page.getByRole("button", { name: tab, exact: true }).click();
@@ -141,7 +142,9 @@ test.describe("the match page on a phone", () => {
     const labels = (await grid.allInnerTexts()).map((t) => t.split("\n")[0]!.trim());
     expect(labels.length, "the menu grid is empty").toBeGreaterThan(5);
     for (const label of labels) {
-      await grid.filter({ hasText: new RegExp(`^${label}`) }).first().click();
+      // A freshly opened screen ignores taps for a moment (so the opening tap cannot land on it); give it that moment.
+      await page.waitForTimeout(500);
+      await grid.filter({ hasText: new RegExp(`^${label}`) }).first().click({ timeout: 15_000 });
       await expect(page.locator("[data-phone-title]")).not.toHaveText("Menu");
       await expectFits(page, `menu-${label.toLowerCase().replace(/[^a-z]+/g, "-")}`);
       await back(page);

@@ -4,7 +4,7 @@ import { emptySpecial, regionById, type ArmyView, type IncomingView, type JobVie
 import type { Db } from "../db/client.js";
 import { allianceMembers, alliances, armies, jobs, matchRegions, matches, playerTechs, players, regionSightings, tradeRoutes, refugeeOffers, pacts, mercenaryOffers, dailyObjectives, bounties, regionNotes } from "../db/schema.js";
 import { OBJECTIVES } from "../sim/objectives.js";
-import { matchNow } from "../sim/clock.js";
+import { matchNow, matchDayAt } from "../sim/clock.js";
 import { alliesOf } from "../sim/alliances.js";
 import { countOwnedRegions, projectRegion } from "../sim/regions.js";
 
@@ -12,7 +12,7 @@ import { countOwnedRegions, projectRegion } from "../sim/regions.js";
  * The only path from database to a player's screen. Everything a player can
  * see about a match goes through here, so fog of war is enforced in one place.
  */
-export async function buildMatchState(db: Db, matchId: string, userId: string): Promise<MatchStateView | null> {
+export async function buildMatchState(db: Db, matchId: string, userId: string, opts: { observer?: boolean } = {}): Promise<MatchStateView | null> {
   const [m] = await db.select().from(matches).where(eq(matches.id, matchId)).limit(1);
   if (!m) return null;
   const [me] = await db
@@ -20,7 +20,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
     .from(players)
     .where(and(eq(players.matchId, matchId), eq(players.userId, userId)))
     .limit(1);
-  if (!me) return null;
+  if (!me) return opts.observer ? buildObserverState(db, m, matchId) : null;
 
   const now = matchNow(m);
   const techRows = await db.select({ id: playerTechs.techId }).from(playerTechs).where(eq(playerTechs.playerId, me.id));
@@ -343,6 +343,8 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
       slug: m.slug ?? m.id,
       finishedAt: m.finishedAt?.toISOString() ?? null,
       winnerPlayerId: m.winnerPlayerId ?? null,
+      createdByMe: !!me.userId && ((m.settings ?? {}) as { createdBy?: string }).createdBy === me.userId,
+      tournament: ((m.settings ?? {}) as { kind?: string }).kind === "tournament",
     },
     me: {
       playerId: me.id,
@@ -387,6 +389,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
       delivered: r.delivered,
     })),
     allies,
+    observer: false,
   };
 }
 
@@ -394,4 +397,109 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
 function roundBand(n: number): number {
   const step = n < 10 ? 1 : n < 50 ? 5 : n < 200 ? 10 : n < 1000 ? 50 : 100;
   return Math.max(1, Math.round(n / step) * step);
+}
+
+/**
+ * God mode for an admin who is not a player: every claimed region with its people, buildings and units as of now,
+ * every army on the road, every march against anyone, the standings and the world's state. Nothing can be done
+ * from it; the page shows it read-only.
+ */
+async function buildObserverState(db: Db, m: typeof matches.$inferSelect, matchId: string): Promise<MatchStateView> {
+  const now = matchNow(m);
+  const all = await db.select().from(players).where(and(eq(players.matchId, matchId), eq(players.hidden, false))).orderBy(asc(players.createdAt), asc(players.id));
+  const nameOf = new Map(all.map((p) => [p.id, p.name]));
+  const counts = await countOwnedRegions(db, matchId);
+  const rows = await db.select().from(matchRegions).where(and(eq(matchRegions.matchId, matchId), sql`${matchRegions.ownerPlayerId} is not null`));
+  const sighted: SightedRegionView[] = rows.map((row) => {
+    const { economy } = projectRegion(row, now, m.speed);
+    return {
+      regionId: row.regionId,
+      ownerPlayerId: row.ownerPlayerId,
+      ownerName: row.ownerPlayerId ? (nameOf.get(row.ownerPlayerId) ?? null) : null,
+      population: economy.popWorkers + economy.popSoldiers + economy.popOccupiers,
+      seenAt: now.toISOString(),
+      roads: ((row.buildings as Record<string, number>).roads ?? 0) >= 1,
+      wall: wallOf(row.buildings as Record<string, number>),
+      storm: !!row.stormUntil && row.stormUntil > now,
+      units: Object.fromEntries(Object.entries(row.units as Record<string, number>).filter(([, n]) => n > 0)),
+    };
+  });
+  const inFlight = await db
+    .select()
+    .from(armies)
+    .where(and(eq(armies.matchId, matchId), inArray(armies.status, ["outbound", "returning"])))
+    .orderBy(asc(armies.arrivesAt));
+  const armyViews: ArmyView[] = inFlight.map((a) => ({
+    id: a.id,
+    playerId: a.playerId,
+    mission: a.mission,
+    originRegionId: a.originRegionId,
+    targetRegionId: a.targetRegionId,
+    units: a.units,
+    cargo: a.cargo,
+    status: a.status,
+    departsAt: a.departsAt.toISOString(),
+    arrivesAt: a.arrivesAt.toISOString(),
+    returnsAt: a.returnsAt?.toISOString() ?? null,
+    path: a.path,
+    note: a.note ?? null,
+    lane: a.lane ?? null,
+  }));
+  const incoming: IncomingView[] = inFlight
+    .filter((a) => a.status === "outbound" && (a.mission === "raid" || a.mission === "conquer"))
+    .map((a) => ({
+      id: a.id,
+      mission: a.mission,
+      targetRegionId: a.targetRegionId,
+      fromPlayerId: a.playerId,
+      fromPlayerName: nameOf.get(a.playerId) ?? "Unknown",
+      arrivesAt: a.arrivesAt.toISOString(),
+      size: Object.values(a.units).reduce((x, y) => x + y, 0),
+      units: a.units,
+    }));
+  const stormRows = rows.filter((r) => r.stormUntil && r.stormUntil > now);
+  const thawRows = rows.filter((r) => r.thawUntil && r.thawUntil > now);
+  const bountyRows = await db.select().from(bounties).where(and(eq(bounties.matchId, matchId), isNull(bounties.claimedBy), or(isNull(bounties.expiresAt), gt(bounties.expiresAt, now)))).orderBy(asc(bounties.createdAt));
+  const dayIdx = Math.floor(matchDayAt(m, now));
+  const objRows = await db.select().from(dailyObjectives).where(and(eq(dailyObjectives.matchId, matchId), inArray(dailyObjectives.day, [dayIdx, dayIdx - 1])));
+  const today = objRows.find((o) => o.day === dayIdx);
+  const yday = objRows.find((o) => o.day === dayIdx - 1);
+  return {
+    match: {
+      id: m.id,
+      name: m.name,
+      status: m.status,
+      speed: m.speed,
+      startsAt: m.startsAt.toISOString(),
+      endsAt: m.endsAt.toISOString(),
+      now: now.toISOString(),
+      clockOffsetSeconds: m.clockOffsetSeconds,
+      pausedAt: m.pausedAt?.toISOString() ?? null,
+      slug: m.slug ?? "",
+      finishedAt: m.finishedAt?.toISOString() ?? null,
+      winnerPlayerId: m.winnerPlayerId ?? null,
+      createdByMe: false,
+      tournament: ((m.settings ?? {}) as { kind?: string }).kind === "tournament",
+    },
+    me: { playerId: "", name: "Admin view", capitalRegionId: null, protectionUntil: null, age: 0, techs: [], allianceId: null, allianceTag: null },
+    owned: [],
+    sighted,
+    players: all.map((p) => ({ id: p.id, name: p.name, isAi: p.isAi, aiLevel: p.isAi ? parseProfile(p.aiProfile).difficulty : null, age: p.age, score: p.score, regions: counts.get(p.id) ?? 0 })),
+    jobs: [],
+    armies: armyViews,
+    incoming,
+    frontier: [],
+    storms: stormRows.map((r) => r.regionId),
+    thaws: thawRows.map((r) => ({ regionId: r.regionId, until: r.thawUntil!.toISOString() })),
+    refugees: [],
+    pacts: [],
+    mercenaries: [],
+    lastStand: { eligible: false, used: false },
+    objective: today ? { day: today.day + 1, label: OBJECTIVES[today.key] ?? today.key, yesterday: yday ? { label: OBJECTIVES[yday.key] ?? yday.key, playerId: yday.winnerPlayerId, value: yday.value ?? 0 } : null } : null,
+    bounties: bountyRows.map((b) => ({ id: b.id, kind: b.kind as "region" | "player", regionId: b.regionId, playerId: b.playerId, amount: b.amount, reason: b.reason, expiresAt: b.expiresAt?.toISOString() ?? null })),
+    notes: [],
+    routes: [],
+    allies: [],
+    observer: true,
+  };
 }

@@ -46,7 +46,7 @@ export async function chatRoutes(app: FastifyInstance, opts: { db: Db; publisher
 
   app.post("/api/chat/lobby", async (req, reply) => {
     const user = requireUser(req);
-    if (!user.approved) throw httpError(403, "Last Thaw is in private beta: ask Matt for access first");
+    if (!user.approved) throw httpError(403, "verify your email first; the code is in your inbox");
     const body = chatPostBody.shape.body.parse((req.body as { body?: unknown })?.body);
     if ((await opts.redis.set(`lt-chat:lobby:${user.id}`, "1", "PX", RATE_LIMIT_MS, "NX")) !== "OK") throw httpError(409, "slow down: one message per second");
     const [row] = await db.insert(lobbyMessages).values({ userId: user.id, name: user.displayName, body }).returning();

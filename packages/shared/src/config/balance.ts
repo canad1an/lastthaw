@@ -17,7 +17,7 @@ export const balance = {
     defaultSpeed: 1,
     testSpeed: 10,
     lengthDays: 30,
-    /** Beta: twenty humans a match. */
+    /** Twenty humans a match. */
     maxHumanPlayers: 20,
     /** Days of beginner protection after a match starts (spec: 3 to 5). */
     protectionDays: 4,

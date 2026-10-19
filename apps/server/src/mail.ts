@@ -125,15 +125,19 @@ Thirty days, a real map, and the ice closing in from the poles.<br>
 // The mails
 // ---------------------------------------------------------------------------
 
-export function verificationMail(displayName: string, token: string) {
+export function verificationMail(displayName: string, token: string, code: string) {
   const url = `${config().PUBLIC_URL}/verify?token=${encodeURIComponent(token)}`;
   return renderMail({
-    subject: "Welcome to Last Thaw",
-    preheader: "One click to confirm your email, then the ice is yours to beat.",
+    subject: `${code} is your Last Thaw code`,
+    preheader: `Your code is ${code}. Enter it on the site, or click the button, and the ice is yours to beat.`,
     greeting: `Hi ${displayName}`,
-    paragraphs: ["Your account is ready. Confirm your email and you can join matches: pick a capital on the real map, set your five families to work, and build before the frost reaches your latitude."],
+    paragraphs: [
+      "Your account is ready. Confirm your email and you can join matches: pick a capital on the real map, set your five families to work, and build before the frost reaches your latitude.",
+      `Enter this code where the site asks for it: ${code}. Or press the button below; either one confirms you.`,
+    ],
+    facts: [{ label: "Your code", value: code }],
     cta: { label: "Confirm my email", url },
-    note: "The link is valid for 24 hours. If you did not sign up, you can ignore this message.",
+    note: "The code and the link are valid for 24 hours. If you did not sign up, you can ignore this message.",
   });
 }
 

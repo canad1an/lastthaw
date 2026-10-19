@@ -1,3 +1,4 @@
+import { randomInt } from "node:crypto";
 import { recordLogin } from "../stats/userStats.js";
 import type { FastifyInstance } from "fastify";
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
@@ -33,7 +34,7 @@ function toView(u: {
     displayName: u.displayName,
     emailVerified: u.emailVerifiedAt !== null,
     isAdmin: u.isAdmin,
-    approved: u.isAdmin || !!u.approvedAt || config().DEV_TOOLS,
+    approved: u.isAdmin || !!u.emailVerifiedAt || !!u.approvedAt || config().DEV_TOOLS,
     canRename: u.canRename ?? false,
     tagline: u.tagline ?? null,
     bio: u.bio ?? null,
@@ -46,6 +47,13 @@ export async function issueToken(db: Db, userId: string, kind: "verify" | "reset
   const { token, hash } = newToken();
   await db.insert(emailTokens).values({ userId, kind, tokenHash: hash, expiresAt: new Date(Date.now() + hours * 3600_000) });
   return token;
+}
+
+/** A six-digit code for the same purpose, typed in by the account that asked for it: stored hashed with the account id, so it is only good for that account. */
+export async function issueCode(db: Db, userId: string, hours: number): Promise<string> {
+  const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
+  await db.insert(emailTokens).values({ userId, kind: "verify", tokenHash: hashToken(`code:${userId}:${code}`), expiresAt: new Date(Date.now() + hours * 3600_000) });
+  return code;
 }
 
 /** A real argon2 hash, verified against when the email is unknown, so a missing account takes as long as a wrong password. */
@@ -72,7 +80,8 @@ export async function authRoutes(app: FastifyInstance, opts: { db: Db; redis: Re
     if (!u) throw new Error("insert failed");
 
     const token = await issueToken(db, u.id, "verify", VERIFY_HOURS);
-    const mail = verificationMail(u.displayName, token);
+    const code = await issueCode(db, u.id, VERIFY_HOURS);
+    const mail = verificationMail(u.displayName, token, code);
     void sendMail(u.email, mail.subject, mail.text, mail.html);
 
     await createSession(db, req, reply, u.id);
@@ -113,14 +122,16 @@ export async function authRoutes(app: FastifyInstance, opts: { db: Db; redis: Re
   });
 
   app.post("/api/auth/verify", tight(10, "10 minutes"), async (req, reply) => {
-    const { token } = verifyBody.parse(req.body);
+    const { token, code } = verifyBody.parse(req.body);
     const now = new Date();
+    // A code is typed in by the logged-in account it was sent to; a token comes from the mailed link.
+    const hash = code ? hashToken(`code:${requireUser(req).id}:${code}`) : hashToken(token!);
     const [row] = await db
       .select()
       .from(emailTokens)
-      .where(and(eq(emailTokens.tokenHash, hashToken(token)), eq(emailTokens.kind, "verify"), isNull(emailTokens.usedAt), gt(emailTokens.expiresAt, now)))
+      .where(and(eq(emailTokens.tokenHash, hash), eq(emailTokens.kind, "verify"), isNull(emailTokens.usedAt), gt(emailTokens.expiresAt, now)))
       .limit(1);
-    if (!row) return reply.code(400).send({ error: "that link is invalid or expired" });
+    if (!row) return reply.code(400).send({ error: code ? "that code is wrong or has expired; ask for a new one" : "that link is invalid or expired" });
     await db.transaction(async (tx) => {
       await tx.update(emailTokens).set({ usedAt: now }).where(eq(emailTokens.id, row.id));
       await tx.update(users).set({ emailVerifiedAt: now }).where(eq(users.id, row.userId));
@@ -133,7 +144,8 @@ export async function authRoutes(app: FastifyInstance, opts: { db: Db; redis: Re
     if (user.emailVerified) return { ok: true };
     if (!(await mailAllowed("verify", user.email))) return { ok: true };
     const token = await issueToken(db, user.id, "verify", VERIFY_HOURS);
-    const mail = verificationMail(user.displayName, token);
+    const code = await issueCode(db, user.id, VERIFY_HOURS);
+    const mail = verificationMail(user.displayName, token, code);
     void sendMail(user.email, mail.subject, mail.text, mail.html);
     return reply.send({ ok: true });
   });

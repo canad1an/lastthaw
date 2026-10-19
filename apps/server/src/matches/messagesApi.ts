@@ -28,7 +28,9 @@ export async function messageRoutes(app: FastifyInstance, opts: { db: Db }) {
   app.get("/api/matches/:id/messages", async (req) => {
     const user = requireUser(req);
     const matchId = idParams.parse(req.params).id;
-    const p = await myPlayer(matchId, user.id);
+    const [mine] = await db.select().from(players).where(and(eq(players.matchId, matchId), eq(players.userId, user.id))).limit(1);
+    if (!mine && user.isAdmin) return { unread: 0, messages: [] };
+    const p = mine ?? (await myPlayer(matchId, user.id));
     const rows = await db.select().from(messages).where(eq(messages.playerId, p.id)).orderBy(desc(messages.createdAt)).limit(100);
     const [unread] = await db
       .select({ n: sql<number>`count(*)::int` })
@@ -70,7 +72,9 @@ export async function messageRoutes(app: FastifyInstance, opts: { db: Db }) {
   app.post("/api/matches/:id/messages/read", async (req) => {
     const user = requireUser(req);
     const matchId = idParams.parse(req.params).id;
-    const p = await myPlayer(matchId, user.id);
+    const [mine] = await db.select().from(players).where(and(eq(players.matchId, matchId), eq(players.userId, user.id))).limit(1);
+    if (!mine && user.isAdmin) return { ok: true };
+    const p = mine ?? (await myPlayer(matchId, user.id));
     await db.update(messages).set({ readAt: new Date() }).where(and(eq(messages.playerId, p.id), isNull(messages.readAt)));
     return { ok: true };
   });

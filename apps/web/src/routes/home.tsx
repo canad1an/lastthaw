@@ -243,7 +243,7 @@ export function HomePage() {
           </Link>
           <span className="ml-auto flex items-center gap-4">
             <SocialIcons />
-            <span className="text-xs text-slate-500" title="Beta: the number after the dot counts every change shipped so far">
+            <span className="text-xs text-slate-500" title="Early access: the number after the dot counts every change shipped since launch">
               v{APP_VERSION}
             </span>
           </span>

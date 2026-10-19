@@ -184,9 +184,11 @@ export async function cancelOrphanedJobs(db: Db): Promise<number> {
   return rows.length;
 }
 
-export async function finishMatch(tx: Tx, m: MatchRow, at: Date, publisher: Publisher, after: (fn: () => Promise<void>) => void, winnerPlayerId: string | null, kind?: "hold" | "wonder" | "survival" | "score"): Promise<void> {
+export async function finishMatch(tx: Tx, m: MatchRow, at: Date, publisher: Publisher, after: (fn: () => Promise<void>) => void, winnerPlayerId: string | null, kind?: "hold" | "wonder" | "survival" | "score" | "ended"): Promise<void> {
   if (m.status !== "running") return;
   const winKind = kind ?? (winnerPlayerId ? "hold" : balance.win.survival ? "survival" : "score");
+  // A game its creator ended early names no winner: the standings are by score and the report says what happened.
+  const endedEarly = winKind === "ended";
   const ms = (m.settings ?? {}) as { kind?: string; weekly?: boolean };
   const isRanked = ms.kind === "tournament" || ms.weekly === true;
   // The last day's objective is settled now rather than at a day's end that never comes.
@@ -197,13 +199,13 @@ export async function finishMatch(tx: Tx, m: MatchRow, at: Date, publisher: Publ
   const scoreOfId = (id: string) => standings.find((s) => s.id === id)?.score ?? 0;
   const ranked = [...ps].sort((a, b) => scoreOfId(b.id) - scoreOfId(a.id));
   let winner = winnerPlayerId;
-  if (!winner && balance.win.survival) {
+  if (!winner && !endedEarly && balance.win.survival) {
     // The Last Thaw: when the ice stops, whoever has the most people alive in unfrozen land wins; score breaks ties.
     const alive = ps.filter((p) => !p.eliminatedAt);
     const popOf = (id: string) => standings.find((s) => s.id === id)?.pop ?? 0;
     winner = [...alive].sort((a, b) => popOf(b.id) - popOf(a.id) || scoreOfId(b.id) - scoreOfId(a.id))[0]?.id ?? null;
   }
-  winner ??= ranked[0]?.id ?? null;
+  if (!endedEarly) winner ??= ranked[0]?.id ?? null;
   // The winner is ranked first whatever the score says; everyone else by score.
   if (winner) ranked.sort((a, b) => Number(b.id === winner) - Number(a.id === winner) || scoreOfId(b.id) - scoreOfId(a.id));
   await tx.update(matches).set({ status: "finished", finishedAt: at, winnerPlayerId: winner, winKind }).where(eq(matches.id, m.id));
@@ -217,7 +219,7 @@ export async function finishMatch(tx: Tx, m: MatchRow, at: Date, publisher: Publ
       .insert(userMatchResults)
       .values({ userId: p.userId, matchId: m.id, playerId: p.id, finalRank: i + 1, score: s?.score ?? 0, regionsHeld: s?.regions ?? 0, ageReached: p.age, eliminatedAt: p.eliminatedAt, won: p.id === winner, ranked: isRanked, winKind })
       .onConflictDoNothing();
-    await notify(tx, m.id, p.id, "system", `The match is over. You finished #${i + 1}${p.id === winner ? " and won!" : "."}`, { rank: i + 1, winner });
+    await notify(tx, m.id, p.id, "system", endedEarly ? `The game was ended early by its creator. You finished #${i + 1} by score.` : `The match is over. You finished #${i + 1}${p.id === winner ? " and won!" : "."}`, { rank: i + 1, winner });
   }
   await tx.insert(events).values({ matchId: m.id, at, kind: "match.finished", payload: { winnerPlayerId: winner } });
   after(() => publisher.toMatch(m.id, "match.finished", { winnerPlayerId: winner }));

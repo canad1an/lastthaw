@@ -16,7 +16,7 @@ export const users = pgTable(
     /** Invited accounts start with a placeholder name and may pick their tribe name once. */
     canRename: boolean("can_rename").notNull().default(false),
     isAdmin: boolean("is_admin").notNull().default(false),
-    /** Private beta: only approved accounts may join matches. Set by an admin. */
+    /** An admin's approval: lets an account in before its email is verified (invited players). */
     approvedAt: timestamp("approved_at", { withTimezone: true }),
     /** Set by an admin: the account cannot log in and its sessions are gone until cleared. */
     suspendedAt: timestamp("suspended_at", { withTimezone: true }),

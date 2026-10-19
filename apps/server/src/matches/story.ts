@@ -35,6 +35,8 @@ const ageName = (age: number) => AGES[Math.max(0, Math.min(AGES.length - 1, age)
 /** How a match was won, in one line. */
 export function howWonLine(winKind: string | null, winnerName: string, wonderName: string, population: number, regions: number): string {
   switch (winKind) {
+    case "ended":
+      return "The game was ended early by its creator; no winner was named.";
     case "wonder":
       return `${winnerName} won by raising the ${wonderName}, the wonder that ends a match the moment it is finished.`;
     case "hold":
@@ -138,9 +140,15 @@ export async function buildStory(db: Db, m: MatchRow, ps: PlayerRow[], standings
   };
   const [prev, next] = isTournament(m.settings) ? await Promise.all([neighbours("prev"), neighbours("next")]) : [null, null];
 
-  const winner = standings.find((s) => s.won) ?? standings[0];
-  const howWon = winner && finished ? howWonLine(m.winKind, winner.name, "Great Hearth", winner.population, winner.regions) : "";
+  const ended = m.winKind === "ended";
+  const winner = ended ? undefined : (standings.find((s) => s.won) ?? standings[0]);
+  const howWon = finished ? (ended ? howWonLine("ended", "", "", 0, 0) : winner ? howWonLine(m.winKind, winner.name, "Great Hearth", winner.population, winner.regions) : "") : "";
   const paragraphs: string[] = [];
+  if (finished && ended) {
+    const humans = ps.filter((p) => !p.isAi).length;
+    const top = standings[0];
+    paragraphs.push(`${m.name} was a game of ${standings.length} tribes${humans ? `, ${humans} of them played by people,` : ""} at ${m.speed}x. Its creator ended it early on day ${Math.min(balance.match.lengthDays, Math.floor(dayOf(m.finishedAt ?? new Date())) + 1)}, so no winner was named${top ? `; ${top.name} led on score with ${fmt(top.score)} points` : ""}.`);
+  }
   if (finished && winner) {
     const humans = ps.filter((p) => !p.isAi).length;
     const ages = Math.max(0, ...standings.map((s) => s.age));

@@ -55,7 +55,7 @@ export async function registrationRoutes(app: FastifyInstance, opts: { db: Db; r
 
   app.post("/api/matches/:id/register", async (req, reply) => {
     const user = requireVerified(req);
-    if (!user.approved) throw httpError(403, "Last Thaw is in private beta: ask Matt for access before registering");
+    if (!user.approved) throw httpError(403, "verify your email first; the code is in your inbox");
     const matchId = idParams.parse(req.params).id;
     const [m] = await db.select().from(matches).where(eq(matches.id, matchId)).limit(1);
     if (!m) throw httpError(404, "match not found");

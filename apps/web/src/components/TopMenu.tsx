@@ -1,3 +1,4 @@
+import { useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type ReactNode } from "react";
 import { ageTheme } from "../ageTheme.js";
@@ -154,7 +155,7 @@ export function TopMenu({
         {latest}
       </div>
       <div className="hidden h-10 items-center gap-1 overflow-x-auto px-2 sm:flex">
-        <AgeChip age={state.me.age} />
+        {state.observer ? <span className="inline-flex h-7 shrink-0 items-center rounded-md border border-violet-400/50 bg-violet-500/10 px-2 text-xs font-medium text-violet-100" title="You are looking in as an admin: every region, army and march is in view, and nothing here can be changed">Admin view</span> : <AgeChip age={state.me.age} />}
         <ObjectiveChip state={state} onOpen={() => toggle("players")} />
         <div className="mx-1 h-5 w-px bg-slate-800" />
         {entries.map((e) => (
@@ -282,7 +283,8 @@ export function MenuPanelBody({
             <p className="pt-1 text-xs text-slate-500">{OVERLAY_HINT}</p>
           </div>
         )}
-        {menu === "players" && (state.objective || state.bounties.length > 0) && (
+        {menu === "players" && state.match.createdByMe && !state.match.tournament && state.match.status === "running" && <EndGame matchId={matchId} name={state.match.name} />}
+      {menu === "players" && (state.objective || state.bounties.length > 0) && (
           <div className="space-y-1 border-b border-slate-800 px-3 py-2 text-xs text-slate-300">
             {state.objective && (
               <p>
@@ -395,6 +397,35 @@ export function ObjectiveCard({ state }: { state: MatchStateView }) {
       <p className="mt-0.5 text-xs text-amber-200/80">
         The best tribe at the day's end takes the points. {o.yesterday ? `Yesterday (${o.yesterday.label}): ${winner ?? "nobody"}${o.yesterday.value ? ` with ${o.yesterday.value}` : ""}.` : ""}
       </p>
+    </div>
+  );
+}
+
+/** The creator's way out: end the game now. It finishes with no winner and its report stays at its address. */
+function EndGame({ matchId, name }: { matchId: string; name: string }) {
+  const qc = useQueryClient();
+  const nav = useNavigate();
+  const m = useMutation({
+    mutationFn: () => api.endMatch(matchId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.matchState(matchId) });
+      void qc.invalidateQueries({ queryKey: keys.matches });
+      void nav({ to: "/match/$matchId/report", params: { matchId } });
+    },
+  });
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 px-3 py-2 text-xs text-slate-400">
+      <span>You made this game. You can end it at any time; it finishes with no winner and its report stays.</span>
+      <button
+        className="rounded border border-rose-500/50 bg-rose-500/10 px-2 py-1 text-rose-200 hover:bg-rose-500/20 disabled:opacity-50"
+        disabled={m.isPending}
+        onClick={() => {
+          if (window.confirm(`End "${name}" now for everyone? It finishes with no winner; the report stays.`)) m.mutate();
+        }}
+      >
+        End game
+      </button>
+      {m.error && <span className="text-rose-300">{m.error.message}</span>}
     </div>
   );
 }

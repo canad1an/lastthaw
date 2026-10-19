@@ -7,11 +7,12 @@ import { execSync } from "node:child_process";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
-/** 0.<commits on main>: set by the image build on deploy, read from git when developing. */
+/** 1.<commits since early access began>: set by the image build on deploy, read from git when developing. */
 function appVersion(): string {
   if (process.env.VITE_APP_VERSION) return process.env.VITE_APP_VERSION;
   try {
-    return `0.${execSync("git rev-list --count HEAD", { cwd: here, stdio: ["ignore", "pipe", "ignore"] }).toString().trim()}`;
+    const n = Number(execSync("git rev-list --count HEAD", { cwd: here, stdio: ["ignore", "pipe", "ignore"] }).toString().trim()) - 239;
+    return `1.${String(Math.max(1, n)).padStart(2, "0")}`;
   } catch {
     return "0.0";
   }

@@ -20,7 +20,7 @@ export interface SessionUser {
   displayName: string;
   emailVerified: boolean;
   isAdmin: boolean;
-  /** Private beta: may join matches. */
+  /** May join and create: a verified email (an admin's approval also counts). */
   approved: boolean;
   canRename: boolean;
   tagline: string | null;
@@ -81,7 +81,7 @@ export const sessionPlugin = fp(async (app: FastifyInstance, opts: { db: Db }) =
         .catch(() => {});
     }
     req.sessionId = row.sessionId;
-    req.user = { id: row.id, email: row.email, displayName: row.displayName, emailVerified: row.emailVerifiedAt !== null, isAdmin: row.isAdmin, approved: row.isAdmin || row.approvedAt !== null || config().DEV_TOOLS, canRename: row.canRename, tagline: row.tagline, bio: row.bio, location: row.location, createdAt: row.createdAt.toISOString() };
+    req.user = { id: row.id, email: row.email, displayName: row.displayName, emailVerified: row.emailVerifiedAt !== null, isAdmin: row.isAdmin, approved: row.isAdmin || row.emailVerifiedAt !== null || row.approvedAt !== null || config().DEV_TOOLS, canRename: row.canRename, tagline: row.tagline, bio: row.bio, location: row.location, createdAt: row.createdAt.toISOString() };
   });
 });
 

@@ -100,13 +100,6 @@ export function LobbyPage() {
       </section>
 
       {me.data && !me.data.emailVerified && <VerifyBanner />}
-      {me.data && me.data.emailVerified && !me.data.approved && (
-        <Card className="border-sky-500/40 bg-sky-500/10">
-          <p className="text-sm text-sky-100">
-            Last Thaw is in private beta. Your account is ready, but matches are invite-only for now: ask Matt for access and this page will open up as soon as you are approved.
-          </p>
-        </Card>
-      )}
       {!me.data && !me.isLoading && (
         <Card className="glass-strong flex flex-wrap items-center justify-between gap-3">
           <p className="text-slate-200">You need an account to claim a capital. It takes thirty seconds and costs nothing.</p>
@@ -124,7 +117,7 @@ export function LobbyPage() {
       <div className="space-y-3">
         {matches.isLoading && <p className="text-slate-400">Loading tournaments...</p>}
         {matches.data?.filter((m) => m.kind === "tournament").length === 0 && !matches.isLoading && <p className="text-slate-400">No tournament is open right now.</p>}
-        {matches.data?.filter((m) => m.kind === "tournament").map((m) => <MatchRow key={m.id} m={m} canJoin={!!me.data?.emailVerified && !!me.data?.approved} />)}
+        {matches.data?.filter((m) => m.kind === "tournament").map((m) => <MatchRow key={m.id} m={m} canJoin={!!me.data?.approved} />)}
       </div>
 
       <section className="space-y-3">
@@ -136,7 +129,7 @@ export function LobbyPage() {
           {me.data?.emailVerified && me.data.approved && <JoinByCode />}
         </div>
         {matches.data?.filter((m) => m.kind !== "tournament").length === 0 && <p className="text-sm text-slate-500">No games open. Create one below.</p>}
-        {matches.data?.filter((m) => m.kind !== "tournament").map((m) => <MatchRow key={m.id} m={m} canJoin={!!me.data?.emailVerified && !!me.data?.approved} />)}
+        {matches.data?.filter((m) => m.kind !== "tournament").map((m) => <MatchRow key={m.id} m={m} canJoin={!!me.data?.approved} />)}
       </section>
 
       {me.data?.emailVerified && (me.data.approved || me.data.isAdmin || info.data?.devTools) && <CreateMatch admin={!!me.data.isAdmin} />}
@@ -209,10 +202,15 @@ function VerifyBanner() {
   return (
     <Card className="border-amber-500/40 bg-amber-500/10">
       <p className="text-sm text-amber-100">
-        Verify your email to join matches. Check your inbox for the link.{" "}
+        Verify your email to join matches: we sent you a six-digit code.{" "}
+        <Link to="/verify" search={{ token: undefined }} className="underline hover:text-white">
+          Enter the code
+        </Link>{" "}
+        or{" "}
         <button className="underline hover:text-white" onClick={() => m.mutate()} disabled={m.isPending}>
-          {m.isSuccess ? "Sent again" : "Resend"}
+          {m.isSuccess ? "sent again" : "send a new one"}
         </button>
+        .
       </p>
     </Card>
   );
@@ -322,7 +320,7 @@ function MatchRow({ m, canJoin }: { m: MatchSummary; canJoin: boolean }) {
           </Button>
         ) : (
           m.status === "lobby" && (
-            <Button onClick={() => join.mutate()} disabled={!canJoin || join.isPending} title={canJoin ? "" : "Verify your email and ask for beta access first"}>
+            <Button onClick={() => join.mutate()} disabled={!canJoin || join.isPending} title={canJoin ? "" : "Verify your email first"}>
               Join
             </Button>
           )

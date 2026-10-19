@@ -15,7 +15,8 @@ export function SignupForm({ compact = false }: { compact?: boolean }) {
     mutationFn: () => api.register({ email, password, displayName }),
     onSuccess: (u) => {
       qc.setQueryData(keys.me, u);
-      void nav({ to: "/matches" });
+      // Straight to the code: the mail is on its way, and nothing opens until the address is confirmed.
+      void nav({ to: "/verify", search: { token: undefined } });
     },
   });
   const submit = (e: FormEvent) => {
