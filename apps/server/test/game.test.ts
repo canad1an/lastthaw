@@ -11,6 +11,7 @@ import { createRedis } from "../src/redis.js";
 import { runDueJobs } from "../src/worker/jobs.js";
 import { foundCapital } from "../src/sim/regions.js";
 import { queueBuild } from "../src/sim/commands.js";
+import { cancelOrphanedJobs } from "../src/sim/endgame.js";
 import { logger } from "../src/logger.js";
 
 process.env.DATABASE_URL ??= "postgres://lastthaw:lastthaw@localhost:5432/lastthaw";
@@ -489,6 +490,13 @@ describe("milestone 1 flow", () => {
     const [alicePlayer] = await db.select().from(players).where(and(eq(players.matchId, matchId), eq(players.name, alice.displayName)));
     const cheap = [...buildingById.values()].find((b) => b.age === 0 && !b.requires)!;
     await expect(queueBuild({ db, m: stale, p: alicePlayer!, techs: new Set() }, aPick, cheap.id)).rejects.toMatchObject({ statusCode: 409, message: "the match is not running" });
+    expect(await db.select({ id: jobs.id }).from(jobs).where(and(eq(jobs.matchId, matchId), isNull(jobs.completedAt), isNull(jobs.cancelledAt)))).toHaveLength(0);
+    // A command that read the match as running just before the finish committed can still slip a job in after
+    // the finish-time cancel; the worker's sweep cancels it, stamped with the match's finish.
+    await db.insert(jobs).values({ matchId, playerId: alicePlayer!.id, regionId: aPick, kind: "mission", refId: "late", startsAt: new Date(), endsAt: new Date(Date.now() + 17_000) });
+    expect(await cancelOrphanedJobs(db)).toBeGreaterThanOrEqual(1);
+    const late = await db.select({ cancelledAt: jobs.cancelledAt }).from(jobs).where(and(eq(jobs.matchId, matchId), eq(jobs.refId, "late")));
+    expect(late[0]!.cancelledAt?.getTime()).toBe(finishedRow!.finishedAt!.getTime());
     expect(await db.select({ id: jobs.id }).from(jobs).where(and(eq(jobs.matchId, matchId), isNull(jobs.completedAt), isNull(jobs.cancelledAt)))).toHaveLength(0);
 
     // Milestone 7: admin review is hidden from ordinary users.

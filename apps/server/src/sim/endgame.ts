@@ -4,6 +4,7 @@ import { allianceMembers, alliances, events, jobs, matchMilestones, matchRegions
 import { matchNow } from "./clock.js";
 import type { Publisher } from "../realtime/publish.js";
 import type { Tx } from "./regions.js";
+import type { Db } from "../db/client.js";
 import type { JobRow, MatchRow } from "../worker/jobs.js";
 import { notify } from "../worker/jobs.js";
 import { resolvePendingObjectives } from "./objectives.js";
@@ -169,6 +170,20 @@ export async function checkEarlyWin(tx: Tx, m: MatchRow, at: Date, standings: Ar
 }
 
 /** Mark the match finished, rank everyone and record their history. */
+/**
+ * Cancel jobs still open on finished matches. finishMatch cancels what it can see, but a command whose
+ * transaction read the match as running just before the finish committed can still insert a job after
+ * that cancel ran (seen once on a 720x match: an AI transport queued 1.3 s after the end). Returns how many.
+ */
+export async function cancelOrphanedJobs(db: Db): Promise<number> {
+  const rows = await db.execute(sql`
+    update ${jobs} j set cancelled_at = m.finished_at
+    from ${matches} m
+    where m.id = j.match_id and m.status = 'finished' and j.completed_at is null and j.cancelled_at is null
+    returning j.id`);
+  return rows.length;
+}
+
 export async function finishMatch(tx: Tx, m: MatchRow, at: Date, publisher: Publisher, after: (fn: () => Promise<void>) => void, winnerPlayerId: string | null, kind?: "hold" | "wonder" | "survival" | "score"): Promise<void> {
   if (m.status !== "running") return;
   const winKind = kind ?? (winnerPlayerId ? "hold" : balance.win.survival ? "survival" : "score");

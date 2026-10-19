@@ -13,6 +13,7 @@ import { runTradeRoutes, runOverflow } from "../sim/trade.js";
 import { detectAutomation, detectMultiAccounts, pruneActions } from "../fairplay/detect.js";
 import { cleanupSessions } from "../auth/session.js";
 import { balance } from "@lastthaw/shared";
+import { cancelOrphanedJobs } from "../sim/endgame.js";
 
 /**
  * Simulation worker. One process serves every concurrent match.
@@ -73,6 +74,10 @@ await Promise.all([
   every(60_000, "weekly", () => ensureWeeklyMatch(db, log)),
   every(60_000, "reminders", async () => {
     await sendTournamentReminders(db, log);
+  }),
+  every(60_000, "orphaned jobs", async () => {
+    const n = await cancelOrphanedJobs(db);
+    if (n) log.info({ cancelled: n }, "jobs left open on finished matches cancelled");
   }),
   every(Number(process.env.TICK_MS) || 30_000, "trade", async () => {
     await runTradeRoutes(db, publisher, log);
