@@ -1,10 +1,28 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { regionById, tradeResource, type MatchStateView, type TradeResource, unitById, balance } from "@lastthaw/shared";
+import { regionById, tradeResource, type MatchStateView, type TradeResource, unitById, balance, RESOURCE_WORTH, MARKET_MAX_RATIO } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { Button, Card, ErrorText, Field, Input, fmt } from "./ui.js";
 
 const RESOURCES = tradeResource.options;
+
+/** What a region holds of a trade resource. */
+function stockOf(o: MatchStateView["owned"][number], res: TradeResource): number {
+  if (res === "food" || res === "wood" || res === "stone") return o[res];
+  return o.special[res] ?? 0;
+}
+
+/** A round figure near n: two significant digits, so a suggestion reads like a price and not a calculation. */
+function round2(n: number): number {
+  if (n < 10) return Math.max(1, Math.round(n));
+  const mag = 10 ** (Math.floor(Math.log10(n)) - 1);
+  return Math.round(n / mag) * mag;
+}
+
+/** Fair trade: the amount of `give` worth as much as `amount` of `want`, by the market's own worth table. */
+export function fairAmount(want: TradeResource, amount: number, give: TradeResource): number {
+  return round2((amount * (RESOURCE_WORTH[want] ?? 1)) / (RESOURCE_WORTH[give] ?? 1));
+}
 
 /** The market: open offers from everyone, my offers, and a form to post one. */
 export function MarketPanel({ matchId, state, selectedRegionId }: { matchId: string; state: MatchStateView; selectedRegionId: string | null }) {
@@ -23,6 +41,19 @@ export function MarketPanel({ matchId, state, selectedRegionId }: { matchId: str
   const [offerAmount, setOfferAmount] = useState("100");
   const [askResource, setAskResource] = useState<TradeResource>("stone");
   const [askAmount, setAskAmount] = useState("50");
+
+  // Suggestions for the "I give" side: every other resource the chosen region holds, at a fair price for what is wanted, capped by what is there.
+  const fromRegion = state.owned.find((o) => o.regionId === (regionId || defaultRegion));
+  const wantN = Number(askAmount);
+  const suggestions =
+    fromRegion && wantN > 0
+      ? RESOURCES.filter((r) => r !== askResource)
+          .map((r) => ({ res: r, fair: fairAmount(askResource, wantN, r), have: Math.floor(stockOf(fromRegion, r)) }))
+          .filter((s) => s.have >= 1)
+          .map((s) => ({ ...s, amount: Math.min(s.fair, s.have), short: s.have < s.fair }))
+      : [];
+  const offerN = Number(offerAmount);
+  const worthRatio = offerN > 0 && wantN > 0 ? (offerN * (RESOURCE_WORTH[offerResource] ?? 1)) / (wantN * (RESOURCE_WORTH[askResource] ?? 1)) : null;
 
   const post = useMutation({
     mutationFn: () => api.postOrder(matchId, { regionId: regionId || defaultRegion, offerResource, offerAmount: Number(offerAmount), askResource, askAmount: Number(askAmount) }),
@@ -151,6 +182,41 @@ export function MarketPanel({ matchId, state, selectedRegionId }: { matchId: str
                 <Input type="number" min={1} step={1} value={askAmount} onChange={(e) => setAskAmount(e.target.value)} />
               </Field>
             </div>
+            {suggestions.length > 0 && (
+              <div className="rounded bg-slate-950/60 px-2 py-1.5 text-xs text-slate-400">
+                <p className="mb-1">
+                  A fair offer for {fmt(wantN)} {askResource}, from what {regionName(fromRegion!.regionId)} holds. Tap one to fill in the offer.
+                </p>
+                <div className="flex flex-wrap gap-1">
+                  {suggestions.map((s) => (
+                    <button
+                      key={s.res}
+                      type="button"
+                      className={`rounded border px-2 py-0.5 ${offerResource === s.res && offerN === s.amount ? "border-sky-400 bg-sky-500/20 text-sky-100" : "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"}`}
+                      title={s.short ? `Fair would be ${fmt(s.fair)} ${s.res}, but the region holds only ${fmt(s.have)}` : `Fair for ${fmt(wantN)} ${askResource}`}
+                      onClick={() => {
+                        setOfferResource(s.res);
+                        setOfferAmount(String(s.amount));
+                      }}
+                    >
+                      {fmt(s.amount)} {s.res}
+                      {s.short ? " (all you have)" : ""}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {worthRatio !== null && offerResource !== askResource && (
+              <p className={`text-xs ${worthRatio > MARKET_MAX_RATIO || worthRatio < 1 / MARKET_MAX_RATIO ? "text-rose-300" : worthRatio > 1.5 ? "text-amber-300" : worthRatio < 0.67 ? "text-amber-300" : "text-slate-500"}`}>
+                {worthRatio > MARKET_MAX_RATIO || worthRatio < 1 / MARKET_MAX_RATIO
+                  ? `Too far from fair to post (more than ${MARKET_MAX_RATIO}x either way).`
+                  : worthRatio > 1.5
+                    ? `Generous: you give about ${worthRatio.toFixed(1)}x what you ask for. It will go fast.`
+                    : worthRatio < 0.67
+                      ? `Steep: you ask about ${(1 / worthRatio).toFixed(1)}x what you give. It may sit.`
+                      : "About fair."}
+              </p>
+            )}
             <Button type="submit" disabled={post.isPending || !(Number(offerAmount) > 0) || !(Number(askAmount) > 0) || offerResource === askResource || !state.owned.length}>
               Post offer
             </Button>
