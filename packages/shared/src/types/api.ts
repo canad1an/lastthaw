@@ -253,6 +253,8 @@ export const armyView = z.object({
   note: z.string().nullable().default(null),
   /** Sea lane a patrol holds, as "a|b" (region ids sorted). */
   lane: z.string().nullable().default(null),
+  /** A collecting convoy's remaining itinerary: pickups then the destination. */
+  stops: z.array(z.object({ regionId: z.string(), routeId: z.string().nullable(), take: z.record(z.string(), z.number()), done: z.boolean().optional() })).default([]),
 });
 export type ArmyView = z.infer<typeof armyView>;
 

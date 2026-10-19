@@ -451,6 +451,49 @@ async function deliverUnits(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publis
 }
 
 async function deliverCargo(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher: Publisher, after: After): Promise<void> {
+  // A collecting convoy: at a pickup, load what the materials route there set aside and head for the next stop.
+  if (army.stops.length) {
+    const stops = army.stops.map((s) => ({ ...s }));
+    const idx = stops.findIndex((s) => !s.done && s.regionId === army.targetRegionId);
+    if (idx >= 0) {
+      const cur = stops[idx]!;
+      cur.done = true;
+      const cargo = { ...army.cargo };
+      if (cur.routeId) {
+        const here = await lockRegion(tx, m, cur.regionId, at);
+        // The goods were set aside here; if the region is no longer ours they are gone with it.
+        if (here.ownerPlayerId === army.playerId) for (const [k, v] of Object.entries(cur.take)) cargo[k] = (cargo[k] ?? 0) + v;
+        else cur.take = {};
+      }
+      const next = stops.find((s) => !s.done);
+      if (next) {
+        const { tradeRoutes } = await import("../db/schema.js");
+        const route = findRoute(cur.regionId, next.regionId, true) ?? { path: [cur.regionId, next.regionId], cost: 1000, usesSea: false };
+        const seconds = travelSeconds(route, armySpeed(army.units), m.speed);
+        const arrivesAt = new Date(at.getTime() + seconds * 1000);
+        await tx.update(armies).set({ cargo, stops, targetRegionId: next.regionId, path: route.path, departsAt: at, arrivesAt }).where(eq(armies.id, army.id));
+        await tx.insert(jobs).values({ matchId: m.id, playerId: army.playerId, regionId: next.regionId, kind: "mission", refId: army.id, startsAt: at, endsAt: arrivesAt });
+        void tradeRoutes;
+        const pid = army.playerId;
+        after(() => publisher.toPlayer(m.id, pid, "army.sent", { armyId: army.id, collecting: cur.regionId }));
+        return;
+      }
+      // The destination: credit each materials route with what the convoy took from it, and retire the ones that are complete.
+      const { tradeRoutes } = await import("../db/schema.js");
+      for (const s of stops) {
+        if (!s.routeId) continue;
+        const [r] = await tx.select().from(tradeRoutes).where(eq(tradeRoutes.id, s.routeId)).for("update");
+        if (!r) continue;
+        const delivered = { ...r.delivered };
+        for (const [k, v] of Object.entries(s.take)) delivered[k] = (delivered[k] ?? 0) + v;
+        const done = Object.entries(r.target ?? {}).every(([k, v]) => (delivered[k] ?? 0) >= v - 0.5);
+        if (done) await tx.delete(tradeRoutes).where(eq(tradeRoutes.id, r.id));
+        else await tx.update(tradeRoutes).set({ delivered }).where(eq(tradeRoutes.id, r.id));
+      }
+      army = { ...army, cargo, stops };
+      await tx.update(armies).set({ cargo, stops }).where(eq(armies.id, army.id));
+    }
+  }
   const target = await lockRegion(tx, m, army.targetRegionId, at);
   const friendly = target.ownerPlayerId === army.playerId || (target.ownerPlayerId ? await areAllied(tx, m.id, army.playerId, target.ownerPlayerId) : false);
   if (!friendly) {

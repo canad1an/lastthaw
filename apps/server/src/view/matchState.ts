@@ -261,6 +261,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string, o
     path: a.path,
     note: a.note ?? null,
     lane: a.lane ?? null,
+    stops: a.stops,
   }));
 
   const hostile = ownedIds.length
@@ -446,6 +447,7 @@ async function buildObserverState(db: Db, m: typeof matches.$inferSelect, matchI
     path: a.path,
     note: a.note ?? null,
     lane: a.lane ?? null,
+    stops: a.stops,
   }));
   const incoming: IncomingView[] = inFlight
     .filter((a) => a.status === "outbound" && (a.mission === "raid" || a.mission === "conquer"))

@@ -1,0 +1,1 @@
+ALTER TABLE "armies" ADD COLUMN "stops" jsonb DEFAULT '[]'::jsonb NOT NULL;

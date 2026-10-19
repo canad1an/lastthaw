@@ -309,6 +309,11 @@ export const armies = pgTable(
     /** Carried resources and people: { food, wood, stone, copper, tin, iron, horses, people }. */
     cargo: jsonb("cargo").$type<Record<string, number>>().notNull().default({}),
     path: jsonb("path").$type<string[]>().notNull().default([]),
+    /**
+     * A collecting convoy's itinerary: pickups at materials routes (take = what to load there, done once visited) and the
+     * destination last. The army's target is always the next undone stop; empty for every other army.
+     */
+    stops: jsonb("stops").$type<Array<{ regionId: string; routeId: string | null; take: Record<string, number>; done?: boolean }>>().notNull().default([]),
     status: armyStatus("status").notNull().default("outbound"),
     departsAt: timestamp("departs_at", { withTimezone: true }).notNull(),
     arrivesAt: timestamp("arrives_at", { withTimezone: true }).notNull(),

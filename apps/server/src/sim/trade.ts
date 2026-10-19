@@ -1,11 +1,11 @@
-import { and, eq, isNull, lte, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, lte, sql } from "drizzle-orm";
 import type pino from "pino";
-import { balance, bestHauler, carryCapacity, distanceKm, haulerCarry, haulerCount, HAULER_IDS, regionById, unitById } from "@lastthaw/shared";
+import { balance, bestHauler, carryCapacity, distanceKm, findRoute, haulerCarry, haulerCount, HAULER_IDS, regionById, unitById } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { armies, matchRegions, matches, playerTechs, players, tradeRoutes } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
 import { matchNow } from "./clock.js";
-import { projectRegion, stockOf } from "./regions.js";
+import { projectRegion, stockOf, type MatchRegionRow } from "./regions.js";
 import { sendArmy, returnHeld, type CommandContext } from "./commands.js";
 import type { MatchRow } from "../worker/jobs.js";
 
@@ -98,6 +98,7 @@ export async function dispatchRoute(db: Db, m: MatchRow, p: PlayerRow, route: Tr
       return "stock-up complete";
     }
   }
+  if (route.forJobId) return dispatchSupply(db, m, p, route, origin, owed ?? {}, now);
   const kind = bestHauler(origin.units, regionById(route.fromRegionId)?.seaRoutes.includes(route.toRegionId) ?? false);
   if (!kind) return fetchCaravans(db, m, p, route.fromRegionId, route.caravans, now);
   const home = origin.units[kind] ?? 0;
@@ -159,6 +160,111 @@ export async function dispatchRoute(db: Db, m: MatchRow, p: PlayerRow, route: Tr
     await db.update(tradeRoutes).set({ delivered }).where(eq(tradeRoutes.id, route.id));
   }
   return `sent ${caravans} ${kindName}${caravans === 1 ? "" : "s"} with ${desc}`;
+}
+
+/**
+ * A materials route's turn: one convoy leaves its origin with what is set aside there and, while it has room, calls at
+ * the other materials routes bound for the same destination, nearest next, loading what each has set aside, then delivers.
+ * The goods leave each route's hold the moment they are on the manifest. Haulers come from the pool when none are home.
+ */
+async function dispatchSupply(db: Db, m: MatchRow, p: PlayerRow, route: TradeRouteRow, origin: MatchRegionRow, owed: Record<string, number>, now: Date): Promise<string> {
+  const held = Object.fromEntries(Object.entries(route.held).filter(([, v]) => v >= 1));
+  if (Object.keys(held).length === 0) {
+    // Nothing waiting here: either everything is already on a convoy, or the route is spent.
+    if (Object.keys(owed).length === 0) {
+      await db.delete(tradeRoutes).where(eq(tradeRoutes.id, route.id));
+      return "stock-up complete";
+    }
+    return "nothing set aside to send (the rest is on its way)";
+  }
+  const ctx = await contextFor(db, m, p);
+  const siblings = (
+    await db
+      .select()
+      .from(tradeRoutes)
+      .where(and(eq(tradeRoutes.matchId, m.id), eq(tradeRoutes.playerId, p.id), eq(tradeRoutes.toRegionId, route.toRegionId), sql`${tradeRoutes.forJobId} is not null`, sql`${tradeRoutes.id} <> ${route.id}`))
+  ).filter((r) => Object.values(r.held).some((v) => v >= 1));
+  const groupTotal = [route, ...siblings].reduce((a, r) => a + Object.values(r.held).reduce((x, y) => x + y, 0), 0);
+  const kind = bestHauler(origin.units, false);
+  if (!kind) {
+    // A sibling route with haulers at home, or with haulers on the way, sends the convoy that calls here: no need to pull more.
+    if (siblings.length) {
+      const ids = siblings.map((r) => r.fromRegionId);
+      const rows = await db.select({ regionId: matchRegions.regionId, units: matchRegions.units }).from(matchRegions).where(and(eq(matchRegions.matchId, m.id), inArray(matchRegions.regionId, ids)));
+      const staffed = rows.find((r) => bestHauler(r.units, false));
+      if (staffed) return `waiting for the convoy from ${regionNameOf(staffed.regionId)}`;
+      const coming = await db
+        .select({ targetRegionId: armies.targetRegionId })
+        .from(armies)
+        .where(and(eq(armies.matchId, m.id), eq(armies.playerId, p.id), eq(armies.mission, "move"), eq(armies.status, "outbound"), inArray(armies.targetRegionId, ids)));
+      if (coming[0]) return `waiting for the convoy from ${regionNameOf(coming[0].targetRegionId)}`;
+    }
+    const per = haulerCarry("caravan", ctx.techs);
+    return fetchCaravans(db, m, p, route.fromRegionId, Math.max(1, Math.min(balance.trade.maxSupplyCaravans, Math.ceil(groupTotal / per))), now);
+  }
+  const perCaravan = haulerCarry(kind, ctx.techs);
+  const home = origin.units[kind] ?? 0;
+  const n = Math.max(1, Math.min(home, balance.trade.maxSupplyCaravans, Math.ceil(groupTotal / perCaravan)));
+  let room = n * perCaravan;
+
+  // Load here first.
+  const cargo: Record<string, number> = {};
+  for (const [k, v] of Object.entries(held)) {
+    const t = Math.min(v, Math.floor(room));
+    if (t >= 1) {
+      cargo[k] = t;
+      room -= t;
+    }
+  }
+  const stops: Array<{ regionId: string; routeId: string | null; take: Record<string, number>; done?: boolean }> = [{ regionId: route.fromRegionId, routeId: route.id, take: cargo, done: true }];
+  const holdUpdates = new Map<string, Record<string, number>>();
+  {
+    const h = { ...route.held };
+    for (const [k, v] of Object.entries(cargo)) h[k] = Math.max(0, (h[k] ?? 0) - v);
+    holdUpdates.set(route.id, h);
+  }
+  // Then the nearest other pickups while there is room, each reachable by land from the last.
+  let at = route.fromRegionId;
+  const pool = [...siblings];
+  const heldTotal = (r: TradeRouteRow) => Object.values(r.held).reduce((x, y) => x + y, 0);
+  const minimum = perCaravan * balance.trade.minSupplyPickupShare;
+  while (room >= 1 && pool.length && stops.length <= balance.trade.maxConvoyCalls) {
+    // Nearest next, but a tiny hold is skipped while a worthwhile one remains anywhere in the pool.
+    pool.sort((a, b) => distanceKm(at, a.fromRegionId) - distanceKm(at, b.fromRegionId));
+    const worthwhile = pool.some((r) => heldTotal(r) >= minimum);
+    const i = worthwhile ? pool.findIndex((r) => heldTotal(r) >= minimum) : 0;
+    const next = pool.splice(i, 1)[0]!;
+    if (next.fromRegionId === at || !findRoute(at, next.fromRegionId, false)) continue;
+    const take: Record<string, number> = {};
+    const h = { ...next.held };
+    for (const [k, v] of Object.entries(next.held)) {
+      const t = Math.min(v, Math.floor(room));
+      if (t >= 1) {
+        take[k] = t;
+        room -= t;
+        h[k] = v - t;
+      }
+    }
+    if (Object.keys(take).length === 0) continue;
+    stops.push({ regionId: next.fromRegionId, routeId: next.id, take });
+    holdUpdates.set(next.id, h);
+    at = next.fromRegionId;
+  }
+  stops.push({ regionId: route.toRegionId, routeId: null, take: {} });
+  const firstLeg = stops.find((s) => !s.done)!.regionId;
+  await sendArmy(ctx, route.fromRegionId, { mission: "transport", targetRegionId: firstLeg, units: { [kind]: n }, people: 0, cargo, prepaid: true, stops });
+  for (const [id, h] of holdUpdates) {
+    await db
+      .update(tradeRoutes)
+      .set({ held: h, lastRunAt: now, lastResult: id === route.id ? undefined : `goods loaded by the convoy from ${regionNameOf(route.fromRegionId)}`, nextAt: new Date(now.getTime() + (route.everyHours * 3600 * 1000) / m.speed) })
+      .where(eq(tradeRoutes.id, id));
+  }
+  const kindName = (unitById.get(kind)?.name ?? kind).toLowerCase();
+  const desc = Object.entries(cargo)
+    .map(([k, v]) => `${v} ${k}`)
+    .join(", ");
+  const calls = stops.filter((s) => !s.done && s.routeId).map((s) => regionNameOf(s.regionId));
+  return `sent ${n} ${kindName}${n === 1 ? "" : "s"} with ${desc}${calls.length ? `; collecting at ${calls.join(", ")} on the way` : ""}`;
 }
 
 async function contextFor(db: Db, m: MatchRow, p: PlayerRow): Promise<CommandContext> {

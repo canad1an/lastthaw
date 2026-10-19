@@ -179,6 +179,10 @@ export const balance = {
     fetchCaravans: true,
     /** A materials route for a waiting build asks for enough haulers to carry its load in one trip, up to this many. */
     maxSupplyCaravans: 10,
+    /** Sources for a build are the capital, then the regions holding the most; a region offering less than this share of one hauler load is skipped while bigger ones remain. */
+    minSupplyPickupShare: 0.1,
+    /** A collecting convoy calls at no more than this many other regions on one trip. */
+    maxConvoyCalls: 5,
     /** A region whose stock hits its cap sends this share of the cap to the capital by caravan, automatically. */
     overflowToCapital: true,
     overflowShare: 0.5,

@@ -128,16 +128,9 @@ export async function queueBuild(ctx: CommandContext, regionId: string, building
       .values({ matchId: m.id, playerId: p.id, regionId, kind: "build", refId: buildingId, level, slot: pending.length, payload: { cost, paid }, startsAt: now, endsAt: m.endsAt ?? new Date(now.getTime() + 365 * 86400_000), waitingFor: owed })
       .returning();
     if (def.wonder) await wonderStarted(tx, m, p.id, p.name, regionId, j!.endsAt, true);
-    // One stock-up route per source region: capital first, then nearest, each sending what it can spare.
-    const still: Record<string, number> = { ...owed };
-    for (const src of payers.slice(1)) {
-      const have = stockOf(src);
-      const part: Record<string, number> = {};
-      for (const [k, v] of Object.entries(still)) {
-        const t = Math.min(v, Math.floor(have[k] ?? 0));
-        if (t >= 1) part[k] = t;
-      }
-      if (Object.keys(part).length === 0) continue;
+    // One stock-up route per source region: the capital first, then the regions holding the most, small offers last.
+    const plan = planSources(owed, payers.slice(1), stockOf, p.capitalRegionId, haulerCarry("caravan", techs));
+    for (const { src, part } of plan) {
       // Set aside at the source now, as a warehouse would for a delivery: nothing else can spend it, and the haulers load and leave on arrival.
       await applyCost(tx, src, part as Cost);
       // Merge into an existing materials route from the same source, so one convoy carries everything queued.
@@ -147,6 +140,7 @@ export async function queueBuild(ctx: CommandContext, regionId: string, building
         .where(and(eq(tradeRoutes.matchId, m.id), eq(tradeRoutes.fromRegionId, src.regionId), eq(tradeRoutes.toRegionId, regionId), sql`${tradeRoutes.forJobId} is not null`))
         .limit(1)
         .for("update");
+      let routeId: string;
       if (existing) {
         const target = { ...(existing.target ?? {}) };
         const held = { ...existing.held };
@@ -157,29 +151,37 @@ export async function queueBuild(ctx: CommandContext, regionId: string, building
         const remaining: Record<string, number> = {};
         for (const [k, v] of Object.entries(target)) if (v - (existing.delivered[k] ?? 0) >= 1) remaining[k] = v - (existing.delivered[k] ?? 0);
         await tx.update(tradeRoutes).set({ target, load: target, held, caravans: supplyCaravans(remaining, [...locked.values()], techs), nextAt: new Date(Math.min(existing.nextAt.getTime(), now.getTime())) }).where(eq(tradeRoutes.id, existing.id));
+        routeId = existing.id;
       } else {
-        await tx.insert(tradeRoutes).values({
-          matchId: m.id,
-          playerId: p.id,
-          fromRegionId: src.regionId,
-          toRegionId: regionId,
-          mode: "fixed",
-          load: part,
-          share: 0,
-          caravans: supplyCaravans(part, [...locked.values()], techs),
-          everyHours: 1,
-          target: part,
-          delivered: {},
-          held: part,
-          nextAt: now,
-          forJobId: j!.id,
-        });
+        const [created] = await tx
+          .insert(tradeRoutes)
+          .values({
+            matchId: m.id,
+            playerId: p.id,
+            fromRegionId: src.regionId,
+            toRegionId: regionId,
+            mode: "fixed",
+            load: part,
+            share: 0,
+            caravans: supplyCaravans(part, [...locked.values()], techs),
+            everyHours: 1,
+            target: part,
+            delivered: {},
+            held: part,
+            nextAt: now,
+            forJobId: j!.id,
+          })
+          .returning({ id: tradeRoutes.id });
+        routeId = created!.id;
       }
-      for (const [k, t] of Object.entries(part)) {
-        still[k] = (still[k] ?? 0) - t;
-        if (still[k]! <= 0) delete still[k];
+      // Convoys already collecting for this region take what they have room for, with an extra stop here.
+      const placed = await placeOnConvoys(tx, m, p.id, routeId, src.regionId, regionId, part, techs);
+      if (Object.keys(placed).length) {
+        const [r] = await tx.select({ held: tradeRoutes.held }).from(tradeRoutes).where(eq(tradeRoutes.id, routeId));
+        const held = { ...(r?.held ?? {}) };
+        for (const [k, v] of Object.entries(placed)) held[k] = Math.max(0, (held[k] ?? 0) - v);
+        await tx.update(tradeRoutes).set({ held }).where(eq(tradeRoutes.id, routeId));
       }
-      if (Object.keys(still).length === 0) break;
     }
     return j!;
   });
@@ -302,6 +304,8 @@ export interface SendArmyInput {
   cargo: Record<string, number>;
   /** The cargo was set aside earlier (a materials route's hold): it is not in the region's stores and is not taken from them. */
   prepaid?: boolean;
+  /** A collecting convoy's itinerary (transport only): pickups, then the destination; the target is the first undone stop. */
+  stops?: Array<{ regionId: string; routeId: string | null; take: Record<string, number>; done?: boolean }>;
 }
 
 const HOSTILE: ReadonlySet<MissionKind> = new Set(["raid", "conquer"]);
@@ -495,6 +499,7 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
         cargo: { ...body.cargo, people: body.people },
         lane: body.mission === "patrol" ? laneKey(regionId, body.targetRegionId) : null,
         path: route.path,
+        stops: body.stops ?? [],
         status: "outbound",
         departsAt: now,
         arrivesAt,
@@ -589,6 +594,98 @@ export async function returnHeld(tx: Tx, m: MatchRow, regionId: string, onlyRout
   }
 }
 
+/**
+ * Goods just set aside for `toRegionId` at `fromRegionId`: a convoy still collecting for that destination, with room to
+ * spare, gets an extra stop there and the goods ride with it, so a new build request reuses haulers already on the way.
+ * Returns what was placed on convoys; the rest stays in the route's hold for the next convoy.
+ */
+export async function placeOnConvoys(tx: Tx, m: MatchRow, playerId: string, routeId: string, fromRegionId: string, toRegionId: string, goods: Record<string, number>, techs: ReadonlySet<string>): Promise<Record<string, number>> {
+  const left: Record<string, number> = { ...goods };
+  const placed: Record<string, number> = {};
+  const convoys = await tx
+    .select()
+    .from(armies)
+    .where(and(eq(armies.matchId, m.id), eq(armies.playerId, playerId), eq(armies.mission, "transport"), eq(armies.status, "outbound")))
+    .for("update");
+  for (const a of convoys) {
+    if (Object.values(left).every((v) => v < 1)) break;
+    const stops = a.stops;
+    const last = stops[stops.length - 1];
+    if (!last || last.regionId !== toRegionId) continue;
+    // Still collecting: some pickup ahead. On the final leg it is too late to add a stop.
+    if (!stops.some((s) => !s.done && s.routeId)) continue;
+    // Already called there: the goods wait for the next convoy rather than send this one back.
+    if (stops.some((s) => s.regionId === fromRegionId && s.done)) continue;
+    const aboard = Object.entries(a.cargo).reduce((x, [k, v]) => x + (k === "people" ? 0 : v), 0);
+    const manifest = stops.filter((s) => !s.done).reduce((x, s) => x + Object.values(s.take).reduce((y, z) => y + z, 0), 0);
+    let spare = carryCapacity(a.units, techs) - aboard - manifest;
+    if (spare < 1) continue;
+    // A new stop must be reachable by land from the convoy's last pickup; a stop it already plans needs no check.
+    const pendingHere = stops.some((s) => !s.done && s.regionId === fromRegionId);
+    const prev = stops.filter((s) => !s.done && s.routeId).pop()?.regionId ?? a.targetRegionId;
+    if (!pendingHere && !findRoute(prev, fromRegionId, false)) continue;
+    const take: Record<string, number> = {};
+    for (const [k, v] of Object.entries(left)) {
+      const t = Math.min(v, Math.floor(spare));
+      if (t >= 1) {
+        take[k] = t;
+        spare -= t;
+        left[k] = v - t;
+        placed[k] = (placed[k] ?? 0) + t;
+      }
+    }
+    if (Object.keys(take).length === 0) continue;
+    const next = [...stops];
+    const pending = next.find((s) => !s.done && s.regionId === fromRegionId);
+    if (pending) {
+      // About to call there anyway: load the extra on that stop.
+      const merged = { ...pending.take };
+      for (const [k, v] of Object.entries(take)) merged[k] = (merged[k] ?? 0) + v;
+      pending.take = merged;
+    } else {
+      next.splice(next.length - 1, 0, { regionId: fromRegionId, routeId, take });
+    }
+    await tx.update(armies).set({ stops: next }).where(eq(armies.id, a.id));
+  }
+  return placed;
+}
+
+/**
+ * Sources for what a build is short of: the capital first, then whoever holds the most of it. A region offering less
+ * than a small share of one hauler load is left for a second pass, taken only if the bigger ones could not cover it.
+ * Returns the parts to set aside, in order, until the bill is met or every region has been asked.
+ */
+export function planSources<R extends { regionId: string }>(short: Record<string, number>, regions: R[], stockFor: (r: R) => Record<string, number>, capitalRegionId: string | null, perHauler: number): Array<{ src: R; part: Record<string, number> }> {
+  const still: Record<string, number> = { ...short };
+  const out: Array<{ src: R; part: Record<string, number> }> = [];
+  const useful = (r: R) => Object.entries(still).reduce((a, [k, v]) => a + Math.min(v, Math.floor(stockFor(r)[k] ?? 0)), 0);
+  const ordered = [...regions].sort((a, b) => (a.regionId === capitalRegionId ? -1 : b.regionId === capitalRegionId ? 1 : useful(b) - useful(a)));
+  const minimum = perHauler * balance.trade.minSupplyPickupShare;
+  for (const pass of [minimum, 0]) {
+    for (const src of ordered) {
+      if (Object.keys(still).length === 0) return out;
+      if (out.some((o) => o.src === src)) continue;
+      const have = stockFor(src);
+      const part: Record<string, number> = {};
+      let total = 0;
+      for (const [k, v] of Object.entries(still)) {
+        const t = Math.min(v, Math.floor(have[k] ?? 0));
+        if (t >= 1) {
+          part[k] = t;
+          total += t;
+        }
+      }
+      if (total === 0 || (total < pass && src.regionId !== capitalRegionId)) continue;
+      out.push({ src, part });
+      for (const [k, t] of Object.entries(part)) {
+        still[k] = (still[k] ?? 0) - t;
+        if (still[k]! <= 0) delete still[k];
+      }
+    }
+  }
+  return out;
+}
+
 /** How many haulers a materials route should ask for: enough to carry its load in one trip with the best hauler the player owns, within the cap. */
 function supplyCaravans(load: Record<string, number>, regionsOfMine: Array<{ units: Record<string, number> }>, techs: ReadonlySet<string>): number {
   const total = Object.values(load).reduce((a, b) => a + b, 0);
@@ -679,11 +776,17 @@ export async function repairWaitingBuilds(tx: Tx, m: MatchRow, now: Date): Promi
       .for("update");
     const promised: Record<string, number> = {};
     for (const r of routes) for (const [k, v] of Object.entries(r.held)) promised[k] = (promised[k] ?? 0) + Math.max(0, v);
+    // Rolling: convoys bound here directly, and collecting convoys whose last stop is here, with what is aboard and what is still to be picked up.
     const rolling = await tx
-      .select({ cargo: armies.cargo })
+      .select({ cargo: armies.cargo, targetRegionId: armies.targetRegionId, stops: armies.stops })
       .from(armies)
-      .where(and(eq(armies.matchId, m.id), eq(armies.playerId, first.playerId), eq(armies.mission, "transport"), eq(armies.status, "outbound"), eq(armies.targetRegionId, regionId)));
-    for (const a of rolling) for (const [k, v] of Object.entries(a.cargo)) if (k !== "people") promised[k] = (promised[k] ?? 0) + v;
+      .where(and(eq(armies.matchId, m.id), eq(armies.playerId, first.playerId), eq(armies.mission, "transport"), eq(armies.status, "outbound")));
+    for (const a of rolling) {
+      const dest = a.stops.length ? a.stops[a.stops.length - 1]!.regionId : a.targetRegionId;
+      if (dest !== regionId) continue;
+      for (const [k, v] of Object.entries(a.cargo)) if (k !== "people") promised[k] = (promised[k] ?? 0) + v;
+      for (const s of a.stops) if (!s.done) for (const [k, v] of Object.entries(s.take)) promised[k] = (promised[k] ?? 0) + v;
+    }
     // The whole queue's debt, not just the first job's: every waiting build here is served in order by the same routes.
     const allOwed: Record<string, number> = {};
     for (const j of list) for (const [k, v] of Object.entries((j.waitingFor ?? {}) as Record<string, number>)) allOwed[k] = (allOwed[k] ?? 0) + v;
@@ -702,24 +805,15 @@ export async function repairWaitingBuilds(tx: Tx, m: MatchRow, now: Date): Promi
       .select()
       .from(matchRegions)
       .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.ownerPlayerId, p.id), isNull(matchRegions.frozenAt)));
-    const sources = mine
-      .filter((r) => r.regionId !== regionId)
-      .sort((a, b) => (a.regionId === p.capitalRegionId ? -1 : b.regionId === p.capitalRegionId ? 1 : distanceKm(regionId, a.regionId) - distanceKm(regionId, b.regionId)));
-    for (const src of sources) {
-      const have = stockOf(src);
-      // What this source already promises on its route counts against its stock.
+    const sources = mine.filter((r) => r.regionId !== regionId);
+    const plan = planSources(still, sources, stockOf, p.capitalRegionId, haulerCarry("caravan", techs));
+    for (const { src, part } of plan) {
       const existing = routes.find((r) => r.fromRegionId === src.regionId);
-      const part: Record<string, number> = {};
-      for (const [k, v] of Object.entries(still)) {
-        const spoken = existing ? Math.max(0, (existing.target?.[k] ?? 0) - (existing.delivered[k] ?? 0)) : 0;
-        const t = Math.min(v, Math.floor((have[k] ?? 0) - spoken));
-        if (t >= 1) part[k] = t;
-      }
-      if (Object.keys(part).length === 0) continue;
       // Set aside at the source, under its lock, so nothing else spends it before the haulers come.
       const srcRow = await settleAndLockRegion(tx, m.id, src.regionId, now, m.speed, resourceMultOf(m));
       if (srcRow.ownerPlayerId !== p.id || !canAfford(stockOf(srcRow), part as Cost)) continue;
       await applyCost(tx, srcRow, part as Cost);
+      let routeId: string;
       if (existing) {
         const target = { ...(existing.target ?? {}) };
         const held = { ...existing.held };
@@ -730,14 +824,21 @@ export async function repairWaitingBuilds(tx: Tx, m: MatchRow, now: Date): Promi
         const remaining: Record<string, number> = {};
         for (const [k, v] of Object.entries(target)) if (v - (existing.delivered[k] ?? 0) >= 1) remaining[k] = v - (existing.delivered[k] ?? 0);
         await tx.update(tradeRoutes).set({ target, load: target, held, caravans: supplyCaravans(remaining, mine, techs), nextAt: new Date(Math.min(existing.nextAt.getTime(), now.getTime())) }).where(eq(tradeRoutes.id, existing.id));
+        routeId = existing.id;
       } else {
-        await tx.insert(tradeRoutes).values({ matchId: m.id, playerId: p.id, fromRegionId: src.regionId, toRegionId: regionId, mode: "fixed", load: part, share: 0, caravans: supplyCaravans(part, mine, techs), everyHours: 1, target: part, delivered: {}, held: part, nextAt: now, forJobId: first.id });
+        const [created] = await tx
+          .insert(tradeRoutes)
+          .values({ matchId: m.id, playerId: p.id, fromRegionId: src.regionId, toRegionId: regionId, mode: "fixed", load: part, share: 0, caravans: supplyCaravans(part, mine, techs), everyHours: 1, target: part, delivered: {}, held: part, nextAt: now, forJobId: first.id })
+          .returning({ id: tradeRoutes.id });
+        routeId = created!.id;
       }
-      for (const [k, t] of Object.entries(part)) {
-        still[k] = (still[k] ?? 0) - t;
-        if (still[k]! <= 0) delete still[k];
+      const placed = await placeOnConvoys(tx, m, p.id, routeId, src.regionId, regionId, part, techs);
+      if (Object.keys(placed).length) {
+        const [r] = await tx.select({ held: tradeRoutes.held }).from(tradeRoutes).where(eq(tradeRoutes.id, routeId));
+        const held = { ...(r?.held ?? {}) };
+        for (const [k, v] of Object.entries(placed)) held[k] = Math.max(0, (held[k] ?? 0) - v);
+        await tx.update(tradeRoutes).set({ held }).where(eq(tradeRoutes.id, routeId));
       }
-      if (Object.keys(still).length === 0) break;
     }
   }
   return fixed;

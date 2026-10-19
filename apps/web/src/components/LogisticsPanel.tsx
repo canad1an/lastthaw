@@ -49,6 +49,8 @@ export function LogisticsPanel({ state, onSelect }: { state: MatchStateView; onS
     return { ...r, left };
   });
   const idleCount = idleRegions.reduce((a, o) => a + HAULER_IDS.reduce((x, id) => x + (o.units[id] ?? 0), 0), 0);
+  // Collecting convoys: one trip, several pickups.
+  const convoys = state.armies.filter((a) => a.mission === "transport" && a.status === "outbound" && a.stops.length > 0);
 
   return (
     <div className="space-y-3 p-3 text-sm">
@@ -65,6 +67,29 @@ export function LogisticsPanel({ state, onSelect }: { state: MatchStateView; onS
         </p>
       </div>
       <p className={`text-xs ${verdict.tone}`}>{verdict.text}</p>
+      {convoys.length > 0 && (
+        <div>
+          <p className="mb-1 text-[10px] uppercase tracking-wide text-slate-500">Convoys collecting for builds</p>
+          <ul className="space-y-0.5 text-xs">
+            {convoys.map((a) => {
+              const dest = a.stops[a.stops.length - 1]!.regionId;
+              const calls = a.stops.filter((s) => !s.done && s.routeId).map((s) => regionById(s.regionId)?.name ?? s.regionId);
+              const aboard = Object.entries(a.cargo).filter(([k, v]) => k !== "people" && v > 0);
+              return (
+                <li key={a.id}>
+                  <button className="hover:text-white" onClick={() => onSelect(a.targetRegionId)}>
+                    {Object.entries(a.units).map(([id, n]) => `${n} ${unitById.get(id)?.name.toLowerCase() ?? id}${n === 1 ? "" : "s"}`).join(", ")} → {regionById(dest)?.name}
+                  </button>
+                  <span className="text-slate-500">
+                    {" "}· {aboard.length ? aboard.map(([k, v]) => `${fmt(v)} ${k}`).join(", ") + " aboard" : "empty"}
+                    {calls.length ? `, calling at ${calls.join(", ")}` : ", on the final leg"}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
       {supply.length > 0 && (
         <div>
           <p className="mb-1 text-[10px] uppercase tracking-wide text-slate-500">Materials on the way to builds</p>
