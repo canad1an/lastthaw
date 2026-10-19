@@ -433,19 +433,41 @@ function EndGame({ matchId, name }: { matchId: string; name: string }) {
       void nav({ to: "/match/$matchId/report", params: { matchId } });
     },
   });
+  const [confirming, setConfirming] = useState(false);
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 px-3 py-2 text-xs text-slate-400">
       <span>You made this game. You can end it at any time; it finishes with no winner and its report stays.</span>
-      <button
-        className="rounded border border-rose-500/50 bg-rose-500/10 px-2 py-1 text-rose-200 hover:bg-rose-500/20 disabled:opacity-50"
-        disabled={m.isPending}
-        onClick={() => {
-          if (window.confirm(`End "${name}" now for everyone? It finishes with no winner; the report stays.`)) m.mutate();
-        }}
-      >
+      <button className="rounded border border-rose-500/50 bg-rose-500/10 px-2 py-1 text-rose-200 hover:bg-rose-500/20 disabled:opacity-50" disabled={m.isPending} onClick={() => setConfirming(true)}>
         End game
       </button>
       {m.error && <span className="text-rose-300">{m.error.message}</span>}
+      {confirming && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm" onClick={() => setConfirming(false)} role="dialog" aria-modal="true" aria-labelledby="end-game-title">
+          <div className="w-full max-w-md rounded-2xl border border-rose-500/40 bg-slate-950 p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h2 id="end-game-title" className="text-lg font-semibold text-white">
+              End this game?
+            </h2>
+            <p className="mt-2 text-sm text-slate-300">
+              Are you sure you want to end <span className="text-white">{name}</span> for everyone? This cannot be undone. The game finishes now with no winner, and its report stays at its address.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:bg-slate-800" onClick={() => setConfirming(false)} autoFocus>
+                Cancel
+              </button>
+              <button
+                className="rounded-md border border-rose-500/50 bg-rose-500/20 px-4 py-2 text-sm font-semibold text-rose-100 hover:bg-rose-500/30 disabled:opacity-50"
+                disabled={m.isPending}
+                onClick={() => {
+                  setConfirming(false);
+                  m.mutate();
+                }}
+              >
+                Yes, end the game
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
