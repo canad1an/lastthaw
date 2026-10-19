@@ -235,9 +235,11 @@ describe("milestone 1 flow", () => {
     expect(taken.popOccupiers).toBeCloseTo(5, 0);
     expect(taken.units.warrior).toBe(3);
     expect(state.armies).toHaveLength(0);
-    const aliceInbox = (await a.call("GET", `/api/matches/${matchId}/messages`)).json() as { messages: { kind: string; payload: { report?: { attackerWon: boolean; conquered: boolean } } }[] };
+    const aliceInbox = (await a.call("GET", `/api/matches/${matchId}/messages`)).json() as { messages: { kind: string; payload: { regionId?: string; report?: { attackerWon: boolean; conquered: boolean } } }[] };
     const battleMsg = aliceInbox.messages.find((x) => x.kind === "battle");
     expect(battleMsg?.payload.report).toMatchObject({ attackerWon: true, conquered: true });
+    // The message names its region, so the inbox and the pop-up can offer Open region.
+    expect(battleMsg?.payload.regionId).toBe(neighbour);
     // The battle is in the attacker's notes on the region: what was brought, how it ended.
     {
       const st = matchStateView.parse((await a.call("GET", `/api/matches/${matchId}/state`)).json());

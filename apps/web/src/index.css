@@ -221,3 +221,12 @@ body {
     transform: none;
   }
 }
+
+/* A region a message pointed at: three quick pulses, then gone. */
+@keyframes region-flash {
+  0%, 100% { fill-opacity: 0; stroke-opacity: 0; }
+  50% { fill-opacity: 0.45; stroke-opacity: 1; }
+}
+.region-flash {
+  animation: region-flash 0.85s ease-in-out 3;
+}

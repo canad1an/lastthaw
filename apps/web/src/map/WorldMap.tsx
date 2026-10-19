@@ -21,6 +21,8 @@ export interface WorldMapProps {
   onSelect: (regionId: string | null) => void;
   /** Region id to center on when it changes (e.g. the capital). */
   focus?: string | null;
+  /** Centre on this region and flash its outline for a moment; the counter lets the same region be flown to twice. */
+  flyTo?: { id: string; n: number } | null;
   className?: string;
   /** Ice: current edge latitude, and whether to shade the forecast (day each region freezes). */
   ice?: { latitude: number; forecast: boolean; day: number };
@@ -76,7 +78,7 @@ const MAX_K = 28;
  * Rendering ~400 paths is cheap; the expensive part is re-rendering on every
  * state change, so the static layer is memoized and only the paint changes.
  */
-export function WorldMap({ paint, selected, onSelect, focus, className = "", ice, flags = [], dashed = [], armies = [], roads = [], badges = [], storms = [], thaws = [] }: WorldMapProps) {
+export function WorldMap({ paint, selected, onSelect, focus, flyTo, className = "", ice, flags = [], dashed = [], armies = [], roads = [], badges = [], storms = [], thaws = [] }: WorldMapProps) {
   const [hoverArmy, setHoverArmy] = useState<string | null>(null);
   const [routeArmy, setRouteArmy] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -134,6 +136,21 @@ export function WorldMap({ paint, selected, onSelect, focus, className = "", ice
     const k = 4;
     setView(clampView({ k, x: W / 2 - r.x * k, y: H / 2 - r.y * k }));
   }, [focus, clampView, W, H]);
+
+  // A message's Open region: centre the map on it (zooming in if the view is wide) and flash the outline so the eye lands on it.
+  const [flash, setFlash] = useState<string | null>(null);
+  useEffect(() => {
+    if (!flyTo) return;
+    const r = allRegions().find((x) => x.id === flyTo.id);
+    if (!r) return;
+    setView((v) => {
+      const k = Math.max(v.k, 4);
+      return clampView({ k, x: W / 2 - r.x * k, y: H / 2 - r.y * k });
+    });
+    setFlash(flyTo.id);
+    const t = setTimeout(() => setFlash(null), 2600);
+    return () => clearTimeout(t);
+  }, [flyTo, clampView, W, H]);
 
   const onWheel = (e: ReactWheelEvent<SVGSVGElement>) => {
     e.preventDefault();
@@ -216,6 +233,7 @@ export function WorldMap({ paint, selected, onSelect, focus, className = "", ice
       </defs>
       <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>
         <Regions paint={paint} selected={selected} strokeWidth={0.8 / view.k} />
+        {flash && <path d={allRegions().find((r) => r.id === flash)?.path ?? ""} fill="#fbbf24" stroke="#fde68a" strokeWidth={3 / view.k} strokeLinejoin="round" pointerEvents="none" className="region-flash" />}
         {storms.map((id) => {
           const r = regionById(id);
           return r ? <path key={`storm-${id}`} d={r.path} fill="url(#lt-storm)" pointerEvents="none" /> : null;

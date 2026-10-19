@@ -27,13 +27,19 @@ export interface MenuEntry {
   badge?: string | number | undefined;
   tone?: "alert" | undefined;
 }
+/** The region a message is about, when it names one. */
+export function regionOf(m: { payload?: unknown }): string | undefined {
+  const id = (m.payload as { regionId?: unknown } | null | undefined)?.regionId;
+  return typeof id === "string" ? id : undefined;
+}
+
 export interface MenuData {
   entries: MenuEntry[];
   /** How many of the entries want attention right now. */
   alerts: number;
   messages: MessageView[];
   newest: MessageView | null;
-  toast: { kind: string; subject: string } | null;
+  toast: { kind: string; subject: string; regionId?: string | undefined } | null;
   clearToast: () => void;
   /** A chat line just in, for the bar; null once it has been shown a few seconds or chat is muted. */
   chatToast: ChatToast | null;
@@ -78,7 +84,7 @@ export function useMenuData(matchId: string, state: MatchStateView, overlays: Se
     { id: "view", label: "View", badge: overlays.size || undefined },
   ];
   const alerts = (unread ? 1 : 0) + (chat.unread ? 1 : 0) + (logisticsBadge ? 1 : 0) + (invites ? 1 : 0) + (proposals ? 1 : 0);
-  return { entries, alerts, messages: q.data?.messages ?? [], newest, toast, clearToast, chatToast: chat.toast, clearChatToast: chat.clearToast };
+  return { entries, alerts, messages: q.data?.messages ?? [], newest, toast: toast ? { kind: toast.kind, subject: toast.subject, regionId: regionOf(toast) } : null, clearToast, chatToast: chat.toast, clearChatToast: chat.clearToast };
 }
 
 /**
@@ -130,10 +136,24 @@ export function TopMenu({
   );
 
   const latest = toast ? (
-    <button className="min-w-0 flex-1 truncate text-left text-sm text-slate-100" onClick={() => toggle("messages")}>
-      <span className="mr-2">{messageIcon(toast.kind)}</span>
-      {toast.subject}
-    </button>
+    <div className="flex min-w-0 flex-1 items-center gap-2">
+      <button className="min-w-0 flex-1 truncate text-left text-sm text-slate-100" onClick={() => toggle("messages")}>
+        <span className="mr-2">{messageIcon(toast.kind)}</span>
+        {toast.subject}
+      </button>
+      {toast.regionId && (
+        <button
+          className="shrink-0 rounded border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-xs text-sky-200 hover:bg-sky-500/20"
+          onClick={() => {
+            onSelectRegion(toast.regionId!);
+            clearToast();
+          }}
+          title="Centre the map on this region and open it"
+        >
+          Open region →
+        </button>
+      )}
+    </div>
   ) : chatToast ? (
     <button className="min-w-0 flex-1 truncate text-left text-sm text-slate-100" onClick={() => toggle("chat")} title="Open the chat">
       <span className="mr-2">💬</span>

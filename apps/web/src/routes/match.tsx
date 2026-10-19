@@ -13,6 +13,7 @@ import { PhoneShell } from "../components/phone/PhoneShell.js";
 import { PhoneTabBar } from "../components/phone/PhoneTabBar.js";
 import { tabOf, type Screen } from "../components/phone/screens.js";
 import { AgeChip, ObjectiveChip, useMenuData } from "../components/TopMenu.js";
+import { messageIcon } from "../components/Messages.js";
 import { Ticker } from "../components/Ticker.js";
 import type { RegionTab } from "../components/RegionPanel.js";
 import { ResearchPanel } from "../components/ResearchPanel.js";
@@ -315,6 +316,20 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
     setTarget(null);
     setStack([{ kind: "map" }, { kind: "region", id, tab: "overview" }]);
   }, []);
+  // A message's Open region: select it, centre the map on it and flash it, on either layout.
+  const [flyTo, setFlyTo] = useState<{ id: string; n: number } | null>(null);
+  const goToRegion = useCallback(
+    (id: string) => {
+      if (phone) openRegion(id);
+      else {
+        setSelected(id);
+        setTarget(null);
+        setSheet("half");
+      }
+      setFlyTo((f) => ({ id, n: (f?.n ?? 0) + 1 }));
+    },
+    [phone, openRegion],
+  );
   const setRegionTab = useCallback((tab: RegionTab) => setStack((st) => st.map((sc, i) => (i === st.length - 1 && sc.kind === "region" ? { ...sc, tab } : sc))), []);
   // Picking a target on a phone drops back to the map; the pick returns to the region's units tab.
   const returnTo = useRef<Screen | null>(null);
@@ -458,18 +473,35 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
 
   return (
     <div className="age-screen flex h-[calc(100dvh-3rem)] flex-col bg-slate-950" style={ageVars(state.me.age) as React.CSSProperties} data-age={state.me.age}>
-      {!phone && <TopMenu matchId={matchId} state={state} selectedRegionId={selected} colorOf={colorOf} overlays={overlays} onToggleOverlay={toggleOverlay} onSelectRegion={setSelected} clockOffsetMs={clockOffsetMs} />}
+      {!phone && <TopMenu matchId={matchId} state={state} selectedRegionId={selected} colorOf={colorOf} overlays={overlays} onToggleOverlay={toggleOverlay} onSelectRegion={goToRegion} clockOffsetMs={clockOffsetMs} />}
       {phone && (
         <div className="age-bar flex h-10 shrink-0 items-center gap-2 border-b border-slate-800 bg-slate-950/90 px-2">
           {state.observer ? <span className="inline-flex h-7 shrink-0 items-center rounded-md border border-violet-400/50 bg-violet-500/10 px-2 text-xs font-medium text-violet-100">Admin</span> : <AgeChip age={state.me.age} compact />}
           <ObjectiveChip state={state} compact onOpen={() => setStack([{ kind: "map" }, { kind: "panel", id: "players" }])} />
           <div className="min-w-0 flex-1">
-            {menu.chatToast ? (
+            {menu.toast ? (
+              <div className="flex min-w-0 items-center gap-2">
+                <button className="min-w-0 flex-1 truncate text-left text-sm text-slate-100" onClick={() => setStack([{ kind: "map" }, { kind: "panel", id: "messages" }])}>
+                  {messageIcon(menu.toast.kind)} {menu.toast.subject}
+                </button>
+                {menu.toast.regionId && (
+                  <button
+                    className="shrink-0 rounded border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-xs text-sky-200"
+                    onClick={() => {
+                      goToRegion(menu.toast!.regionId!);
+                      menu.clearToast();
+                    }}
+                  >
+                    Open region →
+                  </button>
+                )}
+              </div>
+            ) : menu.chatToast ? (
               <button className="block w-full truncate text-left text-sm text-slate-100" onClick={() => setStack([{ kind: "map" }, { kind: "panel", id: "chat" }])}>
                 💬 <span className="text-sky-200">{menu.chatToast.playerName}:</span> {menu.chatToast.body}
               </button>
             ) : (
-              <Ticker matchId={matchId} nudge={state.match.now} onSelectRegion={openRegion} />
+              <Ticker matchId={matchId} nudge={state.match.now} onSelectRegion={goToRegion} />
             )}
           </div>
           <span className="shrink-0 text-xs text-slate-400">day {Math.min(balance.match.lengthDays, Math.floor(matchDay) + 1)}</span>
@@ -495,6 +527,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
           selected={selected}
           onSelect={onMapSelect}
           focus={state.me.capitalRegionId}
+          flyTo={flyTo}
           className={`h-full w-full ${picking ? "cursor-crosshair" : ""}`}
           ice={ice}
           flags={state.me.capitalRegionId ? [state.me.capitalRegionId] : []}
@@ -540,7 +573,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
             screen={screen}
             push={push}
             pop={pop}
-            openRegion={openRegion}
+            openRegion={goToRegion}
             setRegionTab={setRegionTab}
             clockOffsetMs={clockOffsetMs}
             colorOf={colorOf}

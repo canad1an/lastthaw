@@ -409,7 +409,7 @@ async function deliverUnits(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publis
   const target = await lockRegion(tx, m, army.targetRegionId, at);
   const friendly = target.ownerPlayerId === army.playerId || (target.ownerPlayerId ? await areAllied(tx, m.id, army.playerId, target.ownerPlayerId) : false);
   if (!friendly) {
-    await notify(tx, m.id, army.playerId, "system", `${regionById(army.targetRegionId)?.name} is no longer friendly; the army is coming back`, {});
+    await notify(tx, m.id, army.playerId, "system", `${regionById(army.targetRegionId)?.name} is no longer friendly; the army is coming back`, { regionId: army.targetRegionId });
     return sendHome(tx, m, army, at, army.units, army.cargo, `${regionById(army.targetRegionId)?.name} is no longer friendly`);
   }
   // Settlers arriving in one of my conquered regions settle in as occupiers.
@@ -454,7 +454,7 @@ async function deliverCargo(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publis
   const target = await lockRegion(tx, m, army.targetRegionId, at);
   const friendly = target.ownerPlayerId === army.playerId || (target.ownerPlayerId ? await areAllied(tx, m.id, army.playerId, target.ownerPlayerId) : false);
   if (!friendly) {
-    await notify(tx, m.id, army.playerId, "trade", `${regionById(army.targetRegionId)?.name} is no longer friendly; the goods are coming back`, {});
+    await notify(tx, m.id, army.playerId, "trade", `${regionById(army.targetRegionId)?.name} is no longer friendly; the goods are coming back`, { regionId: army.targetRegionId });
     return sendHome(tx, m, army, at, army.units, army.cargo, `${regionById(army.targetRegionId)?.name} is no longer friendly`);
   }
   const { people: _people, ...goods } = army.cargo;
@@ -544,7 +544,7 @@ async function battle(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher: P
 
   // Attacking a friend (alliance formed mid-flight) is called off.
   if (defenderId && (defenderId === army.playerId || (await areAllied(tx, m.id, army.playerId, defenderId)))) {
-    await notify(tx, m.id, army.playerId, "battle", `Attack on ${region.name} called off: the region is friendly`, {});
+    await notify(tx, m.id, army.playerId, "battle", `Attack on ${region.name} called off: the region is friendly`, { regionId: region.id });
     return sendHome(tx, m, army, at, army.units, army.cargo, "called off: the region is now friendly");
   }
 
@@ -650,8 +650,8 @@ async function battle(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher: P
   const lossesAll = Object.values(result.attackerLosses).reduce((a, b) => a + b, 0) + Object.values(result.defenderLosses).reduce((a, b) => a + b, 0);
   await tribeBattleTalk(tx, m, { attackerId: army.playerId, defenderId, attackerName, defenderName, region: region.name, attackerWon: result.attackerWon, conquered, losses: lossesAll, seed }, at, publisher, after);
   const verb = army.mission === "raid" ? "Raid on" : "Attack on";
-  await notify(tx, m.id, army.playerId, "battle", `${verb} ${region.name}: ${result.attackerWon ? "victory" : "defeat"}${conquered ? ", region conquered" : ""}`, { report });
-  if (defenderId) await notify(tx, m.id, defenderId, "battle", `${attackerName} ${army.mission === "raid" ? "raided" : "attacked"} ${region.name}: ${result.attackerWon ? "they won" : "we held"}${conquered ? ", region lost" : ""}`, { report });
+  await notify(tx, m.id, army.playerId, "battle", `${verb} ${region.name}: ${result.attackerWon ? "victory" : "defeat"}${conquered ? ", region conquered" : ""}`, { regionId: region.id, report });
+  if (defenderId) await notify(tx, m.id, defenderId, "battle", `${attackerName} ${army.mission === "raid" ? "raided" : "attacked"} ${region.name}: ${result.attackerWon ? "they won" : "we held"}${conquered ? ", region lost" : ""}`, { regionId: region.id, report });
   // Both sides keep the battle in their notes on the region: what each brought, what it cost, how it ended.
   {
     const unitsText = (u: UnitCounts) =>
