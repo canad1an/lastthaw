@@ -1,6 +1,7 @@
 export * from "./config/balance.js";
 export * from "./config/ages.js";
 export * from "./rules/timers.js";
+export * from "./rules/names.js";
 export * from "./rules/buildings.js";
 export * from "./rules/rng.js";
 export * from "./rules/combat.js";

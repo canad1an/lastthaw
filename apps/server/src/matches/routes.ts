@@ -78,8 +78,8 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
       const s = (m.settings ?? {}) as { kind?: "tournament" | "public" | "private"; weekly?: boolean; inviteCode?: string; createdBy?: string };
       const kind = s.kind ?? (s.weekly ? "tournament" : "public");
       const createdByMe = !!user && s.createdBy === user.id;
-      // Private games are only listed to their creator and the people already in them.
-      if (kind === "private" && !createdByMe && !mp) continue;
+      // Private games are only listed to their creator, the people already in them, and admins (who may look into any match).
+      if (kind === "private" && !createdByMe && !mp && !user?.isAdmin) continue;
       out.push({
         id: m.id,
         slug: m.slug ?? m.id,

@@ -1,4 +1,11 @@
 import { z } from "zod";
+import { nameAllowed, nameProblem } from "../rules/names.js";
+
+/** Every chosen name (tribe, game, alliance) goes through the same filter, and the refusal says why. */
+const checkName = (s: string, ctx: z.RefinementCtx) => {
+  const problem = nameProblem(s);
+  if (problem) ctx.addIssue({ code: "custom", message: problem });
+};
 import { balance } from "../config/balance.js";
 
 /** Every API response carries the server time so clients can compute countdowns from an offset. */
@@ -28,7 +35,8 @@ export const registerBody = z.object({
     .max(24)
     .transform((s) => s.normalize("NFKC"))
     .refine((s) => DISPLAY_NAME_RE.test(s), "use letters, digits, spaces, _ or -, starting and ending with a letter or digit")
-    .refine((s) => !RESERVED_NAMES.includes(s.toLowerCase()), "that name is reserved"),
+    .refine((s) => !RESERVED_NAMES.includes(s.toLowerCase()), "that name is reserved")
+    .superRefine(checkName),
 });
 const optionalText = (max: number) =>
   z
@@ -112,7 +120,7 @@ export const joinByCodeBody = z.object({ code: z.string().trim().min(4).max(32) 
 export type MatchSummary = z.infer<typeof matchSummary>;
 
 export const createMatchBody = z.object({
-  name: z.string().trim().min(2).max(40),
+  name: z.string().trim().min(2).max(40).superRefine(checkName),
   speed: z.number().int().min(1).max(1000),
   startsInMinutes: z.number().int().min(0).max(60 * 24 * 14),
   /** Exact start (ISO); wins over startsInMinutes when given. */
@@ -521,8 +529,8 @@ export type EventKind = (typeof EVENT_KINDS)[number];
 // ---------------------------------------------------------------------------
 
 export const createAllianceBody = z.object({
-  name: z.string().trim().min(2).max(30),
-  tag: z.string().trim().min(2).max(5).regex(/^[A-Z0-9]+$/, "tag must be uppercase letters or digits"),
+  name: z.string().trim().min(2).max(30).superRefine(checkName),
+  tag: z.string().trim().min(2).max(5).regex(/^[A-Z0-9]+$/, "tag must be uppercase letters or digits").refine(nameAllowed, "that tag is not allowed"),
 });
 export const allianceInviteBody = z.object({ playerId: z.string() });
 export const allianceIdBody = z.object({ allianceId: z.string() });
