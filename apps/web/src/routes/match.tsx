@@ -519,7 +519,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
         />
       )}
       {finished && <MatchSummary matchId={matchId} open={summaryOpen && !night} onClose={() => setSummaryOpen(false)} colorOf={colorOf} />}
-      {!finished && <MatchIntro open={introOpen} onClose={() => setIntroOpen(false)} matchName={state.match.name} speed={state.match.speed} />}
+      {!finished && <MatchIntro open={introOpen} onClose={() => setIntroOpen(false)} matchName={state.match.name} speed={state.match.speed} resourceMult={state.match.resourceMult} />}
       <div className="relative flex min-h-0 flex-1 flex-col lg:flex-row">
       <div className="relative h-full w-full lg:flex-1">
         <WorldMap

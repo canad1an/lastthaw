@@ -6,7 +6,7 @@ import { allianceMembers, alliances, armies, jobs, matchRegions, matches, player
 import { OBJECTIVES } from "../sim/objectives.js";
 import { matchNow, matchDayAt } from "../sim/clock.js";
 import { alliesOf } from "../sim/alliances.js";
-import { countOwnedRegions, projectRegion } from "../sim/regions.js";
+import { countOwnedRegions, projectRegion, resourceMultOf } from "../sim/regions.js";
 
 /**
  * The only path from database to a player's screen. Everything a player can
@@ -31,7 +31,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string, o
     .where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.ownerPlayerId, me.id)));
 
   const owned: OwnedRegionView[] = ownedRows.map((row) => {
-    const { economy, rates, effects } = projectRegion(row, now, m.speed, myTechFx);
+    const { economy, rates, effects } = projectRegion(row, now, m.speed, myTechFx, resourceMultOf(m));
     return {
       regionId: row.regionId,
       ownerPlayerId: me.id,
@@ -107,7 +107,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string, o
     const allyNames = new Map((await db.select({ id: players.id, name: players.name }).from(players).where(inArray(players.id, allies))).map((p) => [p.id, p.name]));
     const seen = new Set(sighted.map((s) => s.regionId));
     for (const row of allyRows) {
-      const { economy } = projectRegion(row, now, m.speed);
+      const { economy } = projectRegion(row, now, m.speed, undefined, resourceMultOf(m));
       const view: SightedRegionView = {
         regionId: row.regionId,
         ownerPlayerId: row.ownerPlayerId,
@@ -141,7 +141,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string, o
       const ownerIds = [...new Set(rows.map((r) => r.ownerPlayerId).filter((x): x is string => !!x))];
       const names = new Map(ownerIds.length ? (await db.select({ id: players.id, name: players.name }).from(players).where(inArray(players.id, ownerIds))).map((p) => [p.id, p.name]) : []);
       for (const row of rows) {
-        const { economy } = projectRegion(row, now, m.speed);
+        const { economy } = projectRegion(row, now, m.speed, undefined, resourceMultOf(m));
         const units = Object.fromEntries(Object.entries(row.units as Record<string, number>).filter(([, n]) => n > 0));
         const view: SightedRegionView = {
           regionId: row.regionId,
@@ -184,7 +184,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string, o
       const names = new Map(ownerIds.length ? (await db.select({ id: players.id, name: players.name }).from(players).where(inArray(players.id, ownerIds))).map((p) => [p.id, p.name]) : []);
       const seen = new Set(sighted.map((s) => s.regionId));
       for (const row of rows) {
-        const { economy } = projectRegion(row, now, m.speed);
+        const { economy } = projectRegion(row, now, m.speed, undefined, resourceMultOf(m));
         const view: SightedRegionView = {
           regionId: row.regionId,
           ownerPlayerId: row.ownerPlayerId,
@@ -345,6 +345,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string, o
       winnerPlayerId: m.winnerPlayerId ?? null,
       createdByMe: !!me.userId && ((m.settings ?? {}) as { createdBy?: string }).createdBy === me.userId,
       tournament: ((m.settings ?? {}) as { kind?: string }).kind === "tournament",
+      resourceMult: resourceMultOf(m),
     },
     me: {
       playerId: me.id,
@@ -411,7 +412,7 @@ async function buildObserverState(db: Db, m: typeof matches.$inferSelect, matchI
   const counts = await countOwnedRegions(db, matchId);
   const rows = await db.select().from(matchRegions).where(and(eq(matchRegions.matchId, matchId), sql`${matchRegions.ownerPlayerId} is not null`));
   const sighted: SightedRegionView[] = rows.map((row) => {
-    const { economy } = projectRegion(row, now, m.speed);
+    const { economy } = projectRegion(row, now, m.speed, undefined, resourceMultOf(m));
     return {
       regionId: row.regionId,
       ownerPlayerId: row.ownerPlayerId,
@@ -480,6 +481,7 @@ async function buildObserverState(db: Db, m: typeof matches.$inferSelect, matchI
       winnerPlayerId: m.winnerPlayerId ?? null,
       createdByMe: false,
       tournament: ((m.settings ?? {}) as { kind?: string }).kind === "tournament",
+      resourceMult: resourceMultOf(m),
     },
     me: { playerId: "", name: "Admin view", capitalRegionId: null, protectionUntil: null, age: 0, techs: [], allianceId: null, allianceTag: null },
     owned: [],

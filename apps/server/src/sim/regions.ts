@@ -13,7 +13,13 @@ export function traitsOf(regionId: string): RegionTraits {
   return { terrain: r.terrain, resources: r.resources, coastal: r.coastal, river: r.river };
 }
 
-export function economyOf(row: MatchRegionRow, effects: RegionEffects = effectsOf(row.buildings), growthMult = 1, at: Date = new Date()): RegionEconomy {
+/** The match's resource multiplier from its settings; 1 unless the creator chose otherwise. */
+export function resourceMultOf(m: { settings: unknown }): number {
+  const v = (m.settings as { resourceMult?: unknown } | null)?.resourceMult;
+  return typeof v === "number" && v >= 1 && v <= 10 ? v : 1;
+}
+
+export function economyOf(row: MatchRegionRow, effects: RegionEffects = effectsOf(row.buildings), growthMult = 1, at: Date = new Date(), resourceMult = 1): RegionEconomy {
   const special = { ...emptySpecial(), ...(row.special as Partial<Record<(typeof SPECIAL_RESOURCES)[number], number>>) };
   return {
     popWorkers: row.popWorkers,
@@ -30,6 +36,7 @@ export function economyOf(row: MatchRegionRow, effects: RegionEffects = effectsO
     extract: effects.extract,
     iceFactor: row.frozenAt ? 0 : row.iceFactor,
     growthMult,
+    resourceMult,
     abandoned: row.evacuatedAt !== null,
     frozen: row.frozenAt !== null,
     storm: !!row.stormUntil && row.stormUntil > at,
@@ -46,10 +53,10 @@ export async function ownerTechEffects(db: Db | Tx, playerId: string | null): Pr
 }
 
 /** Pure projection of a row to `asOf`. Does not touch the database. */
-export function projectRegion(row: MatchRegionRow, asOf: Date, speed: number, tech: TechEffects = NO_TECH_EFFECTS): { economy: RegionEconomy; rates: Rates; effects: RegionEffects } {
+export function projectRegion(row: MatchRegionRow, asOf: Date, speed: number, tech: TechEffects = NO_TECH_EFFECTS, resourceMult = 1): { economy: RegionEconomy; rates: Rates; effects: RegionEffects } {
   const traits = traitsOf(row.regionId);
   const effects = applyTechEffects(effectsOf(row.buildings), tech);
-  const economy = settle(traits, economyOf(row, effects, 1 + tech.growth, asOf), elapsedSeconds(row.settledAt, asOf), speed);
+  const economy = settle(traits, economyOf(row, effects, 1 + tech.growth, asOf, resourceMult), elapsedSeconds(row.settledAt, asOf), speed);
   return { economy, rates: computeRates(traits, economy), effects };
 }
 
@@ -69,7 +76,7 @@ function economyColumns(e: RegionEconomy) {
  * Lock a region row, settle it to `asOf`, persist, and return the fresh row.
  * Call this inside a transaction before any write that changes a rate.
  */
-export async function settleAndLockRegion(tx: Tx, matchId: string, regionId: string, asOf: Date, speed: number): Promise<MatchRegionRow> {
+export async function settleAndLockRegion(tx: Tx, matchId: string, regionId: string, asOf: Date, speed: number, resourceMult = 1): Promise<MatchRegionRow> {
   const rows = await tx
     .select()
     .from(matchRegions)
@@ -78,7 +85,7 @@ export async function settleAndLockRegion(tx: Tx, matchId: string, regionId: str
   const row = rows[0];
   if (!row) throw Object.assign(new Error("region not found"), { statusCode: 404 });
   if (asOf.getTime() <= row.settledAt.getTime()) return row;
-  const { economy } = projectRegion(row, asOf, speed, await ownerTechEffects(tx, row.ownerPlayerId));
+  const { economy } = projectRegion(row, asOf, speed, await ownerTechEffects(tx, row.ownerPlayerId), resourceMult);
   const [updated] = await tx
     .update(matchRegions)
     .set({ ...economyColumns(economy), settledAt: asOf })

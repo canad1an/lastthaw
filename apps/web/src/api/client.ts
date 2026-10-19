@@ -71,7 +71,7 @@ export const api = {
   changePassword: (b: { currentPassword: string; newPassword: string }) => request<{ ok: true }>("POST", "/api/me/password", b),
 
   matches: () => request("GET", "/api/matches", undefined, matchSummary.array()),
-  createMatch: (b: { name: string; speed: number; startsInMinutes: number; startsAt?: string; kind?: "tournament" | "public" | "private"; aiFillTo?: number; neutralTribes?: number; aiDifficulty?: "mixed" | "easy" | "medium" | "hard" }) => request<{ id: string; inviteCode: string | null }>("POST", "/api/matches", b),
+  createMatch: (b: { name: string; speed: number; startsInMinutes: number; startsAt?: string; kind?: "tournament" | "public" | "private"; aiFillTo?: number; neutralTribes?: number; aiDifficulty?: "mixed" | "easy" | "medium" | "hard"; resourceMult?: number }) => request<{ id: string; inviteCode: string | null }>("POST", "/api/matches", b),
   joinByCode: (code: string) => request<{ id: string; name: string }>("POST", "/api/matches/join-code", { code }),
   startNow: (id: string) => request<{ ok: true }>("POST", `/api/matches/${id}/start-now`, {}),
   cancelGame: (id: string) => request<{ ok: true }>("DELETE", `/api/matches/${id}`),

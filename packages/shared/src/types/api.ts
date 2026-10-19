@@ -110,6 +110,8 @@ export const matchSummary = z.object({
   /** The invite code, shown only to the game's creator. */
   inviteCode: z.string().nullable().default(null),
   createdByMe: z.boolean().default(false),
+  /** The game's resource multiplier (1 = normal). */
+  resourceMult: z.number().default(1),
   /** Tournaments: how many have registered, whether I have, and when joining opens. */
   registrations: z.number().default(0),
   registered: z.boolean().default(false),
@@ -133,6 +135,8 @@ export const createMatchBody = z.object({
   neutralTribes: z.number().int().min(0).max(300).optional(),
   /** AI difficulty: a single tier or a mix. */
   aiDifficulty: z.enum(["mixed", "easy", "medium", "hard"]).optional(),
+  /** Everything gathered or extracted is scaled by this, independent of speed. 1 is normal; tournaments are always 1. */
+  resourceMult: z.number().min(1).max(10).optional(),
 });
 
 export const pickStartBody = z.object({ regionId: z.string() });
@@ -406,6 +410,8 @@ export const matchStateView = z.object({
     name: z.string(),
     status: matchStatus,
     speed: z.number(),
+    /** Everything gathered or extracted is scaled by this (1 = normal). */
+    resourceMult: z.number().default(1),
     startsAt: z.string(),
     endsAt: z.string(),
     /** Match clock (server time plus any dev time skip), ISO. While paused this is the moment the pause began. */

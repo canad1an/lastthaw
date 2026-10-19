@@ -58,3 +58,19 @@ describe("settle", () => {
     expect(after.popWorkers).toBeLessThan(s.popWorkers);
   });
 });
+
+describe("resource multiplier", () => {
+  it("scales everything gathered and extracted, and nothing else", async () => {
+    const { computeRates, startingEconomy } = await import("../src/rules/settle.js");
+    const traits = { terrain: "forest", resources: ["copper"], coastal: false, river: false } as const;
+    const base = { ...startingEconomy(), popWorkers: 100, extract: { copper: 4 } };
+    const one = computeRates(traits, base);
+    const two = computeRates(traits, { ...base, resourceMult: 2 });
+    expect(two.gross.food).toBeCloseTo(one.gross.food * 2, 6);
+    expect(two.gross.wood).toBeCloseTo(one.gross.wood * 2, 6);
+    expect(two.special.copper).toBeCloseTo(one.special.copper * 2, 6);
+    // Food consumption and growth are people, not production: unchanged.
+    expect(two.food - two.gross.food).toBeCloseTo(one.food - one.gross.food, 6);
+    expect(two.population).toBeCloseTo(one.population, 6);
+  });
+});

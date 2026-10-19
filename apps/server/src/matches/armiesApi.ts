@@ -8,7 +8,7 @@ import { requireUser } from "../auth/session.js";
 import type { Publisher } from "../realtime/publish.js";
 import { httpError, requireRunning, sendArmy, type CommandContext, convertUnits } from "../sim/commands.js";
 import { disbandUnits, evacuateRegion } from "../sim/evacuate.js";
-import { applyCost, waySetsFor, settleAndLockRegion, stockOf } from "../sim/regions.js";
+import { applyCost, waySetsFor, settleAndLockRegion, stockOf, resourceMultOf } from "../sim/regions.js";
 import { alliesOf } from "../sim/alliances.js";
 import { z } from "zod";
 import { idParams, regionParams, armyParams } from "./params.js";
@@ -123,7 +123,7 @@ export async function armyRoutes(app: FastifyInstance, opts: { db: Db; publisher
       await requireRunning(tx, matchId);
       const ids = [p.capitalRegionId!, regionId].sort();
       const locked = new Map<string, Awaited<ReturnType<typeof settleAndLockRegion>>>();
-      for (const id of ids) locked.set(id, await settleAndLockRegion(tx, matchId, id, now, m.speed));
+      for (const id of ids) locked.set(id, await settleAndLockRegion(tx, matchId, id, now, m.speed, resourceMultOf(m)));
       const target = locked.get(regionId)!;
       const old = locked.get(p.capitalRegionId!)!;
       if (target.ownerPlayerId !== p.id) throw httpError(403, "not your region");

@@ -5,7 +5,7 @@ import { armies, bounties, jobs, marketOrders, matchRegions, mercenaryOffers, pl
 import { hireMercenaries } from "./worldEvents.js";
 import { lastStand } from "./lastStand.js";
 import type { Publisher } from "../realtime/publish.js";
-import { applyCost, projectRegion, settleAndLockRegion, stockOf, type MatchRegionRow } from "./regions.js";
+import { applyCost, projectRegion, settleAndLockRegion, stockOf, type MatchRegionRow, resourceMultOf } from "./regions.js";
 import { queueBuild, queueResearch, queueTrain, sendArmy, type CommandContext, type PlayerRow } from "./commands.js";
 import { areAllied } from "./alliances.js";
 import { acceptMarketOrder } from "../matches/marketApi.js";
@@ -100,7 +100,7 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
   for (const offer of waiting) {
     const region = owned.find((r) => r.regionId === offer.regionId);
     if (!region) continue;
-    const { economy } = projectRegion(region, now, m.speed, techFx);
+    const { economy } = projectRegion(region, now, m.speed, techFx, resourceMultOf(m));
     const crowded = economy.popWorkers + economy.popSoldiers + economy.popOccupiers + offer.people > economy.capacity * 1.5;
     const ok = !crowded && economy.food >= offer.people * balance.events.refugees.foodPerPerson * 1.5;
     await attempt(() => decideRefugees(db, m, p, offer.id, ok));
@@ -219,7 +219,7 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
   for (const row of owned) {
     if (row.frozenAt) continue;
     const region = regionById(row.regionId)!;
-    const { economy, rates } = projectRegion(row, now, m.speed, techFx);
+    const { economy, rates } = projectRegion(row, now, m.speed, techFx, resourceMultOf(m));
     const pop = economy.popWorkers + economy.popSoldiers + economy.popOccupiers;
     const underThreat = threatened.has(row.regionId);
 
@@ -257,7 +257,7 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
     if (Math.abs(cur.food - want.food) > 0.05 || Math.abs(cur.stone - want.stone) > 0.05 || Math.abs(cur.wood - want.wood) > 0.05) {
       await attempt(() =>
         db.transaction(async (tx) => {
-          await settleAndLockRegion(tx, m.id, row.regionId, now, m.speed);
+          await settleAndLockRegion(tx, m.id, row.regionId, now, m.speed, resourceMultOf(m));
           await tx.update(matchRegions).set({ assignment: want }).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, row.regionId)));
         }),
       );
@@ -325,7 +325,7 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
     for (const t of RESEARCH_ORDER) if (ids.has(t) && !order.includes(t)) order.push(t);
     for (const t of [...avail].sort((a, b) => a.baseSeconds - b.baseSeconds)) if (!order.includes(t.id)) order.push(t.id);
     const capital = owned.find((r) => r.regionId === p.capitalRegionId) ?? owned[0]!;
-    const { economy } = projectRegion(capital, now, m.speed, techFx);
+    const { economy } = projectRegion(capital, now, m.speed, techFx, resourceMultOf(m));
     let tries = 0;
     for (const id of order) {
       if (tries >= 3) break;
@@ -569,7 +569,7 @@ async function sellOre(ctx: CommandContext, owned: MatchRegionRow[], now: Date, 
       pooled[ore] = (pooled[ore] ?? 0) - amount;
       try {
         await db.transaction(async (tx) => {
-          const locked = await settleAndLockRegion(tx, m.id, row.regionId, now, m.speed);
+          const locked = await settleAndLockRegion(tx, m.id, row.regionId, now, m.speed, resourceMultOf(m));
           if ((stockOf(locked)[ore] ?? 0) < amount) return;
           await applyCost(tx, locked, { [ore]: amount });
           await tx.insert(marketOrders).values({

@@ -39,6 +39,8 @@ export interface RegionEconomy {
   iceFactor: number;
   /** Population growth multiplier from the owner's techs (1 = none). */
   growthMult: number;
+  /** The match's resource multiplier, chosen by the game's creator: everything gathered or extracted is scaled by it (1 = normal). */
+  resourceMult?: number;
   /** Evacuated: nobody lives here, nothing grows or is gathered until people return. */
   abandoned: boolean;
   frozen: boolean;
@@ -100,7 +102,7 @@ export function computeRates(traits: RegionTraits, e: RegionEconomy): Rates {
   const gross: Record<BaseResource, number> = { food: 0, wood: 0, stone: 0 };
   const special = emptySpecial();
   if (!e.frozen && !e.abandoned) {
-    const weather = e.storm ? balance.events.storm.production : 1;
+    const weather = (e.storm ? balance.events.storm.production : 1) * (e.resourceMult ?? 1);
     for (const res of BASE_RESOURCES) {
       gross[res] = e.popWorkers * assignment[res] * yieldPerWorker(traits, res) * (e.yieldMult[res] ?? 1) * e.iceFactor * weather * (e.boom === res ? balance.events.boom.mult : 1);
     }

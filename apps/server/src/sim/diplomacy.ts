@@ -4,7 +4,7 @@ import { balance, regionById } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { events, matchRegions, pacts, players, transfers } from "../db/schema.js";
 import { httpError } from "./commands.js";
-import { applyCost, settleAndLockRegion, stockOf, type Tx } from "./regions.js";
+import { applyCost, settleAndLockRegion, stockOf, type Tx, resourceMultOf } from "./regions.js";
 import { notify, type MatchRow } from "../worker/jobs.js";
 import { matchNow } from "./clock.js";
 
@@ -130,7 +130,7 @@ export async function payTribute(db: Db, m: MatchRow, me: PlayerRow, pactId: str
     if (!other) throw httpError(404, "the demander is gone");
     const ids = [...new Set([me.capitalRegionId!, ...(other.capitalRegionId ? [other.capitalRegionId] : [])])].sort();
     const locked = new Map<string, Awaited<ReturnType<typeof settleAndLockRegion>>>();
-    for (const id of ids) locked.set(id, await settleAndLockRegion(tx, m.id, id, now, m.speed));
+    for (const id of ids) locked.set(id, await settleAndLockRegion(tx, m.id, id, now, m.speed, resourceMultOf(m)));
     const mine = locked.get(me.capitalRegionId!)!;
     if ((stockOf(mine)[terms.resource] ?? 0) < terms.amount) throw httpError(409, `your capital does not have ${terms.amount} ${terms.resource}`);
     await applyCost(tx, mine, { [terms.resource]: terms.amount });

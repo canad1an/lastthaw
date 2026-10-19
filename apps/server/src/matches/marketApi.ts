@@ -9,7 +9,7 @@ import { requireUser } from "../auth/session.js";
 import type { Publisher } from "../realtime/publish.js";
 import { matchNow } from "../sim/clock.js";
 import { httpError } from "../sim/commands.js";
-import { applyCost, settleAndLockRegion, stockOf, type MatchRegionRow, type Tx } from "../sim/regions.js";
+import { applyCost, settleAndLockRegion, stockOf, type MatchRegionRow, type Tx, resourceMultOf } from "../sim/regions.js";
 import { idParams, orderParams } from "./params.js";
 
 const MAX_OPEN_ORDERS = 10;
@@ -130,7 +130,7 @@ export async function marketRoutes(app: FastifyInstance, opts: { db: Db; publish
         .from(marketOrders)
         .where(and(eq(marketOrders.playerId, p.id), eq(marketOrders.status, "open")));
       if ((count?.n ?? 0) >= MAX_OPEN_ORDERS) throw httpError(409, `you already have ${MAX_OPEN_ORDERS} open orders`);
-      const row = await settleAndLockRegion(tx, matchId, body.regionId, matchNow(m), m.speed);
+      const row = await settleAndLockRegion(tx, matchId, body.regionId, matchNow(m), m.speed, resourceMultOf(m));
       if (row.ownerPlayerId !== p.id) throw httpError(403, "not your region");
       if (row.frozenAt) throw httpError(409, "this region is frozen");
       if ((stockOf(row)[body.offerResource] ?? 0) < body.offerAmount) throw httpError(409, `not enough ${body.offerResource}`);
@@ -167,11 +167,11 @@ export async function marketRoutes(app: FastifyInstance, opts: { db: Db; publish
       if (o.playerId !== p.id) throw httpError(403, "not your order");
       if (o.status !== "open") throw httpError(409, "that order is no longer open");
       const res = o.offerResource as TradeResource;
-      let dest: MatchRegionRow | null = await settleAndLockRegion(tx, matchId, o.regionId, now, m.speed);
+      let dest: MatchRegionRow | null = await settleAndLockRegion(tx, matchId, o.regionId, now, m.speed, resourceMultOf(m));
       if (dest.ownerPlayerId !== p.id) {
         dest = null;
         if (p.capitalRegionId && p.capitalRegionId !== o.regionId) {
-          const cap = await settleAndLockRegion(tx, matchId, p.capitalRegionId, now, m.speed);
+          const cap = await settleAndLockRegion(tx, matchId, p.capitalRegionId, now, m.speed, resourceMultOf(m));
           if (cap.ownerPlayerId === p.id) dest = cap;
         }
       }
@@ -220,7 +220,7 @@ return db.transaction(async (tx) => {
     if (sellerDest === regionId) throw httpError(400, "that region is not yours");
     const ids = [regionId, ...(sellerDest ? [sellerDest] : [])].sort();
     const locked = new Map<string, MatchRegionRow>();
-    for (const id of ids) locked.set(id, await settleAndLockRegion(tx, m.id, id, now, m.speed));
+    for (const id of ids) locked.set(id, await settleAndLockRegion(tx, m.id, id, now, m.speed, resourceMultOf(m)));
 
     const buyerRow = locked.get(regionId)!;
     if (buyerRow.ownerPlayerId !== p.id) throw httpError(403, "not your region");

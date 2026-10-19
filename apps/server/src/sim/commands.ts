@@ -12,7 +12,7 @@ import { matchDayAt, matchNow } from "./clock.js";
 import { wonderStarted } from "./endgame.js";
 import { stormFactorFor } from "./worldEvents.js";
 import { peaceBetween } from "./diplomacy.js";
-import { applyCost, settleAndLockRegion, stockOf, type MatchRegionRow, type Tx, waySetsFor } from "./regions.js";
+import { applyCost, settleAndLockRegion, stockOf, type MatchRegionRow, type Tx, waySetsFor, resourceMultOf } from "./regions.js";
 import { alliesOf, areAllied } from "./alliances.js";
 import type { MatchRow } from "../worker/jobs.js";
 
@@ -75,7 +75,7 @@ export async function queueBuild(ctx: CommandContext, regionId: string, building
       .orderBy(asc(matchRegions.regionId));
     if (!mine.some((r) => r.regionId === regionId)) throw httpError(403, "not your region");
     const locked = new Map<string, MatchRegionRow>();
-    for (const r of mine) locked.set(r.regionId, await settleAndLockRegion(tx, m.id, r.regionId, now, m.speed));
+    for (const r of mine) locked.set(r.regionId, await settleAndLockRegion(tx, m.id, r.regionId, now, m.speed, resourceMultOf(m)));
     const row = locked.get(regionId)!;
     if (row.ownerPlayerId !== p.id) throw httpError(403, "not your region");
     if (row.frozenAt) throw httpError(409, "this region is frozen");
@@ -194,7 +194,7 @@ export async function queueTrain(ctx: CommandContext, regionId: string, unitId: 
   return db.transaction(async (tx) => {
     await requireRunning(tx, m.id);
     const now = matchNow(m);
-    const row = await settleAndLockRegion(tx, m.id, regionId, now, m.speed);
+    const row = await settleAndLockRegion(tx, m.id, regionId, now, m.speed, resourceMultOf(m));
     if (row.ownerPlayerId !== p.id) throw httpError(403, "not your region");
     if (row.frozenAt) throw httpError(409, "this region is frozen");
     const pending = await pendingRegionJobs(tx, m.id, regionId);
@@ -250,7 +250,7 @@ export async function queueResearch(ctx: CommandContext, techId: string) {
       .orderBy(asc(matchRegions.regionId));
     if (!mine.some((r) => r.regionId === p.capitalRegionId)) throw httpError(409, "you have lost your capital");
     const rows: MatchRegionRow[] = [];
-    for (const r of mine) rows.push(await settleAndLockRegion(tx, m.id, r.regionId, now, m.speed));
+    for (const r of mine) rows.push(await settleAndLockRegion(tx, m.id, r.regionId, now, m.speed, resourceMultOf(m)));
     const capital = rows.find((r) => r.regionId === p.capitalRegionId)!;
     const ordered = [capital, ...rows.filter((r) => r !== capital)];
     const pooled: Record<string, number> = {};
@@ -367,7 +367,7 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
 
   const outcome = await db.transaction(async (tx) => {
     await requireRunning(tx, m.id);
-    const origin = await settleAndLockRegion(tx, m.id, regionId, now, m.speed);
+    const origin = await settleAndLockRegion(tx, m.id, regionId, now, m.speed, resourceMultOf(m));
     if (origin.ownerPlayerId !== p.id) throw httpError(403, "not your region");
 
     const [target] = await tx
@@ -571,7 +571,7 @@ export async function convertUnits(ctx: CommandContext, regionId: string, from: 
   return db.transaction(async (tx) => {
     await requireRunning(tx, m.id);
     const now = matchNow(m);
-    const row = await settleAndLockRegion(tx, m.id, regionId, now, m.speed);
+    const row = await settleAndLockRegion(tx, m.id, regionId, now, m.speed, resourceMultOf(m));
     if (row.ownerPlayerId !== p.id) throw httpError(403, "not your region");
     const have = row.units[from] ?? 0;
     const n = Math.min(qty, have);
@@ -606,7 +606,7 @@ export async function repairWaitingBuilds(tx: Tx, m: MatchRow, now: Date): Promi
   for (const [regionId, list] of byRegion) {
     const first = list[0]!;
     if (!first.playerId) continue;
-    const row = await settleAndLockRegion(tx, m.id, regionId, now, m.speed);
+    const row = await settleAndLockRegion(tx, m.id, regionId, now, m.speed, resourceMultOf(m));
     if (row.ownerPlayerId !== first.playerId || row.frozenAt) continue;
     const owed = first.waitingFor as Record<string, number>;
     const stock = stockOf(row);

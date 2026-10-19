@@ -2,7 +2,7 @@ import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { allRegions, balance, emptySpecial, iceExposure, iceLatitudeOnDay, regionById, seededRng, freezeDayForLatitude } from "@lastthaw/shared";
 import { events, jobs, matchRegions, matches, players, refugeeOffers } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
-import { settleAndLockRegion, type Tx } from "./regions.js";
+import { settleAndLockRegion, type Tx, resourceMultOf } from "./regions.js";
 import { notify, type JobRow, type MatchRow } from "../worker/jobs.js";
 
 /** Create one ice_step job per match day at match start. */
@@ -67,7 +67,7 @@ export async function applyIceStep(tx: Tx, m: MatchRow, job: JobRow, publisher: 
   // Lock every region we touch in ascending order (the lock order used everywhere) before changing any.
   const touched = [...new Set([...taperChanges.map((t) => t.regionId), ...freezing.map((r) => r.regionId)])].sort();
   const settled = new Map<string, Awaited<ReturnType<typeof settleAndLockRegion>>>();
-  for (const id of touched) settled.set(id, await settleAndLockRegion(tx, m.id, id, job.endsAt, m.speed));
+  for (const id of touched) settled.set(id, await settleAndLockRegion(tx, m.id, id, job.endsAt, m.speed, resourceMultOf(m)));
   for (const t of taperChanges) {
     await tx.update(matchRegions).set({ iceFactor: t.factor }).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, t.regionId)));
   }

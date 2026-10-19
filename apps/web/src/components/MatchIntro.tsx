@@ -36,7 +36,7 @@ export function useIntroOpen(matchId: string, enabled: boolean): [boolean, (v: b
  * what to do first, and the ways to win. Shown once per match per device;
  * the "?" button on the map brings it back.
  */
-export function MatchIntro({ open, onClose, matchName, speed }: { open: boolean; onClose: () => void; matchName: string; speed: number }) {
+export function MatchIntro({ open, onClose, matchName, speed, resourceMult = 1 }: { open: boolean; onClose: () => void; matchName: string; speed: number; resourceMult?: number }) {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -56,6 +56,7 @@ export function MatchIntro({ open, onClose, matchName, speed }: { open: boolean;
               {days} days from now the world north and south of 28° is frozen solid. Five families, one region, and a map that shrinks every day. Build before the ice does.
             </p>
             {speed !== 1 && <p className="mt-1 text-xs text-slate-500">This match runs at {speed}x: a game day passes every {Math.round(1440 / speed)} real minutes.</p>}
+            {resourceMult !== 1 && <p className="mt-1 text-xs text-slate-500">Resources come in at {resourceMult}x: everything gathered or mined, food included, is {resourceMult} times the usual.</p>}
           </div>
 
           <div className="space-y-5 px-5 pb-6 text-sm text-slate-300">

@@ -6,7 +6,7 @@ import { jobs, matches, playerTechs, players, tradeRoutes } from "../db/schema.j
 import { requireUser } from "../auth/session.js";
 import type { Publisher } from "../realtime/publish.js";
 import { matchNow } from "../sim/clock.js";
-import { applyCost, settleAndLockRegion } from "../sim/regions.js";
+import { applyCost, settleAndLockRegion, resourceMultOf } from "../sim/regions.js";
 import { httpError, pendingRegionJobs, queueBuild, queueResearch, queueTrain, type CommandContext } from "../sim/commands.js";
 import { idParams, regionParams, jobParams } from "./params.js";
 
@@ -98,7 +98,7 @@ export async function jobRoutes(app: FastifyInstance, opts: { db: Db; publisher:
       }
       const factor = started ? balance.timers.cancelRefundStarted : 1;
       if (refundRegion) {
-        const row = await settleAndLockRegion(tx, matchId, refundRegion, now, m.speed);
+        const row = await settleAndLockRegion(tx, matchId, refundRegion, now, m.speed, resourceMultOf(m));
         if (row.ownerPlayerId === p.id) await applyCost(tx, row, cost, -factor);
       }
       await tx.update(jobs).set({ cancelledAt: now }).where(eq(jobs.id, jobId));

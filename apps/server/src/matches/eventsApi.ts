@@ -8,7 +8,7 @@ import type { Publisher } from "../realtime/publish.js";
 import { requireUser } from "../auth/session.js";
 import { httpError } from "../sim/commands.js";
 import { matchNow } from "../sim/clock.js";
-import { applyCost, settleAndLockRegion, stockOf, waySetsFor } from "../sim/regions.js";
+import { applyCost, settleAndLockRegion, stockOf, waySetsFor, resourceMultOf } from "../sim/regions.js";
 import { alliesOf } from "../sim/alliances.js";
 import { endPact, payTribute, proposePact, respondPact } from "../sim/diplomacy.js";
 import { hireMercenaries } from "../sim/worldEvents.js";
@@ -121,7 +121,7 @@ export async function decideRefugees(db: Db, m: typeof matches.$inferSelect, p: 
     // Food comes from the region first, then the capital; lock in ascending order.
     const ids = [...new Set([offer.regionId, ...(p.capitalRegionId ? [p.capitalRegionId] : [])])].sort();
     const rows = new Map<string, Awaited<ReturnType<typeof settleAndLockRegion>>>();
-    for (const id of ids) rows.set(id, await settleAndLockRegion(tx, m.id, id, now, m.speed));
+    for (const id of ids) rows.set(id, await settleAndLockRegion(tx, m.id, id, now, m.speed, resourceMultOf(m)));
     const region = rows.get(offer.regionId)!;
     if (region.ownerPlayerId !== p.id || region.frozenAt) throw httpError(409, "that region is no longer yours");
     const capital = p.capitalRegionId && p.capitalRegionId !== offer.regionId ? rows.get(p.capitalRegionId) : null;

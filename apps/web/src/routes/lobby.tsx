@@ -276,6 +276,11 @@ function MatchRow({ m, canJoin, admin }: { m: MatchSummary; canJoin: boolean; ad
         <div className="flex items-center gap-2">
           <h2 className="display font-semibold text-white">{m.name}</h2>
           <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-300">{m.speed}x</span>
+          {m.resourceMult !== 1 && (
+            <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-xs text-amber-200" title="Everything gathered or mined comes in at this rate">
+              {m.resourceMult}x resources
+            </span>
+          )}
           <span className={`rounded px-1.5 py-0.5 text-xs ${m.status === "running" ? "bg-emerald-500/20 text-emerald-300" : "bg-sky-500/20 text-sky-300"}`}>
             {m.status}
           </span>
@@ -344,8 +349,9 @@ function CreateMatch({ admin }: { admin: boolean }) {
   const [kind, setKind] = useState<"tournament" | "public" | "private">(admin ? "tournament" : "public");
   const [aiFillTo, setAiFillTo] = useState(20);
   const [aiDifficulty, setAiDifficulty] = useState<"mixed" | "easy" | "medium" | "hard">("mixed");
+  const [resourceMult, setResourceMult] = useState(1);
   const m = useMutation({
-    mutationFn: () => api.createMatch({ name, speed, startsInMinutes: startsIn, ...(startsAt ? { startsAt: new Date(startsAt).toISOString() } : {}), kind, aiFillTo, aiDifficulty }),
+    mutationFn: () => api.createMatch({ name, speed, startsInMinutes: startsIn, ...(startsAt ? { startsAt: new Date(startsAt).toISOString() } : {}), kind, aiFillTo, aiDifficulty, ...(resourceMult !== 1 ? { resourceMult } : {}) }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matches }),
   });
   const suggest = useMutation({ mutationFn: () => api.nameSuggestion(), onSuccess: (r) => setName(r.name) });
@@ -393,6 +399,16 @@ function CreateMatch({ admin }: { admin: boolean }) {
         </Field>
         <Field label="AI tribes up to">
           <Input type="number" min={0} max={balance.match.maxAiTribes} value={aiFillTo} onChange={(e) => setAiFillTo(Number(e.target.value))} />
+        </Field>
+        <Field label="Resources">
+          <select value={resourceMult} onChange={(e) => setResourceMult(Number(e.target.value))} className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100" disabled={kind === "tournament"}>
+            {[1, 1.5, 2, 3, 5].map((n) => (
+              <option key={n} value={n}>
+                {n}x{n === 1 ? " (normal)" : ""}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-slate-500">Everything gathered or mined, food included, comes in at this rate. Separate from speed: a 1x game at 2x resources is still a real month, with twice the goods.</p>
         </Field>
         <Field label="AI difficulty">
           <select value={aiDifficulty} onChange={(e) => setAiDifficulty(e.target.value as typeof aiDifficulty)} className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100">

@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { balance, carryCapacity, emptySpecial } from "@lastthaw/shared";
 import { matchRegions, tradeRoutes } from "../db/schema.js";
 import { matchNow } from "./clock.js";
-import { settleAndLockRegion, stockOf } from "./regions.js";
+import { settleAndLockRegion, stockOf, resourceMultOf } from "./regions.js";
 import { httpError, sendArmy, type CommandContext } from "./commands.js";
 
 /**
@@ -14,7 +14,7 @@ export async function evacuateRegion(ctx: CommandContext, regionId: string, toRe
   const { db, m, p } = ctx;
   // Occupiers become ordinary travellers; settle first so stock is current.
   const snapshot = await db.transaction(async (tx) => {
-    const row = await settleAndLockRegion(tx, m.id, regionId, matchNow(m), m.speed);
+    const row = await settleAndLockRegion(tx, m.id, regionId, matchNow(m), m.speed, resourceMultOf(m));
     if (row.ownerPlayerId !== p.id) throw httpError(403, "not your region");
     if (row.evacuatedAt) throw httpError(409, "this region has already been evacuated");
     if (row.frozenAt) throw httpError(409, "this region is frozen solid; nothing is left to evacuate");
@@ -51,7 +51,7 @@ export async function evacuateRegion(ctx: CommandContext, regionId: string, toRe
   const result = await sendArmy(ctx, regionId, { mission: "move", targetRegionId: toRegionId, units, people, cargo });
   // Nobody stays: the odd fraction of a person leaves too. The stores follow on a stock-up route (haulers are fetched as needed).
   await db.transaction(async (tx) => {
-    const row = await settleAndLockRegion(tx, m.id, regionId, matchNow(m), m.speed);
+    const row = await settleAndLockRegion(tx, m.id, regionId, matchNow(m), m.speed, resourceMultOf(m));
     await tx
       .update(matchRegions)
       .set({ evacuatedAt: matchNow(m), popWorkers: 0, popOccupiers: 0 })
@@ -87,7 +87,7 @@ export async function evacuateRegion(ctx: CommandContext, regionId: string, toRe
 export async function disbandUnits(ctx: CommandContext, regionId: string, units: Record<string, number>) {
   const { db, m, p } = ctx;
   return db.transaction(async (tx) => {
-    const row = await settleAndLockRegion(tx, m.id, regionId, matchNow(m), m.speed);
+    const row = await settleAndLockRegion(tx, m.id, regionId, matchNow(m), m.speed, resourceMultOf(m));
     if (row.ownerPlayerId !== p.id) throw httpError(403, "not your region");
     const next = { ...(row.units as Record<string, number>) };
     let n = 0;

@@ -5,7 +5,7 @@ import { armies, events, jobs, matchRegions, playerTechs, players } from "../db/
 import { alliesOf } from "./alliances.js";
 import { matchNow } from "./clock.js";
 import { httpError } from "./commands.js";
-import { applyCost, settleAndLockRegion, stockOf, waySetsFor } from "./regions.js";
+import { applyCost, settleAndLockRegion, stockOf, waySetsFor, resourceMultOf } from "./regions.js";
 import { notify, type MatchRow } from "../worker/jobs.js";
 
 /**
@@ -33,7 +33,7 @@ export async function lastStand(db: Db, m: MatchRow, p: { id: string; capitalReg
   return db.transaction(async (tx) => {
     const ids = [p.capitalRegionId!, targetRegionId].sort();
     const locked = new Map<string, Awaited<ReturnType<typeof settleAndLockRegion>>>();
-    for (const id of ids) locked.set(id, await settleAndLockRegion(tx, m.id, id, now, m.speed));
+    for (const id of ids) locked.set(id, await settleAndLockRegion(tx, m.id, id, now, m.speed, resourceMultOf(m)));
     const old = locked.get(p.capitalRegionId!)!;
     const dest = locked.get(targetRegionId)!;
     if (dest.ownerPlayerId !== p.id || dest.frozenAt) throw httpError(400, "the destination must be an unfrozen region of yours");

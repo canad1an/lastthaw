@@ -10,7 +10,7 @@ import { requireUser, requireVerified } from "../auth/session.js";
 import { config } from "../config.js";
 import type { Publisher } from "../realtime/publish.js";
 import { matchNow } from "../sim/clock.js";
-import { settleAndLockRegion } from "../sim/regions.js";
+import { settleAndLockRegion, resourceMultOf } from "../sim/regions.js";
 import { buildMatchState } from "../view/matchState.js";
 import { startMatch, matchLengthSeconds, enrolRegistered } from "./start.js";
 import { finishMatch } from "../sim/endgame.js";
@@ -98,6 +98,7 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
         kind,
         inviteCode: createdByMe ? (s.inviteCode ?? null) : null,
         createdByMe,
+        resourceMult: resourceMultOf(m),
         registrations: regBy.get(m.id)?.n ?? 0,
         registered: (regBy.get(m.id)?.mine ?? 0) > 0,
         joinOpensAt: kind === "tournament" ? joinOpensAt(m.startsAt).toISOString() : null,
@@ -140,6 +141,8 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
           ...(body.aiFillTo !== undefined ? { aiFillTo: body.aiFillTo } : {}),
           ...(body.neutralTribes !== undefined ? { neutralTribes: body.neutralTribes } : {}),
           ...(body.aiDifficulty ? { aiDifficulty: body.aiDifficulty } : {}),
+          // Tournaments are always played at normal resources; a game's creator may raise them.
+          ...(body.resourceMult && body.resourceMult !== 1 && kind !== "tournament" ? { resourceMult: body.resourceMult } : {}),
           kind,
           ...(kind === "tournament" ? { weekly: true } : {}),
           ...(inviteCode ? { inviteCode } : {}),
@@ -295,7 +298,7 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
     if (!p) throw httpError(403, "not your match");
 
     await db.transaction(async (tx) => {
-      const row = await settleAndLockRegion(tx, matchId, regionId, matchNow(m), m.speed);
+      const row = await settleAndLockRegion(tx, matchId, regionId, matchNow(m), m.speed, resourceMultOf(m));
       if (row.ownerPlayerId !== p.id) throw httpError(403, "not your region");
       await tx
         .update(matchRegions)

@@ -5,7 +5,7 @@ import { balance, effectsOf, emptySpecial, storageCaps, regionById, resolveComba
 import { matchDayAt } from "./clock.js";
 import { armies, battles, jobs, matchRegions, players, regionSightings, playerTechs, tradeRoutes, events } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
-import { settleAndLockRegion, type MatchRegionRow, type Tx, setCapital, ownerTechEffects, waySetsFor, stockOf } from "./regions.js";
+import { settleAndLockRegion, type MatchRegionRow, type Tx, setCapital, ownerTechEffects, waySetsFor, stockOf, resourceMultOf } from "./regions.js";
 import { notify, type JobRow, type MatchRow } from "../worker/jobs.js";
 import { areAllied, alliesOf } from "./alliances.js";
 import { receiveMaterials } from "./commands.js";
@@ -23,7 +23,7 @@ async function lockRegion(tx: Tx, m: MatchRow, regionId: string, at: Date): Prom
     .insert(matchRegions)
     .values({ matchId: m.id, regionId, assignment: { ...balance.start.assignment }, settledAt: at })
     .onConflictDoNothing();
-  return settleAndLockRegion(tx, m.id, regionId, at, m.speed);
+  return settleAndLockRegion(tx, m.id, regionId, at, m.speed, resourceMultOf(m));
 }
 
 function sumUnits(u: UnitCounts): number {
@@ -182,11 +182,11 @@ export async function migrateCrowded(tx: Tx, m: MatchRow, now: Date, hours: numb
     if (dests.length === 0) continue;
     const totalRoom = dests.reduce((a, d) => a + d.room, 0);
     let left = movers;
-    const src = await settleAndLockRegion(tx, m.id, r.regionId, now, m.speed);
+    const src = await settleAndLockRegion(tx, m.id, r.regionId, now, m.speed, resourceMultOf(m));
     for (const d of dests) {
       const take = Math.min(Math.floor(d.room), Math.max(0, Math.round((movers * d.room) / totalRoom)), left, Math.max(0, Math.floor(src.popWorkers) - 1));
       if (take < 1) continue;
-      const dst = await settleAndLockRegion(tx, m.id, d.row.regionId, now, m.speed);
+      const dst = await settleAndLockRegion(tx, m.id, d.row.regionId, now, m.speed, resourceMultOf(m));
       await tx.update(matchRegions).set({ popWorkers: dst.popWorkers + take }).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, d.row.regionId)));
       src.popWorkers -= take;
       d.row.popWorkers += take;
@@ -214,7 +214,7 @@ export async function sweepEvacuated(tx: Tx, m: MatchRow, now: Date): Promise<vo
     const p = byOwner.get(r.ownerPlayerId!);
     const capital = p?.capitalRegionId;
     if (!p || !capital || capital === r.regionId) continue;
-    const row = await settleAndLockRegion(tx, m.id, r.regionId, now, m.speed);
+    const row = await settleAndLockRegion(tx, m.id, r.regionId, now, m.speed, resourceMultOf(m));
     const units: UnitCounts = {};
     for (const [id, n] of Object.entries(row.units)) if (n > 0) units[id] = n;
     const people = Math.floor(row.popWorkers + row.popOccupiers + 0.000001);
@@ -264,7 +264,7 @@ export async function sweepEvacuated(tx: Tx, m: MatchRow, now: Date): Promise<vo
       await tx.delete(tradeRoutes).where(and(eq(tradeRoutes.matchId, m.id), eq(tradeRoutes.fromRegionId, r.regionId)));
     } else {
       // Keep a stock-up route alive for whatever is still in store.
-      const remaining = stockOf(await settleAndLockRegion(tx, m.id, r.regionId, now, m.speed));
+      const remaining = stockOf(await settleAndLockRegion(tx, m.id, r.regionId, now, m.speed, resourceMultOf(m)));
       const target: Record<string, number> = {};
       for (const [k, v] of Object.entries(remaining)) if (v >= 1) target[k] = Math.floor(v);
       const [existing] = await tx
@@ -296,7 +296,7 @@ async function gatherCaravans(tx: Tx, m: MatchRow, playerId: string, targetRegio
     if (r.regionId === targetRegionId || r.frozenAt || haulerCount(r.units) <= 0) continue;
     const route = findRoute(r.regionId, targetRegionId, techs.has(balance.travel.seaTech), roads, rails, harbors);
     if (!route) continue;
-    const row = await settleAndLockRegion(tx, m.id, r.regionId, at, m.speed);
+    const row = await settleAndLockRegion(tx, m.id, r.regionId, at, m.speed, resourceMultOf(m));
     const going: UnitCounts = {};
     for (const id of HAULER_IDS) if ((row.units[id] ?? 0) > 0 && !unitById.get(id)?.naval) going[id] = row.units[id]!;
     const have = sumUnits(going);
