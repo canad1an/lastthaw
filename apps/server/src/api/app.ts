@@ -37,6 +37,7 @@ import { publicRoutes } from "../matches/publicApi.js";
 import { matchPageRoutes } from "../matches/pageHtml.js";
 import { tradeRouteRoutes } from "../matches/tradeApi.js";
 import { registerWebsocket } from "./ws.js";
+import { clientErrorRoutes } from "./clientErrors.js";
 
 /** 0.<commits on main>, baked into the image at build time; "0.dev" when run from source. */
 export const VERSION = process.env.APP_VERSION ?? "0.dev";
@@ -55,8 +56,10 @@ export async function buildApp(deps: AppDeps = {}) {
 
   const app = Fastify({ loggerInstance: logger, trustProxy: true });
 
-  app.setErrorHandler((err: unknown, _req, reply) => {
+  app.setErrorHandler((err: unknown, req, reply) => {
     if (err instanceof ZodError) {
+      // The site's own pages never send a body the server refuses, so this is a UI bug (or a hand-made request); the nightly run reads these.
+      app.log.warn({ invalidRequest: true, method: req.method, url: req.url.split("?")[0], issues: err.issues.map((i) => `${i.path.join(".")}: ${i.message}`) }, "invalid request body");
       return reply.code(400).send({ error: "invalid request", issues: err.issues });
     }
     const e = err as { statusCode?: number; message?: string };
@@ -113,6 +116,7 @@ export async function buildApp(deps: AppDeps = {}) {
     devTools: cfg.DEV_TOOLS,
   }));
 
+  await app.register(clientErrorRoutes);
   await app.register(authRoutes, { db, redis, publisher });
   await app.register(matchRoutes, { db, publisher });
   await app.register(jobRoutes, { db, publisher });

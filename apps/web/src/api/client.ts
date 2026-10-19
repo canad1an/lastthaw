@@ -1,4 +1,5 @@
 import type { z } from "zod";
+import { reportClientError } from "../errorReport.js";
 import { alliancesResponse, chatResponse, marketResponse, matchStateView, matchSummary, userView, type ChatMessageView, type MarketOrderView, type TradeResource } from "@lastthaw/shared";
 
 export class ApiError extends Error {
@@ -35,12 +36,26 @@ async function request<T>(method: string, url: string, body?: unknown, schema?: 
   }
   const res = await fetch(url, init);
   const text = await res.text();
-  const json = text ? (JSON.parse(text) as unknown) : null;
+  let json: unknown = null;
+  try {
+    json = text ? (JSON.parse(text) as unknown) : null;
+  } catch (err) {
+    reportClientError("schema", err, { request: `${method} ${url}`, status: res.status });
+    throw new ApiError(res.status, "the server's answer could not be read");
+  }
   if (!res.ok) {
     const msg = (json as { error?: string } | null)?.error ?? `request failed (${res.status})`;
+    // A 5xx or a body the server refused as invalid is a bug on one side or the other; a 4xx from the player doing the wrong thing is not.
+    if (res.status >= 500 || (res.status === 400 && msg === "invalid request")) reportClientError("api", new Error(msg), { request: `${method} ${url}`, status: res.status });
     throw new ApiError(res.status, msg);
   }
-  return schema ? schema.parse(json) : (json as T);
+  if (!schema) return json as T;
+  const parsed = schema.safeParse(json);
+  if (!parsed.success) {
+    reportClientError("schema", new Error(parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ").slice(0, 600)), { request: `${method} ${url}`, status: res.status });
+    throw parsed.error;
+  }
+  return parsed.data;
 }
 
 export const api = {

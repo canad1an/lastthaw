@@ -75,6 +75,23 @@ describe("api routes", () => {
     expect(res.json()).toMatchObject({ ok: true, devTools: false });
   });
 
+  it("the browser can report an error, which lands in the log; a malformed report is refused", async () => {
+    const lines: string[] = [];
+    const orig = app.log.error.bind(app.log);
+    app.log.error = ((obj: unknown, msg?: string) => {
+      lines.push(JSON.stringify({ obj, msg }));
+      return orig(obj as never, msg as never);
+    }) as typeof app.log.error;
+    try {
+      const res = await app.inject({ method: "POST", url: "/api/client-errors", payload: { kind: "render", message: "Cannot read properties of undefined (reading 'name')", stack: "TypeError: ...", url: "https://lastthaw.com/match/x", version: "1.03" } });
+      expect(res.statusCode).toBe(204);
+      expect(lines.some((l) => l.includes("client error: Cannot read properties") && l.includes('"clientError":true') && l.includes('"kind":"render"'))).toBe(true);
+      expect((await app.inject({ method: "POST", url: "/api/client-errors", payload: { kind: "nope", message: "" } })).statusCode).toBe(400);
+    } finally {
+      app.log.error = orig as typeof app.log.error;
+    }
+  });
+
   it("register validates, refuses duplicates, and the session cookie works", async () => {
     expect((await A.call("POST", "/api/auth/register", { ...admin, password: "short" })).statusCode).toBe(400);
     expect((await A.call("POST", "/api/auth/register", { ...admin, email: "not-an-email" })).statusCode).toBe(400);

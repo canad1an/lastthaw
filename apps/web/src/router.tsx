@@ -1,4 +1,6 @@
-import { createRootRoute, createRoute, createRouter, Outlet } from "@tanstack/react-router";
+import { createRootRoute, createRoute, createRouter, Outlet, type ErrorComponentProps } from "@tanstack/react-router";
+import { useEffect } from "react";
+import { reportClientError } from "./errorReport.js";
 import { TopBar } from "./components/TopBar.js";
 import { ForgotPage, LoginPage, RegisterPage, ResetPage, VerifyPage } from "./routes/auth.js";
 import { LobbyPage } from "./routes/lobby.js";
@@ -49,7 +51,26 @@ const routes = [
   createRoute({ getParentRoute: () => rootRoute, path: "/admin", component: AdminPage }),
 ];
 
-export const router = createRouter({ routeTree: rootRoute.addChildren(routes) });
+/** A page that crashed while rendering: say so, report it, and offer the way out. */
+function CrashedPage({ error, reset }: ErrorComponentProps) {
+  useEffect(() => reportClientError("render", error), [error]);
+  return (
+    <main className="mx-auto max-w-lg px-4 py-16 text-center">
+      <h1 className="display text-2xl font-semibold text-white">Something went wrong on this page</h1>
+      <p className="mt-3 text-slate-300">The fault has been reported and will be looked at. Your game is safe on the server.</p>
+      <div className="mt-6 flex justify-center gap-3">
+        <button className="btn-ember rounded-md px-4 py-2 text-sm font-semibold" onClick={() => reset()}>
+          Try again
+        </button>
+        <a href="/" className="btn-ice rounded-md px-4 py-2 text-sm font-semibold">
+          Home
+        </a>
+      </div>
+    </main>
+  );
+}
+
+export const router = createRouter({ routeTree: rootRoute.addChildren(routes), defaultErrorComponent: CrashedPage });
 
 declare module "@tanstack/react-router" {
   interface Register {

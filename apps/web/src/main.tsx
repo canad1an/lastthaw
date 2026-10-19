@@ -3,6 +3,9 @@ import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import { router } from "./router.js";
+import { installErrorReporting } from "./errorReport.js";
+
+installErrorReporting();
 
 // Matomo: a page view per route change (the first view is sent from index.html).
 router.subscribe("onResolved", ({ toLocation, fromLocation }) => {

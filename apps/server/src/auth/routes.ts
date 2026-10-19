@@ -2,6 +2,7 @@ import { randomInt } from "node:crypto";
 import { recordLogin } from "../stats/userStats.js";
 import type { FastifyInstance } from "fastify";
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
+import { maskEmail } from "../logger.js";
 import { changePasswordBody, forgotBody, loginBody, registerBody, resetBody, updateProfileBody, verifyBody, type UserView } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { config } from "../config.js";
@@ -69,9 +70,15 @@ export async function authRoutes(app: FastifyInstance, opts: { db: Db; redis: Re
     const body = registerBody.parse(req.body);
     const email = body.email.trim().toLowerCase();
     const existing = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
-    if (existing.length) return reply.code(409).send({ error: "an account with that email already exists" });
+    if (existing.length) {
+      app.log.warn({ auth: "register", reason: "email taken", email: maskEmail(email) }, "sign-up refused");
+      return reply.code(409).send({ error: "an account with that email already exists" });
+    }
     const nameTaken = await db.select({ id: users.id }).from(users).where(sql`lower(${users.displayName}) = ${body.displayName.toLowerCase()}`).limit(1);
-    if (nameTaken.length) return reply.code(409).send({ error: "that tribe name is taken; pick another" });
+    if (nameTaken.length) {
+      app.log.warn({ auth: "register", reason: "name taken", email: maskEmail(email) }, "sign-up refused");
+      return reply.code(409).send({ error: "that tribe name is taken; pick another" });
+    }
 
     const [u] = await db
       .insert(users)
@@ -99,6 +106,7 @@ export async function authRoutes(app: FastifyInstance, opts: { db: Db; redis: Re
     const ok = u ? await verifyPassword(u.passwordHash, body.password) : await verifyPassword(await DUMMY_HASH_PROMISE, body.password);
     if (!u || !ok) {
       await redis.multi().incr(failKey).expire(failKey, 900).exec();
+      app.log.warn({ auth: "login", reason: u ? "wrong password" : "no such account", email: maskEmail(email), fails: fails + 1 }, "login refused");
       return reply.code(401).send({ error: "wrong email or password" });
     }
     if (u.suspendedAt) return reply.code(403).send({ error: "this account is suspended" });
@@ -131,7 +139,10 @@ export async function authRoutes(app: FastifyInstance, opts: { db: Db; redis: Re
       .from(emailTokens)
       .where(and(eq(emailTokens.tokenHash, hash), eq(emailTokens.kind, "verify"), isNull(emailTokens.usedAt), gt(emailTokens.expiresAt, now)))
       .limit(1);
-    if (!row) return reply.code(400).send({ error: code ? "that code is wrong or has expired; ask for a new one" : "that link is invalid or expired" });
+    if (!row) {
+      app.log.warn({ auth: "verify", reason: code ? "bad code" : "bad link", userId: req.user?.id ?? null }, "verification refused");
+      return reply.code(400).send({ error: code ? "that code is wrong or has expired; ask for a new one" : "that link is invalid or expired" });
+    }
     await db.transaction(async (tx) => {
       await tx.update(emailTokens).set({ usedAt: now }).where(eq(emailTokens.id, row.id));
       await tx.update(users).set({ emailVerifiedAt: now }).where(eq(users.id, row.userId));
