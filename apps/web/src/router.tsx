@@ -13,7 +13,6 @@ import { AdminPage } from "./routes/admin.js";
 import { HomePage } from "./routes/home.js";
 import { AboutPage } from "./routes/about.js";
 import { HowToPlayPage } from "./routes/howToPlay.js";
-import { HowToPlayAllenPage } from "./routes/howToPlayAllen.js";
 import { HallOfFamePage } from "./routes/hallOfFame.js";
 
 const rootRoute = createRootRoute({
@@ -37,8 +36,6 @@ const routes = [
   createRoute({ getParentRoute: () => rootRoute, path: "/matches", component: LobbyPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/about", component: AboutPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/how-to-play", component: HowToPlayPage }),
-  // Temporary and linked from nowhere: a joke for Allen.
-  createRoute({ getParentRoute: () => rootRoute, path: "/how-to-play-allen", component: HowToPlayAllenPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/hall-of-fame", component: HallOfFamePage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/login", component: LoginPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/register", component: RegisterPage }),
