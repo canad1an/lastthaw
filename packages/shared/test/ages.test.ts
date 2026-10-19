@@ -117,7 +117,8 @@ describe("age data", () => {
     const two = effectsOf({ huts: 2 });
     expect(two.capacity - none.capacity).toBeCloseTo(2 * (buildingById.get("huts")!.effect.capacity ?? 0));
     expect(wallOf({ huts: 1 })).toBeNull();
-    const walls = BUILDINGS.filter((b) => b.category === "defense").map((b) => b.id);
+    // Walls are the defence buildings that add defence; a watchtower only sees, so it is not one.
+    const walls = BUILDINGS.filter((b) => b.category === "defense" && (b.effect.defense ?? 0) > 0).map((b) => b.id);
     expect(walls.length).toBeGreaterThan(0);
     expect(wallOf({ [walls[0]!]: 1 })).toBe(walls[0]);
     const resist = TECHS.filter((t) => (t.effect?.plagueResist ?? 0) > 0);

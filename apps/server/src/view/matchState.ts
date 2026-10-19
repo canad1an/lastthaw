@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, isNull, or, sql, gt } from "drizzle-orm";
 import { parseProfile } from "../sim/ai.js";
-import { emptySpecial, regionById, type ArmyView, type IncomingView, type JobView, type MatchStateView, type OwnedRegionView, type SightedRegionView, techEffectsOf, allRegions, wallOf, balance, freezeDayForLatitude } from "@lastthaw/shared";
+import { emptySpecial, regionById, type ArmyView, type IncomingView, type JobView, type MatchStateView, type OwnedRegionView, type SightedRegionView, techEffectsOf, allRegions, wallOf, balance, freezeDayForLatitude, legIndex } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { allianceMembers, alliances, armies, jobs, matchRegions, matches, playerTechs, players, regionSightings, tradeRoutes, refugeeOffers, pacts, mercenaryOffers, dailyObjectives, bounties, regionNotes } from "../db/schema.js";
 import { OBJECTIVES } from "../sim/objectives.js";
@@ -272,6 +272,16 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
   const stormSet = new Set(stormRows.map((r) => r.regionId));
   for (const s of sighted) s.storm = stormSet.has(s.regionId);
 
+  // Watchtowers: once an attacking force is on its last leg, coming out of a region next to the target, a tower on the
+  // target or on any region of mine beside it sees exactly what is coming.
+  const towers = new Set(ownedRows.filter((r) => (r.buildings.watchtower ?? 0) >= 1).map((r) => r.regionId));
+  const seenBy = (targetId: string, a: { path: string[]; departsAt: Date; arrivesAt: Date }) => {
+    if (towers.size === 0) return false;
+    const neighbours = regionById(targetId)?.neighbors ?? [];
+    if (!towers.has(targetId) && !neighbours.some((n) => towers.has(n))) return false;
+    const path = a.path.length >= 2 ? a.path : [targetId, targetId];
+    return legIndex(path.length, a.departsAt.getTime(), a.arrivesAt.getTime(), now.getTime()) >= path.length - 2;
+  };
   const incoming: IncomingView[] = hostile
     .filter((a) => a.playerId !== me.id)
     .map((a) => ({
@@ -281,8 +291,9 @@ export async function buildMatchState(db: Db, matchId: string, userId: string): 
       fromPlayerId: a.playerId,
       fromPlayerName: nameOf.get(a.playerId) ?? "Unknown",
       arrivesAt: a.arrivesAt.toISOString(),
-      // A band, not the exact count: scouts and walls are what tell you more.
+      // A band, not the exact count: scouts, walls and watchtowers are what tell you more.
       size: roundBand(Object.values(a.units).reduce((x, y) => x + y, 0)),
+      ...(seenBy(a.targetRegionId, a) ? { units: a.units } : {}),
     }));
 
   return {

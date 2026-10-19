@@ -1,3 +1,4 @@
+import { legIndex } from "../src/rules/travel.js";
 import { describe, expect, it } from "vitest";
 import { balance } from "../src/config/balance.js";
 import { buildingById, techById, unitById } from "../src/config/ages.js";
@@ -183,5 +184,16 @@ describe("rng and ice", () => {
       expect(iceLatitudeOnDay(day - 1)).toBeGreaterThan(lat);
     }
     expect(balance.match.maxStartLatitude).toBeLessThan(iceLatitudeOnDay(1));
+  });
+});
+
+describe("legs of a march", () => {
+  it("tells which leg an army is on, and never past the last", () => {
+    expect(legIndex(4, 0, 300, 0)).toBe(0);
+    expect(legIndex(4, 0, 300, 100)).toBe(1);
+    expect(legIndex(4, 0, 300, 210)).toBe(2);
+    expect(legIndex(4, 0, 300, 999)).toBe(2);
+    expect(legIndex(2, 0, 300, 150)).toBe(0);
+    expect(legIndex(1, 0, 0, 5)).toBe(0);
   });
 });

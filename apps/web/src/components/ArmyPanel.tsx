@@ -177,7 +177,17 @@ export function IncomingWarnings({ state, clockOffsetMs, onSelect }: { state: Ma
         {list.map((i) => (
           <li key={i.id} className="flex items-center justify-between gap-2">
             <button className="text-left text-rose-100 hover:underline" onClick={() => onSelect(i.targetRegionId)}>
-              {i.fromPlayerName} {i.mission === "raid" ? "raiding" : "attacking"} {regionById(i.targetRegionId)?.name} (~{i.size} units)
+              {i.fromPlayerName} {i.mission === "raid" ? "raiding" : "attacking"} {regionById(i.targetRegionId)?.name}{" "}
+              {i.units ? (
+                <span className="text-rose-200" title="Seen from a watchtower">
+                  ({Object.entries(i.units)
+                    .filter(([, n]) => n > 0)
+                    .map(([id, n]) => `${n} ${unitById.get(id)?.name ?? id}`)
+                    .join(", ")})
+                </span>
+              ) : (
+                <span>(~{i.size} units)</span>
+              )}
             </button>
             <span className="tabular-nums text-rose-200">
               <Countdown to={i.arrivesAt} clockOffsetMs={clockOffsetMs} prefix="in " />

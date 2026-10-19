@@ -16,6 +16,7 @@ export interface RegionEffects {
   trainSpeed: number;
   protect: number;
   harbor: boolean;
+  watchtower: boolean;
 }
 
 export function effectsOf(buildings: Record<string, number>): RegionEffects {
@@ -31,6 +32,7 @@ export function effectsOf(buildings: Record<string, number>): RegionEffects {
     trainSpeed: 0,
     protect: 0,
     harbor: false,
+    watchtower: false,
   };
   for (const [id, level] of Object.entries(buildings)) {
     const def = buildingById.get(id);
@@ -47,6 +49,7 @@ export function effectsOf(buildings: Record<string, number>): RegionEffects {
     if (f.trainSpeed) e.trainSpeed += f.trainSpeed * level;
     if (f.protect) e.protect += f.protect * level;
     if (f.harbor) e.harbor = true;
+    if (f.watchtower) e.watchtower = true;
   }
   return e;
 }

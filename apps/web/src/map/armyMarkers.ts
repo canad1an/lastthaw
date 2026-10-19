@@ -102,7 +102,15 @@ export function armyMarkers(armies: ArmyView[], incoming: IncomingView[], nowMs:
       hostile: true,
       mission: i.mission,
       title: `${i.fromPlayerName} ${i.mission === "raid" ? "raiding" : "attacking"} ${r.name}`,
-      lines: [`about ${i.size} units`, `arrives in ${formatCountdown((Date.parse(i.arrivesAt) - nowMs) / 1000)}`],
+      lines: [
+        i.units
+          ? `seen from a watchtower: ${Object.entries(i.units)
+              .filter(([, n]) => n > 0)
+              .map(([id, n]) => `${n} ${unitById.get(id)?.name ?? id}`)
+              .join(", ")}`
+          : `about ${i.size} units`,
+        `arrives in ${formatCountdown((Date.parse(i.arrivesAt) - nowMs) / 1000)}`,
+      ],
       route: [],
       progress: 1,
       routeNames: [],

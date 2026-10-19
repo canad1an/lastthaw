@@ -137,3 +137,14 @@ export function laneName(lane: string): string {
   const [a, b] = lane.split("|");
   return `${regionById(a ?? "")?.name ?? a} – ${regionById(b ?? "")?.name ?? b}`;
 }
+
+/**
+ * Which leg of its path an army is on at `nowMs`, 0 for the first: legs are taken as equal in time, which is
+ * close enough to tell "still far off" from "at the border".
+ */
+export function legIndex(pathLength: number, departsMs: number, arrivesMs: number, nowMs: number): number {
+  const legs = Math.max(1, pathLength - 1);
+  const span = Math.max(1, arrivesMs - departsMs);
+  const progress = Math.min(1, Math.max(0, (nowMs - departsMs) / span));
+  return Math.min(legs - 1, Math.floor(progress * legs));
+}

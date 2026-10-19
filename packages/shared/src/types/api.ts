@@ -251,8 +251,10 @@ export const incomingView = z.object({
   fromPlayerId: z.string(),
   fromPlayerName: z.string(),
   arrivesAt: z.string(),
-  /** Rough size only; the exact composition stays hidden. */
+  /** Rough size only; the exact composition stays hidden unless a watchtower has seen it. */
   size: z.number(),
+  /** The exact force, once it has reached a region next to one of yours with a Watchtower. */
+  units: z.record(z.string(), z.number()).optional(),
 });
 export type IncomingView = z.infer<typeof incomingView>;
 
