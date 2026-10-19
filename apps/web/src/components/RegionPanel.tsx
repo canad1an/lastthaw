@@ -123,16 +123,21 @@ export function RegionBody({ matchId, state, regionId, clockOffsetMs, tab, onTab
 function ScoutHere({ matchId, state, regionId }: { matchId: string; state: MatchStateView; regionId: string }) {
   const qc = useQueryClient();
   const options = useMemo(() => {
-    const out: Array<{ from: string; unitId: string; km: number }> = [];
+    const out: Array<{ from: string; unitId: string; km: number; have: number }> = [];
     for (const r of state.owned) {
       if (r.frozen) continue;
-      if ((r.units[balance.scoutUnit] ?? 0) <= 0) continue;
-      out.push({ from: r.regionId, unitId: balance.scoutUnit, km: distanceKm(r.regionId, regionId) });
+      const have = r.units[balance.scoutUnit] ?? 0;
+      if (have <= 0) continue;
+      out.push({ from: r.regionId, unitId: balance.scoutUnit, km: distanceKm(r.regionId, regionId), have });
     }
     return out.sort((a, b) => a.km - b.km).slice(0, 3);
   }, [state.owned, regionId]);
+  // How many to send: a party is safer in a held region (the report arrives if any get through), at the cost of more scouts at risk.
+  const [count, setCount] = useState(1);
+  const most = Math.min(10, Math.max(1, ...options.map((o) => o.have)));
+  const n = Math.min(count, most);
   const send = useMutation({
-    mutationFn: (o: { from: string; unitId: string }) => api.sendArmy(matchId, o.from, { mission: "scout", targetRegionId: regionId, units: { [o.unitId]: 1 }, people: 0, cargo: {} }),
+    mutationFn: (o: { from: string; unitId: string; have: number }) => api.sendArmy(matchId, o.from, { mission: "scout", targetRegionId: regionId, units: { [o.unitId]: Math.min(n, o.have) }, people: 0, cargo: {} }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matchState(matchId) }),
   });
   const already = state.armies.some((a) => a.mission === "scout" && a.targetRegionId === regionId);
@@ -143,14 +148,32 @@ function ScoutHere({ matchId, state, regionId }: { matchId: string; state: Match
         <p className="text-sm text-emerald-300">A scout of yours is on the way.</p>
       ) : options.length > 0 ? (
         <div className="space-y-1">
-          {options.map((o) => (
-            <Button key={o.from} variant="ghost" className="w-full justify-between text-left" disabled={send.isPending} onClick={() => send.mutate(o)} title="One unit rides there, looks around and comes home; what it sees goes into your notes on the region">
-              <span>
-                Scout with a {unitById.get(o.unitId)?.name ?? o.unitId} from {regionById(o.from)?.name ?? o.from}
-              </span>
-              <span className="text-xs text-slate-400">{Math.round(o.km)} km</span>
-            </Button>
-          ))}
+          <div className="flex items-center gap-2 text-xs text-slate-400">
+            <span>Scouts to send</span>
+            <button type="button" className="h-7 w-7 rounded border border-slate-700 text-slate-200 hover:bg-slate-800 disabled:opacity-40" onClick={() => setCount((c) => Math.max(1, c - 1))} disabled={n <= 1} aria-label="fewer scouts">
+              −
+            </button>
+            <span className="w-5 text-center text-sm text-slate-100" data-scout-count>
+              {n}
+            </span>
+            <button type="button" className="h-7 w-7 rounded border border-slate-700 text-slate-200 hover:bg-slate-800 disabled:opacity-40" onClick={() => setCount((c) => Math.min(most, c + 1))} disabled={n >= most} aria-label="more scouts">
+              +
+            </button>
+            <span className="text-slate-500" title="In a held region each scout may be caught; the report arrives if any get through">{n === 1 ? "one may be caught where soldiers stand" : "the report arrives if any get through"}</span>
+          </div>
+          {options.map((o) => {
+            const k = Math.min(n, o.have);
+            return (
+              <Button key={o.from} variant="ghost" className="w-full justify-between text-left" disabled={send.isPending} onClick={() => send.mutate(o)} title="They ride there, look around and come home; what they see goes into your notes on the region">
+                <span>
+                  Scout with {k} {unitById.get(o.unitId)?.name ?? o.unitId}
+                  {k === 1 ? "" : "s"} from {regionById(o.from)?.name ?? o.from}
+                  {k < n ? <span className="text-slate-500"> (all it has)</span> : null}
+                </span>
+                <span className="text-xs text-slate-400">{Math.round(o.km)} km</span>
+              </Button>
+            );
+          })}
           {send.isSuccess && <p className="text-xs text-emerald-300">Sent.</p>}
           <ErrorText>{send.error?.message}</ErrorText>
         </div>
