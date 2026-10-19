@@ -1,0 +1,1 @@
+ALTER TABLE "trade_routes" ADD COLUMN "held" jsonb DEFAULT '{}'::jsonb NOT NULL;

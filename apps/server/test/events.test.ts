@@ -380,6 +380,11 @@ describe("world events", () => {
     const told = await db.select().from(messages).where(and(eq(messages.matchId, matchId), eq(messages.kind, "battle"), sql`${messages.payload}->>'eliminated' = ${me!.id}`));
     expect(told.length).toBeGreaterThan(0);
     expect(told.some((t) => t.playerId === me!.id)).toBe(false);
+    // The conqueror banks the capital milestone, worth its points on the leaderboard.
+    const [ms] = await db.select().from(matchMilestones).where(and(eq(matchMilestones.matchId, matchId), eq(matchMilestones.key, `capital_${me!.id}`)));
+    expect(ms?.playerId).toBe(ai!.id);
+    const { milestonePoints } = await import("../src/sim/endgame.js");
+    expect(milestonePoints(`capital_${me!.id}`)).toBe(balance.win.milestones.capital);
     // Without a conqueror (ice, rebellion), the realm goes neutral as before.
     await db.update(players).set({ eliminatedAt: null, capitalRegionId: n1! }).where(eq(players.id, me!.id));
     await db.update(matchRegions).set({ ownerPlayerId: me!.id, isCapital: true }).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, n1!)));

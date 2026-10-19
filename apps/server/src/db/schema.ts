@@ -366,6 +366,8 @@ export const tradeRoutes = pgTable(
     /** Set when the route carries materials for a waiting build job; removed with the job. */
     forJobId: uuid("for_job_id"),
     delivered: jsonb("delivered").$type<Record<string, number>>().notNull().default({}),
+    /** Materials routes: goods taken out of the origin's stores the moment the route was decided, waiting for the haulers. */
+    held: jsonb("held").$type<Record<string, number>>().notNull().default({}),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("trade_routes_due_idx").on(t.nextAt), index("trade_routes_from_idx").on(t.matchId, t.fromRegionId)],

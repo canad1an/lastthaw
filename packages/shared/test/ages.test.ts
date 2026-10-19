@@ -90,7 +90,7 @@ describe("age data", () => {
     expect(buildingById.get(balance.win.wonderBuilding)?.capitalOnly).toBe(true);
     expect(techById.has(balance.travel.seaTech)).toBe(true);
     for (const key of Object.keys(balance.win.milestones)) {
-      if (key === "age" || key === "wonder" || key === "daily") continue;
+      if (key === "age" || key === "wonder" || key === "daily" || key === "capital") continue;
       expect(buildingById.has(key) || unitById.has(key), `milestone ${key}`).toBe(true);
     }
     for (const id of Object.keys(balance.events.mercenaries.ironPerUnit)) expect(unitById.get(id)?.mercenary, `mercenary ${id}`).toBe(true);

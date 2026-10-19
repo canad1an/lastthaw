@@ -6,7 +6,7 @@ import { armies, matchRegions, matches, playerTechs, players, tradeRoutes } from
 import type { Publisher } from "../realtime/publish.js";
 import { matchNow } from "./clock.js";
 import { projectRegion, stockOf } from "./regions.js";
-import { sendArmy, type CommandContext } from "./commands.js";
+import { sendArmy, returnHeld, type CommandContext } from "./commands.js";
 import type { MatchRow } from "../worker/jobs.js";
 
 export type TradeRouteRow = typeof tradeRoutes.$inferSelect;
@@ -79,6 +79,10 @@ export async function dispatchRoute(db: Db, m: MatchRow, p: PlayerRow, route: Tr
         .where(and(eq(armies.matchId, m.id), eq(armies.playerId, p.id), eq(armies.targetRegionId, route.toRegionId), eq(armies.mission, "settle"), eq(armies.status, "outbound")))
         .limit(1);
       if (pendingSettle.length === 0) {
+        if (route.forJobId) {
+          await db.transaction((tx) => returnHeld(tx, m, route.toRegionId, [route.id]));
+          return "destination is no longer yours; the materials went back on the shelf";
+        }
         await db.delete(tradeRoutes).where(eq(tradeRoutes.id, route.id));
         return "colony was not founded; stock-up cancelled";
       }
@@ -111,6 +115,12 @@ export async function dispatchRoute(db: Db, m: MatchRow, p: PlayerRow, route: Tr
       const amt = Math.min(want, stock[res] ?? 0);
       if (amt >= 1) cargo[res] = Math.floor(amt);
     }
+  } else if (route.forJobId) {
+    // A materials route carries what was set aside for it, not what the region happens to hold.
+    for (const res of GOODS) {
+      const amt = Math.min(owed?.[res] ?? 0, route.held[res] ?? 0);
+      if (amt >= 1) cargo[res] = Math.floor(amt);
+    }
   } else {
     for (const res of GOODS) {
       const want = owed ? (owed[res] ?? 0) : (route.load[res] ?? 0);
@@ -119,7 +129,7 @@ export async function dispatchRoute(db: Db, m: MatchRow, p: PlayerRow, route: Tr
     }
   }
   let total = Object.values(cargo).reduce((a, b) => a + b, 0);
-  if (total < 1) return "nothing to send (stock empty)";
+  if (total < 1) return route.forJobId ? "nothing set aside to send" : "nothing to send (stock empty)";
   if (total > capacity) {
     const f = capacity / total;
     for (const k of Object.keys(cargo)) cargo[k] = Math.floor(cargo[k]! * f);
@@ -129,7 +139,12 @@ export async function dispatchRoute(db: Db, m: MatchRow, p: PlayerRow, route: Tr
   if (carryCapacity({ [kind]: caravans }, ctx.techs) < total) return "haulers cannot carry that much";
   const kindName = (unitById.get(kind)?.name ?? kind).toLowerCase();
 
-  await sendArmy(ctx, route.fromRegionId, { mission: "transport", targetRegionId: route.toRegionId, units: { [kind]: caravans }, people: 0, cargo });
+  await sendArmy(ctx, route.fromRegionId, { mission: "transport", targetRegionId: route.toRegionId, units: { [kind]: caravans }, people: 0, cargo, prepaid: !!route.forJobId });
+  if (route.forJobId) {
+    const held = { ...route.held };
+    for (const [k, v] of Object.entries(cargo)) held[k] = Math.max(0, (held[k] ?? 0) - v);
+    await db.update(tradeRoutes).set({ held }).where(eq(tradeRoutes.id, route.id));
+  }
   const desc = Object.entries(cargo)
     .map(([k, v]) => `${v} ${k}`)
     .join(", ");
@@ -152,10 +167,10 @@ async function contextFor(db: Db, m: MatchRow, p: PlayerRow): Promise<CommandCon
 }
 
 /**
- * No caravans at the route's origin: bring idle ones over from the nearest
- * other region of mine, first come first served: no caravan is reserved for
- * any route, so whichever route is due first gets the nearest idle ones.
- * Only one relief convoy is on the road to an origin at a time.
+ * No haulers at the route's origin: the whole fleet is one pool, and any hauler not needed where it stands is called over.
+ * Idle haulers (in a region with no route of its own) go first, nearest first; then the spare ones beyond what a
+ * region's own routes claim. Several regions may each send a convoy until enough are on the way; what is already
+ * marching here counts. Nothing is ever reserved: whichever route comes due first gets the nearest spare haulers.
  */
 async function fetchCaravans(db: Db, m: MatchRow, p: PlayerRow, fromRegionId: string, wanted: number, now: Date): Promise<string> {
   if (!balance.trade.fetchCaravans) return "no haulers at home (they may be on the road)";
@@ -163,33 +178,63 @@ async function fetchCaravans(db: Db, m: MatchRow, p: PlayerRow, fromRegionId: st
     .select({ id: armies.id, units: armies.units, origin: armies.originRegionId })
     .from(armies)
     .where(and(eq(armies.matchId, m.id), eq(armies.playerId, p.id), eq(armies.mission, "move"), eq(armies.status, "outbound"), eq(armies.targetRegionId, fromRegionId)));
-  const relief = coming.find((a) => haulerCount(a.units) > 0);
-  if (relief) return `no haulers at home; ${haulerCount(relief.units)} coming from ${regionNameOf(relief.origin)}`;
+  const inFlight = coming.reduce((a, x) => a + haulerCount(x.units), 0);
+  const firstComing = coming.find((a) => haulerCount(a.units) > 0);
+  if (inFlight >= wanted && firstComing) return `no haulers at home; ${inFlight} coming from ${regionNameOf(firstComing.origin)}`;
+  let need = wanted - inFlight;
+
   const mine = await db
     .select({ regionId: matchRegions.regionId, units: matchRegions.units, frozenAt: matchRegions.frozenAt })
     .from(matchRegions)
     .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.ownerPlayerId, p.id)));
-  // First come, first served: any hauler standing idle anywhere is fair game; the biggest kind goes first.
-  const spareOf = (r: { units: Record<string, number> }) => HAULER_IDS.filter((id) => !unitById.get(id)?.naval).reduce((a, id) => a + (r.units[id] ?? 0), 0);
+  // What each region's own routes claim: those haulers stay; anything beyond is spare, and a region with no route at all is idle.
+  const claims = await db
+    .select({ fromRegionId: tradeRoutes.fromRegionId, caravans: tradeRoutes.caravans })
+    .from(tradeRoutes)
+    .where(and(eq(tradeRoutes.matchId, m.id), eq(tradeRoutes.playerId, p.id), eq(tradeRoutes.enabled, true)));
+  const claimed = new Map<string, number>();
+  for (const c of claims) claimed.set(c.fromRegionId, (claimed.get(c.fromRegionId) ?? 0) + c.caravans);
+  const landHaulers = (r: { units: Record<string, number> }) => HAULER_IDS.filter((id) => !unitById.get(id)?.naval).reduce((a, id) => a + (r.units[id] ?? 0), 0);
+  const spareOf = (r: { regionId: string; units: Record<string, number> }) => Math.max(0, landHaulers(r) - (claimed.get(r.regionId) ?? 0));
   const candidates = mine
     .filter((r) => r.regionId !== fromRegionId && !r.frozenAt && spareOf(r) > 0)
-    .sort((a, b) => distanceKm(a.regionId, fromRegionId) - distanceKm(b.regionId, fromRegionId));
-  const source = candidates[0];
-  if (!source) return "no haulers at home, and none idle elsewhere";
-  const going: Record<string, number> = {};
-  let left = wanted;
-  for (const id of HAULER_IDS) {
-    if (unitById.get(id)?.naval) continue;
-    const take = Math.min(left, source.units[id] ?? 0);
-    if (take > 0) going[id] = take;
-    left -= take;
-    if (left <= 0) break;
-  }
-  const n = Object.values(going).reduce((a, b) => a + b, 0);
+    .sort((a, b) => {
+      const ia = claimed.has(a.regionId) ? 1 : 0;
+      const ib = claimed.has(b.regionId) ? 1 : 0;
+      return ia - ib || distanceKm(a.regionId, fromRegionId) - distanceKm(b.regionId, fromRegionId);
+    });
+  if (candidates.length === 0) return inFlight > 0 && firstComing ? `no haulers at home; ${inFlight} coming from ${regionNameOf(firstComing.origin)}` : "no haulers at home, and none spare anywhere: train more";
+
   const ctx = await contextFor(db, m, p);
-  const r = await sendArmy(ctx, source.regionId, { mission: "move", targetRegionId: fromRegionId, units: going, people: 0, cargo: {} });
-  const hours = ((r.army.arrivesAt.getTime() - now.getTime()) / 3_600_000) * m.speed;
-  return `no haulers at home; ${n} coming from ${regionNameOf(source.regionId)}, about ${hours < 1 ? `${Math.max(1, Math.round(hours * 60))} min` : `${hours.toFixed(1)} h`}`;
+  const sent: string[] = [];
+  let soonest = Infinity;
+  for (const source of candidates) {
+    if (need <= 0) break;
+    const going: Record<string, number> = {};
+    let left = Math.min(need, spareOf(source));
+    // The biggest kind goes first.
+    for (const id of HAULER_IDS) {
+      if (unitById.get(id)?.naval) continue;
+      const take = Math.min(left, source.units[id] ?? 0);
+      if (take > 0) going[id] = take;
+      left -= take;
+      if (left <= 0) break;
+    }
+    const n = Object.values(going).reduce((a, b) => a + b, 0);
+    if (n <= 0) continue;
+    try {
+      const r = await sendArmy(ctx, source.regionId, { mission: "move", targetRegionId: fromRegionId, units: going, people: 0, cargo: {} });
+      const hours = ((r.army.arrivesAt.getTime() - now.getTime()) / 3_600_000) * m.speed;
+      soonest = Math.min(soonest, hours);
+      sent.push(`${n} from ${regionNameOf(source.regionId)}`);
+      need -= n;
+    } catch {
+      // No route from there (sea without ships, say): try the next.
+    }
+  }
+  if (sent.length === 0) return inFlight > 0 && firstComing ? `no haulers at home; ${inFlight} coming from ${regionNameOf(firstComing.origin)}` : "no haulers at home, and none spare can reach here";
+  const when = soonest < 1 ? `${Math.max(1, Math.round(soonest * 60))} min` : `${soonest.toFixed(1)} h`;
+  return `no haulers at home; ${sent.join(", ")} coming, first in about ${when}`;
 }
 
 function regionNameOf(id: string): string {

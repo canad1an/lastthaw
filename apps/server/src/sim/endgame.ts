@@ -15,9 +15,9 @@ export function scoreOf(regions: number, population: number, age: number): numbe
   return Math.round(regions * w.territory + population * w.population + age * w.age);
 }
 
-/** Points for a milestone key (age_<n>, harbor, train, temple, wonder). */
+/** Points for a milestone key (age_<n>, day_<n>, capital_<player>, harbor, train, temple, wonder). */
 export function milestonePoints(key: string): number {
-  const base = key.startsWith("age_") ? "age" : key.startsWith("day_") ? "daily" : key;
+  const base = key.startsWith("age_") ? "age" : key.startsWith("day_") ? "daily" : key.startsWith("capital_") ? "capital" : key;
   return balance.win.milestones[base] ?? 0;
 }
 
@@ -25,6 +25,7 @@ export function milestonePoints(key: string): number {
 export function milestoneLabel(key: string): string {
   if (key.startsWith("age_")) return `First to the ${AGES[Number(key.slice(4)) as AgeIndex] ?? "next"} Age`;
   if (key.startsWith("day_")) return `Day ${key.slice(4)} objective`;
+  if (key.startsWith("capital_")) return "Took a capital";
   if (key === "wonder") return `First to begin the ${buildingById.get(balance.win.wonderBuilding)?.name ?? "wonder"}`;
   return `First ${buildingById.get(key)?.name ?? key[0]!.toUpperCase() + key.slice(1)}`;
 }

@@ -306,6 +306,8 @@ export const tradeRouteView = z.object({
   /** Stock-up routes deliver `target` in total, then remove themselves. */
   target: z.record(z.string(), z.number()).nullable().default(null),
   delivered: z.record(z.string(), z.number()).default({}),
+  /** Materials routes: goods set aside at the origin, waiting for the haulers. */
+  held: z.record(z.string(), z.number()).default({}),
 });
 export type TradeRouteView = z.infer<typeof tradeRouteView>;
 

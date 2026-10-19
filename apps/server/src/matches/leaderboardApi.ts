@@ -70,7 +70,7 @@ export async function leaderboardRoutes(app: FastifyInstance, opts: { db: Db }) 
     const nameOf = new Map(ps.map((p) => [p.id, p.name]));
     const milestones = (await db.select().from(matchMilestones).where(eq(matchMilestones.matchId, matchId)).orderBy(matchMilestones.at)).map((x) => ({
       key: x.key,
-      label: milestoneLabel(x.key),
+      label: x.key.startsWith("capital_") ? `Took ${nameOf.get(x.key.slice(8)) ?? "a tribe"}'s capital` : milestoneLabel(x.key),
       playerId: x.playerId,
       playerName: nameOf.get(x.playerId) ?? "?",
       points: milestonePoints(x.key),
@@ -150,7 +150,7 @@ export async function leaderboardRoutes(app: FastifyInstance, opts: { db: Db }) 
     const nameOf = new Map(ps.map((p) => [p.id, p.name]));
     const milestones = (await db.select().from(matchMilestones).where(eq(matchMilestones.matchId, matchId)).orderBy(matchMilestones.at)).map((x) => ({
       key: x.key,
-      label: milestoneLabel(x.key),
+      label: x.key.startsWith("capital_") ? `Took ${nameOf.get(x.key.slice(8)) ?? "a tribe"}'s capital` : milestoneLabel(x.key),
       playerId: x.playerId,
       playerName: nameOf.get(x.playerId) ?? "?",
       points: milestonePoints(x.key),

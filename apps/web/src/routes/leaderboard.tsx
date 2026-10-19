@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { balance } from "@lastthaw/shared";
 import { usePageMeta, useSlugAddress } from "../seo.js";
 import { Link, useParams } from "@tanstack/react-router";
 import { Card, fmt } from "../components/ui.js";
@@ -71,11 +72,30 @@ export function LeaderboardTable({ matchId, compact = false }: { matchId: string
             )}
           </>
         )}
-        {milestones.length > 0 && (
+        <p className="mb-1 mt-2 font-semibold text-slate-200">Capital takeovers</p>
+        {milestones.filter((ms) => ms.key.startsWith("capital_")).length === 0 ? (
+          <p className="text-slate-400">
+            None yet. Taking another tribe's capital is worth <span className="text-emerald-300">+{balance.win.milestones.capital}</span>, every time.
+          </p>
+        ) : (
+          <ul className="space-y-0.5">
+            {milestones
+              .filter((ms) => ms.key.startsWith("capital_"))
+              .map((ms) => (
+                <li key={ms.key} className="flex justify-between gap-2">
+                  <span>{ms.label}</span>
+                  <span className="text-slate-400">
+                    {ms.playerName} <span className="text-emerald-300">+{ms.points}</span>
+                  </span>
+                </li>
+              ))}
+          </ul>
+        )}
+        {milestones.some((ms) => !ms.key.startsWith("capital_")) && (
           <>
             <p className="mb-1 mt-2 font-semibold text-slate-200">Firsts</p>
             <ul className="space-y-0.5">
-              {milestones.map((ms) => (
+              {milestones.filter((ms) => !ms.key.startsWith("capital_")).map((ms) => (
                 <li key={ms.key} className="flex justify-between gap-2">
                   <span>{ms.label}</span>
                   <span className="text-slate-400">

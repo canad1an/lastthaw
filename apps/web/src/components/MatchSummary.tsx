@@ -228,11 +228,26 @@ function ReportBody({ matchId, s, colorOf, onClose }: { matchId: string; s: Summ
                 </div>
               </section>
 
-              {s.milestones.length > 0 && (
+              {s.milestones.some((ms) => ms.key.startsWith("capital_")) && (
+                <section>
+                  <h2 className="mb-2 text-sm font-semibold text-slate-200">Capital takeovers</h2>
+                  <ul className="grid gap-1 text-xs sm:grid-cols-2">
+                    {s.milestones
+                      .filter((ms) => ms.key.startsWith("capital_"))
+                      .map((ms) => (
+                        <li key={ms.key} className="flex justify-between gap-2 rounded border border-slate-800 px-2 py-1">
+                          <span className="text-slate-300">{ms.label}</span>
+                          <span className={ms.playerId === s.me.playerId ? "text-sky-300" : "text-slate-400"}>{ms.playerName}</span>
+                        </li>
+                      ))}
+                  </ul>
+                </section>
+              )}
+              {s.milestones.some((ms) => !ms.key.startsWith("capital_")) && (
                 <section>
                   <h2 className="mb-2 text-sm font-semibold text-slate-200">Firsts</h2>
                   <ul className="grid gap-1 text-xs sm:grid-cols-2">
-                    {s.milestones.map((ms) => (
+                    {s.milestones.filter((ms) => !ms.key.startsWith("capital_")).map((ms) => (
                       <li key={ms.key} className="flex justify-between gap-2 rounded border border-slate-800 px-2 py-1">
                         <span className="text-slate-300">{ms.label}</span>
                         <span className={ms.playerId === s.me.playerId ? "text-sky-300" : "text-slate-400"}>{ms.playerName}</span>

@@ -84,16 +84,28 @@ export async function jobRoutes(app: FastifyInstance, opts: { db: Db; publisher:
         const owed: Record<string, number> = { ...(job.waitingFor as Record<string, number>) };
         for (const r of routes) {
           const target = { ...(r.target ?? {}) };
+          const held = { ...r.held };
+          const back: Record<string, number> = {};
           for (const k of Object.keys(owed)) {
             if (!target[k] || owed[k]! <= 0) continue;
             const cut = Math.min(target[k]!, owed[k]!);
             target[k] = target[k]! - cut;
             owed[k] = owed[k]! - cut;
             if (target[k]! <= 0) delete target[k];
+            // What was set aside for this job goes back on the shelf at the source.
+            const give = Math.min(cut, held[k] ?? 0);
+            if (give > 0) {
+              held[k] = (held[k] ?? 0) - give;
+              back[k] = give;
+            }
+          }
+          if (Object.keys(back).length) {
+            const src = await settleAndLockRegion(tx, matchId, r.fromRegionId, now, m.speed, resourceMultOf(m));
+            if (src.ownerPlayerId === p.id) await applyCost(tx, src, back as Cost, -1);
           }
           const stillOwed = Object.entries(target).some(([k, v]) => v > (r.delivered[k] ?? 0) + 0.5);
           if (!stillOwed) await tx.delete(tradeRoutes).where(eq(tradeRoutes.id, r.id));
-          else await tx.update(tradeRoutes).set({ target, load: target }).where(eq(tradeRoutes.id, r.id));
+          else await tx.update(tradeRoutes).set({ target, load: target, held }).where(eq(tradeRoutes.id, r.id));
         }
       }
       const factor = started ? balance.timers.cancelRefundStarted : 1;

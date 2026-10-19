@@ -5,7 +5,8 @@ import { Publisher } from "../src/realtime/publish.js";
 import { runDueJobs } from "../src/worker/jobs.js";
 import { buildApp } from "../src/api/app.js";
 import { createDb, type Db } from "../src/db/client.js";
-import { emailTokens, fairplayFlags, matches, playerActions, players, users, matchRegions, regionNotes } from "../src/db/schema.js";
+import { emailTokens, fairplayFlags, matches, playerActions, players, users, matchRegions, regionNotes, tradeRoutes, jobs, armies } from "../src/db/schema.js";
+import { runTradeRoutes } from "../src/sim/trade.js";
 import { detectAutomation } from "../src/fairplay/detect.js";
 import { createRedis } from "../src/redis.js";
 import { newToken } from "../src/auth/password.js";
@@ -507,6 +508,105 @@ describe("api routes", () => {
     }
     // The scouting wrote into Ben's notes; the notes test that follows starts from none.
     await db.delete(regionNotes).where(and(eq(regionNotes.matchId, gameId), eq(regionNotes.playerId, benState.me.playerId)));
+  });
+
+  it("a build short of materials is supplied: goods set aside at the source at once, idle haulers called over from elsewhere, loaded on arrival, delivered, and the build starts; cancelling puts the goods back", async () => {
+    const base = `/api/matches/${gameId}`;
+    const benState = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
+    const benCap = benState.me.capitalRegionId!;
+    const benPid = benState.me.playerId;
+    // Rows are stamped at match time (the clock has been skipped ahead), or they would "produce" hours of goods on first settle.
+    const atMatchNow = new Date(benState.match.now);
+    // Two unclaimed neighbours of Ben's capital: S will hold the goods (and no haulers); D gets the build (and nothing else).
+    // Unclaimed land within two hops of the capital, nearest ring first, so the haulers can walk there.
+    const ring1 = regionById(benCap)!.neighbors;
+    const ring2 = [...new Set(ring1.flatMap((n) => regionById(n)?.neighbors ?? []))].filter((n) => n !== benCap && !ring1.includes(n));
+    const near = [...ring1, ...ring2];
+    const taken = new Set((await db.select({ regionId: matchRegions.regionId }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), inArray(matchRegions.regionId, near), sql`${matchRegions.ownerPlayerId} is not null`))).map((r) => r.regionId));
+    const free = near.filter((n) => !taken.has(n));
+    expect(free.length).toBeGreaterThanOrEqual(2);
+    const [S, D] = free as [string, string];
+    const claim = async (regionId: string, set: Partial<typeof matchRegions.$inferInsert>) => {
+      await db
+        .insert(matchRegions)
+        .values({ matchId: gameId, regionId, assignment: { ...balance.start.assignment }, settledAt: atMatchNow, ownerPlayerId: benPid, popWorkers: 5, ...set })
+        .onConflictDoUpdate({ target: [matchRegions.matchId, matchRegions.regionId], set: { ownerPlayerId: benPid, popWorkers: 5, settledAt: atMatchNow, ...set } });
+    };
+    await claim(S, { food: 500, wood: 1000, stone: 800, units: {} });
+    await claim(D, { food: 100, wood: 0, stone: 0, units: {} });
+    // The capital has the haulers but none of the goods, so the goods come from S and the haulers from the capital.
+    const [capRow] = await db.select({ units: matchRegions.units }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, benCap)));
+    await db.update(matchRegions).set({ wood: 0, stone: 0, units: { ...capRow!.units, caravan: 6 }, settledAt: atMatchNow }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, benCap)));
+
+    const built = await Ben.call("POST", `${base}/regions/${D}/build`, { buildingId: "lumber_camp" });
+    expect(built.statusCode, built.body).toBe(200);
+    const { jobId } = built.json() as { jobId: string };
+    const [job] = await db.select().from(jobs).where(eq(jobs.id, jobId));
+    // The cost scales with the day; whatever it is, D could pay none of it.
+    const cost = job!.waitingFor as { wood: number; stone: number };
+    expect(cost.wood).toBeGreaterThan(0);
+    expect(cost.stone).toBeGreaterThan(0);
+    // The route is decided at once, from S, and the goods are already off S's shelves.
+    const [route] = await db.select().from(tradeRoutes).where(and(eq(tradeRoutes.matchId, gameId), eq(tradeRoutes.toRegionId, D)));
+    expect(route).toMatchObject({ fromRegionId: S, forJobId: jobId, target: cost, held: cost, caravans: 1 });
+    const stockS = async () => (await db.select({ wood: matchRegions.wood, stone: matchRegions.stone }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, S))))[0]!;
+    const s0 = await stockS();
+    expect(Math.round(s0.wood)).toBe(1000 - cost.wood);
+    expect(Math.round(s0.stone)).toBe(800 - cost.stone);
+
+    // First run: S has no haulers, so the capital's idle ones are called over.
+    const redis = createRedis();
+    const pub = new Publisher(redis);
+    const skip = async (iso: string) => {
+      const now = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json()).match.now;
+      const secs = Math.ceil((Date.parse(iso) - Date.parse(now)) / 1000) + 5;
+      if (secs > 0) await db.update(matches).set({ clockOffsetSeconds: sql`${matches.clockOffsetSeconds} + ${secs}` }).where(eq(matches.id, gameId));
+      await runDueJobs(db, pub, logger);
+    };
+    try {
+      await runTradeRoutes(db, pub, logger);
+      const [r1] = await db.select().from(tradeRoutes).where(eq(tradeRoutes.id, route!.id));
+      expect(r1!.lastResult).toMatch(new RegExp(`^no haulers at home; 1 from ${regionById(benCap)!.name} coming`));
+      const [relief] = await db.select().from(armies).where(and(eq(armies.matchId, gameId), eq(armies.mission, "move"), eq(armies.targetRegionId, S), eq(armies.status, "outbound")));
+      expect(relief?.units).toEqual({ caravan: 1 });
+      // The haulers arrive and the next run loads what was set aside and leaves at once.
+      await skip(relief!.arrivesAt.toISOString());
+      await runTradeRoutes(db, pub, logger);
+      // Everything it promised is on the road, so the route has retired; the hold went with it and nothing more left the shelves.
+      expect(await db.select().from(tradeRoutes).where(eq(tradeRoutes.id, route!.id))).toEqual([]);
+      expect((await stockS()).wood).toBeGreaterThanOrEqual(1000 - cost.wood - 1);
+      const [convoy] = await db.select().from(armies).where(and(eq(armies.matchId, gameId), eq(armies.mission, "transport"), eq(armies.targetRegionId, D), eq(armies.status, "outbound")));
+      expect(convoy?.cargo).toMatchObject(cost);
+      // Delivery starts the build.
+      await skip(convoy!.arrivesAt.toISOString());
+      const [after] = await db.select().from(jobs).where(eq(jobs.id, jobId));
+      expect(after!.waitingFor).toBeNull();
+
+      // A second build at D is set aside from S again; cancelling it puts the goods back and drops the route.
+      // (D gathered a little while the convoy travelled; empty it so the build cannot pay on the spot.)
+      const nowIso = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json()).match.now;
+      await db.update(matchRegions).set({ wood: 0, stone: 0, settledAt: new Date(nowIso) }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, D)));
+      const built2 = await Ben.call("POST", `${base}/regions/${D}/build`, { buildingId: "lumber_camp" });
+      expect(built2.statusCode, built2.body).toBe(200);
+      const job2 = (built2.json() as { jobId: string }).jobId;
+      const [j2] = await db.select().from(jobs).where(eq(jobs.id, job2));
+      expect(j2?.waitingFor).not.toBeNull();
+      const [route2] = (await db.select().from(tradeRoutes).where(and(eq(tradeRoutes.matchId, gameId), eq(tradeRoutes.toRegionId, D)))).filter((r) => r.forJobId === job2);
+      expect(route2).toBeDefined();
+      expect(route2?.held).toEqual(route2?.target);
+      const setAside = route2!.held;
+      // Whichever region the goods were set aside in (the capital first, if it has them) gets them back.
+      const stockAt = async (id: string) => (await db.select({ wood: matchRegions.wood, stone: matchRegions.stone }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, id))))[0]!;
+      const before = await stockAt(route2!.fromRegionId);
+      const cancelled = await Ben.call("POST", `${base}/jobs/${job2}/cancel`, {});
+      expect(cancelled.statusCode, cancelled.body).toBe(200);
+      const restored = await stockAt(route2!.fromRegionId);
+      expect(Math.round(restored.wood - before.wood)).toBe(setAside.wood ?? 0);
+      expect(Math.round(restored.stone - before.stone)).toBe(setAside.stone ?? 0);
+      expect(await db.select().from(tradeRoutes).where(and(eq(tradeRoutes.matchId, gameId), eq(tradeRoutes.toRegionId, D), eq(tradeRoutes.forJobId, job2)))).toEqual([]);
+    } finally {
+      await redis.quit().catch(() => {});
+    }
   });
 
   it("region notes: a player marks a region and writes a note only they can read", async () => {

@@ -41,15 +41,14 @@ export function LogisticsPanel({ state, onSelect }: { state: MatchStateView; onS
         ? { tone: "text-slate-300", text: "Your haulers are all at home with nothing to do. Set up trade routes or let overflow use them." }
         : { tone: "text-emerald-400", text: "Hauling is keeping up: nothing is waiting on a caravan." };
 
-  // What the fleet is asked to do right now, in hauler-trips: routes want their caravan count per trip,
-  // every full region wants one convoy, and waiting materials need enough capacity to ship in one go.
-  const bestCarry = Math.max(...fleet.map((r) => r.carry), haulerCarry("caravan", state.me.techs));
-  const routeDemand = state.routes.filter((r) => r.enabled).reduce((a, r) => a + r.caravans, 0);
-  const overflowDemand = state.owned.filter((o) => !o.frozen && !o.isCapital && (["food", "wood", "stone"] as const).some((k) => o[k] >= o.storage[k] * 0.95)).length;
-  const materialsDemand = Math.ceil(Object.values(owed).reduce((a, b) => a + b, 0) / bestCarry);
-  const ideal = routeDemand + overflowDemand + materialsDemand;
   const have = totalHome + totalRoad;
-  const shortBy = Math.max(0, ideal - have);
+  // Materials routes: the ones bringing goods to waiting builds, with what is still to come on each.
+  const supply = state.routes.filter((r) => r.target).map((r) => {
+    const left: Record<string, number> = {};
+    for (const [k, v] of Object.entries(r.target ?? {})) if (v - (r.delivered[k] ?? 0) >= 1) left[k] = v - (r.delivered[k] ?? 0);
+    return { ...r, left };
+  });
+  const idleCount = idleRegions.reduce((a, o) => a + HAULER_IDS.reduce((x, id) => x + (o.units[id] ?? 0), 0), 0);
 
   return (
     <div className="space-y-3 p-3 text-sm">
@@ -61,18 +60,27 @@ export function LogisticsPanel({ state, onSelect }: { state: MatchStateView; onS
           )}
           : {totalHome} at home, {totalRoad} on the road.
         </p>
-        <p className={`mt-1 text-base ${shortBy > 0 ? "text-amber-300" : "text-emerald-400"}`}>
-          {ideal === 0
-            ? "Nothing needs hauling right now."
-            : shortBy > 0
-              ? `You need about ${ideal}: train ${shortBy} more${!state.me.techs.includes("wagon_building") ? ", or research Wagon building so each one carries 1,200" : !state.me.techs.includes("railways") ? ", or research Railways for trains" : ""}.`
-              : `About ${ideal} are needed and you have enough.`}
-        </p>
         <p className="mt-1 text-xs text-slate-500">
-          Needed = {routeDemand} for routes (their per-trip counts) + {overflowDemand} for full regions + {materialsDemand} for waiting materials. Idle capacity at home: {fmt(capacityHome)}.
+          Every hauler is one pool: a route with none at home calls the nearest spare ones over, idle ones first. Train them anywhere; they go where the work is. Idle capacity at home: {fmt(capacityHome)}.
         </p>
       </div>
       <p className={`text-xs ${verdict.tone}`}>{verdict.text}</p>
+      {supply.length > 0 && (
+        <div>
+          <p className="mb-1 text-[10px] uppercase tracking-wide text-slate-500">Materials on the way to builds</p>
+          <ul className="space-y-0.5 text-xs">
+            {supply.map((r) => (
+              <li key={r.id}>
+                <button className="hover:text-white" onClick={() => onSelect(r.toRegionId)}>
+                  {regionById(r.fromRegionId)?.name} → {regionById(r.toRegionId)?.name}
+                </button>
+                <span className="text-slate-400"> · {Object.entries(r.left).map(([k, v]) => `${fmt(v)} ${k}`).join(", ") || "delivered"} still to come{Object.values(r.held).some((v) => v > 0) ? ` (${Object.entries(r.held).filter(([, v]) => v > 0).map(([k, v]) => `${fmt(v)} ${k}`).join(", ")} set aside at ${regionById(r.fromRegionId)?.name})` : ""}, {r.caravans} hauler{r.caravans === 1 ? "" : "s"} per trip</span>
+                {r.lastResult && <span className="text-slate-500"> · {r.lastResult}</span>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="overflow-x-auto">
       <table className="w-full min-w-max text-xs">
@@ -144,7 +152,7 @@ export function LogisticsPanel({ state, onSelect }: { state: MatchStateView; onS
           )}
           {idleRegions.length > 0 && (
             <p className="mt-1 text-xs text-slate-500">
-              Haulers sitting idle with no route in: {idleRegions.map((o) => regionById(o.regionId)?.name).join(", ")}. They are still used for overflow and relief.
+              {idleCount} hauler{idleCount === 1 ? "" : "s"} with no route of their own in {idleRegions.map((o) => regionById(o.regionId)?.name).join(", ")}: the first to be called when any route runs short.
             </p>
           )}
         </div>

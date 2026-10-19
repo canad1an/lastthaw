@@ -779,6 +779,9 @@ export async function eliminatePlayer(tx: Tx, m: MatchRow, playerId: string, at:
   await tx.insert(events).values({ matchId: m.id, at, kind: "player.eliminated", payload: { playerId, reason, by: by?.id ?? null } });
   await notify(tx, m.id, playerId, "system", `${reason} You can watch the rest of the match and join the next one.`, {});
   if (by) {
+    // Taking a capital is the biggest single prize in the game: a milestone worth balance.win.milestones.capital, once per capital that falls.
+    const { awardMilestone } = await import("./endgame.js");
+    await awardMilestone(tx, m, `capital_${playerId}`, by.id, at, `Took ${loser?.name ?? "a tribe"}'s capital`);
     // Everyone hears it: the fall of a realm is the news of the day.
     const line = `${loser?.name ?? "A tribe"} has been eliminated by ${by.name}: the capital fell and the whole realm is theirs now.`;
     const others = await tx.select({ id: players.id }).from(players).where(and(eq(players.matchId, m.id), eq(players.hidden, false), isNull(players.eliminatedAt), sql`${players.id} <> ${playerId}`));

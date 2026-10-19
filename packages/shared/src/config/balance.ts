@@ -177,6 +177,8 @@ export const balance = {
   trade: {
     /** When a route finds no caravans at its origin, idle caravans from the nearest other region come over. */
     fetchCaravans: true,
+    /** A materials route for a waiting build asks for enough haulers to carry its load in one trip, up to this many. */
+    maxSupplyCaravans: 10,
     /** A region whose stock hits its cap sends this share of the cap to the capital by caravan, automatically. */
     overflowToCapital: true,
     overflowShare: 0.5,
@@ -368,7 +370,7 @@ export const balance = {
     /** Day 30, the ice stops: the player with the most people alive in unfrozen land wins. Rank below the winner is by score. */
     survival: true,
     /** Bonus score for being first in the match to reach a checkpoint. Keys: age_<n>, harbor, train, temple, wonder. */
-    milestones: { age: 200, harbor: 100, train: 150, temple: 100, wonder: 300, daily: 100 } as Record<string, number>,
+    milestones: { age: 200, harbor: 100, train: 150, temple: 100, wonder: 300, daily: 100, capital: 500 } as Record<string, number>,
     /** Finishing this building wins the match outright. */
     wonderBuilding: "great_hearth",
   },
