@@ -21,6 +21,11 @@ done
 POSTGRES_PASSWORD="$(grep -E '^POSTGRES_PASSWORD=' .env | cut -d= -f2- | tr -d '"
 ')"
 $COMPOSE --profile app run --rm --no-deps -e "DATABASE_URL_DIRECT=postgres://lastthaw:${POSTGRES_PASSWORD}@postgres:5432/lastthaw" api node dist/db/migrate.js
+# Recreating a container throws its logs away, so the outgoing api/worker/ai logs are kept first (two weeks of them in
+# ~/logs); without this the nightly audit only saw the hours since the last deploy.
+mkdir -p "$HOME/logs"
+{ $COMPOSE logs --no-color --timestamps api worker ai 2>/dev/null | gzip > "$HOME/logs/app-$(date -u +%Y%m%dT%H%M%SZ).log.gz"; } || true
+find "$HOME/logs" -name 'app-*.log.gz' -mtime +14 -delete || true
 # Everything but the API is recreated as usual; the API is replaced one replica at a time so Caddy always has a
 # live upstream (the "no upstreams available" 503s came from both replicas restarting at once).
 # --no-deps: without it compose would also recreate the API (caddy and web depend on it) and take both replicas down at once.

@@ -56,3 +56,16 @@ describe("deploy/crontab", () => {
     expect(deploy).toMatch(/mkdir -p "\$HOME\/backups"/);
   });
 });
+
+describe("deploy/deploy.sh log archive", () => {
+  // On 2026-10-20 the nightly audit saw 3 of the last 26 hours: the morning deploy had recreated api, worker and ai,
+  // and Docker deletes a container's logs with it.
+  it("saves the outgoing api/worker/ai logs before any container is recreated, and prunes old ones", () => {
+    const deploy = read("deploy/deploy.sh");
+    const archive = deploy.search(/logs --no-color --timestamps api worker ai .*gzip > "\$HOME\/logs\/app-/);
+    expect(archive).toBeGreaterThan(-1);
+    expect(archive).toBeLessThan(deploy.indexOf("up -d --no-deps --remove-orphans"));
+    expect(archive).toBeLessThan(deploy.indexOf('docker rm -f "$c"'));
+    expect(deploy).toMatch(/find "\$HOME\/logs" -name 'app-\*\.log\.gz' -mtime \+14 -delete/);
+  });
+});
