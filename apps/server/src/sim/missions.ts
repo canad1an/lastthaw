@@ -320,6 +320,8 @@ async function gatherCaravans(tx: Tx, m: MatchRow, playerId: string, targetRegio
 async function settleLand(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher: Publisher, after: After): Promise<void> {
   const target = await lockRegion(tx, m, army.targetRegionId, at);
   const name = regionById(army.targetRegionId)?.name ?? army.targetRegionId;
+  // Land that became ours before the settlers arrived: they stay, as occupiers if it was conquered, as settlers otherwise.
+  if (target.ownerPlayerId === army.playerId) return deliverUnits(tx, m, army, at, publisher, after);
   const occupied = target.ownerPlayerId || target.popWorkers + target.popSoldiers + target.popOccupiers >= 1 || Object.values(target.units).some((n) => n > 0);
   if (occupied) {
     const by = target.ownerPlayerId ? await playerName(tx, target.ownerPlayerId) : "a neutral tribe";
@@ -631,8 +633,10 @@ async function battle(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher: P
   const region = regionById(army.targetRegionId)!;
   const defenderId = target.ownerPlayerId;
 
+  // The region became ours on the way (a capital fell and its realm came over): the force stays. Soldiers garrison it, settlers join the occupiers.
+  if (defenderId === army.playerId) return deliverUnits(tx, m, army, at, publisher, after);
   // Attacking a friend (alliance formed mid-flight) is called off.
-  if (defenderId && (defenderId === army.playerId || (await areAllied(tx, m.id, army.playerId, defenderId)))) {
+  if (defenderId && (await areAllied(tx, m.id, army.playerId, defenderId))) {
     await notify(tx, m.id, army.playerId, "battle", `Attack on ${region.name} called off: the region is friendly`, { regionId: region.id });
     return sendHome(tx, m, army, at, army.units, army.cargo, "called off: the region is now friendly");
   }

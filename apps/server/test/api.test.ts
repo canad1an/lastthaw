@@ -5,7 +5,7 @@ import { Publisher } from "../src/realtime/publish.js";
 import { runDueJobs } from "../src/worker/jobs.js";
 import { buildApp } from "../src/api/app.js";
 import { createDb, type Db } from "../src/db/client.js";
-import { emailTokens, fairplayFlags, matches, playerActions, players, users, matchRegions, regionNotes, tradeRoutes, jobs, armies } from "../src/db/schema.js";
+import { emailTokens, fairplayFlags, matches, playerActions, players, users, matchRegions, regionNotes, tradeRoutes, jobs, armies, pacts } from "../src/db/schema.js";
 import { runTradeRoutes } from "../src/sim/trade.js";
 import { detectAutomation } from "../src/fairplay/detect.js";
 import { createRedis } from "../src/redis.js";
@@ -673,6 +673,56 @@ describe("api routes", () => {
     } finally {
       await redis.quit().catch(() => {});
     }
+  });
+
+  it("a force marching on land that becomes yours before it arrives stays there: soldiers garrison it and settlers join the occupiers", async () => {
+    const base = `/api/matches/${gameId}`;
+    // Ben attacks a region of Ann's; the pact from the diplomacy test would forbid it, so it is cleared.
+    await db.delete(pacts).where(eq(pacts.matchId, gameId));
+    const benState = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
+    const annCap = benState.me.capitalRegionId!;
+    const annPid = benState.me.playerId;
+    const atMatchNow = new Date(benState.match.now);
+    const Attacker = Ben;
+    // A free neighbour of the attacker's capital, given to the other player as the target.
+    const near: string[] = [];
+    {
+      const seen = new Set([annCap]);
+      let ring = [annCap];
+      for (let hop = 0; hop < 3; hop++) {
+        const next: string[] = [];
+        for (const id of ring) for (const n of regionById(id)?.neighbors ?? []) if (!seen.has(n)) { seen.add(n); next.push(n); near.push(n); }
+        ring = next;
+      }
+    }
+    const taken = new Set((await db.select({ regionId: matchRegions.regionId }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), inArray(matchRegions.regionId, near), sql`${matchRegions.ownerPlayerId} is not null`))).map((r) => r.regionId));
+    const R = near.find((n) => !taken.has(n))!;
+    expect(R).toBeTruthy();
+    await db
+      .insert(matchRegions)
+      // A neutral tribe holds it (a player's region would be under beginner protection in this young match).
+      .values({ matchId: gameId, regionId: R, assignment: { ...balance.start.assignment }, settledAt: atMatchNow, ownerPlayerId: null, popWorkers: 5, units: { warrior: 2 } })
+      .onConflictDoUpdate({ target: [matchRegions.matchId, matchRegions.regionId], set: { ownerPlayerId: null, popWorkers: 5, settledAt: atMatchNow, units: { warrior: 2 }, popOccupiers: 0 } });
+    const [cap] = await db.select({ units: matchRegions.units }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, annCap)));
+    await db.update(matchRegions).set({ units: { ...cap!.units, warrior: 5, settler: 5 }, settledAt: atMatchNow }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, annCap)));
+    const out = await Attacker.call("POST", `${base}/regions/${annCap}/send`, { mission: "conquer", targetRegionId: R, units: { warrior: 5, settler: 5 }, people: 0, cargo: {} });
+    expect(out.statusCode, out.body).toBe(200);
+    const { armyId, arrivesAt } = out.json() as { armyId: string; arrivesAt: string };
+    // Before the force arrives, the region comes over to the attacker (as the fall of the owner's capital would hand it).
+    await db.update(matchRegions).set({ ownerPlayerId: annPid, conquered: true, loyalty: balance.conquest.startingLoyalty }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, R)));
+    const now = matchStateView.parse((await Attacker.call("GET", `${base}/state`)).json()).match.now;
+    await db.update(matches).set({ clockOffsetSeconds: sql`${matches.clockOffsetSeconds} + ${Math.ceil((Date.parse(arrivesAt) - Date.parse(now)) / 1000) + 5}` }).where(eq(matches.id, gameId));
+    const redis = createRedis();
+    await runDueJobs(db, new Publisher(redis), logger);
+    await redis.quit().catch(() => {});
+    const [army] = await db.select().from(armies).where(eq(armies.id, armyId));
+    expect(army?.status).toBe("done");
+    const [row] = await db.select().from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, R)));
+    expect(row?.ownerPlayerId).toBe(annPid);
+    expect(row?.units.warrior).toBeGreaterThanOrEqual(5);
+    expect(row?.popOccupiers).toBe(5);
+    const inbox = ((await Attacker.call("GET", `${base}/messages`)).json() as { messages: Array<{ subject: string }> }).messages;
+    expect(inbox.some((x) => x.subject.startsWith("5 settlers joined the occupiers in"))).toBe(true);
   });
 
   it("region notes: a player marks a region and writes a note only they can read", async () => {
