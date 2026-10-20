@@ -33,6 +33,7 @@ export function FinancialsPanel({ matchId }: { matchId: string }) {
   if (!f || !model) return <p className="p-3 text-xs text-slate-400">{q.error ? q.error.message : "Adding up the books…"}</p>;
   const today = Math.floor(f.day);
   const hoursToday = Math.max(0.01, (f.day - today) * 24);
+  const maxDay = Math.max(1, f.day, ...f.history.map((h) => h.day));
   return (
     <div className="space-y-3 p-3 text-sm">
       <div className="flex flex-wrap gap-1">
@@ -55,12 +56,12 @@ export function FinancialsPanel({ matchId }: { matchId: string }) {
 
       <section>
         <p className="mb-1 text-[10px] uppercase tracking-wide text-slate-500">{res} per hour, over the match</p>
-        <LineChart series={model.lines} maxDay={Math.max(1, f.day)} unit="/h" />
+        <LineChart series={model.lines} maxDay={maxDay} unit="/h" />
       </section>
 
       <section>
         <p className="mb-1 text-[10px] uppercase tracking-wide text-slate-500">{res} spent, by day and by what</p>
-        <BarChart days={model.days} maxDay={Math.max(1, f.day)} />
+        <BarChart days={model.days} maxDay={maxDay} />
       </section>
 
       <section>
@@ -140,7 +141,11 @@ function build(f: FinanceView, res: Res) {
   }
   if (res === "food") {
     const byDay = new Map<number, Array<FinanceView["history"][number]>>();
-    for (const h of f.history) byDay.set(Math.floor(h.day), [...(byDay.get(Math.floor(h.day)) ?? []), h]);
+    // A sample never files under a day the clock has not reached.
+    for (const h of f.history) {
+      const k = Math.min(today, Math.floor(h.day));
+      byDay.set(k, [...(byDay.get(k) ?? []), h]);
+    }
     for (const [dayN, samples] of byDay) {
       const hours = dayN === today ? (f.day - today) * 24 : 24;
       const avg = (k: "people" | "soldiers") => samples.reduce((a, h) => a + h.eaten[k], 0) / samples.length;

@@ -59,7 +59,8 @@ function sampleOf(rows: Array<typeof matchRegions.$inferSelect>, m: MatchRow, no
 /** One sample per quarter game day per player, written by the tick; nothing happens between samples. */
 export async function recordEconomy(tx: Tx, m: MatchRow, now: Date): Promise<void> {
   if (!m.startsAt) return;
-  const day = Math.round(matchDayAt(m, now) * 4) / 4;
+  // The quarter day that has begun, never one ahead of the clock.
+  const day = Math.floor(matchDayAt(m, now) * 4) / 4;
   const [already] = await tx.select({ day: economyHistory.day }).from(economyHistory).where(and(eq(economyHistory.matchId, m.id), eq(economyHistory.day, day))).limit(1);
   if (already) return;
   const rows = await tx.select().from(matchRegions).where(and(eq(matchRegions.matchId, m.id), sql`${matchRegions.ownerPlayerId} is not null`, sql`${matchRegions.frozenAt} is null`));
