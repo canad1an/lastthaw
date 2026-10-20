@@ -692,11 +692,14 @@ async function battle(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher: P
 
   const effects = effectsOf(target.buildings);
   const militia = Math.floor(((target.popWorkers + target.popOccupiers) / 10) * balance.combat.militiaPerTenPeople);
-  const defenderUnits: UnitCounts = militia > 0 ? addUnits(target.units, { militia }) : { ...target.units };
+  // Everyone standing in the region defends it, settlers included, except the haulers: caravans, wagons, trains and cogs stay out of the fight and untouched.
+  const standing: UnitCounts = {};
+  for (const [id, n] of Object.entries(target.units)) if (n > 0 && !unitById.get(id)?.hauler) standing[id] = n;
+  const defenderUnits: UnitCounts = militia > 0 ? addUnits(standing, { militia }) : standing;
   const attackerTech = await ownerTechEffects(tx, army.playerId);
   const defenderTech = await ownerTechEffects(tx, target.ownerPlayerId);
   const seed = `${m.seed}:${army.id}:${at.getTime()}`;
-  // Settlers travelling with a conquest wait behind the lines; they occupy if the battle is won.
+  // Settlers travelling with a conquest wait behind the lines; they occupy if the battle is won and retreat with the survivors if it is lost.
   const { settler: settlersAlong = 0, ...fighting } = army.units;
   // Walls are near-impregnable to men alone; siege engines bring the wall bonus down. Techs and terrain always count.
   const wallFull = Object.keys(balance.combat.wallBreach).reduce((a, id) => a + (buildingById.get(id)?.effect.defense ?? 0) * (target.buildings[id] ?? 0), 0);
