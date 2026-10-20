@@ -6,12 +6,12 @@
  */
 import { and, asc, eq, isNull, lte, or, sql } from "drizzle-orm";
 import type pino from "pino";
-import { balance, availableBuildings, buildingBlockedBy, buildingById, regionById, unitById, HAULER_IDS, type AdvisorSettings, type AdvisorReport, type AdvisorSuggestion, type Cost, advisorSettings as advisorSettingsSchema } from "@lastthaw/shared";
+import { balance, availableBuildings, buildingBlockedBy, buildingById, computeRates, normalizeAssignment, regionById, unitById, HAULER_IDS, type AdvisorSettings, type AdvisorReport, type AdvisorSuggestion, type Cost, type RegionEconomy, advisorSettings as advisorSettingsSchema } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { advisors, jobs, matchRegions, matches, playerTechs, players, tradeRoutes } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
 import { matchNow } from "./clock.js";
-import { applyCost, projectRegion, settleAndLockRegion, stockOf, resourceMultOf, type MatchRegionRow, type Tx } from "./regions.js";
+import { applyCost, projectRegion, settleAndLockRegion, stockOf, resourceMultOf, traitsOf, type MatchRegionRow, type Tx } from "./regions.js";
 import { queueBuild, sendArmy, type CommandContext } from "./commands.js";
 import { buildOrderFor } from "./ai.js";
 import { notify, type MatchRow } from "../worker/jobs.js";
@@ -217,15 +217,84 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
     }
   }
 
+  // Workers: each region's shares from what it and the empire need.
+  let rebalanced = 0;
+  if (settings.workers) rebalanced = await rebalanceWorkers(db, m, projected, pending, skip, now);
+
   // People.
   let moved = 0;
   if (settings.population === "balanced") moved = await balancePeople(ctx, projected.map((x) => ({ row: x.row, economy: x.economy })), skip);
 
   const suggestions = await suggestionsFor(db, m, p, projected.map((x) => ({ row: x.row, economy: x.economy })), pending, settings, now);
-  const report: AdvisorReport = { at: now.toISOString(), queued, moved, skipped, suggestions };
+  const report: AdvisorReport = { at: now.toISOString(), queued, moved, rebalanced, skipped, suggestions };
   await db.update(advisors).set({ lastPassAt: now, lastReport: report }).where(eq(advisors.id, a.id));
   await publisher.toPlayer(m.id, p.id, "advisor.report", { kind: a.kind, queued, moved });
   return report;
+}
+
+/**
+ * Worker shares, region by region. Every split on a 10% grid is scored by what it would gather an hour, each resource
+ * weighted by how badly it is wanted: full stores are worth nothing more, and a resource the empire's waiting builds owe
+ * is worth more the longer the empire would take to gather it. Food is a floor, not a choice: a split that starves the
+ * region (net food below zero with under half a day in store) is out. The best split replaces the current one when it
+ * differs by a tenth or more in any share, so settings do not twitch every pass.
+ */
+export async function rebalanceWorkers(db: Db, m: MatchRow, regions: Array<{ row: MatchRegionRow; economy: RegionEconomy }>, pending: Array<{ regionId: string | null; kind: string; waitingFor: unknown }>, skip: Set<string>, now: Date): Promise<number> {
+  const live = regions.filter((x) => !skip.has(x.row.regionId) && x.economy.popWorkers >= 1);
+  if (!live.length) return 0;
+  // The empire's gathering per hour as it stands, and what its waiting builds still owe.
+  const gross = { food: 0, wood: 0, stone: 0 };
+  const owed = { food: 0, wood: 0, stone: 0 };
+  const traitsOfRegion = new Map(live.map((x) => [x.row.regionId, traitsOf(x.row.regionId)]));
+  for (const x of live) {
+    const r = computeRates(traitsOfRegion.get(x.row.regionId)!, x.economy);
+    gross.food += r.gross.food;
+    gross.wood += r.gross.wood;
+    gross.stone += r.gross.stone;
+  }
+  for (const j of pending) {
+    if (j.kind !== "build" || !j.waitingFor) continue;
+    for (const [k, v] of Object.entries(j.waitingFor as Record<string, number>)) if (k in owed) owed[k as keyof typeof owed] += v;
+  }
+  // Worth of one more unit an hour: 1 for a resource nobody is short of, up to 3 when the empire owes a day of it.
+  const need = { food: 1, wood: 1 + Math.min(2, owed.wood / Math.max(1, gross.wood * 12)), stone: 1 + Math.min(2, owed.stone / Math.max(1, gross.stone * 12)) };
+  const grid: Array<{ food: number; wood: number; stone: number }> = [];
+  for (let f = 1; f <= 8; f++) for (let w = 0; w <= 10 - f; w++) grid.push({ food: f / 10, wood: w / 10, stone: (10 - f - w) / 10 });
+  let changed = 0;
+  for (const x of live) {
+    const traits = traitsOfRegion.get(x.row.regionId)!;
+    const e = x.economy;
+    const fill = { food: e.food / Math.max(1, e.storage.food), wood: e.wood / Math.max(1, e.storage.wood), stone: e.stone / Math.max(1, e.storage.stone) };
+    // A full store is worth nothing more; a low one is worth the most. The empire's need scales that.
+    const worth = (k: "food" | "wood" | "stone") => need[k] * Math.max(0, 1 - Math.min(1, fill[k] / 0.95));
+    const current = normalizeAssignment(e.assignment);
+    let best = current;
+    let bestScore = -Infinity;
+    let any = false;
+    for (const a of grid) {
+      const r = computeRates(traits, { ...e, assignment: a });
+      const consumption = r.gross.food - r.food;
+      const starving = r.food < 0 && e.food < consumption * 12;
+      if (starving) continue;
+      any = true;
+      // Food beyond what the region eats is worth its store-weighted value; what it eats is worth keeping no matter what.
+      const score = Math.min(r.gross.food, consumption) * 1.5 + Math.max(0, r.gross.food - consumption) * worth("food") + r.gross.wood * worth("wood") + r.gross.stone * worth("stone");
+      if (score > bestScore + 1e-9) {
+        bestScore = score;
+        best = a;
+      }
+    }
+    if (!any) best = { food: 0.8, wood: 0.1, stone: 0.1 };
+    const differs = Math.abs(best.food - current.food) >= 0.1 || Math.abs(best.wood - current.wood) >= 0.1 || Math.abs(best.stone - current.stone) >= 0.1;
+    if (!differs) continue;
+    await db.transaction(async (tx) => {
+      const row = await settleAndLockRegion(tx, m.id, x.row.regionId, now, m.speed, resourceMultOf(m));
+      if (row.ownerPlayerId !== x.row.ownerPlayerId) return;
+      await tx.update(matchRegions).set({ assignment: best }).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, x.row.regionId)));
+      changed += 1;
+    });
+  }
+  return changed;
 }
 
 /**

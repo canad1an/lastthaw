@@ -29,6 +29,7 @@ const ECONOMIC_DUTIES = [
   "Lets the convoys bring what a region cannot pay, from the capital and the nearest stocked regions, when you allow it.",
   "Moves people the way you choose: not at all, overflow from crowded regions to neighbours, or balanced across the empire.",
   "Leaves you a report after every pass: what was queued, what was skipped and why, and suggestions that open the region.",
+  "Sets each region's workers between food, wood and stone from what the region and the empire need: full stores get no more, waiting builds get what they owe, and nobody goes hungry.",
   "Never spends on research, armies or the market; those stay yours.",
 ];
 
@@ -230,6 +231,10 @@ function SettingsForm({ matchId, state, advisor }: { matchId: string; state: Mat
         <input type="checkbox" checked={draft.useOtherRegions} onChange={(e) => setDraft((d) => ({ ...d, useOtherRegions: e.target.checked }))} className="mt-0.5 accent-sky-400" />
         <span>Use other regions' resources: queue a build the region cannot pay for and let convoys bring the rest from the capital and the nearest stocked regions. Off, each region pays for its own.</span>
       </label>
+      <label className="flex items-start gap-2 text-xs text-slate-300">
+        <input type="checkbox" checked={draft.workers} onChange={(e) => setDraft((d) => ({ ...d, workers: e.target.checked }))} className="mt-0.5 accent-sky-400" />
+        <span>Set worker shares: each pass, every region's split between food, wood and stone is set from what it and the empire need. Full stores get no more, waiting builds get what they owe, and no region is left to starve. Off, your own sliders stand.</span>
+      </label>
       <div className="text-xs text-slate-300">
         <p className="mb-1 font-medium text-slate-200">People</p>
         {(
@@ -285,6 +290,7 @@ function Report({ advisor, onSelect }: { advisor: AdvisorView; onSelect: (region
       <p className="text-xs text-slate-300">
         Queued {r.queued} build{r.queued === 1 ? "" : "s"}
         {r.moved ? `, moved ${fmt(r.moved)} people` : ""}
+        {r.rebalanced ? `, reset the workers of ${r.rebalanced} region${r.rebalanced === 1 ? "" : "s"}` : ""}
         {skipped.length ? `; skipped ${skipped.map(([k, n]) => `${n} (${SKIP_LABEL[k] ?? k})`).join(", ")}` : ""}.
       </p>
       {r.suggestions.length > 0 && (

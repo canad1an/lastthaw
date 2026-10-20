@@ -774,6 +774,17 @@ describe("api routes", () => {
       expect(quarryJobs.length).toBe(report.queued);
       expect((await Ben.call("POST", `${base}/advisors/economic/run`, {})).statusCode).toBe(429);
 
+      // Workers: a capital gathering no food while its store is nearly empty is put back on food by the next pass; a store near its cap gets no more.
+      await db.update(matchRegions).set({ assignment: { food: 0, wood: 0.5, stone: 0.5 }, food: 20, stone: 2900, settledAt: new Date(await nowIso()) }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
+      await db.update(advisors).set({ lastPassAt: null }).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
+      const runW = await Ben.call("POST", `${base}/advisors/economic/run`, {});
+      expect(runW.statusCode, runW.body).toBe(200);
+      expect((runW.json() as { report: { rebalanced: number } }).report.rebalanced).toBeGreaterThan(0);
+      const [capAfter] = await db.select({ assignment: matchRegions.assignment }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
+      expect(capAfter!.assignment.food).toBeGreaterThanOrEqual(0.3);
+      expect(capAfter!.assignment.stone).toBeLessThanOrEqual(0.2);
+      await fill(4000, 3000, 2500, 60, 60);
+
       // Balanced people: a swollen capital sends a column to an emptier region of Ben's.
       await db.update(matchRegions).set({ popWorkers: 600, settledAt: new Date(await nowIso()) }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
       await db.update(advisors).set({ lastPassAt: null }).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));

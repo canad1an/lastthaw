@@ -394,6 +394,8 @@ export const advisorSettings = z.object({
   minLevels: z.record(z.string(), z.number().int().min(0).max(50)).default({}),
   /** Queue builds a region cannot pay for and let convoys bring the rest from other regions. */
   useOtherRegions: z.boolean().default(true),
+  /** Set each region's worker shares between food, wood and stone from what the region and the empire need. */
+  workers: z.boolean().default(true),
   /** Regions the advisor leaves alone. */
   skipRegions: z.array(z.string()).max(500).default([]),
   /** How people are moved: not at all, overflow from crowded regions to neighbours, or balanced across the empire. */
@@ -406,6 +408,8 @@ export const advisorReport = z.object({
   at: z.string(),
   queued: z.number(),
   moved: z.number().default(0),
+  /** Regions whose worker shares were changed this pass. */
+  rebalanced: z.number().default(0),
   skipped: z.record(z.string(), z.number()).default({}),
   suggestions: z.array(advisorSuggestion).default([]),
 });
