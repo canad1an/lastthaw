@@ -69,6 +69,10 @@ export async function matchPageMeta(db: Db, ref: string, page: "report" | "repla
   const slug = m.slug ?? m.id;
   const finished = m.status === "finished";
   const url = `${site}/match/${slug}${page === "play" ? "" : `/${page}`}`;
+  // A private game is never indexed, whatever its state: its address is only for the people who played it and an admin.
+  if (((m.settings ?? {}) as { kind?: string }).kind === "private") {
+    return { title: m.name, description: "A private Last Thaw game.", url, noindex: true };
+  }
   if (!finished) {
     const when = m.status === "lobby" ? `starts ${m.startsAt.toISOString().slice(0, 16).replace("T", " ")} UTC` : "is being fought now";
     return { title: page === "lobby" ? `${m.name}: waiting room` : `${m.name}`, description: `${m.name}, a Last Thaw match, ${when}. Thirty days on a real map with the ice closing in from the poles.`, url, noindex: true };

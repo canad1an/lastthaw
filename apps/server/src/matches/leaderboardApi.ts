@@ -36,12 +36,20 @@ export async function leaderboardRoutes(app: FastifyInstance, opts: { db: Db }) 
     const [p] = await db.select({ id: players.id }).from(players).where(and(eq(players.matchId, matchId), eq(players.userId, userId))).limit(1);
     return !!p;
   };
+  /** A private game's pages are for the people who played it and admins, before and after it ends. */
+  const guardPrivate = async (m: { id: string; settings: unknown }, user: { id: string; isAdmin: boolean } | null) => {
+    if (((m.settings ?? {}) as { kind?: string }).kind !== "private") return;
+    if (user?.isAdmin) return;
+    if (user && (await isMember(m.id, user.id))) return;
+    throw httpError(403, "this is a private game: its pages are only for the people who played it");
+  };
 
   app.get("/api/matches/:id/leaderboard", async (req, reply) => {
     const user = requireUser(req);
     const matchId = matchIdParam(req);
     const [m] = await db.select().from(matches).where(eq(matches.id, matchId)).limit(1);
     if (!m) return reply.code(404).send({ error: "match not found" });
+    await guardPrivate(m, user);
     // Live standings are for the people in the match; everyone can read them once it is over.
     const member = await isMember(matchId, user.id);
     if (m.status !== "finished" && !member && !user.isAdmin) throw httpError(403, "only players in this match can see its standings while it runs");
@@ -111,6 +119,7 @@ export async function leaderboardRoutes(app: FastifyInstance, opts: { db: Db }) 
     const matchId = matchIdParam(req);
     const [m] = await db.select().from(matches).where(eq(matches.id, matchId)).limit(1);
     if (!m) return reply.code(404).send({ error: "match not found" });
+    await guardPrivate(m, user);
     if (m.status !== "finished" && !(user && (user.isAdmin || (await isMember(matchId, user.id))))) throw httpError(403, "the report is published when the match ends");
     const ps = await db.select().from(players).where(and(eq(players.matchId, matchId), eq(players.hidden, false))).orderBy(desc(players.score));
     const me = user ? ps.find((p) => p.userId === user.id) : undefined;
@@ -180,6 +189,7 @@ export async function leaderboardRoutes(app: FastifyInstance, opts: { db: Db }) 
     const matchId = matchIdParam(req);
     const [m] = await db.select().from(matches).where(eq(matches.id, matchId)).limit(1);
     if (!m) return reply.code(404).send({ error: "match not found" });
+    await guardPrivate(m, req.user ?? null);
     // The whole map, with every owner, is only for finished matches: during play it would be total vision.
     if (m.status !== "finished" && !req.user?.isAdmin) throw httpError(403, "the replay is published when the match ends");
     const ps = await db.select({ id: players.id, name: players.name, isAi: players.isAi }).from(players).where(and(eq(players.matchId, matchId), eq(players.hidden, false))).orderBy(players.createdAt);

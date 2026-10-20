@@ -1387,6 +1387,40 @@ describe("api routes", () => {
     expect(await detectAutomation(db)).toBe(0);
   });
 
+  it("a private game is never public: not in the sitemap, the public lists or the hall of fame; its pages are noindex; and its report, standings and replay are for its players and admins only", async () => {
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "lt-web-"));
+    writeFileSync(join(dir, "index.html"), '<!doctype html><html><head><meta name="description" content="generic" /><title>Last Thaw</title></head><body></body></html>');
+    const before = process.env.WEB_DIST;
+    process.env.WEB_DIST = dir;
+    const slug = `2026-10-secret-${Date.now().toString(36)}`;
+    const [priv] = await db
+      .insert(matches)
+      .values({ name: "Secret Thaw", slug, speed: 1, seed: "secret", startsAt: new Date(Date.now() - 40 * 86400_000), endsAt: new Date(Date.now() - 10 * 86400_000), finishedAt: new Date(Date.now() - 10 * 86400_000), status: "finished", settings: { kind: "private", createdBy: "nobody" } })
+      .returning({ id: matches.id });
+    try {
+      const sitemap = await app.inject({ method: "GET", url: "/sitemap.xml" });
+      expect(sitemap.body).not.toContain(slug);
+      expect(JSON.stringify((await app.inject({ method: "GET", url: "/api/public/hall-of-fame" })).json())).not.toContain(priv!.id);
+      expect(JSON.stringify((await app.inject({ method: "GET", url: "/api/public/matches" })).json())).not.toContain(priv!.id);
+      const page = await Out.call("GET", `/match/${slug}/report`);
+      expect(page.statusCode).toBe(200);
+      expect(page.body).toContain("noindex");
+      // Nobody outside: not anonymous, not a logged-in stranger; an admin may look.
+      expect((await Out.call("GET", `/api/matches/${priv!.id}/summary`)).statusCode).toBe(403);
+      expect((await Ben.call("GET", `/api/matches/${priv!.id}/summary`)).statusCode).toBe(403);
+      expect((await Ben.call("GET", `/api/matches/${priv!.id}/replay`)).statusCode).toBe(403);
+      expect((await Ben.call("GET", `/api/matches/${priv!.id}/leaderboard`)).statusCode).toBe(403);
+      expect((await A.call("GET", `/api/matches/${priv!.id}/replay`)).statusCode).toBe(200);
+    } finally {
+      await db.delete(matches).where(eq(matches.id, priv!.id));
+      if (before === undefined) delete process.env.WEB_DIST;
+      else process.env.WEB_DIST = before;
+    }
+  });
+
   it("match pages are served with their own head: title, description, sharing card and structured data", async () => {
     const { mkdtempSync, writeFileSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");
