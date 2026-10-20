@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
-import { balance, matchStateView, regionById, scoutCatchChance, seededRng } from "@lastthaw/shared";
+import { balance, effectsOf, matchStateView, regionById, scoutCatchChance, seededRng, storageCaps } from "@lastthaw/shared";
 import { Publisher } from "../src/realtime/publish.js";
 import { runDueJobs } from "../src/worker/jobs.js";
 import { buildApp } from "../src/api/app.js";
@@ -238,6 +238,24 @@ describe("api routes", () => {
 
   let gameId = "";
   let code = "";
+  /**
+   * Stock every region of a player's as a settled empire would be: a level-6 Storehouse everywhere and each store filled
+   * to min(wanted, its cap), stamped at match time so nothing is clamped or re-gathered on the next settle. Stores are
+   * capped per region (the capital holds three times more), and a day's advisor contract needs more than one base cap.
+   */
+  async function fillEmpire(matchId: string, playerId: string, want: { food: number; wood: number; stone: number; copper: number; iron: number }) {
+    const [m] = await db.select({ clockOffsetSeconds: matches.clockOffsetSeconds, pausedAt: matches.pausedAt }).from(matches).where(eq(matches.id, matchId));
+    const at = new Date((m!.pausedAt?.getTime() ?? Date.now()) + m!.clockOffsetSeconds * 1000);
+    const rows = await db.select({ regionId: matchRegions.regionId, buildings: matchRegions.buildings, isCapital: matchRegions.isCapital }).from(matchRegions).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.ownerPlayerId, playerId)));
+    for (const r of rows) {
+      const buildings = { ...r.buildings, storehouse: Math.max(6, r.buildings.storehouse ?? 0) };
+      const caps = storageCaps(effectsOf(buildings), r.isCapital);
+      await db
+        .update(matchRegions)
+        .set({ buildings, food: Math.min(want.food, caps.food), wood: Math.min(want.wood, caps.wood), stone: Math.min(want.stone, caps.stone), special: { copper: want.copper, iron: want.iron }, settledAt: at })
+        .where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, r.regionId)));
+    }
+  }
   it("games: a private game needs its invite code, speed and AI counts are capped, one open game at a time, and the creator may end it", async () => {
     const fast = await Ann.call("POST", "/api/matches", { name: `Fast ${suffix}`, speed: balance.match.maxGameSpeed + 1, startsInMinutes: 0, kind: "public" });
     expect(fast.statusCode, JSON.stringify(fast.json())).toBe(400);
@@ -744,25 +762,28 @@ describe("api routes", () => {
     const benPid = benState.me.playerId;
     const nowIso = async () => matchStateView.parse((await Ben.call("GET", `${base}/state`)).json()).match.now;
     const stockAt = async (id: string) => (await db.select({ food: matchRegions.food, wood: matchRegions.wood, stone: matchRegions.stone, special: matchRegions.special }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, id))))[0]!;
-    const fill = async (food: number, wood: number, stone: number, copper: number, iron: number) => {
-      await db.update(matchRegions).set({ food, wood, stone, special: { copper, iron }, settledAt: new Date(await nowIso()) }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
+    // Stores are capped per region (the capital holds three times more), so every region of Ben's is filled and the contract is measured across them.
+    const fill = (food: number, wood: number, stone: number, copper: number, iron: number) => fillEmpire(gameId, benPid, { food, wood, stone, copper, iron });
+    const totalStock = async () => {
+      const rows = await db.select({ food: matchRegions.food, wood: matchRegions.wood, stone: matchRegions.stone, special: matchRegions.special }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid)));
+      return rows.reduce((a, r) => ({ food: a.food + r.food, wood: a.wood + r.wood, copper: a.copper + ((r.special as { copper?: number }).copper ?? 0) }), { food: 0, wood: 0, copper: 0 });
     };
     const redis = createRedis();
     const pub = new Publisher(redis);
     try {
       // Hire: the first hour's wage leaves the capital; a second hire is refused.
-      await fill(4000, 3000, 2500, 60, 60);
+      await fill(12000, 12000, 9000, 100, 100);
       const regions = (await db.select({ n: sql<number>`count(*)::int` }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid), sql`${matchRegions.frozenAt} is null`)))[0]!.n;
       const wage = wageFor("economic", regions);
-      const before = await stockAt(cap);
+      const before = await totalStock();
       const hired = await Ben.call("POST", `${base}/advisors/economic/hire`, {});
       expect(hired.statusCode, hired.body).toBe(200);
       expect((hired.json() as { wage: Record<string, number> }).wage).toEqual(wage);
-      const after = await stockAt(cap);
-      // A day's contract leaves the capital at once.
+      const after = await totalStock();
+      // A day's contract leaves the empire at once, the capital first.
       expect(Math.round(before.food - after.food)).toBe(wage.food! * balance.advisors.contractHours);
       expect(Math.round(before.wood - after.wood)).toBe(wage.wood! * balance.advisors.contractHours);
-      expect(((before.special as { copper: number }).copper ?? 0) - ((after.special as { copper: number }).copper ?? 0)).toBe(wage.copper! * balance.advisors.contractHours);
+      expect(Math.round(before.copper - after.copper)).toBe(wage.copper! * balance.advisors.contractHours);
       expect((await Ben.call("POST", `${base}/advisors/economic/hire`, {})).statusCode).toBe(409);
       let st = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
       expect(st.advisors).toHaveLength(1);
@@ -786,7 +807,9 @@ describe("api routes", () => {
       expect((await Ben.call("POST", `${base}/advisors/economic/run`, {})).statusCode).toBe(429);
 
       // Workers: a capital gathering no food while its store is nearly empty is put back on food by the next pass; a store near its cap gets no more.
-      await db.update(matchRegions).set({ assignment: { food: 0, wood: 0.5, stone: 0.5 }, food: 20, wood: 3500, stone: 2900, settledAt: new Date(await nowIso()) }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
+      const [capRow] = await db.select({ buildings: matchRegions.buildings, isCapital: matchRegions.isCapital }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
+      const capCaps = storageCaps(effectsOf(capRow!.buildings), capRow!.isCapital);
+      await db.update(matchRegions).set({ assignment: { food: 0, wood: 0.5, stone: 0.5 }, food: 20, wood: Math.floor(capCaps.wood * 0.97), stone: Math.floor(capCaps.stone * 0.97), settledAt: new Date(await nowIso()) }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
       await db.update(advisors).set({ lastPassAt: null }).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
       const runW = await Ben.call("POST", `${base}/advisors/economic/run`, {});
       expect(runW.statusCode, runW.body).toBe(200);
@@ -794,7 +817,7 @@ describe("api routes", () => {
       const [capAfter] = await db.select({ assignment: matchRegions.assignment }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
       expect(capAfter!.assignment.food).toBeGreaterThanOrEqual(0.5);
       expect(capAfter!.assignment.stone).toBeLessThanOrEqual(0.2);
-      await fill(4000, 3000, 2500, 60, 60);
+      await fill(12000, 12000, 9000, 100, 100);
 
       // Balanced people: a swollen capital sends a column to an emptier region of Ben's.
       await db.update(matchRegions).set({ popWorkers: 600, settledAt: new Date(await nowIso()) }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
@@ -810,7 +833,7 @@ describe("api routes", () => {
         await db.update(matches).set({ lastTickAt: new Date(Date.now() - 3600_000) }).where(eq(matches.id, gameId));
         await runMatchTicks(db, pub, logger);
       };
-      await fill(4000, 3000, 2500, 60, 60);
+      await fill(12000, 12000, 9000, 100, 100);
       await db.update(advisors).set({ paidUntil: new Date(Date.parse(await nowIso()) - 2 * (3600_000 / benState.match.speed)) }).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
       const b2 = await stockAt(cap);
       await tickOnce();
@@ -832,7 +855,7 @@ describe("api routes", () => {
       const told = await db.select().from(messages).where(and(eq(messages.matchId, gameId), eq(messages.playerId, benPid), sql`${messages.payload}->>'unpaid' = 'true'`));
       expect(told.length).toBe(1);
       // Paid again: back at work.
-      await fill(4000, 3000, 2500, 60, 60);
+      await fill(12000, 12000, 9000, 100, 100);
       await tickOnce();
       const [row3] = await db.select().from(advisors).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
       expect(row3!.unpaidSince).toBeNull();
@@ -845,7 +868,7 @@ describe("api routes", () => {
       expect(tooSoon.statusCode).toBe(409);
       expect(tooSoon.body).toContain("take you back");
       await db.update(advisors).set({ firedAt: new Date(Date.parse(await nowIso()) - (balance.advisors.rehireCooldownHours + 1) * (3600_000 / benState.match.speed)) }).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid), eq(advisors.kind, "economic")));
-      await fill(4000, 3000, 2500, 60, 60);
+      await fill(12000, 12000, 9000, 100, 100);
       expect((await Ben.call("POST", `${base}/advisors/economic/hire`, {})).statusCode).toBe(200);
       st = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
       expect(st.advisors[0]!.settings.minLevels).toEqual({ quarry: 1 });
@@ -857,7 +880,7 @@ describe("api routes", () => {
       await tickOnce();
       const [still] = await db.select({ popWorkers: matchRegions.popWorkers }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
       expect(Math.round(still!.popWorkers)).toBeGreaterThanOrEqual(590);
-      await fill(4000, 3000, 2500, 60, 60);
+      await fill(12000, 12000, 9000, 100, 100);
       expect((await Ben.call("POST", `${base}/advisors/economic/hire`, {})).statusCode).toBe(200);
       // Rehiring keeps the old settings (balanced); overflow is what this step checks.
       expect((await Ben.call("PUT", `${base}/advisors/economic/settings`, { population: "overflow" })).statusCode).toBe(200);
@@ -878,9 +901,7 @@ describe("api routes", () => {
     const cap = benState.me.capitalRegionId!;
     const benPid = benState.me.playerId;
     const nowIso = async () => matchStateView.parse((await Ben.call("GET", `${base}/state`)).json()).match.now;
-    const fillCap = async () => {
-      await db.update(matchRegions).set({ food: 4000, wood: 3000, stone: 2500, special: { copper: 80, iron: 80 }, settledAt: new Date(await nowIso()) }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
-    };
+    const fillCap = () => fillEmpire(gameId, benPid, { food: 6000, wood: 12000, stone: 10000, copper: 100, iron: 120 });
     // A weak neutral tribe on free land next to one of Ben's regions: the target.
     const ownedIds = benState.owned.map((o) => o.regionId);
     const around = [...new Set(ownedIds.flatMap((id) => regionById(id)?.neighbors ?? []))].filter((n) => !ownedIds.includes(n));
@@ -967,6 +988,64 @@ describe("api routes", () => {
       await db.delete(regionNotes).where(and(eq(regionNotes.matchId, gameId), eq(regionNotes.playerId, benPid)));
     } finally {
       await redis.quit().catch(() => {});
+    }
+  });
+
+  it("the Warden of the Thaw: hired for her wage, puts the regions in the ice's path on the clock, evacuates one to safe ground with a route, sends the capital wagon ahead of the ice, and starts a colony on the warm side", async () => {
+    const base = `/api/matches/${gameId}`;
+    // Nunavut freezes on day 2; Manitoba, one hop south, on day 13. Both are given to Ben, Nunavut as his capital, twelve hours before the ice reaches it.
+    const A = "ca-nunavut";
+    const S = "ca-manitoba";
+    const benState = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
+    const benPid = benState.me.playerId;
+    const oldCapital = benState.me.capitalRegionId;
+    const [mrow] = await db.select({ startsAt: matches.startsAt, speed: matches.speed, clockOffsetSeconds: matches.clockOffsetSeconds }).from(matches).where(eq(matches.id, gameId));
+    const freezeA = mrow!.startsAt!.getTime() + (2 * 86400_000) / mrow!.speed;
+    const wantNow = freezeA - 12 * (3600_000 / mrow!.speed);
+    const nowMs = Date.now() + mrow!.clockOffsetSeconds * 1000;
+    if (wantNow > nowMs) await db.update(matches).set({ clockOffsetSeconds: sql`${matches.clockOffsetSeconds} + ${Math.ceil((wantNow - nowMs) / 1000)}` }).where(eq(matches.id, gameId));
+    const now = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json()).match.now;
+    for (const [id, pop] of [[A, 40], [S, 900]] as const) {
+      const row = { ownerPlayerId: benPid, popWorkers: pop, popSoldiers: 0, popOccupiers: 0, units: { warrior: 3 }, buildings: { storehouse: 6 }, food: 4000, wood: 4000, stone: 3500, special: { copper: 100, iron: 120 }, frozenAt: null, evacuatedAt: null, settledAt: new Date(now) };
+      await db.insert(matchRegions).values({ matchId: gameId, regionId: id, assignment: { ...balance.start.assignment }, ...row }).onConflictDoUpdate({ target: [matchRegions.matchId, matchRegions.regionId], set: row });
+    }
+    await db.update(players).set({ capitalRegionId: A }).where(eq(players.id, benPid));
+    await db.update(matchRegions).set({ isCapital: false }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid)));
+    await db.update(matchRegions).set({ isCapital: true }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, A)));
+    await fillEmpire(gameId, benPid, { food: 6000, wood: 16000, stone: 14000, copper: 100, iron: 120 });
+    try {
+      const regions = (await db.select({ n: sql<number>`count(*)::int` }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid), sql`${matchRegions.frozenAt} is null`)))[0]!.n;
+      const hired = await Ben.call("POST", `${base}/advisors/thaw/hire`, {});
+      expect(hired.statusCode, hired.body).toBe(200);
+      expect((hired.json() as { wage: Record<string, number> }).wage).toEqual(wageFor("thaw", regions));
+      expect((await Ben.call("PUT", `${base}/advisors/thaw/settings`, { warningHours: 24, capitalHours: 48, destination: "safest", moveCapital: true, settle: true })).statusCode).toBe(200);
+      const r = await Ben.call("POST", `${base}/advisors/thaw/run`, {});
+      expect(r.statusCode, r.body).toBe(200);
+      const report = (r.json() as { report: { evacuated: number; settled: number; trained: number; clock: Array<{ regionId: string; hoursLeft: number }>; suggestions: Array<{ text: string }> } }).report;
+      // Nunavut is on the clock and has been emptied toward Manitoba; the capital wagon follows.
+      expect(report.clock.map((l) => l.regionId)).toContain(A);
+      expect(report.clock.find((l) => l.regionId === A)!.hoursLeft).toBeLessThanOrEqual(24);
+      expect(report.evacuated, JSON.stringify(report.suggestions)).toBe(1);
+      const [column] = await db.select().from(armies).where(and(eq(armies.matchId, gameId), eq(armies.playerId, benPid), eq(armies.mission, "move"), eq(armies.originRegionId, A), eq(armies.targetRegionId, S), eq(armies.status, "outbound")));
+      expect(column).toBeDefined();
+      expect(column!.units.warrior).toBe(3);
+      const [after] = await db.select({ evacuatedAt: matchRegions.evacuatedAt }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, A)));
+      expect(after!.evacuatedAt).not.toBeNull();
+      const [wagon] = await db.select().from(armies).where(and(eq(armies.matchId, gameId), eq(armies.playerId, benPid), eq(armies.mission, "relocate"), eq(armies.status, "outbound")));
+      expect(wagon, JSON.stringify(report.suggestions)).toBeDefined();
+      expect(wagon!.targetRegionId).toBe(S);
+      // The warm side: settlers ordered at Manitoba (or already on the road), unless every neighbour is taken, which the report says.
+      const colony = report.settled > 0 || report.trained >= balance.settle.settlersRequired || report.suggestions.some((s) => /No free land/.test(s.text));
+      expect(colony, JSON.stringify(report.suggestions)).toBe(true);
+      // Manitoba, safe, is not on the clock and was not touched.
+      expect(report.clock.map((l) => l.regionId)).not.toContain(S);
+      expect((await Ben.call("POST", `${base}/advisors/thaw/fire`, {})).statusCode).toBe(200);
+    } finally {
+      await db.update(players).set({ capitalRegionId: oldCapital }).where(eq(players.id, benPid));
+      await db.update(matchRegions).set({ isCapital: false }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, A)));
+      if (oldCapital) await db.update(matchRegions).set({ isCapital: true }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, oldCapital)));
+      await db.delete(armies).where(and(eq(armies.matchId, gameId), eq(armies.playerId, benPid), inArray(armies.originRegionId, [A, S])));
+      await db.update(matchRegions).set({ ownerPlayerId: null, popWorkers: 0, units: {}, evacuatedAt: null }).where(and(eq(matchRegions.matchId, gameId), inArray(matchRegions.regionId, [A, S])));
     }
   });
 
@@ -1295,4 +1374,5 @@ describe("api routes", () => {
     expect(h.json()).toMatchObject({ played: 0, titles: [] });
     expect((h.json() as { active: { matchId: string }[] }).active.some((a) => a.matchId === gameId)).toBe(true);
   });
+
 });

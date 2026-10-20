@@ -63,12 +63,19 @@ export function noteBadges(state: MatchStateView): OverlayBadge[] {
     .map((n) => ({ regionId: n.regionId, colour: NOTE_HEX[n.colour!] ?? "#f8fafc", glyph: "✎", label: `${regionById(n.regionId)?.name ?? n.regionId}${n.text ? `: ${n.text}` : ""}` }));
 }
 
-/** The Military advisor's marks: a red crossed swords on every target, an amber shield on the most exposed border regions. */
+/**
+ * The advisors' marks: a red crossed swords on every Military target, an amber shield on the most exposed border
+ * regions, and a snowflake on every region the Warden of the Thaw has on the clock.
+ */
 export function advisorBadges(state: MatchStateView): OverlayBadge[] {
+  const out: OverlayBadge[] = [];
   const max = state.advisors.find((a) => a.kind === "military");
-  if (!max) return [];
-  const out: OverlayBadge[] = max.settings.targets.map((id, i) => ({ regionId: id, colour: "#f43f5e", glyph: "⚔", label: `Target ${i + 1} for the Military advisor: ${regionById(id)?.name ?? id}` }));
-  for (const e of max.lastReport?.exposed ?? []) if (e.exposure >= 1) out.push({ regionId: e.regionId, colour: "#f59e0b", glyph: "⛨", label: e.text });
+  if (max) {
+    out.push(...max.settings.targets.map((id, i) => ({ regionId: id, colour: "#f43f5e", glyph: "⚔", label: `Target ${i + 1} for the Military advisor: ${regionById(id)?.name ?? id}` })));
+    for (const e of max.lastReport?.exposed ?? []) if (e.exposure >= 1) out.push({ regionId: e.regionId, colour: "#f59e0b", glyph: "⛨", label: e.text });
+  }
+  const freya = state.advisors.find((a) => a.kind === "thaw");
+  for (const l of freya?.lastReport?.clock ?? []) out.push({ regionId: l.regionId, colour: "#7dd3fc", glyph: "❄", label: l.text });
   return out;
 }
 

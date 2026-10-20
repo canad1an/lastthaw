@@ -75,7 +75,8 @@ export function useMenuData(matchId: string, state: MatchStateView, overlays: Se
   }, [inboxOpen, q.data]);
   const hiredAdvisors = state.advisors.length;
   const exposedHigh = state.advisors.some((a) => a.kind === "military" && (a.lastReport?.exposed ?? []).some((e) => e.exposure >= 2));
-  const advisorBadge = state.advisors.some((a) => a.unpaid) ? "unpaid" : exposedHigh ? "exposed" : hiredAdvisors ? `${hiredAdvisors} hired` : undefined;
+  const iceSoon = state.advisors.some((a) => a.kind === "thaw" && (a.lastReport?.clock ?? []).some((l) => l.hoursLeft <= a.settings.warningHours));
+  const advisorBadge = state.advisors.some((a) => a.unpaid) ? "unpaid" : iceSoon ? "ice" : exposedHigh ? "exposed" : hiredAdvisors ? `${hiredAdvisors} hired` : undefined;
   const entries: MenuEntry[] = [
     { id: "messages", label: "Messages", badge: unread ? `${unread} new` : undefined, tone: "alert" },
     { id: "alliance", label: "Alliance", badge: proposals ? `${proposals} to answer` : state.me.allianceTag ? `[${state.me.allianceTag}]` : invites ? `${invites} invite` : undefined, tone: proposals ? "alert" : undefined },
@@ -85,7 +86,7 @@ export function useMenuData(matchId: string, state: MatchStateView, overlays: Se
     { id: "leaderboard", label: "Leaderboard" },
     { id: "empire", label: "Resources", badge: state.owned.length },
     { id: "logistics", label: "Logistics", badge: logisticsBadge, tone: logisticsBadge ? "alert" : undefined },
-    { id: "advisors", label: "Advisors", badge: advisorBadge, tone: state.advisors.some((a) => a.unpaid) || exposedHigh ? "alert" : undefined },
+    { id: "advisors", label: "Advisors", badge: advisorBadge, tone: state.advisors.some((a) => a.unpaid) || exposedHigh || iceSoon ? "alert" : undefined },
     { id: "tech", label: "Tech", badge: `${state.me.techs.length}/${TECHS.length}` },
     { id: "view", label: "View", badge: overlays.size || undefined },
   ];

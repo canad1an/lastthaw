@@ -26,12 +26,13 @@ const SKIP_LABEL: Record<string, string> = {
   haulingBusy: "enough builds already waiting on hauling",
   protected: "target under beginner protection",
   pact: "target under a pact or ceasefire",
-  noRoute: "no land route to the target",
+  noRoute: "no route to safe ground, or to the target",
 };
 
-const ADVISORS: Array<{ kind: AdvisorKind; name: string; title: string; blurb: string; duties: string[]; portrait: string }> = [
+const ADVISORS: Array<{ kind: AdvisorKind; name: string; title: string; blurb: string; duties: string[]; portrait: string; she: boolean }> = [
   {
     kind: "economic",
+    she: true,
     name: "Mara",
     title: "the Economic advisor",
     blurb: "Keeper of stores and roads. Buildings, supply and people across every region, so you do not have to open each one.",
@@ -47,6 +48,7 @@ const ADVISORS: Array<{ kind: AdvisorKind; name: string; title: string; blurb: s
   },
   {
     kind: "military",
+    she: false,
     name: "Max",
     title: "the Military advisor",
     blurb: "A general for hire. Holds your borders and takes the regions you mark, to the stance you set.",
@@ -57,6 +59,21 @@ const ADVISORS: Array<{ kind: AdvisorKind; name: string; title: string; blurb: s
       "Takes the regions you mark on the map, up to three campaigns at once: scouts first, then a muster at your nearest region with a land route, then the attack. A beaten force musters again larger; two defeats and he gives up on that one.",
       "Aggressive: picks weak neighbours himself when your list has room, and raids rich ones with soldiers to spare. Passive: defence only.",
       "Never attacks allies, pact partners or tribes under beginner protection, and never touches research or the market.",
+    ],
+  },
+  {
+    kind: "thaw",
+    she: true,
+    name: "Freya",
+    title: "the Warden of the Thaw",
+    blurb: "Keeper of the ice line. Gets your people, soldiers and stores out of every region before it freezes, moves the capital out of the ice's path, and plants colonies on the warm side.",
+    portrait: "/advisors/thaw.jpg",
+    duties: [
+      "Reads the ice schedule against every region you hold each pass and puts the ones freezing soonest on the clock, with a line each.",
+      "Evacuates every region that freezes within the warning you set: people, units and what they can carry go to the safest region of yours with a route (or your capital), the stores following by hauler.",
+      "Moves the capital before its slow wagon would be too late, to your longest-lasting populous region, and tells you when it leaves.",
+      "While land is being lost, settles the nearest free region on the warm side that stays unfrozen for a week or more, training the settlers where they are short, one colony on the road at a time.",
+      "Cannot stop the ice: a region with no safe ground in reach is reported so you can act, and the last stand stays yours to call.",
     ],
   },
 ];
@@ -88,8 +105,8 @@ export function AdvisorsPanel({ matchId, state, onSelect, clockOffsetMs }: { mat
     (() => {
       const meta = ADVISORS.find((x) => x.kind === confirm.kind)!;
       const wage = wageOf(confirm.kind);
-      const pronoun = confirm.kind === "economic" ? "her" : "him";
-      const she = confirm.kind === "economic" ? "She" : "He";
+      const pronoun = meta.she ? "her" : "him";
+      const she = meta.she ? "She" : "He";
       return createPortal(
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm" onClick={() => setConfirm(null)} role="dialog" aria-modal="true">
           <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-950 p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
@@ -167,7 +184,7 @@ export function AdvisorsPanel({ matchId, state, onSelect, clockOffsetMs }: { mat
             </div>
           </div>
         </Card>
-        {view === "economic" ? <SettingsForm matchId={matchId} state={state} advisor={current} /> : <MilitarySettings matchId={matchId} state={state} advisor={current} onSelect={onSelect} />}
+        {view === "economic" ? <SettingsForm matchId={matchId} state={state} advisor={current} /> : view === "military" ? <MilitarySettings matchId={matchId} state={state} advisor={current} onSelect={onSelect} /> : <ThawSettings matchId={matchId} state={state} advisor={current} onSelect={onSelect} />}
         {current.lastReport && <Report advisor={current} onSelect={onSelect} />}
         {dialog}
       </div>
@@ -379,6 +396,98 @@ function MilitarySettings({ matchId, state, advisor, onSelect }: { matchId: stri
   );
 }
 
+function ThawSettings({ matchId, state, advisor, onSelect }: { matchId: string; state: MatchStateView; advisor: AdvisorView; onSelect: (regionId: string) => void }) {
+  const qc = useQueryClient();
+  const refresh = () => void qc.invalidateQueries({ queryKey: keys.matchState(matchId) });
+  const [draft, setDraft] = useState<AdvisorSettings>(advisor.settings);
+  useEffect(() => setDraft(advisor.settings), [advisor.settings]);
+  const save = useMutation({ mutationFn: (s: AdvisorSettings) => api.setAdvisorSettings(matchId, "thaw", s), onSuccess: refresh });
+  const dirty = JSON.stringify(draft) !== JSON.stringify(advisor.settings);
+  const regions = useMemo(() => [...state.owned].sort((a, b) => Number(b.isCapital) - Number(a.isCapital) || (regionById(a.regionId)?.name ?? "").localeCompare(regionById(b.regionId)?.name ?? "")), [state.owned]);
+  const clock = advisor.lastReport?.clock ?? [];
+  const num = (v: string, lo: number, hi: number) => Math.max(lo, Math.min(hi, Math.round(Number(v) || lo)));
+  return (
+    <>
+      <Card className="space-y-3">
+        <h3 className="font-semibold text-white">Ahead of the ice</h3>
+        <div className="grid gap-2 text-xs text-slate-300 sm:grid-cols-2">
+          <label className="flex items-center justify-between gap-2 rounded border border-slate-800 px-2 py-1">
+            <span>Evacuate this many game hours before a region freezes</span>
+            <input type="number" min={6} max={120} value={draft.warningHours} onChange={(e) => setDraft((d) => ({ ...d, warningHours: num(e.target.value, 6, 120) }))} className="w-20 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-right text-slate-100" />
+          </label>
+          <label className="flex items-center justify-between gap-2 rounded border border-slate-800 px-2 py-1">
+            <span>Move the capital this many hours before (the wagon is slow)</span>
+            <input type="number" min={12} max={168} value={draft.capitalHours} onChange={(e) => setDraft((d) => ({ ...d, capitalHours: num(e.target.value, 12, 168) }))} className="w-20 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-right text-slate-100" />
+          </label>
+        </div>
+        <div className="text-xs text-slate-300">
+          {(
+            [
+              ["safest", "Safest ground", "evacuees go to the nearest region of yours that outlasts theirs by a safe margin, or the longest-lasting one in reach."],
+              ["capital", "The capital", "everyone goes to your capital while it is safe itself; otherwise the safest ground."],
+            ] as const
+          ).map(([v, label, text]) => (
+            <label key={v} className="flex items-start gap-2 py-0.5">
+              <input type="radio" name="advisor-destination" checked={draft.destination === v} onChange={() => setDraft((d) => ({ ...d, destination: v }))} className="mt-0.5 accent-sky-400" />
+              <span>
+                <span className="text-slate-100">{label}.</span> {text}
+              </span>
+            </label>
+          ))}
+        </div>
+        <div className="space-y-1 text-xs text-slate-300">
+          <label className="flex items-start gap-2">
+            <input type="checkbox" checked={draft.moveCapital} onChange={(e) => setDraft((d) => ({ ...d, moveCapital: e.target.checked }))} className="mt-0.5 accent-sky-400" />
+            <span>Move the capital out of the ice's path, to your longest-lasting populous region with a route.</span>
+          </label>
+          <label className="flex items-start gap-2">
+            <input type="checkbox" checked={draft.settle} onChange={(e) => setDraft((d) => ({ ...d, settle: e.target.checked }))} className="mt-0.5 accent-sky-400" />
+            <span>Settle the warm side while regions are on the clock: the nearest free region that stays unfrozen a week or more, one colony on the road at a time, settlers trained where they are short.</span>
+          </label>
+        </div>
+        <details className="text-xs text-slate-300">
+          <summary className="cursor-pointer text-slate-400">Regions she leaves alone ({draft.skipRegions.length})</summary>
+          <div className="mt-1 grid gap-0.5 sm:grid-cols-2">
+            {regions.map((r) => (
+              <label key={r.regionId} className="flex items-center gap-2">
+                <input type="checkbox" checked={draft.skipRegions.includes(r.regionId)} onChange={(e) => setDraft((d) => ({ ...d, skipRegions: e.target.checked ? [...d.skipRegions, r.regionId] : d.skipRegions.filter((x) => x !== r.regionId) }))} className="accent-sky-400" />
+                <span>
+                  {regionById(r.regionId)?.name ?? r.regionId}
+                  {r.isCapital ? <span className="text-slate-500"> (capital)</span> : null}
+                </span>
+              </label>
+            ))}
+          </div>
+        </details>
+        <div className="flex items-center gap-2">
+          <Button onClick={() => save.mutate(draft)} disabled={!dirty || save.isPending}>
+            Save
+          </Button>
+          {save.isSuccess && !dirty && <span className="text-xs text-emerald-300">Saved.</span>}
+          <ErrorText>{save.error?.message}</ErrorText>
+        </div>
+      </Card>
+
+      {clock.length > 0 && (
+        <Card className="space-y-2">
+          <h3 className="font-semibold text-white">On the clock</h3>
+          <ul className="space-y-1 text-xs text-slate-300">
+            {clock.map((l) => (
+              <li key={l.regionId} className="flex items-start gap-2">
+                <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] tabular-nums ${l.hoursLeft <= advisor.settings.warningHours ? "bg-rose-500/20 text-rose-200" : "bg-sky-500/20 text-sky-200"}`}>{l.hoursLeft} h</span>
+                <span className="min-w-0 flex-1">{l.text}</span>
+                <button className="shrink-0 rounded border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-xs text-sky-200 hover:bg-sky-500/20" onClick={() => onSelect(l.regionId)}>
+                  Open region →
+                </button>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+    </>
+  );
+}
+
 function SettingsForm({ matchId, state, advisor }: { matchId: string; state: MatchStateView; advisor: AdvisorView }) {
   const qc = useQueryClient();
   const [draft, setDraft] = useState<AdvisorSettings>(advisor.settings);
@@ -493,6 +602,8 @@ function Report({ advisor, onSelect }: { advisor: AdvisorView; onSelect: (region
         {r.rebalanced ? `, reset the workers of ${r.rebalanced} region${r.rebalanced === 1 ? "" : "s"}` : ""}
         {r.trained ? `, ordered ${fmt(r.trained)} soldiers` : ""}
         {r.fortified ? `, queued ${r.fortified} wall${r.fortified === 1 ? "" : "s"}` : ""}
+        {r.evacuated ? `, evacuated ${r.evacuated} region${r.evacuated === 1 ? "" : "s"}` : ""}
+        {r.settled ? `, sent ${r.settled} colon${r.settled === 1 ? "y" : "ies"}` : ""}
         {skipped.length ? `; skipped ${skipped.map(([k, n]) => `${n} (${SKIP_LABEL[k] ?? k})`).join(", ")}` : ""}.
       </p>
       {r.suggestions.length > 0 && (

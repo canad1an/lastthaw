@@ -465,7 +465,7 @@ export const pacts = pgTable(
 );
 
 /** Mercenary companies on offer in a match. */
-/** Hired advisors, one row per kind per player per match; firing deletes the row. */
+/** Hired advisors, one row per kind per player per match; firing keeps the row with firedAt set so the settings survive a rehire. */
 export const advisors = pgTable(
   "advisors",
   {
@@ -476,7 +476,7 @@ export const advisors = pgTable(
     playerId: uuid("player_id")
       .notNull()
       .references(() => players.id, { onDelete: "cascade" }),
-    kind: text("kind").$type<"economic" | "military">().notNull(),
+    kind: text("kind").$type<"economic" | "military" | "thaw" | "chancellor">().notNull(),
     hiredAt: timestamp("hired_at", { withTimezone: true }).notNull(),
     /** Paid for up to this moment of match time; the tick charges each whole hour past it. */
     paidUntil: timestamp("paid_until", { withTimezone: true }).notNull(),

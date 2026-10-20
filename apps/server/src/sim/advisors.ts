@@ -22,7 +22,9 @@ export type AdvisorRow = typeof advisors.$inferSelect;
 const hourMs = (m: MatchRow) => 3600_000 / m.speed;
 
 /** The hourly wage for an empire of `regions` regions, each resource rounded up. */
-export const ADVISOR_NAMES: Record<AdvisorKind, string> = { economic: "Mara, the Economic advisor", military: "Max, the Military advisor" };
+export const ADVISOR_NAMES: Record<AdvisorKind, string> = { economic: "Mara, the Economic advisor", military: "Max, the Military advisor", thaw: "Freya, the Warden of the Thaw", chancellor: "Theo, the Chancellor" };
+/** The short title used in messages: "Your Military advisor". */
+export const ADVISOR_TITLES: Record<AdvisorKind, string> = { economic: "Economic advisor", military: "Military advisor", thaw: "Warden of the Thaw", chancellor: "Chancellor" };
 
 export function wageFor(kind: AdvisorKind, regions: number): Record<string, number> {
   const per = balance.advisors[kind].perRegionPerHour;
@@ -112,11 +114,11 @@ export async function chargeAdvisors(tx: Tx, m: MatchRow, now: Date): Promise<vo
         const line = Object.entries(wage)
           .map(([k, v]) => `${v} ${k}`)
           .join(", ");
-        await notify(tx, m.id, p.id, "system", `Your ${a.kind === "military" ? "Military" : "Economic"} advisor is unpaid and has stopped working: the wage is ${line} an hour, drawn from your capital first`, { advisor: a.kind, unpaid: true });
+        await notify(tx, m.id, p.id, "system", `Your ${ADVISOR_TITLES[a.kind]} is unpaid and has stopped working: the wage is ${line} an hour, drawn from your capital first`, { advisor: a.kind, unpaid: true });
       }
     } else if (a.unpaidSince) {
       await tx.update(advisors).set({ unpaidSince: null }).where(eq(advisors.id, a.id));
-      await notify(tx, m.id, p.id, "system", `Your ${a.kind === "military" ? "Military" : "Economic"} advisor has been paid and is back at work`, { advisor: a.kind, unpaid: false });
+      await notify(tx, m.id, p.id, "system", `Your ${ADVISOR_TITLES[a.kind]} has been paid and is back at work`, { advisor: a.kind, unpaid: false });
     }
   }
 }
@@ -159,6 +161,14 @@ export async function runPass(db: Db, m: MatchRow, p: PlayerRow, a: AdvisorRow, 
   if (a.kind === "military") {
     const { militaryPass } = await import("./militaryAdvisor.js");
     return militaryPass(db, m, p, a, now, publisher);
+  }
+  if (a.kind === "thaw") {
+    const { thawPass } = await import("./thawAdvisor.js");
+    return thawPass(db, m, p, a, now, publisher);
+  }
+  if (a.kind === "chancellor") {
+    const { chancellorPass } = await import("./chancellor.js");
+    return chancellorPass(db, m, p, a, now, publisher);
   }
   return economicPass(db, m, p, a, now, publisher);
 }
@@ -246,7 +256,7 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
   if (settings.population === "balanced") moved = await balancePeople(ctx, projected.map((x) => ({ row: x.row, economy: x.economy })), skip);
 
   const suggestions = await suggestionsFor(db, m, p, projected.map((x) => ({ row: x.row, economy: x.economy })), pending, settings, now);
-  const report: AdvisorReport = { at: now.toISOString(), queued, moved, rebalanced, trained: 0, fortified: 0, exposed: [], skipped, suggestions };
+  const report: AdvisorReport = { at: now.toISOString(), queued, moved, rebalanced, trained: 0, fortified: 0, exposed: [], evacuated: 0, settled: 0, clock: [], skipped, suggestions };
   await db.update(advisors).set({ lastPassAt: now, lastReport: report }).where(eq(advisors.id, a.id));
   await publisher.toPlayer(m.id, p.id, "advisor.report", { kind: a.kind, queued, moved });
   return report;

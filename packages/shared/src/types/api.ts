@@ -386,8 +386,8 @@ export const mercenaryOfferView = z.object({
 export type MercenaryOfferView = z.infer<typeof mercenaryOfferView>;
 export const lastStandBody = z.object({ targetRegionId: z.string() });
 
-/** Advisors: hired staff paid by the hour. Only the Economic advisor exists so far. */
-export const advisorKind = z.enum(["economic", "military"]);
+/** Advisors: hired staff paid by the hour: Economic, Military, the Warden of the Thaw, and the Chancellor. */
+export const advisorKind = z.enum(["economic", "military", "thaw", "chancellor"]);
 export type AdvisorKind = z.infer<typeof advisorKind>;
 export const advisorSettings = z.object({
   /** Minimum level wanted everywhere the building can stand; 0 or absent leaves it alone. */
@@ -413,6 +413,14 @@ export const advisorSettings = z.object({
   scoutFirst: z.boolean().default(true),
   /** Aggressive only: raid rich weak neighbours with spare soldiers. */
   raids: z.boolean().default(true),
+  // Warden of the Thaw: evacuate this many game hours before a region freezes; move the capital this many hours before.
+  warningHours: z.number().int().min(6).max(120).default(24),
+  capitalHours: z.number().int().min(12).max(168).default(48),
+  /** Where evacuees go: the safest region of yours with a route, or the capital. */
+  destination: z.enum(["safest", "capital"]).default("safest"),
+  moveCapital: z.boolean().default(true),
+  /** Settle free land on the warm side while regions are being lost. */
+  settle: z.boolean().default(true),
 });
 export type AdvisorSettings = z.infer<typeof advisorSettings>;
 export const campaignStage = z.enum(["intel", "muster", "marching", "done", "failed"]);
@@ -441,6 +449,11 @@ export const advisorReport = z.object({
   fortified: z.number().default(0),
   /** The most exposed border regions, worst first, with a line each. */
   exposed: z.array(z.object({ regionId: z.string(), exposure: z.number(), text: z.string() })).default([]),
+  // Warden of the Thaw.
+  evacuated: z.number().default(0),
+  settled: z.number().default(0),
+  /** Regions on the clock: freezing soonest first, with a line each. */
+  clock: z.array(z.object({ regionId: z.string(), hoursLeft: z.number(), text: z.string() })).default([]),
   skipped: z.record(z.string(), z.number()).default({}),
   suggestions: z.array(advisorSuggestion).default([]),
 });
