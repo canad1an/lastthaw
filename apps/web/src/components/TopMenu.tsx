@@ -288,10 +288,7 @@ export function MenuPanelBody({
         )}
         {menu === "advisors" && <AdvisorsPanel matchId={matchId} state={state} onSelect={onSelectRegion} clockOffsetMs={clockOffsetMs} />}
         {menu === "empire" && (
-          <EmpirePanel
-            state={state}
-            onSelect={onSelectRegion}
-          />
+          <EmpirePanel matchId={matchId} state={state} onSelect={onSelectRegion} />
         )}
         {menu === "view" && (
           <div className="space-y-1 p-3 text-sm">

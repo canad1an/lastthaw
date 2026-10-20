@@ -1116,6 +1116,38 @@ describe("api routes", () => {
     }
   });
 
+  it("the books: every hire, build, order and research is on the ledger by day and category, and the tick samples what the empire gathers and eats", async () => {
+    const base = `/api/matches/${gameId}`;
+    const benState = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
+    const cap = benState.me.capitalRegionId!;
+    // A build paid on the spot joins the ledger under buildings.
+    await fillEmpire(gameId, benState.me.playerId, { food: 4000, wood: 4000, stone: 3000, copper: 50, iron: 50 });
+    const queued = await Ben.call("POST", `${base}/regions/${cap}/build`, { buildingId: "huts" });
+    expect(queued.statusCode, queued.body).toBe(200);
+    const redis = createRedis();
+    try {
+      await db.update(matches).set({ lastTickAt: new Date(Date.now() - 3600_000) }).where(eq(matches.id, gameId));
+      await runMatchTicks(db, new Publisher(redis), logger);
+      const r = await Ben.call("GET", `${base}/finance`);
+      expect(r.statusCode, r.body).toBe(200);
+      const f = r.json() as { day: number; now: { gross: Record<string, number>; eaten: { people: number; soldiers: number }; regions: number }; history: Array<{ day: number; gross: Record<string, number> }>; spending: Array<{ day: number; category: string; resource: string; amount: number }> };
+      expect(f.now.gross.food).toBeGreaterThan(0);
+      expect(f.now.eaten.people).toBeGreaterThan(0);
+      expect(f.now.regions).toBeGreaterThan(0);
+      expect(f.history.length).toBeGreaterThan(0);
+      expect(f.history[f.history.length - 1]!.gross.food).toBeGreaterThan(0);
+      const total = (cat: string) => f.spending.filter((s) => s.category === cat).reduce((a, s) => a + s.amount, 0);
+      // The advisors hired earlier, the Chancellor's research and market listing, and the Huts just queued.
+      expect(total("advisors")).toBeGreaterThan(0);
+      expect(total("research")).toBeGreaterThan(0);
+      expect(total("market")).toBeGreaterThan(0);
+      expect(f.spending.some((s) => s.category === "build" && s.resource === "wood" && s.amount > 0)).toBe(true);
+      expect((await Out.call("GET", `${base}/finance`)).statusCode).toBe(403);
+    } finally {
+      await redis.quit().catch(() => {});
+    }
+  });
+
   it("a battle plays out: decided on arrival, then a unit or two a round under a crossed-swords icon everyone can watch, and nothing changes hands until the last round", async () => {
     const base = `/api/matches/${gameId}`;
     const benState = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());

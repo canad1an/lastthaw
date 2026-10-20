@@ -309,6 +309,13 @@
       "when": 1792523088779,
       "tag": "0043_battle_rounds",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1792523824208,
+      "tag": "0044_finance_books",
+      "breakpoints": true
     }
   ]
 }

@@ -1,6 +1,29 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { missionLabel, regionById, unitById, type MatchStateView } from "@lastthaw/shared";
 import { fmt } from "./ui.js";
+import { FinancialsPanel } from "./FinancialsPanel.js";
+
+/** The Resources menu: the regions table, or the books. */
+export function EmpirePanel({ matchId, state, onSelect }: { matchId: string; state: MatchStateView; onSelect: (regionId: string) => void }) {
+  const [tab, setTab] = useState<"regions" | "financials">("regions");
+  return (
+    <div>
+      <nav className="flex gap-1 border-b border-slate-800 px-3 text-sm">
+        {(
+          [
+            ["regions", "Regions"],
+            ["financials", "Financials"],
+          ] as const
+        ).map(([id, label]) => (
+          <button key={id} className={`px-2 py-1.5 ${tab === id ? "border-b-2 border-sky-400 text-white" : "text-slate-400 hover:text-slate-200"}`} onClick={() => setTab(id)}>
+            {label}
+          </button>
+        ))}
+      </nav>
+      {tab === "regions" ? <RegionsTable state={state} onSelect={onSelect} /> : <FinancialsPanel matchId={matchId} />}
+    </div>
+  );
+}
 
 const RES = ["food", "wood", "stone", "copper", "tin", "iron", "horses"] as const;
 
@@ -8,7 +31,7 @@ const RES = ["food", "wood", "stone", "copper", "tin", "iron", "horses"] as cons
  * Everything you have, in one table: every region's people, stores and
  * stationed units, with totals, plus units on the move.
  */
-export function EmpirePanel({ state, onSelect }: { state: MatchStateView; onSelect: (regionId: string) => void }) {
+function RegionsTable({ state, onSelect }: { state: MatchStateView; onSelect: (regionId: string) => void }) {
   const rows = useMemo(
     () =>
       [...state.owned]

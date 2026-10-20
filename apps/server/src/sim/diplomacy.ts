@@ -7,6 +7,7 @@ import { httpError } from "./commands.js";
 import { applyCost, settleAndLockRegion, stockOf, type Tx, resourceMultOf } from "./regions.js";
 import { notify, type MatchRow } from "../worker/jobs.js";
 import { matchNow } from "./clock.js";
+import { recordSpend } from "./ledger.js";
 
 type PactRow = typeof pacts.$inferSelect;
 type PlayerRow = typeof players.$inferSelect;
@@ -134,6 +135,7 @@ export async function payTribute(db: Db, m: MatchRow, me: PlayerRow, pactId: str
     const mine = locked.get(me.capitalRegionId!)!;
     if ((stockOf(mine)[terms.resource] ?? 0) < terms.amount) throw httpError(409, `your capital does not have ${terms.amount} ${terms.resource}`);
     await applyCost(tx, mine, { [terms.resource]: terms.amount });
+    await recordSpend(tx, m, me.id, "tribute", { [terms.resource]: terms.amount });
     const theirs = other.capitalRegionId ? locked.get(other.capitalRegionId) : null;
     if (theirs && theirs.ownerPlayerId === other.id) {
       const cur = (theirs as Record<string, unknown>)[terms.resource];

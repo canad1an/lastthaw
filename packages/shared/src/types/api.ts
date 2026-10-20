@@ -303,6 +303,15 @@ export const battleDetailView = liveBattleView.extend({
 });
 export type BattleDetailView = z.infer<typeof battleDetailView>;
 
+/** The player's books: production now and over the match, and spending by day, category and resource. */
+export const financeView = z.object({
+  day: z.number(),
+  now: z.object({ gross: z.record(z.string(), z.number()), eaten: z.object({ people: z.number(), soldiers: z.number() }), regions: z.number() }),
+  history: z.array(z.object({ day: z.number(), gross: z.record(z.string(), z.number()), eaten: z.object({ people: z.number(), soldiers: z.number() }), regions: z.number() })),
+  spending: z.array(z.object({ day: z.number(), category: z.string(), resource: z.string(), amount: z.number() })),
+});
+export type FinanceView = z.infer<typeof financeView>;
+
 export const routePreview = z.object({
   path: z.array(z.string()),
   seconds: z.number(),

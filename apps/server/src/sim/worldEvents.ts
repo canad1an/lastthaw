@@ -4,6 +4,7 @@ import { allRegions, balance, distanceKm, effectsOf, applyTechEffects, iceLatitu
 import { armies, events, jobs, matchRegions, mercenaryOffers, players } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
 import { ownerTechEffects, settleAndLockRegion, type MatchRegionRow, type Tx } from "./regions.js";
+import { recordSpend } from "./ledger.js";
 import { notify, type JobRow, type MatchRow } from "../worker/jobs.js";
 import { httpError } from "./commands.js";
 
@@ -76,6 +77,7 @@ export async function hireMercenaries(tx: Tx, m: MatchRow, p: { id: string; name
   if ((special.iron ?? 0) < o.iron) throw httpError(409, `the company wants ${o.iron} iron; your capital holds ${Math.floor(special.iron ?? 0)}`);
   await tx.update(matchRegions).set({ special: { ...special, iron: (special.iron ?? 0) - o.iron }, units: { ...capital.units, [o.unitId]: (capital.units[o.unitId] ?? 0) + o.qty }, popSoldiers: capital.popSoldiers + o.qty }).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, capital.regionId)));
   await tx.update(mercenaryOffers).set({ hiredBy: p.id, hiredAt: now }).where(eq(mercenaryOffers.id, o.id));
+  await recordSpend(tx, m, p.id, "military", { iron: o.iron });
   const leaves = new Date(now.getTime() + hoursMs(m, c.hours));
   await tx.insert(jobs).values({ matchId: m.id, playerId: p.id, kind: "merc_expire", refId: o.unitId, payload: { company: o.company, qty: o.qty }, startsAt: now, endsAt: leaves });
   await notify(tx, m.id, p.id, "system", `${o.company[0]!.toUpperCase()}${o.company.slice(1)} (${o.qty} ${unitById.get(o.unitId)?.name ?? o.unitId}) have reported to your capital. They leave in ${c.hours} hours.`, { regionId: capital.regionId, mercenaries: true, leaves: leaves.toISOString() });

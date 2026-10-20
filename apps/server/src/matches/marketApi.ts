@@ -8,6 +8,7 @@ import { marketOrders, matchRegions, matches, messages, players, transfers } fro
 import { requireUser } from "../auth/session.js";
 import type { Publisher } from "../realtime/publish.js";
 import { matchNow } from "../sim/clock.js";
+import { recordSpend } from "../sim/ledger.js";
 import { httpError } from "../sim/commands.js";
 import { applyCost, settleAndLockRegion, stockOf, type MatchRegionRow, type Tx, resourceMultOf } from "../sim/regions.js";
 import { idParams, orderParams } from "./params.js";
@@ -172,6 +173,7 @@ export async function createMarketOrder(db: Db, m: MatchRow, p: PlayerRow, body:
     if (row.frozenAt) throw httpError(409, "this region is frozen");
     if ((stockOf(row)[body.offerResource] ?? 0) < body.offerAmount) throw httpError(409, `not enough ${body.offerResource}`);
     await applyCost(tx, row, { [body.offerResource]: body.offerAmount });
+    await recordSpend(tx, m, p.id, "market", { [body.offerResource]: body.offerAmount });
     const [o] = await tx
       .insert(marketOrders)
       .values({
@@ -207,7 +209,10 @@ export async function cancelMarketOrder(db: Db, m: MatchRow, p: PlayerRow, order
         if (cap.ownerPlayerId === p.id) dest = cap;
       }
     }
-    if (dest) await credit(tx, dest, res, o.offerAmount);
+    if (dest) {
+      await credit(tx, dest, res, o.offerAmount);
+      await recordSpend(tx, m, p.id, "market", { [res]: o.offerAmount }, -1);
+    }
     await tx.update(marketOrders).set({ status: "cancelled" }).where(eq(marketOrders.id, o.id));
     return dest?.regionId ?? null;
   });
@@ -238,6 +243,7 @@ return db.transaction(async (tx) => {
     if ((stockOf(buyerRow)[askRes] ?? 0) < o.askAmount) throw httpError(409, `not enough ${askRes}`);
 
     const paid = await applyCost(tx, buyerRow, { [askRes]: o.askAmount });
+    await recordSpend(tx, m, p.id, "market", { [askRes]: o.askAmount });
     const received = await credit(tx, paid, offerRes, o.offerAmount);
 
     let sellerRow = sellerDest ? (locked.get(sellerDest) ?? null) : null;

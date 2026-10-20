@@ -6,6 +6,7 @@ import { jobs, matches, playerTechs, players, tradeRoutes } from "../db/schema.j
 import { requireUser } from "../auth/session.js";
 import type { Publisher } from "../realtime/publish.js";
 import { matchNow } from "../sim/clock.js";
+import { recordSpend } from "../sim/ledger.js";
 import { applyCost, settleAndLockRegion, resourceMultOf } from "../sim/regions.js";
 import { httpError, pendingRegionJobs, queueBuild, queueResearch, queueTrain, type CommandContext } from "../sim/commands.js";
 import { idParams, regionParams, jobParams } from "./params.js";
@@ -101,7 +102,10 @@ export async function jobRoutes(app: FastifyInstance, opts: { db: Db; publisher:
           }
           if (Object.keys(back).length) {
             const src = await settleAndLockRegion(tx, matchId, r.fromRegionId, now, m.speed, resourceMultOf(m));
-            if (src.ownerPlayerId === p.id) await applyCost(tx, src, back as Cost, -1);
+            if (src.ownerPlayerId === p.id) {
+              await applyCost(tx, src, back as Cost, -1);
+              await recordSpend(tx, m, p.id, job.kind === "train" ? "military" : "build", back, -1);
+            }
           }
           const stillOwed = Object.entries(target).some(([k, v]) => v > (r.delivered[k] ?? 0) + 0.5);
           if (!stillOwed) await tx.delete(tradeRoutes).where(eq(tradeRoutes.id, r.id));
@@ -111,7 +115,10 @@ export async function jobRoutes(app: FastifyInstance, opts: { db: Db; publisher:
       const factor = started ? balance.timers.cancelRefundStarted : 1;
       if (refundRegion) {
         const row = await settleAndLockRegion(tx, matchId, refundRegion, now, m.speed, resourceMultOf(m));
-        if (row.ownerPlayerId === p.id) await applyCost(tx, row, cost, -factor);
+        if (row.ownerPlayerId === p.id) {
+          await applyCost(tx, row, cost, -factor);
+          await recordSpend(tx, m, p.id, job.kind === "train" ? "military" : job.kind === "research" ? "research" : "build", cost, -factor);
+        }
       }
       await tx.update(jobs).set({ cancelledAt: now }).where(eq(jobs.id, jobId));
       {

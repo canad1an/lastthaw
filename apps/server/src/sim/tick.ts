@@ -8,6 +8,7 @@ import { matchRegions, matches, players } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
 import { matchNow } from "./clock.js";
 import { chargeAdvisors, overflowPlayerIds } from "./advisors.js";
+import { recordEconomy } from "./ledger.js";
 import { ownerTechEffects, settleAndLockRegion, type Tx } from "./regions.js";
 import { migrateCrowded, sweepEvacuated } from "./missions.js";
 import { repairWaitingBuilds } from "./commands.js";
@@ -72,6 +73,7 @@ async function tickMatch(db: Db, publisher: Publisher, matchId: string, log: pin
     }
     await expirePacts(tx, m, now);
     const standings = await updateScores(tx, m);
+    await recordEconomy(tx, m, now);
     await recordOwnershipFrame(tx, m, now);
     await checkEarlyWin(tx, m, now, standings, publisher, (fn) => after.push(fn));
     await tx.update(matches).set({ lastTickAt: now }).where(eq(matches.id, m.id));

@@ -14,6 +14,16 @@ const ev = balance.events;
 /** The numbers behind the rules, read straight from the balance config so this page never drifts from the game. */
 const ADVANCED: Array<{ title: string; body: React.ReactNode }> = [
   {
+    title: "Financials: the books",
+    body: (
+      <>
+        <p>
+          The Resources menu has a Financials tab: what your empire gathers and mines per game hour right now and over the match (sampled every quarter day), against what it spends, by game day and by what: buildings, military (training, upgrades and mercenaries), research, advisors, the market, tribute and refugees, with what your people and your soldiers eat shown for food. Pick a resource at the top; the table underneath sums every resource over the last day: gathered, eaten, spent and kept. Refunds come off the books. Goods set aside for a build count the moment they are set aside; goods on the road between your own regions are not spending.
+        </p>
+      </>
+    ),
+  },
+  {
     title: "Advisors: what they cost and what they do",
     body: (
       <>

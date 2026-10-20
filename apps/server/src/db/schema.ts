@@ -390,6 +390,42 @@ export const tradeRoutes = pgTable(
 );
 
 /** Score, regions and people per player, sampled every quarter of a match day by the tick: the growth chart at the end. */
+/** The books: what a player spent, by game day, category (build, military, research, advisors, market, tribute, refugees) and resource; refunds come off. */
+export const spendLedger = pgTable(
+  "spend_ledger",
+  {
+    matchId: uuid("match_id")
+      .notNull()
+      .references(() => matches.id, { onDelete: "cascade" }),
+    playerId: uuid("player_id")
+      .notNull()
+      .references(() => players.id, { onDelete: "cascade" }),
+    day: integer("day").notNull(),
+    category: text("category").notNull(),
+    resource: text("resource").notNull(),
+    amount: real("amount").notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.matchId, t.playerId, t.day, t.category, t.resource] })],
+);
+
+/** One sample per quarter game day per player: what the empire gathered and mined per hour, and what its people and soldiers ate. */
+export const economyHistory = pgTable(
+  "economy_history",
+  {
+    matchId: uuid("match_id")
+      .notNull()
+      .references(() => matches.id, { onDelete: "cascade" }),
+    playerId: uuid("player_id")
+      .notNull()
+      .references(() => players.id, { onDelete: "cascade" }),
+    day: real("day").notNull(),
+    gross: jsonb("gross").$type<Record<string, number>>().notNull().default({}),
+    eaten: jsonb("eaten").$type<{ people: number; soldiers: number }>().notNull().default({ people: 0, soldiers: 0 }),
+    regions: integer("regions").notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.matchId, t.playerId, t.day] })],
+);
+
 export const scoreHistory = pgTable(
   "score_history",
   {

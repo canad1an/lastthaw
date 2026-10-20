@@ -13,6 +13,7 @@ import type { Publisher } from "../realtime/publish.js";
 import { matchDayAt, matchNow } from "./clock.js";
 import { applyCost, ownerTechEffects, projectRegion, settleAndLockRegion, stockOf, resourceMultOf, traitsOf, type MatchRegionRow, type Tx } from "./regions.js";
 import { queueBuild, sendArmy, type CommandContext } from "./commands.js";
+import { recordSpend } from "./ledger.js";
 import { buildOrderFor } from "./ai.js";
 import { notify, type MatchRow } from "../worker/jobs.js";
 
@@ -81,6 +82,7 @@ export async function drawWage(tx: Tx, m: MatchRow, p: PlayerRow, wage: Record<s
     }
     if (Object.keys(take).length) {
       await applyCost(tx, r, take as Cost);
+      await recordSpend(tx, m, p.id, "advisors", take);
       for (const [k, t] of Object.entries(take)) {
         remaining[k] = (remaining[k] ?? 0) - t;
         if (remaining[k]! <= 1e-9) delete remaining[k];

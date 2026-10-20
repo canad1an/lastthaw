@@ -8,6 +8,7 @@ import type { Publisher } from "../realtime/publish.js";
 import { requireUser } from "../auth/session.js";
 import { httpError } from "../sim/commands.js";
 import { matchNow } from "../sim/clock.js";
+import { recordSpend } from "../sim/ledger.js";
 import { applyCost, settleAndLockRegion, stockOf, waySetsFor, resourceMultOf } from "../sim/regions.js";
 import { alliesOf } from "../sim/alliances.js";
 import { endPact, payTribute, proposePact, respondPact } from "../sim/diplomacy.js";
@@ -130,6 +131,7 @@ export async function decideRefugees(db: Db, m: typeof matches.$inferSelect, p: 
     if (here + fromCapital < cost) throw httpError(409, `taking them in costs ${cost} food; you have ${Math.floor(here + fromCapital)} between ${regionById(offer.regionId)?.name} and the capital`);
     if (here > 0) await applyCost(tx, region, { food: here });
     if (fromCapital > 0 && capital) await applyCost(tx, capital, { food: fromCapital });
+    await recordSpend(tx, m, p.id, "refugees", { food: here + fromCapital });
     await tx.update(matchRegions).set({ popWorkers: region.popWorkers + offer.people }).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, offer.regionId)));
     await tx.update(refugeeOffers).set({ decidedAt: now, accepted: true }).where(eq(refugeeOffers.id, offer.id));
     await notify(tx, m.id, p.id, "system", `${offer.people} people from ${regionById(offer.fromRegionId)?.name ?? "the north"} have settled in ${regionById(offer.regionId)?.name ?? offer.regionId}.`, { regionId: offer.regionId, people: offer.people });

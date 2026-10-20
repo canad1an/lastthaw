@@ -24,6 +24,7 @@ import { feedRoutes } from "../matches/feedApi.js";
 import { eventRoutes, diplomacyRoutes } from "../matches/eventsApi.js";
 import { advisorRoutes } from "../matches/advisorsApi.js";
 import { battleRoutes } from "../matches/battlesApi.js";
+import { financeRoutes } from "../matches/financeApi.js";
 import { adminRoutes } from "../fairplay/adminApi.js";
 import { registrationRoutes } from "../matches/registrations.js";
 import { resolveMatchRef } from "../matches/slug.js";
@@ -137,6 +138,7 @@ export async function buildApp(deps: AppDeps = {}) {
   await app.register(eventRoutes, { db, publisher });
   await app.register(advisorRoutes, { db, publisher });
   await app.register(battleRoutes, { db });
+  await app.register(financeRoutes, { db });
   await app.register(diplomacyRoutes, { db, publisher });
   if (deps.realtime !== false) await app.register(registerWebsocket, { db });
 

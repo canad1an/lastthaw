@@ -13,6 +13,7 @@ import { wonderStarted } from "./endgame.js";
 import { stormFactorFor } from "./worldEvents.js";
 import { peaceBetween } from "./diplomacy.js";
 import { applyCost, settleAndLockRegion, stockOf, type MatchRegionRow, type Tx, waySetsFor, resourceMultOf, ownerTechEffects } from "./regions.js";
+import { recordSpend } from "./ledger.js";
 import { alliesOf, areAllied } from "./alliances.js";
 import type { MatchRow } from "../worker/jobs.js";
 
@@ -108,7 +109,7 @@ export async function queueBuild(ctx: CommandContext, regionId: string, building
       if (local > 0) paid[k] = local;
       if (v - local > 0.5) owed[k] = Math.ceil(v - local);
     }
-    if (Object.keys(paid).length) await applyCost(tx, row, paid as Cost);
+    if (Object.keys(paid).length) await recordSpend(tx, m, p.id, "build", paid);
     const active = pending.filter((j) => !j.waitingFor);
     // A level queued behind a waiting job must not overtake it: it waits too, even if fully paid.
     const behindWaiting = pending.some((j) => j.waitingFor);
@@ -140,9 +141,12 @@ export async function queueBuild(ctx: CommandContext, regionId: string, building
  */
 export async function supplyWaitingJob(tx: Tx, m: MatchRow, p: PlayerRow, techs: ReadonlySet<string>, regionId: string, jobId: string, owed: Record<string, number>, sources: MatchRegionRow[], allMine: MatchRegionRow[], now: Date): Promise<void> {
   const plan = planSources(owed, sources, stockOf, p.capitalRegionId, haulerCarry("caravan", techs));
+  const [forJob] = await tx.select({ kind: jobs.kind }).from(jobs).where(eq(jobs.id, jobId)).limit(1);
+  const category = forJob?.kind === "train" ? "military" : "build";
   for (const { src, part } of plan) {
     // Set aside at the source now, as a warehouse would for a delivery: nothing else can spend it, and the haulers load and leave on arrival.
     await applyCost(tx, src, part as Cost);
+    await recordSpend(tx, m, p.id, category, part);
     // Merge into an existing materials route from the same source, so one convoy carries everything queued.
     const [existing] = await tx
       .select()
@@ -233,7 +237,7 @@ export async function queueTrain(ctx: CommandContext, regionId: string, unitId: 
         }
       }
       if (shortfall > (opts.maxOwed ?? Infinity)) throw httpError(409, `too much would have to be shipped here (${Math.round(shortfall)}); train where the stock is`);
-      if (Object.keys(paid).length) await applyCost(tx, row, paid as Cost);
+      if (Object.keys(paid).length) await recordSpend(tx, m, p.id, "military", paid);
       const [j] = await tx
         .insert(jobs)
         .values({ matchId: m.id, playerId: p.id, regionId, kind: "train", refId: unitId, qty, slot: pending.length, payload: { cost, paid }, startsAt: now, endsAt: m.endsAt ?? new Date(now.getTime() + 365 * 86400_000), waitingFor: owed })
@@ -244,6 +248,7 @@ export async function queueTrain(ctx: CommandContext, regionId: string, unitId: 
       return j!;
     }
     await applyCost(tx, row, cost);
+    await recordSpend(tx, m, p.id, "military", cost);
     const effects = effectsOf(row.buildings);
     const active = pending.filter((j) => !j.waitingFor);
     const startsAt = active.length ? active[active.length - 1]!.endsAt : now;
@@ -305,6 +310,7 @@ export async function queueResearch(ctx: CommandContext, techId: string) {
       }
       if (Object.keys(take).length) {
         await applyCost(tx, r, take as Cost);
+        await recordSpend(tx, m, p.id, "research", take);
         for (const [k, t] of Object.entries(take)) {
           remaining[k] = (remaining[k] ?? 0) - t;
           if (remaining[k]! <= 1e-9) delete remaining[k];
@@ -625,7 +631,10 @@ export async function returnHeld(tx: Tx, m: MatchRow, regionId: string, onlyRout
     const held = Object.fromEntries(Object.entries(r.held).filter(([, v]) => v > 0));
     if (Object.keys(held).length) {
       const src = await settleAndLockRegion(tx, m.id, r.fromRegionId, matchNow(m), m.speed, resourceMultOf(m));
-      if (src.ownerPlayerId === r.playerId) await applyCost(tx, src, held as Cost, -1);
+      if (src.ownerPlayerId === r.playerId) {
+        await applyCost(tx, src, held as Cost, -1);
+        await recordSpend(tx, m, r.playerId, "build", held, -1);
+      }
     }
     await tx.delete(tradeRoutes).where(eq(tradeRoutes.id, r.id));
   }
@@ -760,6 +769,7 @@ export async function convertUnits(ctx: CommandContext, regionId: string, from: 
     const stock = stockOf(row);
     if (!canAfford(stock, cost as Cost)) throw httpError(409, `not enough ${missingFor(stock, cost as Cost).join(", ")} here`);
     const paid = await applyCost(tx, row, cost as Cost);
+    await recordSpend(tx, m, p.id, "military", cost);
     const units = { ...paid.units, [from]: have - n, [to]: (paid.units[to] ?? 0) + n };
     await tx.update(matchRegions).set({ units }).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, regionId)));
     return { converted: n, cost };
@@ -795,14 +805,20 @@ export async function repairWaitingBuilds(tx: Tx, m: MatchRow, now: Date): Promi
     if (who?.isAi && owedTotal > balance.ai.maxWaitingShipment) {
       for (const j of list) {
         const paid = ((j.payload ?? {}) as { paid?: Record<string, number> }).paid ?? {};
-        if (Object.keys(paid).length) await applyCost(tx, row, paid as Cost, -1);
+        if (Object.keys(paid).length) {
+          await applyCost(tx, row, paid as Cost, -1);
+          await recordSpend(tx, m, first.playerId, first.kind === "train" ? "military" : "build", paid, -1);
+        }
         await tx.update(jobs).set({ cancelledAt: now }).where(eq(jobs.id, j.id));
       }
       await returnHeld(tx, m, regionId);
       continue;
     }
     if (Object.keys(owed).length === 0 || canAfford(stock, owed as Cost)) {
-      if (Object.keys(owed).length) await applyCost(tx, row, owed as Cost);
+      if (Object.keys(owed).length) {
+        await applyCost(tx, row, owed as Cost);
+        await recordSpend(tx, m, first.playerId, first.kind === "train" ? "military" : "build", owed);
+      }
       const r = await receiveMaterials(tx, m, regionId, owed, now);
       fixed += r.started;
       continue;
@@ -852,6 +868,7 @@ export async function repairWaitingBuilds(tx: Tx, m: MatchRow, now: Date): Promi
       const srcRow = await settleAndLockRegion(tx, m.id, src.regionId, now, m.speed, resourceMultOf(m));
       if (srcRow.ownerPlayerId !== p.id || !canAfford(stockOf(srcRow), part as Cost)) continue;
       await applyCost(tx, srcRow, part as Cost);
+      await recordSpend(tx, m, p.id, first.kind === "train" ? "military" : "build", part);
       let routeId: string;
       if (existing) {
         const target = { ...(existing.target ?? {}) };
