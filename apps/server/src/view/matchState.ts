@@ -295,7 +295,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string, o
     .where(and(eq(pacts.matchId, matchId), or(eq(pacts.aPlayerId, me.id), eq(pacts.bPlayerId, me.id)), inArray(pacts.status, ["proposed", "active", "ending", "refused"])))
     .orderBy(asc(pacts.createdAt));
   const advisorRows = await db.select().from(advisors).where(and(eq(advisors.matchId, matchId), eq(advisors.playerId, me.id), isNull(advisors.firedAt)));
-  const regionsHeldNow = owned.length;
+  const advisorWage = await wageFor(db, m, me.id);
   const mercRows = await db.select().from(mercenaryOffers).where(and(eq(mercenaryOffers.matchId, matchId), isNull(mercenaryOffers.hiredBy), gt(mercenaryOffers.expiresAt, now))).orderBy(asc(mercenaryOffers.expiresAt));
   const capLat = me.capitalRegionId ? Math.abs(regionById(me.capitalRegionId)?.lat ?? 0) : 0;
   const matchDayNow = ((now.getTime() - m.startsAt.getTime()) / 86400_000) * m.speed;
@@ -373,12 +373,13 @@ export async function buildMatchState(db: Db, matchId: string, userId: string, o
     refugees: offerRows.map((o) => ({ id: o.id, regionId: o.regionId, fromRegionId: o.fromRegionId, people: o.people, food: o.people * balance.events.refugees.foodPerPerson, expiresAt: o.expiresAt.toISOString() })),
     pacts: pactRows.map((p) => ({ id: p.id, kind: p.kind as "nap" | "ceasefire" | "tribute", aPlayerId: p.aPlayerId, bPlayerId: p.bPlayerId, status: p.status, until: p.until?.toISOString() ?? null, terms: (p.terms ?? {}) as Record<string, unknown> })),
     mercenaries: mercRows.map((o) => ({ id: o.id, company: o.company, unitId: o.unitId, qty: o.qty, iron: o.iron, expiresAt: o.expiresAt.toISOString() })),
+    advisorWage,
     advisors: advisorRows.map((a) => ({
       kind: a.kind,
       hiredAt: a.hiredAt.toISOString(),
       paidUntil: a.paidUntil.toISOString(),
       unpaid: a.unpaidSince !== null,
-      wage: wageFor(a.kind, regionsHeldNow),
+      wage: advisorWage,
       settings: parseSettings(a.settings),
       lastPassAt: a.lastPassAt?.toISOString() ?? null,
       lastReport: a.lastReport ? advisorReport.parse(a.lastReport) : null,
@@ -514,6 +515,7 @@ async function buildObserverState(db: Db, m: typeof matches.$inferSelect, matchI
     pacts: [],
     mercenaries: [],
     advisors: [],
+    advisorWage: {},
     lastStand: { eligible: false, used: false },
     objective: today ? { day: today.day + 1, label: OBJECTIVES[today.key] ?? today.key, yesterday: yday ? { label: OBJECTIVES[yday.key] ?? yday.key, playerId: yday.winnerPlayerId, value: yday.value ?? 0 } : null } : null,
     bounties: bountyRows.map((b) => ({ id: b.id, kind: b.kind as "region" | "player", regionId: b.regionId, playerId: b.playerId, amount: b.amount, reason: b.reason, expiresAt: b.expiresAt?.toISOString() ?? null })),

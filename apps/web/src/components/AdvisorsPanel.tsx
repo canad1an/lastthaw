@@ -5,14 +5,6 @@ import { availableBuildings, balance, regionById, type AdvisorKind, type Advisor
 import { api, keys } from "../api/client.js";
 import { Button, Card, ErrorText, fmt } from "./ui.js";
 
-/** The hourly wage of an advisor for an empire of `regions` regions, as the server computes it. */
-export function advisorWage(kind: AdvisorKind, regions: number): Record<string, number> {
-  const out: Record<string, number> = {};
-  for (const [k, v] of Object.entries(balance.advisors[kind].perRegionPerHour)) out[k] = Math.max(1, Math.ceil(v * Math.max(1, regions)));
-  return out;
-}
-export const economicWage = (regions: number) => advisorWage("economic", regions);
-
 const wageLine = (w: Record<string, number>) =>
   Object.entries(w)
     .map(([k, v]) => `${fmt(v)} ${k}`)
@@ -114,7 +106,7 @@ export function AdvisorsPanel({ matchId, state, onSelect, clockOffsetMs }: { mat
   const [view, setView] = useState<"roster" | AdvisorKind>("roster");
   const regions = state.owned.length;
   const hired = (kind: AdvisorKind) => state.advisors.find((a) => a.kind === kind) ?? null;
-  const wageOf = (kind: AdvisorKind) => hired(kind)?.wage ?? advisorWage(kind, regions);
+  const wageOf = (kind: AdvisorKind) => hired(kind)?.wage ?? state.advisorWage;
 
   const dialog =
     confirm &&
@@ -132,7 +124,7 @@ export function AdvisorsPanel({ matchId, state, onSelect, clockOffsetMs }: { mat
             {confirm.what === "hire" ? (
               <div className="mt-2 space-y-2 text-sm text-slate-300">
                 <p>
-                  The wage, every game hour, for your {regions} region{regions === 1 ? "" : "s"}. Hiring takes the first {balance.advisors.contractHours} hours at once:
+                  The wage, every game hour, at your empire's output today ({regions} region{regions === 1 ? "" : "s"}). Hiring takes the first {balance.advisors.contractHours} hours at once:
                 </p>
                 <ul className="grid grid-cols-2 gap-1 rounded border border-slate-800 p-2 text-slate-100 sm:grid-cols-3">
                   {Object.entries(wage).map(([k, v]) => (
@@ -142,7 +134,7 @@ export function AdvisorsPanel({ matchId, state, onSelect, clockOffsetMs }: { mat
                     </li>
                   ))}
                 </ul>
-                <p className="text-xs text-slate-400">A {balance.advisors.contractHours}-hour contract is paid now, from your capital first; after that the wage is charged every game hour. The wage grows with the regions you hold. If a wage cannot be met {she.toLowerCase()} stops until it is paid. You can fire {pronoun} at any time, but the contract is not refunded and {she.toLowerCase()} will not come back for {balance.advisors.rehireCooldownHours} game hours.</p>
+                <p className="text-xs text-slate-400">A {balance.advisors.contractHours}-hour contract is paid now, from your capital first; after that the wage is charged every game hour. The wage is {Math.round(balance.advisors.outputShare * 100)}% of everything your empire gathers and mines each hour, measured as you go, so it grows as you do. If a wage cannot be met {she.toLowerCase()} stops until it is paid. You can fire {pronoun} at any time, but the contract is not refunded and {she.toLowerCase()} will not come back for {balance.advisors.rehireCooldownHours} game hours.</p>
               </div>
             ) : (
               <p className="mt-2 text-sm text-slate-300">{she} leaves at once. Builds and training already queued, and armies and convoys already on the road, carry on. The rest of the paid contract is not refunded, and {she.toLowerCase()} will not take you back for {balance.advisors.rehireCooldownHours} game hours.</p>
@@ -209,7 +201,7 @@ export function AdvisorsPanel({ matchId, state, onSelect, clockOffsetMs }: { mat
 
   return (
     <div className="space-y-3 p-3 text-sm">
-      <p className="text-xs text-slate-400">Advisors take routine management off your hands for a steep hourly wage. Hiring buys the first {balance.advisors.contractHours} hours at once; fire at any time, but nothing is refunded and a fired advisor stays away for {balance.advisors.rehireCooldownHours} game hours.</p>
+      <p className="text-xs text-slate-400">Advisors take routine management off your hands for a steep hourly wage: each takes {Math.round(balance.advisors.outputShare * 100)}% of everything your empire gathers and mines, measured as you grow. Hiring buys the first {balance.advisors.contractHours} hours at once; fire at any time, but nothing is refunded and a fired advisor stays away for {balance.advisors.rehireCooldownHours} game hours.</p>
       {ADVISORS.map((meta) => {
         const a = hired(meta.kind);
         const wage = wageOf(meta.kind);
@@ -243,7 +235,7 @@ export function AdvisorsPanel({ matchId, state, onSelect, clockOffsetMs }: { mat
                   </Button>
                 )}
                 <span className="text-xs text-slate-500">
-                  {wageLine(wage)} an hour for {regions} region{regions === 1 ? "" : "s"}
+                  {wageLine(wage)} an hour, {Math.round(balance.advisors.outputShare * 100)}% of what you gather
                 </span>
                 <ErrorText>{hire.error?.message ?? fire.error?.message}</ErrorText>
               </div>

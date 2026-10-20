@@ -7,7 +7,6 @@ import { buildApp } from "../src/api/app.js";
 import { createDb, type Db } from "../src/db/client.js";
 import { emailTokens, fairplayFlags, matches, playerActions, players, users, matchRegions, regionNotes, tradeRoutes, jobs, armies, pacts, advisors, messages, marketOrders } from "../src/db/schema.js";
 import { runMatchTicks } from "../src/sim/tick.js";
-import { wageFor } from "../src/sim/advisors.js";
 import { runTradeRoutes } from "../src/sim/trade.js";
 import { detectAutomation } from "../src/fairplay/detect.js";
 import { createRedis } from "../src/redis.js";
@@ -774,16 +773,19 @@ describe("api routes", () => {
       // Hire: the first hour's wage leaves the capital; a second hire is refused.
       await fill(12000, 12000, 9000, 100, 100);
       const regions = (await db.select({ n: sql<number>`count(*)::int` }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid), sql`${matchRegions.frozenAt} is null`)))[0]!.n;
-      const wage = wageFor("economic", regions);
       const before = await totalStock();
       const hired = await Ben.call("POST", `${base}/advisors/economic/hire`, {});
       expect(hired.statusCode, hired.body).toBe(200);
-      expect((hired.json() as { wage: Record<string, number> }).wage).toEqual(wage);
+      // The wage is a share of the empire's live output: positive in what it gathers, and what the server charged.
+      const wage = (hired.json() as { wage: Record<string, number> }).wage;
+      expect(wage.food).toBeGreaterThan(0);
+      expect(wage.wood).toBeGreaterThan(0);
+      expect(wage.copper ?? 0).toBeGreaterThanOrEqual(0);
       const after = await totalStock();
       // A day's contract leaves the empire at once, the capital first.
       expect(Math.round(before.food - after.food)).toBe(wage.food! * balance.advisors.contractHours);
       expect(Math.round(before.wood - after.wood)).toBe(wage.wood! * balance.advisors.contractHours);
-      expect(Math.round(before.copper - after.copper)).toBe(wage.copper! * balance.advisors.contractHours);
+      expect(Math.round(before.copper - after.copper)).toBe((wage.copper ?? 0) * balance.advisors.contractHours);
       expect((await Ben.call("POST", `${base}/advisors/economic/hire`, {})).statusCode).toBe(409);
       let st = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
       expect(st.advisors).toHaveLength(1);
@@ -835,6 +837,8 @@ describe("api routes", () => {
       };
       await fill(12000, 12000, 9000, 100, 100);
       await db.update(advisors).set({ paidUntil: new Date(Date.parse(await nowIso()) - 2 * (3600_000 / benState.match.speed)) }).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
+      // The wage is live: what the empire gathers now, not what it gathered at the hire.
+      const liveWage = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json()).advisorWage;
       const b2 = await stockAt(cap);
       await tickOnce();
       const [row] = await db.select().from(advisors).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
@@ -842,11 +846,11 @@ describe("api routes", () => {
       expect(row!.unpaidSince).toBeNull();
       const a2 = await stockAt(cap);
       // Three hours came due (two past plus the one just reached): the food fell by at least two wages, and not by more than four.
-      expect(b2.food - a2.food).toBeGreaterThanOrEqual(2 * wage.food! - 1);
-      expect(b2.food - a2.food).toBeLessThan(4 * wage.food! + 50);
+      expect(b2.food - a2.food).toBeGreaterThanOrEqual(2 * liveWage.food! - 1);
+      expect(b2.food - a2.food).toBeLessThan(4 * liveWage.food! + 50);
 
-      // Unpaid: an empire with no iron cannot pay; the advisor stops, says so once, and refuses to run.
-      await db.update(matchRegions).set({ special: {} }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid)));
+      // Unpaid: an empire with no food in store cannot pay the food share; the advisor stops, says so once, and refuses to run.
+      await db.update(matchRegions).set({ food: 0, settledAt: new Date(await nowIso()) }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid)));
       await db.update(advisors).set({ paidUntil: new Date(Date.parse(await nowIso()) - 3600_000 / benState.match.speed) }).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
       await tickOnce();
       const [row2] = await db.select().from(advisors).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
@@ -868,8 +872,13 @@ describe("api routes", () => {
       expect(tooSoon.statusCode).toBe(409);
       expect(tooSoon.body).toContain("take you back");
       await db.update(advisors).set({ firedAt: new Date(Date.parse(await nowIso()) - (balance.advisors.rehireCooldownHours + 1) * (3600_000 / benState.match.speed)) }).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid), eq(advisors.kind, "economic")));
+      // A swollen capital gathers so much that a day's wage would outgrow the stores: thin it before rehiring.
+      await db.update(matchRegions).set({ popWorkers: 150 }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid), sql`${matchRegions.popWorkers} > 150`));
       await fill(12000, 12000, 9000, 100, 100);
-      expect((await Ben.call("POST", `${base}/advisors/economic/hire`, {})).statusCode).toBe(200);
+      {
+        const rehired = await Ben.call("POST", `${base}/advisors/economic/hire`, {});
+        expect(rehired.statusCode, rehired.body).toBe(200);
+      }
       st = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
       expect(st.advisors[0]!.settings.minLevels).toEqual({ quarry: 1 });
       expect((await Ben.call("POST", `${base}/advisors/economic/fire`, {})).statusCode).toBe(200);
@@ -880,8 +889,13 @@ describe("api routes", () => {
       await tickOnce();
       const [still] = await db.select({ popWorkers: matchRegions.popWorkers }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
       expect(Math.round(still!.popWorkers)).toBeGreaterThanOrEqual(590);
+      // A swollen capital gathers so much that a day's wage would outgrow the stores: thin it before rehiring.
+      await db.update(matchRegions).set({ popWorkers: 150 }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid), sql`${matchRegions.popWorkers} > 150`));
       await fill(12000, 12000, 9000, 100, 100);
-      expect((await Ben.call("POST", `${base}/advisors/economic/hire`, {})).statusCode).toBe(200);
+      {
+        const rehired = await Ben.call("POST", `${base}/advisors/economic/hire`, {});
+        expect(rehired.statusCode, rehired.body).toBe(200);
+      }
       // Rehiring keeps the old settings (balanced); overflow is what this step checks.
       expect((await Ben.call("PUT", `${base}/advisors/economic/settings`, { population: "overflow" })).statusCode).toBe(200);
       await db.update(matchRegions).set({ popWorkers: 600 }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
@@ -935,10 +949,9 @@ describe("api routes", () => {
     try {
       // Hire: his wage leaves the capital.
       const regions = (await db.select({ n: sql<number>`count(*)::int` }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid), sql`${matchRegions.frozenAt} is null`)))[0]!.n;
-      const wage = wageFor("military", regions);
       const hired = await Ben.call("POST", `${base}/advisors/military/hire`, {});
       expect(hired.statusCode, hired.body).toBe(200);
-      expect((hired.json() as { wage: Record<string, number> }).wage).toEqual(wage);
+      expect((hired.json() as { wage: Record<string, number> }).wage.food).toBeGreaterThan(0);
       expect((await Ben.call("PUT", `${base}/advisors/military/settings`, { stance: "measured", garrison: 4, fortify: true, scoutFirst: true })).statusCode).toBe(200);
       // The target is marked from the map; own land is refused.
       expect((await Ben.call("POST", `${base}/advisors/military/targets`, { regionId: cap, add: true })).statusCode).toBe(400);
@@ -1005,7 +1018,9 @@ describe("api routes", () => {
     const nowMs = Date.now() + mrow!.clockOffsetSeconds * 1000;
     if (wantNow > nowMs) await db.update(matches).set({ clockOffsetSeconds: sql`${matches.clockOffsetSeconds} + ${Math.ceil((wantNow - nowMs) / 1000)}` }).where(eq(matches.id, gameId));
     const now = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json()).match.now;
-    for (const [id, pop] of [[A, 40], [S, 900]] as const) {
+    // Ben's other regions are thinned so Manitoba is his most populous safe region, and a day's wage (a share of what all of them gather) stays within his stores.
+    await db.update(matchRegions).set({ popWorkers: 120 }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid), sql`${matchRegions.popWorkers} > 120`));
+    for (const [id, pop] of [[A, 40], [S, 200]] as const) {
       const row = { ownerPlayerId: benPid, popWorkers: pop, popSoldiers: 0, popOccupiers: 0, units: { warrior: 3 }, buildings: { storehouse: 6 }, food: 4000, wood: 4000, stone: 3500, special: { copper: 100, iron: 120 }, frozenAt: null, evacuatedAt: null, settledAt: new Date(now) };
       await db.insert(matchRegions).values({ matchId: gameId, regionId: id, assignment: { ...balance.start.assignment }, ...row }).onConflictDoUpdate({ target: [matchRegions.matchId, matchRegions.regionId], set: row });
     }
@@ -1017,7 +1032,7 @@ describe("api routes", () => {
       const regions = (await db.select({ n: sql<number>`count(*)::int` }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid), sql`${matchRegions.frozenAt} is null`)))[0]!.n;
       const hired = await Ben.call("POST", `${base}/advisors/thaw/hire`, {});
       expect(hired.statusCode, hired.body).toBe(200);
-      expect((hired.json() as { wage: Record<string, number> }).wage).toEqual(wageFor("thaw", regions));
+      expect((hired.json() as { wage: Record<string, number> }).wage.food).toBeGreaterThan(0);
       expect((await Ben.call("PUT", `${base}/advisors/thaw/settings`, { warningHours: 24, capitalHours: 48, destination: "safest", moveCapital: true, settle: true })).statusCode).toBe(200);
       const r = await Ben.call("POST", `${base}/advisors/thaw/run`, {});
       expect(r.statusCode, r.body).toBe(200);
@@ -1072,7 +1087,7 @@ describe("api routes", () => {
       const regions = (await db.select({ n: sql<number>`count(*)::int` }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid), sql`${matchRegions.frozenAt} is null`)))[0]!.n;
       const hired = await Ben.call("POST", `${base}/advisors/chancellor/hire`, {});
       expect(hired.statusCode, hired.body).toBe(200);
-      expect((hired.json() as { wage: Record<string, number> }).wage).toEqual(wageFor("chancellor", regions));
+      expect((hired.json() as { wage: Record<string, number> }).wage.food).toBeGreaterThan(0);
       expect((await Ben.call("PUT", `${base}/advisors/chancellor/settings`, { researchGoal: "age", sell: true, buy: true, sellAbove: 0.8, overpay: 1.25, reserveShare: 0.3, maxOrders: 3 })).statusCode).toBe(200);
       await fillEmpire(gameId, benPid, { food: 12000, wood: 12000, stone: 9000, copper: 100, iron: 100 });
       const r = await Ben.call("POST", `${base}/advisors/chancellor/run`, {});

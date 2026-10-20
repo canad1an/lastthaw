@@ -7,7 +7,7 @@ import { advisors, matches, players } from "../db/schema.js";
 import { requireUser } from "../auth/session.js";
 import type { Publisher } from "../realtime/publish.js";
 import { matchNow } from "../sim/clock.js";
-import { drawWage, regionsHeld, runPass, wageFor } from "../sim/advisors.js";
+import { drawWage, runPass, wageFor } from "../sim/advisors.js";
 import { advisorTargetBody, balance, regionById } from "@lastthaw/shared";
 import { matchRegions } from "../db/schema.js";
 import { areAllied } from "../sim/alliances.js";
@@ -46,7 +46,7 @@ export async function advisorRoutes(app: FastifyInstance, opts: { db: Db; publis
       const back = new Date(existing.firedAt.getTime() + balance.advisors.rehireCooldownHours * hourMs);
       if (back > now) throw httpError(409, `you fired this advisor; they will take you back in ${Math.max(1, Math.ceil(((back.getTime() - now.getTime()) / 3600_000) * m.speed))} game hour${Math.ceil(((back.getTime() - now.getTime()) / 3600_000) * m.speed) === 1 ? "" : "s"}`);
     }
-    const wage = wageFor(kind, await regionsHeld(db, m, p.id));
+    const wage = await wageFor(db, m, p.id);
     // A contract: the first day of wages is paid on hiring, and nothing is refunded on firing.
     const contract: Record<string, number> = {};
     for (const [k, v] of Object.entries(wage)) contract[k] = v * balance.advisors.contractHours;

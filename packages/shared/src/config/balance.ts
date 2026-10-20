@@ -372,8 +372,13 @@ export const balance = {
     contractHours: 24,
     rehireCooldownHours: 24,
     runEveryMinutes: 60,
+    /**
+     * Every advisor's wage is this share of the player's gross output of every resource, per game hour, measured live
+     * across the regions held (gathering and mining, before anything is eaten): the wage grows as the empire does, and
+     * four advisors take everything.
+     */
+    outputShare: 0.25,
     economic: {
-      perRegionPerHour: { food: 20, wood: 70, stone: 45, copper: 0.2, iron: 0.1 } as Record<string, number>,
       passMinutes: 30,
       maxQueuedPerPass: 6,
       /** The advisor never has more than this many builds waiting on materials across the empire; beyond it, only builds a region can pay for itself. */
@@ -391,7 +396,6 @@ export const balance = {
      * maxAttempts times. Training is supplied by convoys like builds.
      */
     military: {
-      perRegionPerHour: { food: 25, wood: 40, stone: 35, copper: 0.2, iron: 0.6 } as Record<string, number>,
       passMinutes: 30,
       trainPerPass: 6,
       fortifyPerPass: 3,
@@ -409,7 +413,6 @@ export const balance = {
      * ice's path and settles free land on the warm side while regions are being lost.
      */
     thaw: {
-      perRegionPerHour: { food: 20, wood: 60, stone: 50, copper: 0.1, iron: 0.2 } as Record<string, number>,
       passMinutes: 30,
       evacuatePerPass: 6,
       /** A destination must freeze at least this many days after the region it takes in. */
@@ -426,7 +429,6 @@ export const balance = {
      * what waiting orders and the next research owe bought from the cheapest offer not too far above fair.
      */
     chancellor: {
-      perRegionPerHour: { food: 15, wood: 50, stone: 40, copper: 0.5, iron: 0.4 } as Record<string, number>,
       passMinutes: 30,
       researchPerPass: 3,
       keepSlotsFree: 2,

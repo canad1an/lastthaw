@@ -11,7 +11,7 @@ import type { Db } from "../db/client.js";
 import { advisors, jobs, matchRegions, matches, playerTechs, players, tradeRoutes } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
 import { matchDayAt, matchNow } from "./clock.js";
-import { applyCost, projectRegion, settleAndLockRegion, stockOf, resourceMultOf, traitsOf, type MatchRegionRow, type Tx } from "./regions.js";
+import { applyCost, ownerTechEffects, projectRegion, settleAndLockRegion, stockOf, resourceMultOf, traitsOf, type MatchRegionRow, type Tx } from "./regions.js";
 import { queueBuild, sendArmy, type CommandContext } from "./commands.js";
 import { buildOrderFor } from "./ai.js";
 import { notify, type MatchRow } from "../worker/jobs.js";
@@ -21,15 +21,30 @@ export type AdvisorRow = typeof advisors.$inferSelect;
 
 const hourMs = (m: MatchRow) => 3600_000 / m.speed;
 
-/** The hourly wage for an empire of `regions` regions, each resource rounded up. */
 export const ADVISOR_NAMES: Record<AdvisorKind, string> = { economic: "Mara, the Economic advisor", military: "Max, the Military advisor", thaw: "Freya, the Warden of the Thaw", chancellor: "Theo, the Chancellor" };
 /** The short title used in messages: "Your Military advisor". */
 export const ADVISOR_TITLES: Record<AdvisorKind, string> = { economic: "Economic advisor", military: "Military advisor", thaw: "Warden of the Thaw", chancellor: "Chancellor" };
 
-export function wageFor(kind: AdvisorKind, regions: number): Record<string, number> {
-  const per = balance.advisors[kind].perRegionPerHour;
+/**
+ * The hourly wage of any advisor for a player right now: balance.advisors.outputShare of the empire's gross output
+ * of every resource across its unfrozen regions (gathering and mining, before consumption), each rounded up.
+ * Resources the empire does not produce are not charged. The same for every kind: four advisors take everything.
+ */
+export async function wageFor(db: Tx | Db, m: MatchRow, playerId: string): Promise<Record<string, number>> {
+  const rows = await db
+    .select()
+    .from(matchRegions)
+    .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.ownerPlayerId, playerId), isNull(matchRegions.frozenAt)));
+  const fx = await ownerTechEffects(db, playerId);
+  const now = matchNow(m);
+  const gross: Record<string, number> = {};
+  for (const row of rows) {
+    const { rates } = projectRegion(row, now, m.speed, fx, resourceMultOf(m));
+    for (const [k, v] of Object.entries(rates.gross)) gross[k] = (gross[k] ?? 0) + Math.max(0, v);
+    for (const [k, v] of Object.entries(rates.special)) gross[k] = (gross[k] ?? 0) + Math.max(0, v);
+  }
   const out: Record<string, number> = {};
-  for (const [k, v] of Object.entries(per)) out[k] = Math.max(1, Math.ceil(v * Math.max(1, regions)));
+  for (const [k, v] of Object.entries(gross)) if (v > 0) out[k] = Math.max(1, Math.ceil(v * balance.advisors.outputShare));
   return out;
 }
 
@@ -94,7 +109,7 @@ export async function chargeAdvisors(tx: Tx, m: MatchRow, now: Date): Promise<vo
       await tx.delete(advisors).where(eq(advisors.id, a.id));
       continue;
     }
-    const wage = wageFor(a.kind, await regionsHeld(tx, m, p.id));
+    const wage = await wageFor(tx, m, p.id);
     let paidUntil = a.paidUntil;
     let hours = 0;
     let paid = true;
