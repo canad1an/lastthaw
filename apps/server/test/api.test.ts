@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
-import { balance, effectsOf, matchStateView, regionById, scoutCatchChance, seededRng, storageCaps } from "@lastthaw/shared";
+import { balance, effectsOf, fairAmount, matchStateView, regionById, scoutCatchChance, seededRng, storageCaps } from "@lastthaw/shared";
 import { Publisher } from "../src/realtime/publish.js";
 import { runDueJobs } from "../src/worker/jobs.js";
 import { buildApp } from "../src/api/app.js";
 import { createDb, type Db } from "../src/db/client.js";
-import { emailTokens, fairplayFlags, matches, playerActions, players, users, matchRegions, regionNotes, tradeRoutes, jobs, armies, pacts, advisors, messages } from "../src/db/schema.js";
+import { emailTokens, fairplayFlags, matches, playerActions, players, users, matchRegions, regionNotes, tradeRoutes, jobs, armies, pacts, advisors, messages, marketOrders } from "../src/db/schema.js";
 import { runMatchTicks } from "../src/sim/tick.js";
 import { wageFor } from "../src/sim/advisors.js";
 import { runTradeRoutes } from "../src/sim/trade.js";
@@ -1046,6 +1046,58 @@ describe("api routes", () => {
       if (oldCapital) await db.update(matchRegions).set({ isCapital: true }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, oldCapital)));
       await db.delete(armies).where(and(eq(armies.matchId, gameId), eq(armies.playerId, benPid), inArray(armies.originRegionId, [A, S])));
       await db.update(matchRegions).set({ ownerPlayerId: null, popWorkers: 0, units: {}, evacuatedAt: null }).where(and(eq(matchRegions.matchId, gameId), inArray(matchRegions.regionId, [A, S])));
+    }
+  });
+
+  it("the Chancellor: hired for his wage, queues the research path to the next age, buys what a waiting order owes from the cheapest fair offer, and lists a store near its cap at the fair price", async () => {
+    const base = `/api/matches/${gameId}`;
+    const benState = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
+    const benPid = benState.me.playerId;
+    const cap = benState.me.capitalRegionId!;
+    const annState = matchStateView.parse((await Ann.call("GET", `${base}/state`)).json());
+    const annCap = annState.me.capitalRegionId!;
+    const nowIso = async () => matchStateView.parse((await Ben.call("GET", `${base}/state`)).json()).match.now;
+    await fillEmpire(gameId, benPid, { food: 12000, wood: 12000, stone: 9000, copper: 100, iron: 100 });
+    // A training order at Ben's capital still owes stone, and Ann offers stone for wood a little under fair.
+    const [job] = await db
+      .insert(jobs)
+      .values({ matchId: gameId, playerId: benPid, regionId: cap, kind: "train", refId: "warrior", qty: 10, slot: 9, payload: { cost: { stone: 500 }, paid: {} }, waitingFor: { stone: 500 }, startsAt: new Date(await nowIso()), endsAt: new Date(Date.parse(await nowIso()) + 3600_000) })
+      .returning();
+    await db.update(matchRegions).set({ stone: 2000, settledAt: new Date(await nowIso()) }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, annCap)));
+    // Posted straight into the book (Ann's command allowance is spent by the fair-play test later); the goods were escrowed by hand above.
+    const annPid = annState.me.playerId;
+    const [annOrder] = await db.insert(marketOrders).values({ matchId: gameId, playerId: annPid, regionId: annCap, offerResource: "stone", offerAmount: 400, askResource: "wood", askAmount: 400, status: "open" }).returning();
+    const annOrderId = annOrder!.id;
+    try {
+      const regions = (await db.select({ n: sql<number>`count(*)::int` }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid), sql`${matchRegions.frozenAt} is null`)))[0]!.n;
+      const hired = await Ben.call("POST", `${base}/advisors/chancellor/hire`, {});
+      expect(hired.statusCode, hired.body).toBe(200);
+      expect((hired.json() as { wage: Record<string, number> }).wage).toEqual(wageFor("chancellor", regions));
+      expect((await Ben.call("PUT", `${base}/advisors/chancellor/settings`, { researchGoal: "age", sell: true, buy: true, sellAbove: 0.8, overpay: 1.25, reserveShare: 0.3, maxOrders: 3 })).statusCode).toBe(200);
+      await fillEmpire(gameId, benPid, { food: 12000, wood: 12000, stone: 9000, copper: 100, iron: 100 });
+      const r = await Ben.call("POST", `${base}/advisors/chancellor/run`, {});
+      expect(r.statusCode, r.body).toBe(200);
+      const report = (r.json() as { report: { researched: number; listed: number; bought: number; suggestions: Array<{ text: string }> } }).report;
+      // Research: techs on the way to the next age are queued, prerequisites first.
+      const research = await db.select({ refId: jobs.refId }).from(jobs).where(and(eq(jobs.matchId, gameId), eq(jobs.playerId, benPid), eq(jobs.kind, "research"), sql`${jobs.completedAt} is null`, sql`${jobs.cancelledAt} is null`));
+      expect(report.researched, JSON.stringify(report.suggestions)).toBeGreaterThan(0);
+      expect(research.length).toBeGreaterThanOrEqual(report.researched);
+      // Buying: Ann's stone is taken for the waiting order, into the capital.
+      const [filled] = await db.select().from(marketOrders).where(eq(marketOrders.id, annOrderId));
+      expect(filled!.status, JSON.stringify(report.suggestions)).toBe("filled");
+      expect(filled!.filledByPlayerId).toBe(benPid);
+      expect(report.bought).toBe(1);
+      // Selling: the capital's full wood store is listed at the fair price, asking for the stone still owed.
+      const mine = await db.select().from(marketOrders).where(and(eq(marketOrders.matchId, gameId), eq(marketOrders.playerId, benPid), eq(marketOrders.status, "open")));
+      expect(report.listed, JSON.stringify(report.suggestions)).toBeGreaterThan(0);
+      const wood = mine.find((o) => o.offerResource === "wood");
+      expect(wood).toBeDefined();
+      expect(wood!.askAmount).toBe(fairAmount("wood", wood!.offerAmount, wood!.askResource));
+      expect(mine.length).toBeLessThanOrEqual(3);
+      expect((await Ben.call("POST", `${base}/advisors/chancellor/fire`, {})).statusCode).toBe(200);
+    } finally {
+      await db.delete(jobs).where(eq(jobs.id, job!.id));
+      await db.update(marketOrders).set({ status: "cancelled" }).where(and(eq(marketOrders.matchId, gameId), eq(marketOrders.status, "open")));
     }
   });
 

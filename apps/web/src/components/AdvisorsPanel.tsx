@@ -27,6 +27,7 @@ const SKIP_LABEL: Record<string, string> = {
   protected: "target under beginner protection",
   pact: "target under a pact or ceasefire",
   noRoute: "no route to safe ground, or to the target",
+  ordersFull: "the market allows no more open orders",
 };
 
 const ADVISORS: Array<{ kind: AdvisorKind; name: string; title: string; blurb: string; duties: string[]; portrait: string; she: boolean }> = [
@@ -74,6 +75,21 @@ const ADVISORS: Array<{ kind: AdvisorKind; name: string; title: string; blurb: s
       "Moves the capital before its slow wagon would be too late, to your longest-lasting populous region, and tells you when it leaves.",
       "While land is being lost, settles the nearest free region on the warm side that stays unfrozen for a week or more, training the settlers where they are short, one colony on the road at a time.",
       "Cannot stop the ice: a region with no safe ground in reach is reported so you can act, and the last stand stays yours to call.",
+    ],
+  },
+  {
+    kind: "chancellor",
+    she: false,
+    name: "Theo",
+    title: "the Chancellor",
+    blurb: "Keeper of the ledger. Research toward the goal you set, and a trader on the market who sells what overflows and buys what your orders owe.",
+    portrait: "/advisors/chancellor.jpg",
+    duties: [
+      "Fills the research queue toward your goal (the next age, hauling, walls or the sea) in prerequisite order, a few techs a pass, and always leaves two slots free for you.",
+      "Lists any store above four fifths of its cap on the market at the fair price, asking for what your waiting orders owe or the ore you hold least, and withdraws a listing nobody takes in twelve hours.",
+      "Buys what waiting builds, training and the next research owe from the cheapest open offer that is not too far above fair, into your capital, keeping a reserve there.",
+      "Reports every tech queued, every listing and every purchase, and what the market could not supply.",
+      "Never touches buildings, armies, people or diplomacy.",
     ],
   },
 ];
@@ -184,7 +200,7 @@ export function AdvisorsPanel({ matchId, state, onSelect, clockOffsetMs }: { mat
             </div>
           </div>
         </Card>
-        {view === "economic" ? <SettingsForm matchId={matchId} state={state} advisor={current} /> : view === "military" ? <MilitarySettings matchId={matchId} state={state} advisor={current} onSelect={onSelect} /> : <ThawSettings matchId={matchId} state={state} advisor={current} onSelect={onSelect} />}
+        {view === "economic" ? <SettingsForm matchId={matchId} state={state} advisor={current} /> : view === "military" ? <MilitarySettings matchId={matchId} state={state} advisor={current} onSelect={onSelect} /> : view === "thaw" ? <ThawSettings matchId={matchId} state={state} advisor={current} onSelect={onSelect} /> : <ChancellorSettings matchId={matchId} state={state} advisor={current} />}
         {current.lastReport && <Report advisor={current} onSelect={onSelect} />}
         {dialog}
       </div>
@@ -488,6 +504,91 @@ function ThawSettings({ matchId, state, advisor, onSelect }: { matchId: string; 
   );
 }
 
+const GOALS: ReadonlyArray<[AdvisorSettings["researchGoal"], string, string]> = [
+  ["age", "The next age", "every prerequisite of the age's tech in order, then the tech itself the day it opens."],
+  ["hauling", "Hauling", "the path to Railways: wheels, harness, wagons, engineering and the furnaces trains need."],
+  ["walls", "Walls", "the path to Concrete: masonry, fortification, mathematics and engineering."],
+  ["sea", "The sea", "the path to Navigation: sailing, carpentry, shipbuilding and cartography."],
+  ["off", "No research", "the queue is yours alone."],
+];
+
+function ChancellorSettings({ matchId, state, advisor }: { matchId: string; state: MatchStateView; advisor: AdvisorView }) {
+  const qc = useQueryClient();
+  const refresh = () => void qc.invalidateQueries({ queryKey: keys.matchState(matchId) });
+  const [draft, setDraft] = useState<AdvisorSettings>(advisor.settings);
+  useEffect(() => setDraft(advisor.settings), [advisor.settings]);
+  const save = useMutation({ mutationFn: (s: AdvisorSettings) => api.setAdvisorSettings(matchId, "chancellor", s), onSuccess: refresh });
+  const dirty = JSON.stringify(draft) !== JSON.stringify(advisor.settings);
+  const regions = useMemo(() => [...state.owned].sort((a, b) => Number(b.isCapital) - Number(a.isCapital) || (regionById(a.regionId)?.name ?? "").localeCompare(regionById(b.regionId)?.name ?? "")), [state.owned]);
+  const pct = (v: number) => Math.round(v * 100);
+  const fromPct = (s: string, lo: number, hi: number) => Math.max(lo, Math.min(hi, (Number(s) || lo * 100) / 100));
+  return (
+    <Card className="space-y-3">
+      <h3 className="font-semibold text-white">Research goal</h3>
+      <div className="text-xs text-slate-300">
+        {GOALS.map(([v, label, text]) => (
+          <label key={v} className="flex items-start gap-2 py-0.5">
+            <input type="radio" name="advisor-goal" checked={draft.researchGoal === v} onChange={() => setDraft((d) => ({ ...d, researchGoal: v }))} className="mt-0.5 accent-sky-400" />
+            <span>
+              <span className="text-slate-100">{label}.</span> {text}
+            </span>
+          </label>
+        ))}
+      </div>
+      <h3 className="font-semibold text-white">The market</h3>
+      <div className="space-y-1 text-xs text-slate-300">
+        <label className="flex items-start gap-2">
+          <input type="checkbox" checked={draft.sell} onChange={(e) => setDraft((d) => ({ ...d, sell: e.target.checked }))} className="mt-0.5 accent-sky-400" />
+          <span>Sell: list any store above the share below of its cap, at the fair price, for what your orders owe or the ore you hold least; withdraw listings nobody takes in {balance.advisors.chancellor.staleHours} hours.</span>
+        </label>
+        <label className="flex items-start gap-2">
+          <input type="checkbox" checked={draft.buy} onChange={(e) => setDraft((d) => ({ ...d, buy: e.target.checked }))} className="mt-0.5 accent-sky-400" />
+          <span>Buy: what waiting builds, training and the next research owe, from the cheapest open offer not above fair by more than the margin below, into the capital, keeping the reserve below of its cap.</span>
+        </label>
+      </div>
+      <div className="grid gap-2 text-xs text-slate-300 sm:grid-cols-2">
+        <label className="flex items-center justify-between gap-2 rounded border border-slate-800 px-2 py-1">
+          <span>Sell above (% of a store's cap)</span>
+          <input type="number" min={50} max={98} value={pct(draft.sellAbove)} onChange={(e) => setDraft((d) => ({ ...d, sellAbove: fromPct(e.target.value, 0.5, 0.98) }))} className="w-20 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-right text-slate-100" />
+        </label>
+        <label className="flex items-center justify-between gap-2 rounded border border-slate-800 px-2 py-1">
+          <span>Pay up to (% of fair)</span>
+          <input type="number" min={100} max={300} value={pct(draft.overpay)} onChange={(e) => setDraft((d) => ({ ...d, overpay: fromPct(e.target.value, 1, 3) }))} className="w-20 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-right text-slate-100" />
+        </label>
+        <label className="flex items-center justify-between gap-2 rounded border border-slate-800 px-2 py-1">
+          <span>Reserve kept at the capital (% of its cap)</span>
+          <input type="number" min={0} max={90} value={pct(draft.reserveShare)} onChange={(e) => setDraft((d) => ({ ...d, reserveShare: fromPct(e.target.value, 0, 0.9) }))} className="w-20 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-right text-slate-100" />
+        </label>
+        <label className="flex items-center justify-between gap-2 rounded border border-slate-800 px-2 py-1">
+          <span>His listings at once</span>
+          <input type="number" min={1} max={10} value={draft.maxOrders} onChange={(e) => setDraft((d) => ({ ...d, maxOrders: Math.max(1, Math.min(10, Math.round(Number(e.target.value) || 1))) }))} className="w-20 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-right text-slate-100" />
+        </label>
+      </div>
+      <details className="text-xs text-slate-300">
+        <summary className="cursor-pointer text-slate-400">Regions he leaves alone ({draft.skipRegions.length})</summary>
+        <div className="mt-1 grid gap-0.5 sm:grid-cols-2">
+          {regions.map((r) => (
+            <label key={r.regionId} className="flex items-center gap-2">
+              <input type="checkbox" checked={draft.skipRegions.includes(r.regionId)} onChange={(e) => setDraft((d) => ({ ...d, skipRegions: e.target.checked ? [...d.skipRegions, r.regionId] : d.skipRegions.filter((x) => x !== r.regionId) }))} className="accent-sky-400" />
+              <span>
+                {regionById(r.regionId)?.name ?? r.regionId}
+                {r.isCapital ? <span className="text-slate-500"> (capital)</span> : null}
+              </span>
+            </label>
+          ))}
+        </div>
+      </details>
+      <div className="flex items-center gap-2">
+        <Button onClick={() => save.mutate(draft)} disabled={!dirty || save.isPending}>
+          Save
+        </Button>
+        {save.isSuccess && !dirty && <span className="text-xs text-emerald-300">Saved.</span>}
+        <ErrorText>{save.error?.message}</ErrorText>
+      </div>
+    </Card>
+  );
+}
+
 function SettingsForm({ matchId, state, advisor }: { matchId: string; state: MatchStateView; advisor: AdvisorView }) {
   const qc = useQueryClient();
   const [draft, setDraft] = useState<AdvisorSettings>(advisor.settings);
@@ -604,6 +705,9 @@ function Report({ advisor, onSelect }: { advisor: AdvisorView; onSelect: (region
         {r.fortified ? `, queued ${r.fortified} wall${r.fortified === 1 ? "" : "s"}` : ""}
         {r.evacuated ? `, evacuated ${r.evacuated} region${r.evacuated === 1 ? "" : "s"}` : ""}
         {r.settled ? `, sent ${r.settled} colon${r.settled === 1 ? "y" : "ies"}` : ""}
+        {r.researched ? `, queued ${r.researched} tech${r.researched === 1 ? "" : "s"}` : ""}
+        {r.listed ? `, listed ${r.listed} offer${r.listed === 1 ? "" : "s"}` : ""}
+        {r.bought ? `, bought ${r.bought} lot${r.bought === 1 ? "" : "s"}` : ""}
         {skipped.length ? `; skipped ${skipped.map(([k, n]) => `${n} (${SKIP_LABEL[k] ?? k})`).join(", ")}` : ""}.
       </p>
       {r.suggestions.length > 0 && (

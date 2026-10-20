@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { regionById, tradeResource, type MatchStateView, type TradeResource, unitById, balance, RESOURCE_WORTH, MARKET_MAX_RATIO } from "@lastthaw/shared";
+import { regionById, tradeResource, type MatchStateView, type TradeResource, unitById, balance, RESOURCE_WORTH, fairAmount, MARKET_MAX_RATIO } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { Button, Card, ErrorText, Field, Input, fmt } from "./ui.js";
 
@@ -10,18 +10,6 @@ const RESOURCES = tradeResource.options;
 function stockOf(o: MatchStateView["owned"][number], res: TradeResource): number {
   if (res === "food" || res === "wood" || res === "stone") return o[res];
   return o.special[res] ?? 0;
-}
-
-/** A round figure near n: two significant digits, so a suggestion reads like a price and not a calculation. */
-function round2(n: number): number {
-  if (n < 10) return Math.max(1, Math.round(n));
-  const mag = 10 ** (Math.floor(Math.log10(n)) - 1);
-  return Math.round(n / mag) * mag;
-}
-
-/** Fair trade: the amount of `give` worth as much as `amount` of `want`, by the market's own worth table. */
-export function fairAmount(want: TradeResource, amount: number, give: TradeResource): number {
-  return round2((amount * (RESOURCE_WORTH[want] ?? 1)) / (RESOURCE_WORTH[give] ?? 1));
 }
 
 /** The market: open offers from everyone, my offers, and a form to post one. */

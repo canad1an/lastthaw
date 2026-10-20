@@ -222,7 +222,7 @@ export async function thawPass(db: Db, m: MatchRow, p: PlayerRow, a: AdvisorRow,
 
   // The report: the clock first, then what was done.
   for (const line of clock.slice(0, 6)) suggestions.unshift({ regionId: line.regionId, text: line.text });
-  const report: AdvisorReport = { at: now.toISOString(), queued: 0, moved, rebalanced: 0, trained, fortified: 0, exposed: [], evacuated, settled, clock, skipped, suggestions: suggestions.slice(0, 14) };
+  const report: AdvisorReport = { at: now.toISOString(), queued: 0, moved, rebalanced: 0, trained, fortified: 0, exposed: [], evacuated, settled, clock, researched: 0, listed: 0, bought: 0, skipped, suggestions: suggestions.slice(0, 14) };
   await db.update(advisors).set({ lastPassAt: now, lastReport: report }).where(eq(advisors.id, a.id));
   await publisher.toPlayer(m.id, p.id, "advisor.report", { kind: a.kind, evacuated, settled, clock: clock.length });
   return report;

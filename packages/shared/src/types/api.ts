@@ -421,6 +421,17 @@ export const advisorSettings = z.object({
   moveCapital: z.boolean().default(true),
   /** Settle free land on the warm side while regions are being lost. */
   settle: z.boolean().default(true),
+  // Chancellor: research toward a goal, and the market.
+  researchGoal: z.enum(["age", "hauling", "walls", "sea", "off"]).default("age"),
+  /** List a store above this share of its cap, down to the sellDownTo share, at the fair price. */
+  sell: z.boolean().default(true),
+  sellAbove: z.number().min(0.5).max(0.98).default(0.8),
+  /** Buy what waiting orders and the next research owe from the cheapest offer not above fair times overpay, keeping reserveShare of the capital's cap. */
+  buy: z.boolean().default(true),
+  overpay: z.number().min(1).max(3).default(1.25),
+  reserveShare: z.number().min(0).max(0.9).default(0.3),
+  /** His own open listings at once (the market allows ten per player). */
+  maxOrders: z.number().int().min(1).max(10).default(3),
 });
 export type AdvisorSettings = z.infer<typeof advisorSettings>;
 export const campaignStage = z.enum(["intel", "muster", "marching", "done", "failed"]);
@@ -454,6 +465,10 @@ export const advisorReport = z.object({
   settled: z.number().default(0),
   /** Regions on the clock: freezing soonest first, with a line each. */
   clock: z.array(z.object({ regionId: z.string(), hoursLeft: z.number(), text: z.string() })).default([]),
+  // Chancellor.
+  researched: z.number().default(0),
+  listed: z.number().default(0),
+  bought: z.number().default(0),
   skipped: z.record(z.string(), z.number()).default({}),
   suggestions: z.array(advisorSuggestion).default([]),
 });
@@ -691,6 +706,18 @@ export type TradeResource = z.infer<typeof tradeResource>;
 export const RESOURCE_WORTH: Record<string, number> = { food: 1, wood: 1, stone: 1.2, copper: 20, tin: 25, iron: 30, horses: 15 };
 /** Offers may be at most this many times more valuable than the ask, or the reverse. */
 export const MARKET_MAX_RATIO = 20;
+
+/** A round figure near n: two significant digits, so a suggestion reads like a price and not a calculation. */
+export function round2(n: number): number {
+  if (n < 10) return Math.max(1, Math.round(n));
+  const mag = 10 ** (Math.floor(Math.log10(n)) - 1);
+  return Math.round(n / mag) * mag;
+}
+
+/** Fair trade: the amount of `give` worth as much as `amount` of `want`, by the market's own worth table. */
+export function fairAmount(want: string, amount: number, give: string): number {
+  return round2((amount * (RESOURCE_WORTH[want] ?? 1)) / (RESOURCE_WORTH[give] ?? 1));
+}
 export const createOrderBody = z.object({
   regionId: z.string(),
   offerResource: tradeResource,

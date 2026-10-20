@@ -493,7 +493,7 @@ export async function militaryPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
 
   for (const cp of campaigns.filter((x) => x.stage !== "done" && x.stage !== "failed")) suggestions.unshift({ regionId: cp.targetRegionId, text: cp.note || `${name(cp.targetRegionId)}: ${cp.stage}.` });
   for (const e of exposed.filter((x) => x.exposure >= 1)) suggestions.push({ regionId: e.regionId, text: e.text });
-  const report: AdvisorReport = { at: now.toISOString(), queued, moved, rebalanced: 0, trained, fortified, skipped, suggestions: suggestions.slice(0, 14), exposed, evacuated: 0, settled: 0, clock: [] };
+  const report: AdvisorReport = { at: now.toISOString(), queued, moved, rebalanced: 0, trained, fortified, skipped, suggestions: suggestions.slice(0, 14), exposed, evacuated: 0, settled: 0, clock: [], researched: 0, listed: 0, bought: 0 };
   await db.update(advisors).set({ lastPassAt: now, lastReport: report, campaigns }).where(eq(advisors.id, a.id));
   await publisher.toPlayer(m.id, p.id, "advisor.report", { kind: a.kind, trained, fortified, campaigns: campaigns.length });
   return report;

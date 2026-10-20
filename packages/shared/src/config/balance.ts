@@ -420,10 +420,22 @@ export const balance = {
       clockPeriods: 3,
       maxOwed: 20000,
     },
-    /** The Chancellor: research toward a goal, and the market (selling surplus, buying what waiting orders owe). */
+    /**
+     * The Chancellor: research toward a goal (the path's prerequisites first, a few techs a pass, research slots kept
+     * free for the player), and the market: stores near their cap listed at the fair price, stale listings withdrawn,
+     * what waiting orders and the next research owe bought from the cheapest offer not too far above fair.
+     */
     chancellor: {
       perRegionPerHour: { food: 15, wood: 50, stone: 40, copper: 0.5, iron: 0.4 } as Record<string, number>,
       passMinutes: 30,
+      researchPerPass: 3,
+      keepSlotsFree: 2,
+      /** A listing nobody has taken in this many game hours is withdrawn (and relisted next pass if the surplus remains). */
+      staleHours: 12,
+      buysPerPass: 2,
+      /** Selling takes a store from the sellAbove share down to this share of its cap. */
+      sellDownTo: 0.6,
+      minListing: 100,
     },
   },
   /**

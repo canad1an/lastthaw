@@ -256,7 +256,7 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
   if (settings.population === "balanced") moved = await balancePeople(ctx, projected.map((x) => ({ row: x.row, economy: x.economy })), skip);
 
   const suggestions = await suggestionsFor(db, m, p, projected.map((x) => ({ row: x.row, economy: x.economy })), pending, settings, now);
-  const report: AdvisorReport = { at: now.toISOString(), queued, moved, rebalanced, trained: 0, fortified: 0, exposed: [], evacuated: 0, settled: 0, clock: [], skipped, suggestions };
+  const report: AdvisorReport = { at: now.toISOString(), queued, moved, rebalanced, trained: 0, fortified: 0, exposed: [], evacuated: 0, settled: 0, clock: [], researched: 0, listed: 0, bought: 0, skipped, suggestions };
   await db.update(advisors).set({ lastPassAt: now, lastReport: report }).where(eq(advisors.id, a.id));
   await publisher.toPlayer(m.id, p.id, "advisor.report", { kind: a.kind, queued, moved });
   return report;

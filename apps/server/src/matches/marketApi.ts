@@ -117,40 +117,8 @@ export async function marketRoutes(app: FastifyInstance, opts: { db: Db; publish
     const user = requireUser(req);
     const matchId = idParams.parse(req.params).id;
     const body = createOrderBody.parse(req.body);
-    if (body.offerResource === body.askResource) throw httpError(400, "offer and ask must differ");
-    // A gift dressed as a trade is how alts feed a main account: both sides must be within reason of each other.
-    const offerWorth = body.offerAmount * (RESOURCE_WORTH[body.offerResource] ?? 1);
-    const askWorth = body.askAmount * (RESOURCE_WORTH[body.askResource] ?? 1);
-    if (offerWorth > askWorth * MARKET_MAX_RATIO || askWorth > offerWorth * MARKET_MAX_RATIO) throw httpError(400, `that price is too far from fair to be a trade (more than ${MARKET_MAX_RATIO}x either way)`);
     const { m, p } = await loadContext(matchId, user.id);
-
-    const order = await db.transaction(async (tx) => {
-      const [count] = await tx
-        .select({ n: sql<number>`count(*)::int` })
-        .from(marketOrders)
-        .where(and(eq(marketOrders.playerId, p.id), eq(marketOrders.status, "open")));
-      if ((count?.n ?? 0) >= MAX_OPEN_ORDERS) throw httpError(409, `you already have ${MAX_OPEN_ORDERS} open orders`);
-      const row = await settleAndLockRegion(tx, matchId, body.regionId, matchNow(m), m.speed, resourceMultOf(m));
-      if (row.ownerPlayerId !== p.id) throw httpError(403, "not your region");
-      if (row.frozenAt) throw httpError(409, "this region is frozen");
-      if ((stockOf(row)[body.offerResource] ?? 0) < body.offerAmount) throw httpError(409, `not enough ${body.offerResource}`);
-      await applyCost(tx, row, { [body.offerResource]: body.offerAmount });
-      const [o] = await tx
-        .insert(marketOrders)
-        .values({
-          matchId,
-          playerId: p.id,
-          regionId: body.regionId,
-          offerResource: body.offerResource,
-          offerAmount: body.offerAmount,
-          askResource: body.askResource,
-          askAmount: body.askAmount,
-          status: "open",
-        })
-        .returning();
-      if (!o) throw new Error("order insert failed");
-      return o;
-    });
+    const order = await createMarketOrder(db, m, p, body);
     await publisher.toPlayer(matchId, p.id, "region.updated", { regionId: body.regionId });
     await publisher.toMatch(matchId, "trade.filled", { orderId: order.id, action: "posted" });
     return reply.code(201).send(toView(order, p.name, p.id));
@@ -160,25 +128,7 @@ export async function marketRoutes(app: FastifyInstance, opts: { db: Db; publish
     const user = requireUser(req);
     const { id: matchId, orderId } = orderParams.parse(req.params);
     const { m, p } = await loadContext(matchId, user.id);
-    const now = matchNow(m);
-
-    const refundedTo = await db.transaction(async (tx) => {
-      const o = await lockOrder(tx, matchId, orderId);
-      if (o.playerId !== p.id) throw httpError(403, "not your order");
-      if (o.status !== "open") throw httpError(409, "that order is no longer open");
-      const res = o.offerResource as TradeResource;
-      let dest: MatchRegionRow | null = await settleAndLockRegion(tx, matchId, o.regionId, now, m.speed, resourceMultOf(m));
-      if (dest.ownerPlayerId !== p.id) {
-        dest = null;
-        if (p.capitalRegionId && p.capitalRegionId !== o.regionId) {
-          const cap = await settleAndLockRegion(tx, matchId, p.capitalRegionId, now, m.speed, resourceMultOf(m));
-          if (cap.ownerPlayerId === p.id) dest = cap;
-        }
-      }
-      if (dest) await credit(tx, dest, res, o.offerAmount);
-      await tx.update(marketOrders).set({ status: "cancelled" }).where(eq(marketOrders.id, o.id));
-      return dest?.regionId ?? null;
-    });
+    const refundedTo = await cancelMarketOrder(db, m, p, orderId);
     if (refundedTo) await publisher.toPlayer(matchId, p.id, "region.updated", { regionId: refundedTo });
     await publisher.toMatch(matchId, "trade.filled", { orderId, action: "cancelled" });
     return { ok: true, refundedTo };
@@ -200,6 +150,66 @@ export async function marketRoutes(app: FastifyInstance, opts: { db: Db; publish
       await publisher.toPlayer(matchId, id, "message.new", {});
     }
     return { ok: true, received: result.received };
+  });
+}
+
+/** Post an offer: the goods are escrowed from the region at once. At most MAX_OPEN_ORDERS open per player, within MARKET_MAX_RATIO of fair. */
+export async function createMarketOrder(db: Db, m: MatchRow, p: PlayerRow, body: { regionId: string; offerResource: TradeResource; offerAmount: number; askResource: TradeResource; askAmount: number }): Promise<OrderRow> {
+  const matchId = m.id;
+  if (body.offerResource === body.askResource) throw httpError(400, "offer and ask must differ");
+  // A gift dressed as a trade is how alts feed a main account: both sides must be within reason of each other.
+  const offerWorth = body.offerAmount * (RESOURCE_WORTH[body.offerResource] ?? 1);
+  const askWorth = body.askAmount * (RESOURCE_WORTH[body.askResource] ?? 1);
+  if (offerWorth > askWorth * MARKET_MAX_RATIO || askWorth > offerWorth * MARKET_MAX_RATIO) throw httpError(400, `that price is too far from fair to be a trade (more than ${MARKET_MAX_RATIO}x either way)`);
+  return db.transaction(async (tx) => {
+    const [count] = await tx
+      .select({ n: sql<number>`count(*)::int` })
+      .from(marketOrders)
+      .where(and(eq(marketOrders.playerId, p.id), eq(marketOrders.status, "open")));
+    if ((count?.n ?? 0) >= MAX_OPEN_ORDERS) throw httpError(409, `you already have ${MAX_OPEN_ORDERS} open orders`);
+    const row = await settleAndLockRegion(tx, matchId, body.regionId, matchNow(m), m.speed, resourceMultOf(m));
+    if (row.ownerPlayerId !== p.id) throw httpError(403, "not your region");
+    if (row.frozenAt) throw httpError(409, "this region is frozen");
+    if ((stockOf(row)[body.offerResource] ?? 0) < body.offerAmount) throw httpError(409, `not enough ${body.offerResource}`);
+    await applyCost(tx, row, { [body.offerResource]: body.offerAmount });
+    const [o] = await tx
+      .insert(marketOrders)
+      .values({
+        matchId,
+        playerId: p.id,
+        regionId: body.regionId,
+        offerResource: body.offerResource,
+        offerAmount: body.offerAmount,
+        askResource: body.askResource,
+        askAmount: body.askAmount,
+        status: "open",
+      })
+      .returning();
+    if (!o) throw new Error("order insert failed");
+    return o;
+  });
+}
+
+/** Withdraw an open offer: the goods go back to the order's region, or the capital if that region was lost; capped at storage. Returns where they went. */
+export async function cancelMarketOrder(db: Db, m: MatchRow, p: PlayerRow, orderId: string): Promise<string | null> {
+  const matchId = m.id;
+  const now = matchNow(m);
+  return db.transaction(async (tx) => {
+    const o = await lockOrder(tx, matchId, orderId);
+    if (o.playerId !== p.id) throw httpError(403, "not your order");
+    if (o.status !== "open") throw httpError(409, "that order is no longer open");
+    const res = o.offerResource as TradeResource;
+    let dest: MatchRegionRow | null = await settleAndLockRegion(tx, matchId, o.regionId, now, m.speed, resourceMultOf(m));
+    if (dest.ownerPlayerId !== p.id) {
+      dest = null;
+      if (p.capitalRegionId && p.capitalRegionId !== o.regionId) {
+        const cap = await settleAndLockRegion(tx, matchId, p.capitalRegionId, now, m.speed, resourceMultOf(m));
+        if (cap.ownerPlayerId === p.id) dest = cap;
+      }
+    }
+    if (dest) await credit(tx, dest, res, o.offerAmount);
+    await tx.update(marketOrders).set({ status: "cancelled" }).where(eq(marketOrders.id, o.id));
+    return dest?.regionId ?? null;
   });
 }
 
