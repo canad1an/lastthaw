@@ -71,6 +71,8 @@ const MIN_K = 1;
 const MARKER_SCALE = 1.75;
 /** Overlay badges (soldiers, caravans, notes) grow a little less, so several on one region still fit. */
 const BADGE_SCALE = 1.4;
+/** A battle's crossed swords are drawn this many times larger than other badges, so a fight is seen from anywhere on the map. */
+const BATTLE_BADGE_SCALE = 5;
 // Phones pinch in close to pick out one province among many; the limit used to stop well short of that.
 const MAX_K = 28;
 
@@ -235,6 +237,11 @@ export function WorldMap({ paint, selected, onSelect, focus, flyTo, className = 
       <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>
         <Regions paint={paint} selected={selected} strokeWidth={0.8 / view.k} />
         {flash && <path d={allRegions().find((r) => r.id === flash)?.path ?? ""} fill="#fbbf24" stroke="#fde68a" strokeWidth={3 / view.k} strokeLinejoin="round" pointerEvents="none" className="region-flash" />}
+        {badges.filter((b) => b.battleId).map((b) => {
+          // A battle in progress: the whole region flashes red until the last round.
+          const r = regionById(b.regionId);
+          return r ? <path key={`battle-${b.battleId}`} d={r.path} fill="#f43f5e" stroke="#fb7185" strokeWidth={2.4 / view.k} strokeLinejoin="round" pointerEvents="none" className="region-battle" /> : null;
+        })}
         {storms.map((id) => {
           const r = regionById(id);
           return r ? <path key={`storm-${id}`} d={r.path} fill="url(#lt-storm)" pointerEvents="none" /> : null;
@@ -294,9 +301,11 @@ export function WorldMap({ paint, selected, onSelect, focus, flyTo, className = 
             const r = regionById(b.regionId);
             if (!r) return null;
             // Fan several badges on one region around its centre so each stays visible.
-            const k = badges.slice(0, i).filter((x) => x.regionId === b.regionId).length;
-            const s = (unitsPerPx / view.k) * BADGE_SCALE;
-            const dx = 9 + k * 11;
+            // A battle's crossed swords sit large on the region's centre; the rest fan out beside it.
+            const battle = !!b.battleId;
+            const k = badges.slice(0, i).filter((x) => x.regionId === b.regionId && !x.battleId).length;
+            const s = (unitsPerPx / view.k) * BADGE_SCALE * (battle ? BATTLE_BADGE_SCALE : 1);
+            const dx = battle ? 0 : 9 + k * 11;
             return (
               <g
                 key={`${b.regionId}-${i}`}
@@ -310,9 +319,9 @@ export function WorldMap({ paint, selected, onSelect, focus, flyTo, className = 
                 }}
               >
                 <title>{b.label}</title>
-                {b.pulse && <circle cx={dx} cy={-9} r={8} fill="none" stroke={b.colour} strokeWidth={1.5} className="animate-ping" />}
-                <circle cx={dx} cy={-9} r={b.pulse ? 7 : 5.5} fill={b.colour} stroke="#0b1a2b" strokeWidth={1.2} />
-                <text x={dx} y={-9} textAnchor="middle" dominantBaseline="central" fontSize={7} fontWeight={700} fill="#0b1a2b">
+                {b.pulse && <circle cx={dx} cy={battle ? 0 : -9} r={8} fill="none" stroke={b.colour} strokeWidth={1.5} className="animate-ping" />}
+                <circle cx={dx} cy={battle ? 0 : -9} r={b.pulse ? 7 : 5.5} fill={b.colour} stroke="#0b1a2b" strokeWidth={battle ? 0.6 : 1.2} />
+                <text x={dx} y={battle ? 0 : -9} textAnchor="middle" dominantBaseline="central" fontSize={7} fontWeight={700} fill="#0b1a2b">
                   {b.glyph}
                 </text>
               </g>

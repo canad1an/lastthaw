@@ -1,18 +1,26 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { balance, formatCountdown, regionById, unitById, type BattleDetailView } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { useNow } from "../hooks/useNow.js";
-import { unitGlyph } from "./unitGlyphs.js";
+import { BattleScene } from "./battleScene.js";
 
 const total = (u: Record<string, number>) => Object.values(u).reduce((a, b) => a + b, 0);
 const strengthOf = (u: Record<string, number>, stat: "attack" | "defense") => Object.entries(u).reduce((a, [id, n]) => a + n * (unitById.get(id)?.[stat] ?? 0), 0);
 const pct = (v: number) => `${Math.round(v * 100)}%`;
+const SAME_PLURAL = new Set(["Militia", "Cavalry", "Infantry", "Artillery"]);
+/** "Spearman" to "Spearmen", "Cavalry" stays, the rest take an s. */
+const plural = (name: string) => (SAME_PLURAL.has(name) ? name : name.endsWith("man") ? name.slice(0, -3) + "men" : name + "s");
+const unitName = (id: string, n: number) => {
+  const name = unitById.get(id)?.name ?? id;
+  return n === 1 ? name : plural(name);
+};
 
 /**
- * The live battle: both armies on a mock battlefield, a unit per tile and the fallen greyed out, the strength of each
- * side, what the defender has going for it, a countdown to the next round and a log of the rounds so far. It follows
+ * The live battle: both armies painted on a battlefield, marching in and fighting in the middle while the rounds fell
+ * them one or two at a time, then the strength of each side, what the defender has going for it, a countdown to the
+ * next round and a log of the rounds so far. It follows
  * the battle over the websocket (battle.round events refetch it) with a slow poll behind.
  */
 export function BattleWindow({ matchId, battleId, myPlayerId, onClose, onSelectRegion }: { matchId: string; battleId: string; myPlayerId: string | null; onClose: () => void; onSelectRegion: (regionId: string) => void }) {
@@ -69,7 +77,9 @@ function Battle({ b, now, myPlayerId, onClose, onSelectRegion }: { b: BattleDeta
           Close
         </button>
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto p-4">
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <Field b={b} />
+        <div className="p-4">
         {verdict && <p className={`mb-3 rounded px-3 py-2 text-sm ${b.result?.attackerWon ? "bg-rose-500/15 text-rose-100" : "bg-emerald-500/15 text-emerald-100"}`}>{verdict}</p>}
         <div className="grid gap-3 md:grid-cols-2">
           <Side label="Attackers" name={b.attacker.name} units={b.attacker.now} start={b.attacker.start} now={aNow} total={aStart} strength={strengthOf(b.attacker.now, "attack") * (1 + b.bonus.attack)} strengthLabel="attack" tone="rose" chips={[b.bonus.attack ? `techs +${pct(b.bonus.attack)}` : "", b.bonus.siege ? `siege ${b.bonus.siege}` : ""].filter(Boolean)} />
@@ -88,22 +98,50 @@ function Battle({ b, now, myPlayerId, onClose, onSelectRegion }: { b: BattleDeta
           </ol>
         </div>
         <p className="mt-2 text-[11px] text-slate-500">The result was decided when the army arrived, by the usual rules; the fight plays out a unit or two every {balance.battle.roundSeconds} seconds so you can watch it. Nothing changes hands until the last round.</p>
+        </div>
       </div>
     </>
   );
 }
 
+/** The painted battlefield; the scene keeps its own animation loop and is fed each new picture of the battle. */
+function Field({ b }: { b: BattleDetailView }) {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const scene = useRef<BattleScene | null>(null);
+  const [k, setK] = useState(1);
+  useEffect(() => {
+    if (!canvas.current) return;
+    const s = new BattleScene(canvas.current, balance.battle.roundSeconds);
+    scene.current = s;
+    return () => {
+      s.destroy();
+      scene.current = null;
+    };
+  }, []);
+  useEffect(() => {
+    scene.current?.update(b);
+    setK(scene.current?.unitsPerFigure ?? 1);
+  }, [b]);
+  return (
+    <div className="relative bg-[#1b2433]">
+      <canvas ref={canvas} className="block aspect-[1000/440] w-full" aria-label={`The battlefield: ${b.attacker.name} on the left, ${b.defender.name} on the right`} />
+      {k > 1 && <span className="absolute bottom-2 right-2 rounded bg-slate-950/60 px-2 py-0.5 text-[11px] text-slate-200">1 figure = {k} men</span>}
+    </div>
+  );
+}
+
 function describeRound(aLoss: Record<string, number>, dLoss: Record<string, number>, attacker: string, defender: string): string {
-  const say = (u: Record<string, number>, who: string) =>
-    Object.entries(u)
+  const say = (u: Record<string, number>, who: string) => {
+    const list = Object.entries(u)
       .filter(([, n]) => n > 0)
-      .map(([id, n]) => `${n === 1 ? "a" : n} ${unitById.get(id)?.name ?? id}${n === 1 ? "" : "s"} of ${who}'s fell`)
-      .join(", ");
+      .map(([id, n]) => `${n === 1 ? (/^[AEIOU]/.test(unitName(id, 1)) ? "an" : "a") : n} ${unitName(id, n)}`);
+    return list.length ? `${who} lost ${list.join(" and ")}` : "";
+  };
   const parts = [say(aLoss, attacker), say(dLoss, defender)].filter(Boolean);
   return parts.length ? parts.join("; ") + "." : "nobody fell.";
 }
 
-/** One side of the field: a tile per unit, the fallen greyed, with the side's strength bar and what helps it. */
+/** One side of the field: its strength bar and what helps it, and a bar for every kind of unit it brought. */
 function Side({ label, name, units, start, now, total, strength, strengthLabel, tone, chips }: { label: string; name: string; units: Record<string, number>; start: Record<string, number>; now: number; total: number; strength: number; strengthLabel: string; tone: "rose" | "sky"; chips: string[] }) {
   const colour = tone === "rose" ? "bg-rose-500" : "bg-sky-500";
   const types = Object.entries(start)
@@ -126,35 +164,23 @@ function Side({ label, name, units, start, now, total, strength, strengthLabel, 
         {strengthLabel} {Math.round(strength).toLocaleString("en-US")}
         {chips.length ? ` · ${chips.join(" · ")}` : ""}
       </p>
-      <div className="mt-2 space-y-2">
+      <ul className="mt-2 space-y-1">
         {types.map(([id, n]) => {
           const alive = units[id] ?? 0;
-          const shown = Math.min(n, 40);
-          const def = unitById.get(id);
           return (
-            <div key={id}>
-              <p className="text-[11px] text-slate-300">
-                {alive} of {n} {def?.name ?? id}
-                {n === 1 ? "" : "s"}
+            <li key={id} className="grid grid-cols-[1fr_5.5rem] items-center gap-3 text-[11px] tabular-nums text-slate-300">
+              <span>
+                {alive} of {n} {unitName(id, n)}
                 {n - alive > 0 ? <span className="text-slate-500"> · {n - alive} fallen</span> : null}
-              </p>
-              <div className="mt-0.5 flex flex-wrap gap-0.5">
-                {Array.from({ length: shown }, (_, i) => {
-                  // The fallen are the last tiles of the row, so a line of men thins from the right.
-                  const fallen = i >= Math.round((alive / n) * shown);
-                  return (
-                    <span key={i} className={`flex h-6 w-6 items-center justify-center rounded text-sm leading-none transition-opacity duration-700 ${fallen ? "bg-slate-900 opacity-30 grayscale" : tone === "rose" ? "bg-rose-900/40" : "bg-sky-900/40"}`} title={def?.name ?? id}>
-                      {unitGlyph(id)}
-                    </span>
-                  );
-                })}
-                {n > shown && <span className="self-center pl-1 text-[11px] text-slate-500">×{n}</span>}
-              </div>
-            </div>
+              </span>
+              <span className="h-1 overflow-hidden rounded bg-slate-800">
+                <span className={`block h-full ${colour} transition-all duration-700`} style={{ width: `${(alive / n) * 100}%` }} />
+              </span>
+            </li>
           );
         })}
-        {types.length === 0 && <p className="text-xs text-slate-500">nobody</p>}
-      </div>
+        {types.length === 0 && <li className="text-xs text-slate-500">nobody</li>}
+      </ul>
     </section>
   );
 }
