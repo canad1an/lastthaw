@@ -5,7 +5,9 @@ import { Publisher } from "../src/realtime/publish.js";
 import { runDueJobs } from "../src/worker/jobs.js";
 import { buildApp } from "../src/api/app.js";
 import { createDb, type Db } from "../src/db/client.js";
-import { emailTokens, fairplayFlags, matches, playerActions, players, users, matchRegions, regionNotes, tradeRoutes, jobs, armies, pacts } from "../src/db/schema.js";
+import { emailTokens, fairplayFlags, matches, playerActions, players, users, matchRegions, regionNotes, tradeRoutes, jobs, armies, pacts, advisors, messages } from "../src/db/schema.js";
+import { runMatchTicks } from "../src/sim/tick.js";
+import { wageFor } from "../src/sim/advisors.js";
 import { runTradeRoutes } from "../src/sim/trade.js";
 import { detectAutomation } from "../src/fairplay/detect.js";
 import { createRedis } from "../src/redis.js";
@@ -723,6 +725,117 @@ describe("api routes", () => {
     expect(row?.popOccupiers).toBe(5);
     const inbox = ((await Attacker.call("GET", `${base}/messages`)).json() as { messages: Array<{ subject: string }> }).messages;
     expect(inbox.some((x) => x.subject.startsWith("5 settlers joined the occupiers in"))).toBe(true);
+  });
+
+  it("the Economic advisor: hired for an hourly wage with no fee, raises buildings to the minimums set, balances people, is charged by the tick, stops when unpaid, and moves nobody when not hired", async () => {
+    const base = `/api/matches/${gameId}`;
+    const benState = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
+    const cap = benState.me.capitalRegionId!;
+    const benPid = benState.me.playerId;
+    const nowIso = async () => matchStateView.parse((await Ben.call("GET", `${base}/state`)).json()).match.now;
+    const stockAt = async (id: string) => (await db.select({ food: matchRegions.food, wood: matchRegions.wood, stone: matchRegions.stone, special: matchRegions.special }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, id))))[0]!;
+    const fill = async (food: number, wood: number, stone: number, copper: number, iron: number) => {
+      await db.update(matchRegions).set({ food, wood, stone, special: { copper, iron }, settledAt: new Date(await nowIso()) }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
+    };
+    const redis = createRedis();
+    const pub = new Publisher(redis);
+    try {
+      // Hire: the first hour's wage leaves the capital; a second hire is refused.
+      await fill(4000, 3000, 2500, 60, 60);
+      const regions = (await db.select({ n: sql<number>`count(*)::int` }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid), sql`${matchRegions.frozenAt} is null`)))[0]!.n;
+      const wage = wageFor("economic", regions);
+      const before = await stockAt(cap);
+      const hired = await Ben.call("POST", `${base}/advisors/economic/hire`, {});
+      expect(hired.statusCode, hired.body).toBe(200);
+      expect((hired.json() as { wage: Record<string, number> }).wage).toEqual(wage);
+      const after = await stockAt(cap);
+      expect(Math.round(before.food - after.food)).toBe(wage.food);
+      expect(Math.round(before.wood - after.wood)).toBe(wage.wood);
+      expect(((before.special as { copper: number }).copper ?? 0) - ((after.special as { copper: number }).copper ?? 0)).toBe(wage.copper);
+      expect((await Ben.call("POST", `${base}/advisors/economic/hire`, {})).statusCode).toBe(409);
+      let st = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
+      expect(st.advisors).toHaveLength(1);
+      expect(st.advisors[0]).toMatchObject({ kind: "economic", unpaid: false, wage, settings: { population: "overflow", useOtherRegions: true } });
+
+      // Settings: validated, then stored.
+      expect((await Ben.call("PUT", `${base}/advisors/economic/settings`, { minLevels: { huts: 99 } })).statusCode).toBe(400);
+      expect((await Ben.call("PUT", `${base}/advisors/economic/settings`, { minLevels: { quarry: 1 }, useOtherRegions: true, skipRegions: [], population: "balanced" })).statusCode).toBe(200);
+      st = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
+      expect(st.advisors[0]!.settings).toMatchObject({ minLevels: { quarry: 1 }, population: "balanced" });
+
+      // A pass: a Quarry is queued wherever one is missing and can stand; a second pass straight away is refused.
+      const lacking = st.owned.filter((o) => !(o.buildings.quarry ?? 0)).length;
+      expect(lacking).toBeGreaterThan(0);
+      const run = await Ben.call("POST", `${base}/advisors/economic/run`, {});
+      expect(run.statusCode, run.body).toBe(200);
+      const report = (run.json() as { report: { queued: number; skipped: Record<string, number> } }).report;
+      expect(report.queued).toBeGreaterThan(0);
+      const quarryJobs = await db.select().from(jobs).where(and(eq(jobs.matchId, gameId), eq(jobs.playerId, benPid), eq(jobs.kind, "build"), eq(jobs.refId, "quarry"), sql`${jobs.completedAt} is null`, sql`${jobs.cancelledAt} is null`));
+      expect(quarryJobs.length).toBe(report.queued);
+      expect((await Ben.call("POST", `${base}/advisors/economic/run`, {})).statusCode).toBe(429);
+
+      // Balanced people: a swollen capital sends a column to an emptier region of Ben's.
+      await db.update(matchRegions).set({ popWorkers: 600, settledAt: new Date(await nowIso()) }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
+      await db.update(advisors).set({ lastPassAt: null }).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
+      const run2 = await Ben.call("POST", `${base}/advisors/economic/run`, {});
+      expect(run2.statusCode, run2.body).toBe(200);
+      expect((run2.json() as { report: { moved: number } }).report.moved).toBeGreaterThan(0);
+      const columns = await db.select().from(armies).where(and(eq(armies.matchId, gameId), eq(armies.playerId, benPid), eq(armies.mission, "move"), eq(armies.status, "outbound"), eq(armies.originRegionId, cap)));
+      expect(columns.some((a) => (a.cargo.people ?? 0) > 0)).toBe(true);
+
+      // The tick charges every whole hour past paidUntil.
+      const tickOnce = async () => {
+        await db.update(matches).set({ lastTickAt: new Date(Date.now() - 3600_000) }).where(eq(matches.id, gameId));
+        await runMatchTicks(db, pub, logger);
+      };
+      await fill(4000, 3000, 2500, 60, 60);
+      await db.update(advisors).set({ paidUntil: new Date(Date.parse(await nowIso()) - 2 * (3600_000 / benState.match.speed)) }).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
+      const b2 = await stockAt(cap);
+      await tickOnce();
+      const [row] = await db.select().from(advisors).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
+      expect(row!.paidUntil.getTime()).toBeGreaterThan(Date.parse(await nowIso()) - 1000);
+      expect(row!.unpaidSince).toBeNull();
+      const a2 = await stockAt(cap);
+      // Three hours came due (two past plus the one just reached): the food fell by at least two wages, and not by more than four.
+      expect(b2.food - a2.food).toBeGreaterThanOrEqual(2 * wage.food! - 1);
+      expect(b2.food - a2.food).toBeLessThan(4 * wage.food! + 50);
+
+      // Unpaid: an empire with no iron cannot pay; the advisor stops, says so once, and refuses to run.
+      await db.update(matchRegions).set({ special: {} }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid)));
+      await db.update(advisors).set({ paidUntil: new Date(Date.parse(await nowIso()) - 3600_000 / benState.match.speed) }).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
+      await tickOnce();
+      const [row2] = await db.select().from(advisors).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
+      expect(row2!.unpaidSince).not.toBeNull();
+      expect((await Ben.call("POST", `${base}/advisors/economic/run`, {})).statusCode).toBe(409);
+      const told = await db.select().from(messages).where(and(eq(messages.matchId, gameId), eq(messages.playerId, benPid), sql`${messages.payload}->>'unpaid' = 'true'`));
+      expect(told.length).toBe(1);
+      // Paid again: back at work.
+      await fill(4000, 3000, 2500, 60, 60);
+      await tickOnce();
+      const [row3] = await db.select().from(advisors).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
+      expect(row3!.unpaidSince).toBeNull();
+
+      // Dismiss, and rehire with nothing but the hour's wage.
+      expect((await Ben.call("POST", `${base}/advisors/economic/dismiss`, {})).statusCode).toBe(200);
+      st = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
+      expect(st.advisors).toEqual([]);
+      expect((await Ben.call("POST", `${base}/advisors/economic/hire`, {})).statusCode).toBe(200);
+      expect((await Ben.call("POST", `${base}/advisors/economic/dismiss`, {})).statusCode).toBe(200);
+
+      // No advisor: a crowded capital stays crowded through a tick; with one set to overflow, the surplus spills to a neighbour.
+      await db.update(matchRegions).set({ popWorkers: 600, settledAt: new Date(await nowIso()) }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
+      await tickOnce();
+      const [still] = await db.select({ popWorkers: matchRegions.popWorkers }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
+      expect(Math.round(still!.popWorkers)).toBeGreaterThanOrEqual(590);
+      await fill(4000, 3000, 2500, 60, 60);
+      expect((await Ben.call("POST", `${base}/advisors/economic/hire`, {})).statusCode).toBe(200);
+      await tickOnce();
+      const [spilled] = await db.select({ popWorkers: matchRegions.popWorkers }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
+      expect(spilled!.popWorkers).toBeLessThan(still!.popWorkers);
+      expect((await Ben.call("POST", `${base}/advisors/economic/dismiss`, {})).statusCode).toBe(200);
+    } finally {
+      await redis.quit().catch(() => {});
+    }
   });
 
   it("region notes: a player marks a region and writes a note only they can read", async () => {

@@ -347,7 +347,15 @@ function OwnedDetails({ matchId, state, owned, clockOffsetMs, speed }: { matchId
         <dt className="text-slate-500">of which</dt>
         <dd className="col-span-2 text-xs text-slate-400">
           {fmt(live.e.popWorkers)} workers{live.e.popSoldiers > 0 ? `, ${fmt(live.e.popSoldiers)} in units` : ""}{live.e.popOccupiers > 0 ? `, ${fmt(live.e.popOccupiers)} occupiers` : ""}. Counts only who is here now, not units on the road.
-          {pop > live.e.capacity && <span className="text-amber-300"> Over capacity: growth has stopped, and {Math.round(balance.economy.migrationPerHour * 100)}% of the surplus leaves each hour for neighbouring regions of yours with room.</span>}
+          {pop > live.e.capacity && (
+            <span className="text-amber-300">
+              {" "}
+              Over capacity: growth has stopped.{" "}
+              {state.advisors.some((a) => a.kind === "economic" && !a.unpaid && a.settings.population !== "off")
+                ? `Your Economic advisor moves the surplus (${Math.round(balance.economy.migrationPerHour * 100)}% an hour to neighbours with room, or balanced across your regions).`
+                : "Move people out by hand, or hire an Economic advisor to do it."}
+            </span>
+          )}
         </dd>
         {!owned.isCapital && <LoyaltyRow owned={owned} state={state} />}
         <Row label="Food" value={`${fmt(live.e.food)} / ${fmt(live.e.storage.food)}`} rate={perHour(live.rates.food)} warn={live.rates.starving} />

@@ -1,6 +1,6 @@
 import type { z } from "zod";
 import { reportClientError } from "../errorReport.js";
-import { alliancesResponse, chatResponse, marketResponse, matchStateView, matchSummary, userView, type ChatMessageView, type MarketOrderView, type TradeResource } from "@lastthaw/shared";
+import { alliancesResponse, chatResponse, marketResponse, matchStateView, matchSummary, userView, type AdvisorSettings, type ChatMessageView, type MarketOrderView, type TradeResource } from "@lastthaw/shared";
 
 export class ApiError extends Error {
   constructor(
@@ -107,6 +107,10 @@ export const api = {
   endPact: (id: string, pactId: string) => request<{ ok: true }>("POST", `/api/matches/${id}/pacts/${pactId}/end`, {}),
   payTribute: (id: string, pactId: string) => request<{ ok: true }>("POST", `/api/matches/${id}/pacts/${pactId}/pay`, {}),
   hireMercenaries: (id: string, offerId: string) => request<{ ok: true; qty: number; company: string }>("POST", `/api/matches/${id}/mercenaries/${offerId}/hire`, {}),
+  hireAdvisor: (id: string, kind: "economic") => request<{ ok: true; wage: Record<string, number> }>("POST", `/api/matches/${id}/advisors/${kind}/hire`, {}),
+  dismissAdvisor: (id: string, kind: "economic") => request<{ ok: true }>("POST", `/api/matches/${id}/advisors/${kind}/dismiss`, {}),
+  setAdvisorSettings: (id: string, kind: "economic", settings: AdvisorSettings) => request<{ ok: true }>("PUT", `/api/matches/${id}/advisors/${kind}/settings`, settings),
+  runAdvisor: (id: string, kind: "economic") => request<{ ok: true }>("POST", `/api/matches/${id}/advisors/${kind}/run`, {}),
   setNote: (id: string, regionId: string, b: { text: string; colour: string | null }) => request<{ ok: true }>("PUT", `/api/matches/${id}/notes/${regionId}`, b),
   endMatch: (id: string) => request<{ ok: true }>("POST", `/api/matches/${id}/end`, {}),
   lastStand: (id: string, targetRegionId: string) => request<{ ok: true; arrivesAt: string }>("POST", `/api/matches/${id}/last-stand`, { targetRegionId }),

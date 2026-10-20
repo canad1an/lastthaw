@@ -386,6 +386,43 @@ export const mercenaryOfferView = z.object({
 export type MercenaryOfferView = z.infer<typeof mercenaryOfferView>;
 export const lastStandBody = z.object({ targetRegionId: z.string() });
 
+/** Advisors: hired staff paid by the hour. Only the Economic advisor exists so far. */
+export const advisorKind = z.enum(["economic"]);
+export type AdvisorKind = z.infer<typeof advisorKind>;
+export const advisorSettings = z.object({
+  /** Minimum level wanted everywhere the building can stand; 0 or absent leaves it alone. */
+  minLevels: z.record(z.string(), z.number().int().min(0).max(50)).default({}),
+  /** Queue builds a region cannot pay for and let convoys bring the rest from other regions. */
+  useOtherRegions: z.boolean().default(true),
+  /** Regions the advisor leaves alone. */
+  skipRegions: z.array(z.string()).max(500).default([]),
+  /** How people are moved: not at all, overflow from crowded regions to neighbours, or balanced across the empire. */
+  population: z.enum(["off", "overflow", "balanced"]).default("overflow"),
+});
+export type AdvisorSettings = z.infer<typeof advisorSettings>;
+export const advisorSuggestion = z.object({ regionId: z.string().nullable(), text: z.string() });
+export type AdvisorSuggestion = z.infer<typeof advisorSuggestion>;
+export const advisorReport = z.object({
+  at: z.string(),
+  queued: z.number(),
+  moved: z.number().default(0),
+  skipped: z.record(z.string(), z.number()).default({}),
+  suggestions: z.array(advisorSuggestion).default([]),
+});
+export type AdvisorReport = z.infer<typeof advisorReport>;
+export const advisorView = z.object({
+  kind: advisorKind,
+  hiredAt: z.string(),
+  paidUntil: z.string(),
+  /** The wage could not be met: the advisor has stopped until it is. */
+  unpaid: z.boolean(),
+  wage: z.record(z.string(), z.number()),
+  settings: advisorSettings,
+  lastPassAt: z.string().nullable(),
+  lastReport: advisorReport.nullable(),
+});
+export type AdvisorView = z.infer<typeof advisorView>;
+
 export const refugeeOfferView = z.object({
   id: z.string(),
   regionId: z.string(),
@@ -461,6 +498,8 @@ export const matchStateView = z.object({
   pacts: z.array(pactView).default([]),
   /** Mercenary companies for hire right now. */
   mercenaries: z.array(mercenaryOfferView).default([]),
+  /** Advisors I have hired. */
+  advisors: z.array(advisorView).default([]),
   /** The last stand is open: the ice is a day from the capital and it has not been used. */
   lastStand: z.object({ eligible: z.boolean(), used: z.boolean() }).default({ eligible: false, used: false }),
   /** Today's objective and who took yesterday's. */
@@ -531,6 +570,10 @@ export const EVENT_KINDS = [
   "alliance.updated",
   "chat.message",
   "trade.filled",
+  "advisor.hired",
+  "advisor.dismissed",
+  "advisor.settings",
+  "advisor.report",
 ] as const;
 export type EventKind = (typeof EVENT_KINDS)[number];
 

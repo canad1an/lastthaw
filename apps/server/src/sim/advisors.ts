@@ -1,0 +1,322 @@
+/**
+ * Advisors: hired staff who take routine management off a player's hands for a steep hourly wage.
+ * Today the Economic advisor: raises buildings across every region to the minimum levels the player set, lets the
+ * materials routes and convoys supply what a region cannot pay, moves people the way the player chose, and writes
+ * a short report with suggestions after every pass. Wages are charged by the match tick; passes run in the AI process.
+ */
+import { and, asc, eq, isNull, lte, or, sql } from "drizzle-orm";
+import type pino from "pino";
+import { balance, availableBuildings, buildingBlockedBy, buildingById, regionById, unitById, HAULER_IDS, type AdvisorSettings, type AdvisorReport, type AdvisorSuggestion, type Cost, advisorSettings as advisorSettingsSchema } from "@lastthaw/shared";
+import type { Db } from "../db/client.js";
+import { advisors, jobs, matchRegions, matches, playerTechs, players, tradeRoutes } from "../db/schema.js";
+import type { Publisher } from "../realtime/publish.js";
+import { matchNow } from "./clock.js";
+import { applyCost, projectRegion, settleAndLockRegion, stockOf, resourceMultOf, type MatchRegionRow, type Tx } from "./regions.js";
+import { queueBuild, sendArmy, type CommandContext } from "./commands.js";
+import { buildOrderFor } from "./ai.js";
+import { notify, type MatchRow } from "../worker/jobs.js";
+
+type PlayerRow = typeof players.$inferSelect;
+export type AdvisorRow = typeof advisors.$inferSelect;
+
+const hourMs = (m: MatchRow) => 3600_000 / m.speed;
+
+/** The hourly wage for an empire of `regions` regions, each resource rounded up. */
+export function wageFor(kind: "economic", regions: number): Record<string, number> {
+  const per = balance.advisors[kind].perRegionPerHour;
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(per)) out[k] = Math.max(1, Math.ceil(v * Math.max(1, regions)));
+  return out;
+}
+
+export function parseSettings(raw: unknown): AdvisorSettings {
+  const r = advisorSettingsSchema.safeParse(raw ?? {});
+  return r.success ? r.data : advisorSettingsSchema.parse({});
+}
+
+/**
+ * Take a wage from the empire: the capital first, then the other regions. Every region of the player is locked in
+ * ascending order (the lock order used everywhere). Returns false, taking nothing, when any one resource is short.
+ */
+export async function drawWage(tx: Tx, m: MatchRow, p: PlayerRow, wage: Record<string, number>): Promise<boolean> {
+  const mine = await tx
+    .select({ regionId: matchRegions.regionId })
+    .from(matchRegions)
+    .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.ownerPlayerId, p.id), isNull(matchRegions.frozenAt)))
+    .orderBy(asc(matchRegions.regionId));
+  const now = matchNow(m);
+  const rows: MatchRegionRow[] = [];
+  for (const r of mine) rows.push(await settleAndLockRegion(tx, m.id, r.regionId, now, m.speed, resourceMultOf(m)));
+  const capital = rows.find((r) => r.regionId === p.capitalRegionId);
+  const ordered = capital ? [capital, ...rows.filter((r) => r !== capital)] : rows;
+  const pooled: Record<string, number> = {};
+  for (const r of ordered) for (const [k, v] of Object.entries(stockOf(r))) pooled[k] = (pooled[k] ?? 0) + v;
+  for (const [k, v] of Object.entries(wage)) if ((pooled[k] ?? 0) < v) return false;
+  const remaining: Record<string, number> = { ...wage };
+  for (const r of ordered) {
+    const have = stockOf(r);
+    const take: Record<string, number> = {};
+    for (const [k, v] of Object.entries(remaining)) {
+      const t = Math.min(v, have[k] ?? 0);
+      if (t > 0) take[k] = t;
+    }
+    if (Object.keys(take).length) {
+      await applyCost(tx, r, take as Cost);
+      for (const [k, t] of Object.entries(take)) {
+        remaining[k] = (remaining[k] ?? 0) - t;
+        if (remaining[k]! <= 1e-9) delete remaining[k];
+      }
+    }
+    if (Object.keys(remaining).length === 0) break;
+  }
+  return true;
+}
+
+export async function regionsHeld(tx: Tx | Db, m: MatchRow, playerId: string): Promise<number> {
+  const [r] = await tx.select({ n: sql<number>`count(*)::int` }).from(matchRegions).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.ownerPlayerId, playerId), isNull(matchRegions.frozenAt)));
+  return r?.n ?? 0;
+}
+
+/**
+ * Wages, every tick: each advisor is paid for every whole game hour that has passed since it was last paid for.
+ * One that cannot be paid stops working (no passes) and its player is told once; it goes back to work when the next
+ * charge succeeds. It never leaves on its own.
+ */
+export async function chargeAdvisors(tx: Tx, m: MatchRow, now: Date): Promise<void> {
+  const rows = await tx.select().from(advisors).where(and(eq(advisors.matchId, m.id), lte(advisors.paidUntil, now)));
+  for (const a of rows) {
+    const [p] = await tx.select().from(players).where(eq(players.id, a.playerId)).limit(1);
+    if (!p || p.eliminatedAt) {
+      await tx.delete(advisors).where(eq(advisors.id, a.id));
+      continue;
+    }
+    const wage = wageFor(a.kind, await regionsHeld(tx, m, p.id));
+    let paidUntil = a.paidUntil;
+    let hours = 0;
+    let paid = true;
+    // At most two days of arrears in one go, so a long pause never drains an empire in a single tick.
+    while (paidUntil <= now && hours < 48) {
+      if (!(await drawWage(tx, m, p, wage))) {
+        paid = false;
+        break;
+      }
+      paidUntil = new Date(paidUntil.getTime() + hourMs(m));
+      hours += 1;
+    }
+    if (hours > 0) await tx.update(advisors).set({ paidUntil }).where(eq(advisors.id, a.id));
+    if (!paid) {
+      if (!a.unpaidSince) {
+        await tx.update(advisors).set({ unpaidSince: now }).where(eq(advisors.id, a.id));
+        const line = Object.entries(wage)
+          .map(([k, v]) => `${v} ${k}`)
+          .join(", ");
+        await notify(tx, m.id, p.id, "system", `Your Economic advisor is unpaid and has stopped working: the wage is ${line} an hour, drawn from your capital first`, { advisor: a.kind, unpaid: true });
+      }
+    } else if (a.unpaidSince) {
+      await tx.update(advisors).set({ unpaidSince: null }).where(eq(advisors.id, a.id));
+      await notify(tx, m.id, p.id, "system", "Your Economic advisor has been paid and is back at work", { advisor: a.kind, unpaid: false });
+    }
+  }
+}
+
+/** Players in a match whose people the game moves on its own: every AI tribe, and humans whose paid Economic advisor is set to overflow. */
+export async function overflowPlayerIds(tx: Tx, m: MatchRow): Promise<string[]> {
+  const ai = await tx.select({ id: players.id }).from(players).where(and(eq(players.matchId, m.id), eq(players.isAi, true), isNull(players.eliminatedAt)));
+  const adv = await tx
+    .select({ playerId: advisors.playerId })
+    .from(advisors)
+    .where(and(eq(advisors.matchId, m.id), eq(advisors.kind, "economic"), isNull(advisors.unpaidSince), sql`${advisors.settings}->>'population' = 'overflow'`));
+  return [...new Set([...ai.map((p) => p.id), ...adv.map((a) => a.playerId)])];
+}
+
+/** Advisor passes: every paid advisor whose turn has come, in the AI process (each command commits on its own). */
+export async function runAdvisors(db: Db, publisher: Publisher, log: pino.Logger): Promise<number> {
+  const running = await db.select().from(matches).where(and(eq(matches.status, "running"), isNull(matches.pausedAt)));
+  let passes = 0;
+  for (const m of running) {
+    const now = matchNow(m);
+    const due = new Date(now.getTime() - (balance.advisors.economic.passMinutes * 60_000) / m.speed);
+    const rows = await db
+      .select()
+      .from(advisors)
+      .where(and(eq(advisors.matchId, m.id), isNull(advisors.unpaidSince), or(isNull(advisors.lastPassAt), lte(advisors.lastPassAt, due))));
+    for (const a of rows) {
+      try {
+        const [p] = await db.select().from(players).where(eq(players.id, a.playerId)).limit(1);
+        if (!p || p.eliminatedAt) continue;
+        await economicPass(db, m, p, a, now, publisher);
+        passes += 1;
+      } catch (err) {
+        log.warn({ err, advisorId: a.id }, "advisor pass failed");
+      }
+    }
+  }
+  return passes;
+}
+
+/** One pass of the Economic advisor: buildings up to the minimums, then people, then the report. */
+export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: AdvisorRow, now: Date, publisher: Publisher): Promise<AdvisorReport> {
+  const c = balance.advisors.economic;
+  const settings = parseSettings(a.settings);
+  const techRows = await db.select({ id: playerTechs.techId }).from(playerTechs).where(eq(playerTechs.playerId, p.id));
+  const techs = new Set(techRows.map((t) => t.id));
+  const ctx: CommandContext = { db, m, p, techs };
+  const owned = await db
+    .select()
+    .from(matchRegions)
+    .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.ownerPlayerId, p.id), isNull(matchRegions.frozenAt), isNull(matchRegions.evacuatedAt)));
+  const pending = await db
+    .select({ regionId: jobs.regionId, kind: jobs.kind, refId: jobs.refId, waitingFor: jobs.waitingFor, startsAt: jobs.startsAt })
+    .from(jobs)
+    .where(and(eq(jobs.matchId, m.id), eq(jobs.playerId, p.id), isNull(jobs.completedAt), isNull(jobs.cancelledAt)));
+  const skip = new Set(settings.skipRegions);
+  const skipped: Record<string, number> = {};
+  const bump = (k: string) => (skipped[k] = (skipped[k] ?? 0) + 1);
+  let queued = 0;
+  const avail = new Map(availableBuildings(p.age, techs).map((b) => [b.id, b]));
+
+  // Buildings: the capital first, then the most populous regions; within a region the AI's order, with its nudges.
+  const projected = owned.map((row) => ({ row, ...projectRegion(row, now, m.speed, undefined, resourceMultOf(m)) }));
+  const pop = (x: (typeof projected)[number]) => x.economy.popWorkers + x.economy.popSoldiers + x.economy.popOccupiers;
+  projected.sort((x, y) => Number(y.row.isCapital) - Number(x.row.isCapital) || pop(y) - pop(x));
+  for (const { row, economy } of projected) {
+    if (skip.has(row.regionId)) continue;
+    if (queued >= c.maxQueuedPerPass) break;
+    const region = regionById(row.regionId);
+    if (!region) continue;
+    const here = pending.filter((j) => j.regionId === row.regionId && (j.kind === "build" || j.kind === "train"));
+    let slots = balance.queue.slotsPerRegion - here.length;
+    const waitingHere = here.some((j) => j.kind === "build" && j.waitingFor);
+    for (const id of buildOrderFor(row, economy, false)) {
+      const target = Math.min(settings.minLevels[id] ?? 0, buildingById.get(id)?.maxLevel ?? 0);
+      if (target <= 0) continue;
+      const def = avail.get(id);
+      if (!def) {
+        bump("notYetAvailable");
+        continue;
+      }
+      const have = (row.buildings[id] ?? 0) + here.filter((j) => j.kind === "build" && j.refId === id).length;
+      if (have >= target) continue;
+      if (buildingBlockedBy(def, region, row.buildings, row.isCapital)) {
+        bump("blocked");
+        continue;
+      }
+      if (slots <= 0) {
+        bump("queueFull");
+        break;
+      }
+      if (queued >= c.maxQueuedPerPass) break;
+      try {
+        await queueBuild(ctx, row.regionId, id, { allowWait: settings.useOtherRegions && !waitingHere, maxOwed: c.maxOwed });
+        queued += 1;
+        slots -= 1;
+      } catch (err) {
+        const msg = (err as Error).message ?? "";
+        bump(/not enough|too much would have to be shipped/.test(msg) ? "unaffordable" : /queue is full/.test(msg) ? "queueFull" : "blocked");
+      }
+    }
+  }
+
+  // People.
+  let moved = 0;
+  if (settings.population === "balanced") moved = await balancePeople(ctx, projected.map((x) => ({ row: x.row, economy: x.economy })), skip);
+
+  const suggestions = await suggestionsFor(db, m, p, projected.map((x) => ({ row: x.row, economy: x.economy })), pending, settings, now);
+  const report: AdvisorReport = { at: now.toISOString(), queued, moved, skipped, suggestions };
+  await db.update(advisors).set({ lastPassAt: now, lastReport: report }).where(eq(advisors.id, a.id));
+  await publisher.toPlayer(m.id, p.id, "advisor.report", { kind: a.kind, queued, moved });
+  return report;
+}
+
+/**
+ * Balanced population: every region toward the same share of its capacity. Regions above the mean by more than the
+ * band send a slice of their workers to the emptiest reachable region below the mean, as a column of people on the road.
+ */
+export async function balancePeople(ctx: CommandContext, regions: Array<{ row: MatchRegionRow; economy: { popWorkers: number; popSoldiers: number; popOccupiers: number; capacity: number } }>, skip: Set<string>): Promise<number> {
+  const c = balance.advisors.economic;
+  const live = regions.filter((x) => !skip.has(x.row.regionId));
+  if (live.length < 2) return 0;
+  const pop = (x: (typeof live)[number]) => x.economy.popWorkers + x.economy.popSoldiers + x.economy.popOccupiers;
+  const fill = (x: (typeof live)[number]) => pop(x) / Math.max(1, x.economy.capacity);
+  const totalPop = live.reduce((a, x) => a + pop(x), 0);
+  const totalCap = live.reduce((a, x) => a + Math.max(1, x.economy.capacity), 0);
+  const mean = totalPop / totalCap;
+  const givers = live.filter((x) => fill(x) > mean + c.balanceBand && x.economy.popWorkers > 1).sort((x, y) => fill(y) - fill(x));
+  const takers = live.filter((x) => fill(x) < mean - c.balanceBand);
+  let moved = 0;
+  const promised = new Map<string, number>();
+  for (const g of givers) {
+    const movers = Math.floor(Math.min(Math.floor(g.economy.popWorkers) - 1, pop(g) * c.balanceSharePerPass, pop(g) - mean * g.economy.capacity));
+    if (movers < 1) continue;
+    // The emptiest taker with room, nearest among equals.
+    const ranked = takers
+      .map((t) => ({ t, room: Math.floor(mean * t.economy.capacity - pop(t) - (promised.get(t.row.regionId) ?? 0)) }))
+      .filter((x) => x.room >= 1)
+      .sort((p1, p2) => fill(p1.t) - fill(p2.t) || distance(g.row.regionId, p1.t.row.regionId) - distance(g.row.regionId, p2.t.row.regionId));
+    const pick = ranked[0];
+    if (!pick) break;
+    const n = Math.min(movers, pick.room);
+    try {
+      await sendArmy(ctx, g.row.regionId, { mission: "move", targetRegionId: pick.t.row.regionId, units: {}, people: n, cargo: {} });
+      moved += n;
+      promised.set(pick.t.row.regionId, (promised.get(pick.t.row.regionId) ?? 0) + n);
+    } catch {
+      // No land route, or the region changed under us: try the next giver.
+    }
+  }
+  return moved;
+}
+
+function distance(a: string, b: string): number {
+  const ra = regionById(a);
+  const rb = regionById(b);
+  if (!ra || !rb) return 0;
+  return Math.hypot(ra.x - rb.x, ra.y - rb.y);
+}
+
+/** Cheap, honest advice from what the pass already knows. Each line names a region so the panel can open it. */
+export async function suggestionsFor(
+  db: Db,
+  m: MatchRow,
+  p: PlayerRow,
+  regions: Array<{ row: MatchRegionRow; economy: { food: number; wood: number; stone: number; storage: { food: number; wood: number; stone: number }; popWorkers: number; popSoldiers: number; popOccupiers: number; capacity: number } }>,
+  pending: Array<{ regionId: string | null; kind: string; refId: string | null; waitingFor: unknown; startsAt: Date }>,
+  settings: AdvisorSettings,
+  now: Date,
+): Promise<AdvisorSuggestion[]> {
+  const out: AdvisorSuggestion[] = [];
+  const routes = await db.select({ fromRegionId: tradeRoutes.fromRegionId, enabled: tradeRoutes.enabled }).from(tradeRoutes).where(and(eq(tradeRoutes.matchId, m.id), eq(tradeRoutes.playerId, p.id)));
+  const routeOut = new Set(routes.filter((r) => r.enabled).map((r) => r.fromRegionId));
+  const name = (id: string) => regionById(id)?.name ?? id;
+  for (const { row, economy } of regions) {
+    const full = (["food", "wood", "stone"] as const).filter((k) => economy[k] >= economy.storage[k] * 0.9);
+    if (full.length && !routeOut.has(row.regionId) && !row.isCapital) {
+      const storeMin = Math.max(settings.minLevels.storehouse ?? 0, settings.minLevels.granary ?? 0);
+      out.push({ regionId: row.regionId, text: `${name(row.regionId)} is near its cap for ${full.join(", ")} with no route out: ${storeMin > (row.buildings.storehouse ?? 0) ? "a Storehouse is on its way" : "raise the Storehouse minimum or set up a route"}.` });
+    }
+    const pop = economy.popWorkers + economy.popSoldiers + economy.popOccupiers;
+    if (pop >= economy.capacity * 0.9 && (row.buildings.huts ?? 0) >= (settings.minLevels.huts ?? 0)) {
+      out.push({ regionId: row.regionId, text: `${name(row.regionId)} is nearly full (${Math.round(pop)} of ${Math.round(economy.capacity)}): raise the Huts minimum${settings.population === "off" ? ", or let the advisor move people" : ""}.` });
+    }
+    const region = regionById(row.regionId);
+    if (region) {
+      const ore = region.resources.filter((r) => r === "copper" || r === "tin" || r === "iron");
+      if (ore.length && !(row.buildings.mine ?? 0) && !(settings.minLevels.mine ?? 0)) out.push({ regionId: row.regionId, text: `${name(row.regionId)} has ${ore.join(" and ")} and no Mine: set a Mine minimum to use it.` });
+      if (region.resources.includes("horses") && !(row.buildings.stables ?? 0) && !(settings.minLevels.stables ?? 0)) out.push({ regionId: row.regionId, text: `${name(row.regionId)} has horses and no Stables: set a Stables minimum.` });
+    }
+    const idle = HAULER_IDS.filter((id) => !unitById.get(id)?.naval).reduce((a, id) => a + (row.units[id] ?? 0), 0);
+    if (idle > 0 && !routeOut.has(row.regionId)) out.push({ regionId: row.regionId, text: `${idle} hauler${idle === 1 ? "" : "s"} idle in ${name(row.regionId)} with no route; the pool will call them when a route runs short.` });
+  }
+  for (const j of pending) {
+    if (j.kind !== "build" || !j.waitingFor || !j.regionId) continue;
+    const hours = ((now.getTime() - j.startsAt.getTime()) / 3600_000) * m.speed;
+    if (hours >= 6) {
+      const owed = Object.entries(j.waitingFor as Record<string, number>)
+        .map(([k, v]) => `${Math.round(v)} ${k}`)
+        .join(", ");
+      out.push({ regionId: j.regionId, text: `${buildingById.get(j.refId ?? "")?.name ?? j.refId} in ${name(j.regionId)} has waited ${Math.round(hours)} h for ${owed}${settings.useOtherRegions ? "" : ": allow other regions' resources"}.` });
+    }
+  }
+  return out.slice(0, 12);
+}
+

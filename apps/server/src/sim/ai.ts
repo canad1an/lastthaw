@@ -28,6 +28,20 @@ const RESEARCH_ORDER = [
   "electricity", "combined_arms", "radar", "synthetic_fertilizer", "ballistics", "satellites",
 ];
 
+/**
+ * The order buildings are considered in a region: the priority list, with walls first under threat, Huts first when
+ * crowded and a Storehouse first when the stores are nearly full. Shared by AI tribes and the Economic advisor.
+ */
+export function buildOrderFor(row: { isCapital: boolean }, economy: { popWorkers: number; popSoldiers: number; popOccupiers: number; capacity: number; food: number; wood: number; storage: { food: number; wood: number } }, underThreat: boolean): string[] {
+  const order = [...BUILD_ORDER];
+  const pop = economy.popWorkers + economy.popSoldiers + economy.popOccupiers;
+  if (underThreat) order.unshift("walls", "palisade");
+  if (pop / Math.max(1, economy.capacity) > 0.75) order.unshift("huts");
+  if (economy.food > economy.storage.food * 0.85 || economy.wood > economy.storage.wood * 0.85) order.unshift("storehouse");
+  void row;
+  return order;
+}
+
 /** What a tribe demands in tribute: a share of the victim's capital stock, which a reasonable tribe can pay. */
 export function tributeDemand(stock: Record<string, number>, resource: string): number {
   const c = balance.ai;
@@ -226,12 +240,10 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
     // Buildings: walls first when threatened, otherwise the priority list.
     let slots = balance.queue.slotsPerRegion - queueLen(row.regionId);
     const avail = new Map(availableBuildings(p.age, techs).map((b) => [b.id, b]));
-    const order = [...BUILD_ORDER];
+    const order = buildOrderFor(row, economy, underThreat);
     // The race for the wonder: once the age allows it, a hard tribe's capital builds the Great Hearth before anything else.
     if (row.isCapital && difficulty === "hard" && p.age >= (buildingById.get(balance.win.wonderBuilding)?.age ?? 99)) order.unshift(balance.win.wonderBuilding);
-    if (underThreat) order.unshift("walls", "palisade");
-    if (pop / economy.capacity > 0.75) order.unshift("huts");
-    if (economy.food > economy.storage.food * 0.85 || economy.wood > economy.storage.wood * 0.85) order.unshift("storehouse");
+    void pop;
     let wanted: Cost | null = null;
     for (const id of order) {
       const def = avail.get(id);

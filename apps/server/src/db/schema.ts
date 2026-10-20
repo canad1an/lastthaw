@@ -465,6 +465,31 @@ export const pacts = pgTable(
 );
 
 /** Mercenary companies on offer in a match. */
+/** Hired advisors, one row per kind per player per match; dismissing deletes the row. */
+export const advisors = pgTable(
+  "advisors",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    matchId: uuid("match_id")
+      .notNull()
+      .references(() => matches.id, { onDelete: "cascade" }),
+    playerId: uuid("player_id")
+      .notNull()
+      .references(() => players.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<"economic">().notNull(),
+    hiredAt: timestamp("hired_at", { withTimezone: true }).notNull(),
+    /** Paid for up to this moment of match time; the tick charges each whole hour past it. */
+    paidUntil: timestamp("paid_until", { withTimezone: true }).notNull(),
+    settings: jsonb("settings").$type<Record<string, unknown>>().notNull().default({}),
+    lastPassAt: timestamp("last_pass_at", { withTimezone: true }),
+    lastReport: jsonb("last_report").$type<Record<string, unknown>>(),
+    /** Set while the wage cannot be met: no passes until it clears. */
+    unpaidSince: timestamp("unpaid_since", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("advisors_player_kind_idx").on(t.matchId, t.playerId, t.kind)],
+);
+
 export const mercenaryOffers = pgTable(
   "mercenary_offers",
   {

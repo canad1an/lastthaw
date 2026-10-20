@@ -360,6 +360,23 @@ export const balance = {
   /** The one unit allowed on a scout mission. */
   scoutUnit: "tracker",
   /**
+   * Advisors: hired staff paid by the game hour, scaling with the empire. The Economic advisor raises buildings to the
+   * minimum levels set, lets convoys supply what a region cannot pay (up to maxOwed per build), moves people as chosen,
+   * and makes a pass every passMinutes, queueing at most maxQueuedPerPass builds a pass. No hiring fee.
+   */
+  advisors: {
+    economic: {
+      perRegionPerHour: { food: 30, wood: 20, stone: 15, copper: 0.1, iron: 0.05 } as Record<string, number>,
+      passMinutes: 30,
+      maxQueuedPerPass: 20,
+      maxOwed: 20000,
+      /** Balanced population: regions more than this share of capacity above the empire's mean fill give people away. */
+      balanceBand: 0.1,
+      /** Balanced population: at most this share of a region's people leaves in one pass. */
+      balanceSharePerPass: 0.05,
+    },
+  },
+  /**
    * Scouting is not free: a scout slipping into a held region may be caught, and a caught scout files no report.
    * Chance = catchBase + catchPerTenSoldiers per ten soldiers standing there (+ wallBonus behind a wall), doubled by a
    * Watchtower in or beside the region, capped at catchCap. Rolled per scout; the report arrives if any survive.

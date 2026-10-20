@@ -20,6 +20,7 @@ export const PANEL_TITLES: Record<PanelId, string> = {
   view: "Map overlays",
   empire: "Resources",
   logistics: "Logistics",
+  advisors: "Advisors",
   tech: "Tech tree",
   research: "Research",
   routes: "Trade routes",

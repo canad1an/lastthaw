@@ -1,6 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { ageTheme } from "../ageTheme.js";
 import { useChatWatch, type ChatToast } from "./chatWatch.js";
 import { TECHS, balance, regionById, type MatchStateView } from "@lastthaw/shared";
@@ -17,8 +18,9 @@ import { LogisticsPanel } from "./LogisticsPanel.js";
 import { TechTreePanel } from "./TechTreePanel.js";
 import { Ticker } from "./Ticker.js";
 import { DiplomacyPanel } from "./DiplomacyPanel.js";
+import { AdvisorsPanel } from "./AdvisorsPanel.js";
 
-export type MenuId = "messages" | "alliance" | "chat" | "market" | "players" | "leaderboard" | "view" | "empire" | "logistics" | "tech";
+export type MenuId = "messages" | "alliance" | "chat" | "market" | "players" | "leaderboard" | "view" | "empire" | "logistics" | "advisors" | "tech";
 type Menu = MenuId | "menu";
 
 export interface MenuEntry {
@@ -71,6 +73,8 @@ export function useMenuData(matchId: string, state: MatchStateView, overlays: Se
     if (inboxOpen && (q.data?.messages ?? []).some((m) => !m.readAt) && !markRead.isPending) markRead.mutate();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inboxOpen, q.data]);
+  const economic = state.advisors.find((a) => a.kind === "economic");
+  const advisorBadge = economic ? (economic.unpaid ? "unpaid" : economic.lastReport?.suggestions.length || "hired") : undefined;
   const entries: MenuEntry[] = [
     { id: "messages", label: "Messages", badge: unread ? `${unread} new` : undefined, tone: "alert" },
     { id: "alliance", label: "Alliance", badge: proposals ? `${proposals} to answer` : state.me.allianceTag ? `[${state.me.allianceTag}]` : invites ? `${invites} invite` : undefined, tone: proposals ? "alert" : undefined },
@@ -80,6 +84,7 @@ export function useMenuData(matchId: string, state: MatchStateView, overlays: Se
     { id: "leaderboard", label: "Leaderboard" },
     { id: "empire", label: "Resources", badge: state.owned.length },
     { id: "logistics", label: "Logistics", badge: logisticsBadge, tone: logisticsBadge ? "alert" : undefined },
+    { id: "advisors", label: "Advisors", badge: advisorBadge, tone: state.advisors.some((a) => a.unpaid) ? "alert" : undefined },
     { id: "tech", label: "Tech", badge: `${state.me.techs.length}/${TECHS.length}` },
     { id: "view", label: "View", badge: overlays.size || undefined },
   ];
@@ -186,7 +191,7 @@ export function TopMenu({
       </div>
       <Ticker matchId={matchId} nudge={state.match.now} onSelectRegion={onSelectRegion} />
       {open && (
-        <Dropdown onClose={() => setOpen(null)} title={{ messages: "Messages", alliance: "Alliance", chat: "Chat", market: "Market", players: "Players", leaderboard: "Leaderboard", view: "View", empire: "Resources", logistics: "Logistics", tech: "Tech tree", menu: "Menu" }[open]}>
+        <Dropdown onClose={() => setOpen(null)} title={{ messages: "Messages", alliance: "Alliance", chat: "Chat", market: "Market", players: "Players", leaderboard: "Leaderboard", view: "View", empire: "Resources", logistics: "Logistics", advisors: "Advisors", tech: "Tech tree", menu: "Menu" }[open]}>
           {open === "menu" && (
             <div className="grid grid-cols-2 gap-2 p-3">
               {entries.map((e) => (
@@ -279,6 +284,7 @@ export function MenuPanelBody({
             onSelect={onSelectRegion}
           />
         )}
+        {menu === "advisors" && <AdvisorsPanel matchId={matchId} state={state} onSelect={onSelectRegion} clockOffsetMs={clockOffsetMs} />}
         {menu === "empire" && (
           <EmpirePanel
             state={state}
@@ -441,7 +447,8 @@ function EndGame({ matchId, name }: { matchId: string; name: string }) {
         End game
       </button>
       {m.error && <span className="text-rose-300">{m.error.message}</span>}
-      {confirming && (
+      {confirming &&
+        createPortal(
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm" onClick={() => setConfirming(false)} role="dialog" aria-modal="true" aria-labelledby="end-game-title">
           <div className="w-full max-w-md rounded-2xl border border-rose-500/40 bg-slate-950 p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <h2 id="end-game-title" className="text-lg font-semibold text-white">
@@ -466,8 +473,9 @@ function EndGame({ matchId, name }: { matchId: string; name: string }) {
               </button>
             </div>
           </div>
-        </div>
-      )}
+        </div>,
+          document.body,
+        )}
     </div>
   );
 }

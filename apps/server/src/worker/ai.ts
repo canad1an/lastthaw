@@ -4,6 +4,7 @@ import { logger } from "../logger.js";
 import { createRedis } from "../redis.js";
 import { Publisher } from "../realtime/publish.js";
 import { runAiDecisions } from "../sim/tick.js";
+import { runAdvisors } from "../sim/advisors.js";
 
 /**
  * AI process. Runs AI tribes' decisions on its own cadence so a slow or busy
@@ -31,6 +32,8 @@ while (!stopping) {
   try {
     const n = await runAiDecisions(db, publisher, log);
     if (n) log.debug({ decisions: n, ms: Date.now() - started }, "ai pass");
+    const a = await runAdvisors(db, publisher, log);
+    if (a) log.debug({ advisors: a }, "advisor passes");
     await redis.set("lt-heartbeat:ai", new Date().toISOString(), "EX", 120).catch(() => {});
   } catch (err) {
     log.error({ err }, "ai pass failed");

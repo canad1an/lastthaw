@@ -149,13 +149,13 @@ async function relocateCapital(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, pub
  * tick, to neighbouring regions of the same owner that have room, split by
  * how much room each has. Workers only; soldiers and occupiers stay.
  */
-export async function migrateCrowded(tx: Tx, m: MatchRow, now: Date, hours: number): Promise<number> {
+export async function migrateCrowded(tx: Tx, m: MatchRow, now: Date, hours: number, playerIds: string[]): Promise<number> {
   const share = Math.min(1, balance.economy.migrationPerHour * hours);
-  if (share <= 0) return 0;
+  if (share <= 0 || playerIds.length === 0) return 0;
   const rows = await tx
     .select()
     .from(matchRegions)
-    .where(and(eq(matchRegions.matchId, m.id), isNotNull(matchRegions.ownerPlayerId), isNull(matchRegions.frozenAt), isNull(matchRegions.evacuatedAt)))
+    .where(and(eq(matchRegions.matchId, m.id), inArray(matchRegions.ownerPlayerId, playerIds), isNull(matchRegions.frozenAt), isNull(matchRegions.evacuatedAt)))
     .orderBy(matchRegions.regionId);
   const byId = new Map(rows.map((r) => [r.regionId, r]));
   const techFx = new Map<string, Awaited<ReturnType<typeof ownerTechEffects>>>();

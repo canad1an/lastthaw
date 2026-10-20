@@ -7,6 +7,7 @@ import type { Db } from "../db/client.js";
 import { matchRegions, matches, players } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
 import { matchNow } from "./clock.js";
+import { chargeAdvisors, overflowPlayerIds } from "./advisors.js";
 import { ownerTechEffects, settleAndLockRegion, type Tx } from "./regions.js";
 import { migrateCrowded, sweepEvacuated } from "./missions.js";
 import { repairWaitingBuilds } from "./commands.js";
@@ -55,8 +56,10 @@ async function tickMatch(db: Db, publisher: Publisher, matchId: string, log: pin
     // Loyalty first: it locks every owned region in ascending order; the passes below re-lock rows already held.
     await loyaltyAndRebellion(tx, m, now, elapsedGameHours, rng, (fn) => after.push(fn), publisher);
     await sweepEvacuated(tx, m, now);
-    await migrateCrowded(tx, m, now, elapsedGameHours);
+    // People spill over from crowded regions only for AI tribes and for humans whose Economic advisor is paid and set to overflow.
+    await migrateCrowded(tx, m, now, elapsedGameHours, await overflowPlayerIds(tx, m));
     await repairWaitingBuilds(tx, m, now);
+    await chargeAdvisors(tx, m, now);
     await neutralGrowth(tx, m, now, elapsedGameHours);
     // Once per match day: blizzards, plague, rich finds and the hordes.
     const dayNow = Math.floor(((now.getTime() - m.startsAt.getTime()) / 86400_000) * m.speed);
