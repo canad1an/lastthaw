@@ -105,7 +105,7 @@ export function AdvisorsPanel({ matchId, state, onSelect, clockOffsetMs }: { mat
           <button className="text-xs text-sky-400 hover:underline" onClick={() => setView("roster")}>
             ← All advisors
           </button>
-          <span className={`rounded px-2 py-0.5 text-xs ${economic.unpaid ? "bg-rose-500/20 text-rose-200" : "bg-emerald-500/20 text-emerald-200"}`}>{economic.unpaid ? "unpaid, not working" : "at work"}</span>
+          <span className={`rounded px-2 py-0.5 text-xs ${economic.unpaid ? "bg-rose-500/20 text-rose-200" : "bg-emerald-500/20 text-emerald-200"}`}>{economic.unpaid ? "unpaid, not working" : "Hired"}</span>
         </div>
         <Card className="flex items-center gap-3">
           <img src="/advisors/economic.svg" alt="" className="h-14 w-14 shrink-0 rounded-full" />
@@ -141,7 +141,7 @@ export function AdvisorsPanel({ matchId, state, onSelect, clockOffsetMs }: { mat
           <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
             <h3 className="text-base font-semibold text-white">Mara, the Economic advisor</h3>
             {economic ? (
-              <span className={`rounded px-2 py-0.5 text-xs ${economic.unpaid ? "bg-rose-500/20 text-rose-200" : "bg-emerald-500/20 text-emerald-200"}`}>{economic.unpaid ? "unpaid, not working" : "at work"}</span>
+              <span className={`rounded px-2 py-0.5 text-xs ${economic.unpaid ? "bg-rose-500/20 text-rose-200" : "bg-emerald-500/20 text-emerald-200"}`}>{economic.unpaid ? "unpaid, not working" : "Hired"}</span>
             ) : (
               <span className="rounded bg-slate-800 px-2 py-0.5 text-xs text-slate-300">not hired</span>
             )}
