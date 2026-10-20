@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
-import { balance, effectsOf, fairAmount, matchStateView, regionById, scoutCatchChance, seededRng, storageCaps } from "@lastthaw/shared";
+import { allRegions, balance, effectsOf, fairAmount, matchStateView, regionById, scoutCatchChance, seededRng, storageCaps } from "@lastthaw/shared";
 import { Publisher } from "../src/realtime/publish.js";
 import { runDueJobs } from "../src/worker/jobs.js";
 import { buildApp } from "../src/api/app.js";
@@ -15,6 +15,8 @@ import { SIM_SPEED, createSimMatch } from "../src/scripts/nightlySim.js";
 import { inviteUser } from "../src/scripts/inviteUser.js";
 import { sendTournamentReminders } from "../src/matches/registrations.js";
 import { tournamentRegistrations } from "../src/db/schema.js";
+import { chargeAdvisors, wageFor } from "../src/sim/advisors.js";
+import { economyNow } from "../src/sim/ledger.js";
 import { logger } from "../src/logger.js";
 import { inviteMail } from "../src/mail.js";
 
@@ -951,6 +953,31 @@ describe("api routes", () => {
       const regions = (await db.select({ n: sql<number>`count(*)::int` }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid), sql`${matchRegions.frozenAt} is null`)))[0]!.n;
       const hired = await Ben.call("POST", `${base}/advisors/military/hire`, {});
       expect(hired.statusCode, hired.body).toBe(200);
+      {
+        // The wage is food, wood and stone only. A mine on an ore region puts ore into the gross output, and it still stays out
+        // of the wage; with every ore and horse store at zero the hourly charge clears, so a short ore never stops an advisor.
+        // Ben is lent an unclaimed copper region with a mine for the check, and gives it back after.
+        const claimed = new Set((await db.select({ regionId: matchRegions.regionId }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), sql`${matchRegions.ownerPlayerId} is not null`))).map((r) => r.regionId));
+        const oreRegion = allRegions().find((r) => r.resources.includes("copper") && !claimed.has(r.id))?.id;
+        expect(oreRegion, "no free copper region on the map").toBeTruthy();
+        await db
+          .insert(matchRegions)
+          .values({ matchId: gameId, regionId: oreRegion!, ownerPlayerId: benPid, assignment: { ...balance.start.assignment }, settledAt: new Date(await nowIso()), popWorkers: 40, buildings: { mine: 3 } })
+          .onConflictDoUpdate({ target: [matchRegions.matchId, matchRegions.regionId], set: { ownerPlayerId: benPid, popWorkers: 40, buildings: { mine: 3 }, settledAt: new Date(await nowIso()) } });
+        const [mrow] = await db.select().from(matches).where(eq(matches.id, gameId));
+        const gross = (await economyNow(db, mrow!, benPid)).gross;
+        expect(["copper", "tin", "iron"].some((k) => (gross[k] ?? 0) > 0), JSON.stringify(gross)).toBe(true);
+        const wage = await wageFor(db, mrow!, benPid);
+        expect(Object.keys(wage).sort()).toEqual(["food", "stone", "wood"]);
+        await db.update(matchRegions).set({ special: { copper: 0, tin: 0, iron: 0, horses: 0 } }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid)));
+        await fillCap();
+        await db.update(advisors).set({ paidUntil: new Date(Date.parse(await nowIso()) - 1000) }).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid), eq(advisors.kind, "military")));
+        const chargeAt = new Date(await nowIso());
+        await db.transaction((tx) => chargeAdvisors(tx, mrow!, chargeAt));
+        const [charged] = await db.select({ unpaidSince: advisors.unpaidSince, paidUntil: advisors.paidUntil }).from(advisors).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid), eq(advisors.kind, "military")));
+        expect(charged!.unpaidSince).toBeNull();
+        await db.update(matchRegions).set({ ownerPlayerId: null, popWorkers: 0, buildings: {} }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, oreRegion!)));
+      }
       expect((hired.json() as { wage: Record<string, number> }).wage.food).toBeGreaterThan(0);
       expect((await Ben.call("PUT", `${base}/advisors/military/settings`, { stance: "measured", garrison: 4, fortify: true, scoutFirst: true })).statusCode).toBe(200);
       // The target is marked from the map; own land is refused.

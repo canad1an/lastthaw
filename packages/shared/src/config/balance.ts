@@ -382,9 +382,9 @@ export const balance = {
     rehireCooldownHours: 24,
     runEveryMinutes: 60,
     /**
-     * Every advisor's wage is this share of the player's gross output of every resource, per game hour, measured live
-     * across the regions held (gathering and mining, before anything is eaten): the wage grows as the empire does, and
-     * four advisors take everything.
+     * Every advisor's wage is this share of the player's gross output of food, wood and stone, per game hour, measured
+     * live across the regions held (gathering, before anything is eaten): the wage grows as the empire does, and four
+     * advisors take all of it. Ore and horses are never charged: they are what the advisors spend for the player.
      */
     outputShare: 0.25,
     economic: {

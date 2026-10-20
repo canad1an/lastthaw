@@ -134,7 +134,7 @@ export function AdvisorsPanel({ matchId, state, onSelect, clockOffsetMs }: { mat
                     </li>
                   ))}
                 </ul>
-                <p className="text-xs text-slate-400">A {balance.advisors.contractHours}-hour contract is paid now, from your capital first; after that the wage is charged every game hour. The wage is {Math.round(balance.advisors.outputShare * 100)}% of everything your empire gathers and mines each hour, measured as you go, so it grows as you do. If a wage cannot be met {she.toLowerCase()} stops until it is paid. You can fire {pronoun} at any time, but the contract is not refunded and {she.toLowerCase()} will not come back for {balance.advisors.rehireCooldownHours} game hours.</p>
+                <p className="text-xs text-slate-400">A {balance.advisors.contractHours}-hour contract is paid now, from your capital first; after that the wage is charged every game hour. The wage is {Math.round(balance.advisors.outputShare * 100)}% of the food, wood and stone your empire gathers each hour, measured as you go, so it grows as you do. If a wage cannot be met {she.toLowerCase()} stops until it is paid. You can fire {pronoun} at any time, but the contract is not refunded and {she.toLowerCase()} will not come back for {balance.advisors.rehireCooldownHours} game hours.</p>
               </div>
             ) : (
               <p className="mt-2 text-sm text-slate-300">{she} leaves at once. Builds and training already queued, and armies and convoys already on the road, carry on. The rest of the paid contract is not refunded, and {she.toLowerCase()} will not take you back for {balance.advisors.rehireCooldownHours} game hours.</p>
@@ -201,7 +201,7 @@ export function AdvisorsPanel({ matchId, state, onSelect, clockOffsetMs }: { mat
 
   return (
     <div className="space-y-3 p-3 text-sm">
-      <p className="text-xs text-slate-400">Advisors take routine management off your hands for a steep hourly wage: each takes {Math.round(balance.advisors.outputShare * 100)}% of everything your empire gathers and mines, measured as you grow. Hiring buys the first {balance.advisors.contractHours} hours at once; fire at any time, but nothing is refunded and a fired advisor stays away for {balance.advisors.rehireCooldownHours} game hours.</p>
+      <p className="text-xs text-slate-400">Advisors take routine management off your hands for a steep hourly wage: each takes {Math.round(balance.advisors.outputShare * 100)}% of the food, wood and stone your empire gathers, measured as you grow. Hiring buys the first {balance.advisors.contractHours} hours at once; fire at any time, but nothing is refunded and a fired advisor stays away for {balance.advisors.rehireCooldownHours} game hours.</p>
       {ADVISORS.map((meta) => {
         const a = hired(meta.kind);
         const wage = wageOf(meta.kind);
@@ -235,7 +235,7 @@ export function AdvisorsPanel({ matchId, state, onSelect, clockOffsetMs }: { mat
                   </Button>
                 )}
                 <span className="text-xs text-slate-500">
-                  {wageLine(wage)} an hour, {Math.round(balance.advisors.outputShare * 100)}% of what you gather
+                  {wageLine(wage)} an hour, {Math.round(balance.advisors.outputShare * 100)}% of the food, wood and stone you gather
                 </span>
                 <ErrorText>{hire.error?.message ?? fire.error?.message}</ErrorText>
               </div>

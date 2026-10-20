@@ -28,9 +28,14 @@ export const ADVISOR_TITLES: Record<AdvisorKind, string> = { economic: "Economic
 
 /**
  * The hourly wage of any advisor for a player right now: balance.advisors.outputShare of the empire's gross output
- * of every resource across its unfrozen regions (gathering and mining, before consumption), each rounded up.
- * Resources the empire does not produce are not charged. The same for every kind: four advisors take everything.
+ * of food, wood and stone across its unfrozen regions (gathering, before consumption), each rounded up. Ore and
+ * horses are never part of the wage: they trickle in by the unit, the advisors spend them on the player's behalf
+ * (bronze units, research), and one short ore would otherwise stop an advisor while the stores hold hundreds of
+ * thousands of everything else. The same for every kind: four advisors take all the gathering.
  */
+/** The resources an advisor is paid in. */
+export const WAGE_RESOURCES = ["food", "wood", "stone"] as const;
+
 export async function wageFor(db: Tx | Db, m: MatchRow, playerId: string): Promise<Record<string, number>> {
   const rows = await db
     .select()
@@ -41,8 +46,7 @@ export async function wageFor(db: Tx | Db, m: MatchRow, playerId: string): Promi
   const gross: Record<string, number> = {};
   for (const row of rows) {
     const { rates } = projectRegion(row, now, m.speed, fx, resourceMultOf(m));
-    for (const [k, v] of Object.entries(rates.gross)) gross[k] = (gross[k] ?? 0) + Math.max(0, v);
-    for (const [k, v] of Object.entries(rates.special)) gross[k] = (gross[k] ?? 0) + Math.max(0, v);
+    for (const k of WAGE_RESOURCES) gross[k] = (gross[k] ?? 0) + Math.max(0, rates.gross[k] ?? 0);
   }
   const out: Record<string, number> = {};
   for (const [k, v] of Object.entries(gross)) if (v > 0) out[k] = Math.max(1, Math.ceil(v * balance.advisors.outputShare));

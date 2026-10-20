@@ -28,7 +28,7 @@ const ADVANCED: Array<{ title: string; body: React.ReactNode }> = [
     body: (
       <>
         <p>
-          Every advisor is paid the same wage: {Math.round(balance.advisors.outputShare * 100)}% of everything your empire gathers and mines per game hour (food, wood, stone, ore and horses, before anything is eaten), measured live across the regions you hold, each resource rounded up and drawn from your capital first and then your other regions. The wage grows as you do, so two advisors are half your output and all four take everything. Hiring is a day's contract paid up front; fire when you like, nothing is refunded, and a day passes before you can rehire.
+          Every advisor is paid the same wage: {Math.round(balance.advisors.outputShare * 100)}% of the food, wood and stone your empire gathers per game hour (before anything is eaten; ore and horses are never charged, they are what your advisors spend for you), measured live across the regions you hold, each resource rounded up and drawn from your capital first and then your other regions. The wage grows as you do, so two advisors are half your output and all four take everything. Hiring is a day's contract paid up front; fire when you like, nothing is refunded, and a day passes before you can rehire.
         </p>
         <p>
           Max, the Military advisor, is paid that same share. Each pass he trains at most {balance.advisors.military.trainPerPass} orders and queues at most {balance.advisors.military.fortifyPerPass} walls, every border region toward its garrison (your number, doubled when passive, doubled again for the capital), reinforces the exposed from the interior's surplus, and runs up to three campaigns: a sighting younger than {balance.advisors.military.sightingMaxHours} hours or a watchtower view, a force {balance.advisors.military.forceMargin} times the defenders' strength mustered at the nearest region with a land route (siege engines when there is a wall), then the conquest; a beaten force musters again {Math.round((balance.advisors.military.retryMargin - 1) * 100)}% larger, and after {balance.advisors.military.maxAttempts} defeats the campaign is abandoned. He never attacks allies, pact partners or tribes under beginner protection. Training he orders is supplied by convoys like builds, and so is yours: an order a region cannot pay waits for materials just as a build does.
@@ -316,7 +316,7 @@ function AdvisorsSection() {
         <p className="mb-1 text-xs font-medium uppercase tracking-[0.25em] text-sky-300">Staff for hire</p>
         <h2 className="display text-xl font-semibold text-white">Advisors: let someone else run the routine</h2>
         <p className="mt-2 text-sm text-slate-300">
-          Once an empire is more than a handful of regions, opening each one to queue the same upgrades or shuffle the same people is a chore. The Advisors menu in a match hires staff who do it for you, each for a steep wage every game hour on a day's contract paid up front. Fire them when you like; nothing is refunded and they stay away a day. Every advisor costs the same: {Math.round(balance.advisors.outputShare * 100)}% of everything your empire gathers and mines each game hour, measured as you go, so the wage grows with you. Two advisors are half your output; all four take it all. Four are on offer.
+          Once an empire is more than a handful of regions, opening each one to queue the same upgrades or shuffle the same people is a chore. The Advisors menu in a match hires staff who do it for you, each for a steep wage every game hour on a day's contract paid up front. Fire them when you like; nothing is refunded and they stay away a day. Every advisor costs the same: {Math.round(balance.advisors.outputShare * 100)}% of the food, wood and stone your empire gathers each game hour, measured as you go, so the wage grows with you. Two advisors are half your output; all four take it all. Four are on offer.
         </p>
       </header>
 
@@ -345,7 +345,7 @@ function AdvisorsSection() {
             <b>Her report</b> after every pass says what was queued, what was skipped and why (unaffordable, queue full, cannot stand there, hauling busy), and leaves suggestions with an Open region button: stores near their cap with no route out, regions nearly full, ore with no Mine, haulers idle, builds that have waited too long. Regions you tick under "leaves alone" she never touches.
           </p>
           <p>
-            <b>Wage:</b> {Math.round(balance.advisors.outputShare * 100)}% of everything your empire gathers and mines each game hour, measured live; the same for every advisor.
+            <b>Wage:</b> {Math.round(balance.advisors.outputShare * 100)}% of the food, wood and stone your empire gathers each game hour, measured live; the same for every advisor.
           </p>
         </div>
       </Card>
