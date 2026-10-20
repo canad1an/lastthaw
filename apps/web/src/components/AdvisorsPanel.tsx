@@ -108,7 +108,7 @@ export function AdvisorsPanel({ matchId, state, onSelect, clockOffsetMs }: { mat
           <span className={`rounded px-2 py-0.5 text-xs ${economic.unpaid ? "bg-rose-500/20 text-rose-200" : "bg-emerald-500/20 text-emerald-200"}`}>{economic.unpaid ? "unpaid, not working" : "Hired"}</span>
         </div>
         <Card className="flex items-center gap-3">
-          <img src="/advisors/economic.svg" alt="" className="h-14 w-14 shrink-0 rounded-full" />
+          <img src="/advisors/economic.jpg" alt="" className="h-14 w-14 shrink-0 rounded-full" />
           <div className="min-w-0 flex-1 text-xs text-slate-400">
             <p className="text-sm font-semibold text-white">Mara, the Economic advisor</p>
             <p>
@@ -136,7 +136,7 @@ export function AdvisorsPanel({ matchId, state, onSelect, clockOffsetMs }: { mat
     <div className="space-y-3 p-3 text-sm">
       <p className="text-xs text-slate-400">Advisors take routine management off your hands for a steep hourly wage. You hire them and you fire them; there is no fee either way.</p>
       <Card className="flex flex-col items-center gap-3 text-center sm:flex-row sm:items-start sm:text-left">
-        <img src="/advisors/economic.svg" alt="Mara, the Economic advisor" className="h-36 w-36 shrink-0 rounded-full shadow-lg" data-advisor-portrait="economic" />
+        <img src="/advisors/economic.jpg" alt="Mara, the Economic advisor" className="h-36 w-36 shrink-0 rounded-full shadow-lg" data-advisor-portrait="economic" />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
             <h3 className="text-base font-semibold text-white">Mara, the Economic advisor</h3>
