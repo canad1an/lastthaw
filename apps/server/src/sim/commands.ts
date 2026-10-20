@@ -602,11 +602,13 @@ export async function returnHeld(tx: Tx, m: MatchRow, regionId: string, onlyRout
 export async function placeOnConvoys(tx: Tx, m: MatchRow, playerId: string, routeId: string, fromRegionId: string, toRegionId: string, goods: Record<string, number>, techs: ReadonlySet<string>): Promise<Record<string, number>> {
   const left: Record<string, number> = { ...goods };
   const placed: Record<string, number> = {};
+  // The caller holds a region lock, and a convoy's arrival locks the army before its regions, so waiting here would deadlock:
+  // a convoy that is busy right now is skipped and the goods wait in the hold for the next one.
   const convoys = await tx
     .select()
     .from(armies)
     .where(and(eq(armies.matchId, m.id), eq(armies.playerId, playerId), eq(armies.mission, "transport"), eq(armies.status, "outbound")))
-    .for("update");
+    .for("update", { skipLocked: true });
   for (const a of convoys) {
     if (Object.values(left).every((v) => v < 1)) break;
     const stops = a.stops;

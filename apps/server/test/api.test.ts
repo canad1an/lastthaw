@@ -591,6 +591,35 @@ describe("api routes", () => {
       // Everything promised has left the holds, onto the manifest.
       for (const r of await routesTo(D)) expect(Object.values(r.held).every((v) => v === 0)).toBe(true);
 
+      // While the worker holds the convoy (resolving its arrival, which then locks a region), a build request holding a
+      // source region must not wait for it: the convoy is skipped and the goods stay in the hold. Waiting deadlocked on production.
+      {
+        const { placeOnConvoys } = await import("../src/sim/commands.js");
+        const [mrow] = await db.select().from(matches).where(eq(matches.id, gameId));
+        let release!: () => void;
+        const released = new Promise<void>((r) => (release = r));
+        let locked!: () => void;
+        const isLocked = new Promise<void>((r) => (locked = r));
+        const holder = db.transaction(async (tx) => {
+          await tx.select().from(armies).where(eq(armies.id, convoy!.id)).for("update");
+          locked();
+          await released;
+        });
+        await isLocked;
+        try {
+          const placed = await db.transaction(async (tx) => {
+            await tx.execute(sql`set local lock_timeout = '3s'`);
+            return placeOnConvoys(tx, mrow!, benPid, convoy!.stops[1]!.routeId ?? "r", other, D, { wood: 1, stone: 1 }, new Set());
+          });
+          expect(placed).toEqual({});
+        } finally {
+          release();
+          await holder;
+        }
+        const [same] = await db.select().from(armies).where(eq(armies.id, convoy!.id));
+        expect(same!.stops).toEqual(convoy!.stops);
+      }
+
       // A build queued while the convoy is still collecting: its stone rides along on the pending call, its wood waits for the next convoy.
       const nowIso = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json()).match.now;
       // (D and the capital gathered a little while the haulers travelled; empty both so the goods come from S and S2 again.)
