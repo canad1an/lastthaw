@@ -353,8 +353,8 @@ function MilitarySettings({ matchId, state, advisor, onSelect }: { matchId: stri
                     {regionById(id)?.name ?? id}
                     {c ? <span className="text-slate-500"> · {c.stage}</span> : null}
                   </button>
-                  <button className="shrink-0 text-slate-500 hover:text-rose-300" onClick={() => untarget.mutate(id)} title="Remove">
-                    ✕
+                  <button className="shrink-0 rounded border border-slate-700 px-1.5 py-0.5 text-[11px] text-slate-400 hover:border-rose-400/60 hover:text-rose-200" onClick={() => untarget.mutate(id)} title="Take this region off the Military advisor's list">
+                    remove
                   </button>
                 </li>
               );

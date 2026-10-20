@@ -390,7 +390,8 @@ export async function buildMatchState(db: Db, matchId: string, userId: string, o
       paidUntil: a.paidUntil.toISOString(),
       unpaid: a.unpaidSince !== null,
       wage: advisorWage,
-      settings: parseSettings(a.settings),
+      // A target you already own is never shown, whatever the row still says: the ⚔ goes the moment the region is yours.
+      settings: ((s) => ({ ...s, targets: s.targets.filter((t) => !ownedIds.includes(t)) }))(parseSettings(a.settings)),
       lastPassAt: a.lastPassAt?.toISOString() ?? null,
       lastReport: a.lastReport ? advisorReport.parse(a.lastReport) : null,
       campaigns: campaignView.array().parse(a.campaigns ?? []),

@@ -994,6 +994,10 @@ describe("api routes", () => {
       await skip(force!.arrivesAt.toISOString());
       const [won] = await db.select({ owner: matchRegions.ownerPlayerId }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, N)));
       expect(won?.owner).toBe(benPid);
+      // The region is his now, so it is no longer a target: the row is cleared by the conquest itself, not by a later pass.
+      const [adv] = await db.select({ settings: advisors.settings }).from(advisors).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid), eq(advisors.kind, "military")));
+      expect(((adv!.settings ?? {}) as { targets?: string[] }).targets ?? []).toEqual([]);
+      expect(matchStateView.parse((await Ben.call("GET", `${base}/state`)).json()).advisors.find((a) => a.kind === "military")?.settings.targets).toEqual([]);
       const p4 = await pass();
       expect(p4.campaigns.find((c) => c.targetRegionId === N)?.stage).toBe("done");
       expect((await Ben.call("POST", `${base}/advisors/military/fire`, {})).statusCode).toBe(200);

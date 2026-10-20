@@ -9,6 +9,7 @@ import { settleAndLockRegion, type MatchRegionRow, type Tx, setCapital, ownerTec
 import { notify, type JobRow, type MatchRow } from "../worker/jobs.js";
 import { areAllied, alliesOf } from "./alliances.js";
 import { receiveMaterials } from "./commands.js";
+import { clearMilitaryTargets } from "./advisorTargets.js";
 import { causeForWar } from "./diplomacy.js";
 
 type ArmyRow = typeof armies.$inferSelect;
@@ -329,6 +330,7 @@ async function settleLand(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publishe
     return sendHome(tx, m, army, at, army.units, army.cargo, `${name} was claimed first by ${by}`);
   }
   const settlers = army.units.settler ?? 0;
+  await clearMilitaryTargets(tx, m.id, army.playerId, [army.targetRegionId]);
   await tx
     .update(matchRegions)
     .set({
@@ -835,6 +837,7 @@ async function finishBattle(tx: Tx, m: MatchRow, b: typeof battles.$inferSelect,
     const occupiers = settlersAlong + (army.cargo.people ?? 0);
     if (occupiers >= balance.conquest.occupiersRequired) {
       conquered = true;
+      await clearMilitaryTargets(tx, m.id, army.playerId, [army.targetRegionId]);
       Object.assign(set, {
         ownerPlayerId: army.playerId,
         isCapital: false,
@@ -959,6 +962,7 @@ export async function eliminatePlayer(tx: Tx, m: MatchRow, playerId: string, at:
         : { ownerPlayerId: null, isCapital: false, conquered: false, popOccupiers: 0, loyalty: 1 },
     )
     .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.ownerPlayerId, playerId)));
+  if (by) await clearMilitaryTargets(tx, m.id, by.id, realm.map((r) => r.regionId));
   await tx
     .update(jobs)
     .set({ cancelledAt: at })
