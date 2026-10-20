@@ -84,7 +84,7 @@ export function armyMarkers(armies: ArmyView[], incoming: IncomingView[], nowMs:
         `from ${regionById(a.originRegionId)?.name ?? a.originRegionId}`,
         a.mission === "relocate" ? "the capital's stores and court" : fmtUnits(a.units) + (people > 0 ? ` and ${people} people` : ""),
         cargo ? `carrying ${cargo}${capacity > 0 ? ` (${Math.round(goodsTotal)} of ${Math.round(capacity)})` : ""}` : capacity > 0 && !returning ? "carrying nothing" : "",
-        `${returning ? "home" : a.mission === "patrol" ? "holds the lane for" : "arrives"} ${a.mission === "patrol" && !returning ? "" : "in "}${formatCountdown((end - nowMs) / 1000)}`,
+        a.status === "fighting" ? "in battle now: click the crossed swords on the region to watch" : `${returning ? "home" : a.mission === "patrol" ? "holds the lane for" : "arrives"} ${a.mission === "patrol" && !returning ? "" : "in "}${formatCountdown((end - nowMs) / 1000)}`,
       ].filter(Boolean),
       route,
       progress,

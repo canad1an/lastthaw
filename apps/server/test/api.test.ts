@@ -5,7 +5,7 @@ import { Publisher } from "../src/realtime/publish.js";
 import { runDueJobs } from "../src/worker/jobs.js";
 import { buildApp } from "../src/api/app.js";
 import { createDb, type Db } from "../src/db/client.js";
-import { emailTokens, fairplayFlags, matches, playerActions, players, users, matchRegions, regionNotes, tradeRoutes, jobs, armies, pacts, advisors, messages, marketOrders } from "../src/db/schema.js";
+import { emailTokens, fairplayFlags, matches, playerActions, players, users, matchRegions, regionNotes, tradeRoutes, jobs, armies, pacts, advisors, messages, marketOrders, battles } from "../src/db/schema.js";
 import { runMatchTicks } from "../src/sim/tick.js";
 import { runTradeRoutes } from "../src/sim/trade.js";
 import { detectAutomation } from "../src/fairplay/detect.js";
@@ -1113,6 +1113,106 @@ describe("api routes", () => {
     } finally {
       await db.delete(jobs).where(eq(jobs.id, job!.id));
       await db.update(marketOrders).set({ status: "cancelled" }).where(and(eq(marketOrders.matchId, gameId), eq(marketOrders.status, "open")));
+    }
+  });
+
+  it("a battle plays out: decided on arrival, then a unit or two a round under a crossed-swords icon everyone can watch, and nothing changes hands until the last round", async () => {
+    const base = `/api/matches/${gameId}`;
+    const benState = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
+    const cap = benState.me.capitalRegionId!;
+    const benPid = benState.me.playerId;
+    const nowIso = async () => matchStateView.parse((await Ben.call("GET", `${base}/state`)).json()).match.now;
+    // A small neutral tribe within a few hops of Ben's capital, and eight warriors at home to raid it with.
+    const claimed = new Set((await db.select({ regionId: matchRegions.regionId }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), sql`${matchRegions.ownerPlayerId} is not null`))).map((r) => r.regionId));
+    let ring = [cap];
+    const seen = new Set(ring);
+    let N: string | undefined;
+    for (let hop = 0; hop < 4 && !N; hop++) {
+      const next: string[] = [];
+      for (const id of ring) for (const nb of regionById(id)?.neighbors ?? []) if (!seen.has(nb)) { seen.add(nb); next.push(nb); }
+      N = next.find((id) => !claimed.has(id));
+      ring = next;
+    }
+    expect(N).toBeTruthy();
+    const T = N!;
+    const tribe = { ownerPlayerId: null, popWorkers: 20, popSoldiers: 0, popOccupiers: 0, units: { warrior: 3 }, food: 900, wood: 400, stone: 300, settledAt: new Date(await nowIso()) };
+    await db.insert(matchRegions).values({ matchId: gameId, regionId: T, assignment: { ...balance.start.assignment }, ...tribe }).onConflictDoUpdate({ target: [matchRegions.matchId, matchRegions.regionId], set: tribe });
+    const [capRow] = await db.select({ units: matchRegions.units }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
+    await db.update(matchRegions).set({ units: { ...capRow!.units, warrior: (capRow!.units.warrior ?? 0) + 8 }, popWorkers: 80, settledAt: new Date(await nowIso()) }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
+    const redis = createRedis();
+    const pub = new Publisher(redis);
+    const wasRoundMs = process.env.BATTLE_ROUND_MS;
+    process.env.BATTLE_ROUND_MS = "1";
+    try {
+      const sent = await Ben.call("POST", `${base}/regions/${cap}/send`, { mission: "raid", targetRegionId: T, units: { warrior: 8 }, people: 0, cargo: {} });
+      expect(sent.statusCode, sent.body).toBe(200);
+      const armyId = (sent.json() as { armyId: string }).armyId;
+      const [army0] = await db.select().from(armies).where(eq(armies.id, armyId));
+      // Arrival: the result is decided and the playback begins; the army stands on the region, fighting.
+      const secs = Math.ceil((army0!.arrivesAt.getTime() - Date.parse(await nowIso())) / 1000) + 2;
+      if (secs > 0) await db.update(matches).set({ clockOffsetSeconds: sql`${matches.clockOffsetSeconds} + ${secs}` }).where(eq(matches.id, gameId));
+      await runDueJobs(db, pub, logger);
+      const [army1] = await db.select().from(armies).where(eq(armies.id, armyId));
+      expect(army1!.status).toBe("fighting");
+      const list = await Ben.call("GET", `${base}/battles`);
+      expect(list.statusCode, list.body).toBe(200);
+      const live = (list.json() as Array<{ id: string; regionId: string; status: string; totalRounds: number }>).find((b) => b.regionId === T)!;
+      expect(live).toBeDefined();
+      expect(live.status).toBe("fighting");
+      const st1 = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
+      expect(st1.battles.some((b) => b.id === live.id)).toBe(true);
+      expect(st1.armies.find((a) => a.id === armyId)?.status).toBe("fighting");
+      const detail0 = await Ben.call("GET", `${base}/battles/${live.id}`);
+      expect(detail0.statusCode, detail0.body).toBe(200);
+      const d0 = detail0.json() as { attacker: { start: Record<string, number>; now: Record<string, number> }; defender: { start: Record<string, number>; now: Record<string, number> }; totalRounds: number; result: unknown };
+      expect(d0.attacker.start.warrior).toBe(8);
+      expect(d0.defender.start.warrior).toBe(3);
+      expect(d0.defender.start.militia).toBe(1);
+      expect(d0.result).toBeNull();
+      // Everyone in the match may watch, and a stranger may not.
+      expect((await Ann.call("GET", `${base}/battles/${live.id}`)).statusCode).toBe(200);
+      expect((await Out.call("GET", `${base}/battles/${live.id}`)).statusCode).toBe(403);
+      // The rounds: a unit or two fall each time, the region itself untouched until the end.
+      const [before] = await db.select({ units: matchRegions.units }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, T)));
+      let done = false;
+      let lastStanding = 8 + 4;
+      for (let i = 0; i < 400 && !done; i++) {
+        await new Promise((r) => setTimeout(r, 3));
+        await runDueJobs(db, pub, logger);
+        const [b] = await db.select().from(battles).where(eq(battles.id, live.id));
+        const l = b!.live as { attacker: { now: Record<string, number> }; defender: { now: Record<string, number> }; log: Array<{ round: number }> };
+        const standing = Object.values(l.attacker.now).reduce((a, n) => a + n, 0) + Object.values(l.defender.now).reduce((a, n) => a + n, 0);
+        expect(lastStanding - standing).toBeLessThanOrEqual(2);
+        expect(lastStanding - standing).toBeGreaterThanOrEqual(0);
+        lastStanding = standing;
+        if (b!.status === "fighting" && b!.round > 0 && b!.round < b!.totalRounds) {
+          const [mid] = await db.select({ units: matchRegions.units }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, T)));
+          expect(mid!.units).toEqual(before!.units);
+        }
+        done = b!.status === "done";
+      }
+      expect(done).toBe(true);
+      // The end: the stored result is applied exactly as a battle always was.
+      const [b] = await db.select().from(battles).where(eq(battles.id, live.id));
+      const report = b!.report as { attackerWon: boolean; attacker: { losses: Record<string, number> }; defender: { losses: Record<string, number> } };
+      const lost = (u: Record<string, number>) => Object.values(u).reduce((a, n) => a + n, 0);
+      expect(b!.totalRounds).toBe(lost(report.attacker.losses) + lost(report.defender.losses));
+      expect(b!.round).toBe(b!.totalRounds);
+      const [after] = await db.select({ units: matchRegions.units }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, T)));
+      expect(after!.units.warrior ?? 0).toBe(3 - (report.defender.losses.warrior ?? 0));
+      const [army2] = await db.select().from(armies).where(eq(armies.id, armyId));
+      expect(["returning", "done"]).toContain(army2!.status);
+      expect(lost(army2!.units)).toBe(8 - lost(report.attacker.losses));
+      const detail1 = (await Ben.call("GET", `${base}/battles/${live.id}`)).json() as { status: string; result: { attackerWon: boolean } | null };
+      expect(detail1.status).toBe("done");
+      expect(detail1.result?.attackerWon).toBe(report.attackerWon);
+      const told = await db.select().from(messages).where(and(eq(messages.matchId, gameId), eq(messages.playerId, benPid), eq(messages.kind, "battle"), sql`${messages.payload}->>'regionId' = ${T}`));
+      expect(told.length).toBeGreaterThan(0);
+      expect(matchStateView.parse((await Ben.call("GET", `${base}/state`)).json()).battles.some((x) => x.id === live.id)).toBe(false);
+    } finally {
+      process.env.BATTLE_ROUND_MS = wasRoundMs ?? "0";
+      await redis.quit().catch(() => {});
+      await db.delete(regionNotes).where(and(eq(regionNotes.matchId, gameId), eq(regionNotes.regionId, T)));
     }
   });
 

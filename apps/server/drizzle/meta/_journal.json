@@ -302,6 +302,13 @@
       "when": 1792516627123,
       "tag": "0042_advisor_fired",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1792523088779,
+      "tag": "0043_battle_rounds",
+      "breakpoints": true
     }
   ]
 }

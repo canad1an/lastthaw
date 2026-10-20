@@ -252,7 +252,7 @@ export const matchRegions = pgTable(
 /** Partial index predicate for the due-job scan. */
 const sqlNullCompleted = sql`completed_at is null and cancelled_at is null`;
 
-export const jobKind = pgEnum("job_kind", ["build", "research", "train", "mission", "ice_step", "win_hold", "match_end", "storm", "merc_expire"]);
+export const jobKind = pgEnum("job_kind", ["build", "research", "train", "mission", "ice_step", "win_hold", "match_end", "storm", "merc_expire", "battle_round"]);
 
 export const jobs = pgTable(
   "jobs",
@@ -286,7 +286,7 @@ export const jobs = pgTable(
 );
 
 export const missionKind = pgEnum("mission_kind", ["raid", "conquer", "reinforce", "move", "transport", "scout", "settle", "relocate", "patrol", "expedition"]);
-export const armyStatus = pgEnum("army_status", ["outbound", "returning", "done"]);
+export const armyStatus = pgEnum("army_status", ["outbound", "returning", "done", "fighting"]);
 
 export const armies = pgTable(
   "armies",
@@ -336,8 +336,19 @@ export const battles = pgTable(
     attackerPlayerId: uuid("attacker_player_id"),
     defenderPlayerId: uuid("defender_player_id"),
     report: jsonb("report").notNull(),
+    /** The playback: fighting while the rounds run, done once the result has been applied. */
+    status: text("status").notNull().default("done"),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    round: integer("round").notNull().default(0),
+    totalRounds: integer("total_rounds").notNull().default(0),
+    nextRoundAt: timestamp("next_round_at", { withTimezone: true }),
+    armyId: uuid("army_id"),
+    /** Both sides at the start and now, the bonuses, the casualty schedule and the log (missions.BattleLive). */
+    live: jsonb("live"),
+    /** The result decided on arrival, applied when the last round ends (missions.BattleOutcome). */
+    outcome: jsonb("outcome"),
   },
-  (t) => [index("battles_match_idx").on(t.matchId, t.resolvedAt)],
+  (t) => [index("battles_match_idx").on(t.matchId, t.resolvedAt), index("battles_live_idx").on(t.matchId, t.status)],
 );
 
 export const tradeRouteMode = pgEnum("trade_route_mode", ["fixed", "share"]);

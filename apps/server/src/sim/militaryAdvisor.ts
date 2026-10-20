@@ -433,6 +433,10 @@ export async function militaryPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
         cp.note = `${name(t)}: the force arrives in ${Math.max(1, Math.round(((army.arrivesAt.getTime() - now.getTime()) / 3600_000) * m.speed))} h.`;
         continue;
       }
+      if (army && army.status === "fighting") {
+        cp.note = `${name(t)}: the battle is on.`;
+        continue;
+      }
       const [after] = await db.select({ owner: matchRegions.ownerPlayerId }).from(matchRegions).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, t))).limit(1);
       if (after?.owner === p.id) {
         cp.stage = "done";

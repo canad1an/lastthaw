@@ -367,6 +367,15 @@ export const balance = {
    * minimum levels set, lets convoys supply what a region cannot pay (up to maxOwed per build), moves people as chosen,
    * and makes a pass every passMinutes, queueing at most maxQueuedPerPass builds a pass. No hiring fee.
    */
+  /**
+   * A battle's result is decided the moment the army arrives (see `combat`); it is then played out in short real-time
+   * rounds that anyone in the match can watch, one or two units falling a round, and nothing changes hands until the
+   * last round. maxRounds caps the playback of an enormous fight by letting more fall per round.
+   */
+  battle: {
+    roundSeconds: 6,
+    maxRounds: 150,
+  },
   advisors: {
     /** Hiring buys this many game hours of wages at once, with no refund; the same advisor cannot be rehired for rehireCooldownHours after a firing; Run a pass now works once per runEveryMinutes. */
     contractHours: 24,

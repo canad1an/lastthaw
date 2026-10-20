@@ -1,6 +1,6 @@
 import type { z } from "zod";
 import { reportClientError } from "../errorReport.js";
-import { alliancesResponse, chatResponse, marketResponse, matchStateView, matchSummary, userView, type AdvisorKind, type AdvisorSettings, type ChatMessageView, type MarketOrderView, type TradeResource } from "@lastthaw/shared";
+import { alliancesResponse, chatResponse, marketResponse, matchStateView, matchSummary, userView, type AdvisorKind, type AdvisorSettings, type BattleDetailView, type LiveBattleView, type ChatMessageView, type MarketOrderView, type TradeResource } from "@lastthaw/shared";
 
 export class ApiError extends Error {
   constructor(
@@ -111,6 +111,8 @@ export const api = {
   fireAdvisor: (id: string, kind: AdvisorKind) => request<{ ok: true }>("POST", `/api/matches/${id}/advisors/${kind}/fire`, {}),
   setAdvisorSettings: (id: string, kind: AdvisorKind, settings: AdvisorSettings) => request<{ ok: true }>("PUT", `/api/matches/${id}/advisors/${kind}/settings`, settings),
   runAdvisor: (id: string, kind: AdvisorKind) => request<{ ok: true }>("POST", `/api/matches/${id}/advisors/${kind}/run`, {}),
+  battles: (id: string) => request<LiveBattleView[]>("GET", `/api/matches/${id}/battles`),
+  battle: (id: string, battleId: string) => request<BattleDetailView>("GET", `/api/matches/${id}/battles/${battleId}`),
   setAdvisorTarget: (id: string, regionId: string, add: boolean) => request<{ ok: true; targets: string[] }>("POST", `/api/matches/${id}/advisors/military/targets`, { regionId, add }),
   setNote: (id: string, regionId: string, b: { text: string; colour: string | null }) => request<{ ok: true }>("PUT", `/api/matches/${id}/notes/${regionId}`, b),
   endMatch: (id: string) => request<{ ok: true }>("POST", `/api/matches/${id}/end`, {}),
@@ -170,4 +172,6 @@ export const keys = {
   chat: (id: string, channel: string) => ["match", id, "chat", channel] as const,
   chatAll: (id: string) => ["match", id, "chat"] as const,
   market: (id: string) => ["match", id, "market"] as const,
+  battles: (id: string) => ["match", id, "battle"] as const,
+  battle: (id: string, battleId: string) => ["match", id, "battle", battleId] as const,
 };

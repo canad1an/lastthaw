@@ -203,6 +203,7 @@ export async function armyRoutes(app: FastifyInstance, opts: { db: Db; publisher
       await requireRunning(tx, matchId);
       const [army] = await tx.select().from(armies).where(eq(armies.id, armyId)).for("update");
       if (!army || army.matchId !== matchId || army.playerId !== p.id) throw httpError(404, "army not found");
+      if (army.status === "fighting") throw httpError(409, "that army is in battle; it comes home when the fight is over");
       if (army.status !== "outbound") throw httpError(409, "that army is already on its way back");
       const now = matchNow(m);
       const travelled = Math.max(1000, now.getTime() - army.departsAt.getTime());

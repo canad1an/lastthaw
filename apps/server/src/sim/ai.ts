@@ -376,7 +376,7 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
   const inFlight = await db
     .select({ id: armies.id })
     .from(armies)
-    .where(and(eq(armies.matchId, m.id), eq(armies.playerId, p.id), inArray(armies.status, ["outbound", "returning"])));
+    .where(and(eq(armies.matchId, m.id), eq(armies.playerId, p.id), inArray(armies.status, ["outbound", "returning", "fighting"])));
   const maxInFlight = difficulty === "hard" ? 3 : 2;
   if (inFlight.length < maxInFlight && threatened.size === 0) {
     const roll = rng();

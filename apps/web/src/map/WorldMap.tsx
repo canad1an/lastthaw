@@ -34,8 +34,9 @@ export interface WorldMapProps {
   armies?: ArmyMarker[];
   /** Road or rail links to draw between adjacent regions: [a, b, colour, kind]. */
   roads?: Array<[string, string, string, "road" | "rail"]>;
-  /** Overlay badges (View menu): small glyph markers at region centres. */
-  badges?: Array<{ regionId: string; colour: string; glyph: string; label: string }>;
+  /** Overlay badges (View menu): small glyph markers at region centres; a pulsing one is clickable when it carries an action. */
+  badges?: Array<{ regionId: string; colour: string; glyph: string; label: string; pulse?: boolean; battleId?: string }>;
+  onBadgeClick?: (badge: { regionId: string; battleId?: string }) => void;
   /** Regions in a blizzard right now: drawn with a white hatch. */
   storms?: string[];
   /** Thaw pockets: amber outline until the ice finally takes them. */
@@ -78,7 +79,7 @@ const MAX_K = 28;
  * Rendering ~400 paths is cheap; the expensive part is re-rendering on every
  * state change, so the static layer is memoized and only the paint changes.
  */
-export function WorldMap({ paint, selected, onSelect, focus, flyTo, className = "", ice, flags = [], dashed = [], armies = [], roads = [], badges = [], storms = [], thaws = [] }: WorldMapProps) {
+export function WorldMap({ paint, selected, onSelect, focus, flyTo, className = "", ice, flags = [], dashed = [], armies = [], roads = [], badges = [], storms = [], thaws = [], onBadgeClick }: WorldMapProps) {
   const [hoverArmy, setHoverArmy] = useState<string | null>(null);
   const [routeArmy, setRouteArmy] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -297,9 +298,20 @@ export function WorldMap({ paint, selected, onSelect, focus, flyTo, className = 
             const s = (unitsPerPx / view.k) * BADGE_SCALE;
             const dx = 9 + k * 11;
             return (
-              <g key={`${b.regionId}-${i}`} transform={`translate(${r.x} ${r.y}) scale(${s})`} pointerEvents="auto">
+              <g
+                key={`${b.regionId}-${i}`}
+                transform={`translate(${r.x} ${r.y}) scale(${s})`}
+                pointerEvents="auto"
+                className={b.battleId ? "cursor-pointer" : undefined}
+                onClick={(e) => {
+                  if (!b.battleId || !onBadgeClick) return;
+                  e.stopPropagation();
+                  onBadgeClick({ regionId: b.regionId, battleId: b.battleId });
+                }}
+              >
                 <title>{b.label}</title>
-                <circle cx={dx} cy={-9} r={5.5} fill={b.colour} stroke="#0b1a2b" strokeWidth={1.2} />
+                {b.pulse && <circle cx={dx} cy={-9} r={8} fill="none" stroke={b.colour} strokeWidth={1.5} className="animate-ping" />}
+                <circle cx={dx} cy={-9} r={b.pulse ? 7 : 5.5} fill={b.colour} stroke="#0b1a2b" strokeWidth={1.2} />
                 <text x={dx} y={-9} textAnchor="middle" dominantBaseline="central" fontSize={7} fontWeight={700} fill="#0b1a2b">
                   {b.glyph}
                 </text>

@@ -23,7 +23,8 @@ import { MatchSummary, useSummaryOpen } from "../components/MatchSummary.js";
 import { MatchNight, useWinterNight } from "../components/MatchNight.js";
 import { MatchIntro, useIntroOpen } from "../components/MatchIntro.js";
 import { RefugeePanel } from "../components/RefugeePanel.js";
-import { noteBadges, overlayBadges, useOverlays, advisorBadges } from "../map/overlays.js";
+import { noteBadges, overlayBadges, useOverlays, advisorBadges, battleBadges } from "../map/overlays.js";
+import { BattleWindow } from "../components/BattleWindow.js";
 import { IncomingWarnings } from "../components/ArmyPanel.js";
 import { ActivityPanel } from "../components/ActivityPanel.js";
 import { ChatChannel } from "../components/Chat.js";
@@ -410,7 +411,9 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
   }, [state.players]);
   const ownedSet = useMemo(() => new Set(state.owned.map((o) => o.regionId)), [state.owned]);
   const ownedById = useMemo(() => new Map(state.owned.map((o) => [o.regionId, o])), [state.owned]);
-  const badges = useMemo(() => [...noteBadges(state), ...advisorBadges(state), ...overlayBadges(state, overlays, matchDay)], [state, overlays, matchDay]);
+  const badges = useMemo(() => [...noteBadges(state), ...advisorBadges(state), ...battleBadges(state), ...overlayBadges(state, overlays, matchDay)], [state, overlays, matchDay]);
+  const [battleId, setBattleId] = useState<string | null>(null);
+  // A battle that ends while its window is open stays on screen with the verdict; one that is gone from the list when the window opens is still readable by id.
   const sightedBy = useMemo(() => new Map(state.sighted.map((s) => [s.regionId, s])), [state.sighted]);
 
   const incomingSet = useMemo(() => new Set(state.incoming.map((i) => i.targetRegionId)), [state.incoming]);
@@ -475,6 +478,18 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
     <div className="age-screen flex h-[calc(100dvh-3rem)] flex-col bg-slate-950" style={ageVars(state.me.age) as React.CSSProperties} data-age={state.me.age}>
       {!phone && <TopMenu matchId={matchId} state={state} selectedRegionId={selected} colorOf={colorOf} overlays={overlays} onToggleOverlay={toggleOverlay} onSelectRegion={goToRegion} clockOffsetMs={clockOffsetMs} />}
       {!state.observer && <RealmTakenPopup messages={menu.messages} onSelectRegion={goToRegion} />}
+      {battleId && (
+        <BattleWindow
+          matchId={matchId}
+          battleId={battleId}
+          myPlayerId={state.me.playerId}
+          onClose={() => setBattleId(null)}
+          onSelectRegion={(id) => {
+            setBattleId(null);
+            goToRegion(id);
+          }}
+        />
+      )}
       {phone && (
         <div className="age-bar flex h-10 shrink-0 items-center gap-2 border-b border-slate-800 bg-slate-950/90 px-2">
           {state.observer ? <span className="inline-flex h-7 shrink-0 items-center rounded-md border border-violet-400/50 bg-violet-500/10 px-2 text-xs font-medium text-violet-100">Admin</span> : <AgeChip age={state.me.age} compact />}
@@ -536,6 +551,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
           armies={markers}
           roads={roadLinks}
           badges={badges}
+          onBadgeClick={(b) => b.battleId && setBattleId(b.battleId)}
           storms={state.storms}
           thaws={state.thaws}
         />
@@ -618,6 +634,11 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
         <IncomingWarnings state={state} clockOffsetMs={clockOffsetMs} onSelect={setSelected} />
         <RefugeePanel matchId={matchId} state={state} clockOffsetMs={clockOffsetMs} onSelect={setSelected} />
         <ActivityPanel matchId={matchId} state={state} clockOffsetMs={clockOffsetMs} onSelect={setSelected} />
+        {selected && state.battles.some((b) => b.regionId === selected) && (
+          <button className="w-full rounded-md border border-rose-500/50 bg-rose-500/15 px-3 py-2 text-sm font-medium text-rose-100 hover:bg-rose-500/25" onClick={() => setBattleId(state.battles.find((b) => b.regionId === selected)!.id)}>
+            ⚔ A battle is on here: watch it
+          </button>
+        )}
         {selected ? (
           <RegionPanel matchId={matchId} state={state} regionId={selected} clockOffsetMs={clockOffsetMs} onClose={() => setSelected(null)} target={target} onPickTarget={onPickTarget} onClearTarget={() => setTarget(null)} />
         ) : (

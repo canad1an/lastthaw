@@ -1,7 +1,7 @@
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { claimBounties } from "./objectives.js";
 import { tribeBattleTalk } from "./tribeVoice.js";
-import { balance, effectsOf, emptySpecial, storageCaps, regionById, resolveCombat, carryCapacity, travelSeconds, findRoute, armySpeed, type UnitCounts, HAULER_IDS, haulerCount, unitById, laneName, applyTechEffects, wallBonusAgainst, breachOf, buildingById, seededRng, availableTechs, scoutCatchChance, soldierCount, wallOf } from "@lastthaw/shared";
+import { balance, effectsOf, emptySpecial, storageCaps, regionById, resolveCombat, carryCapacity, travelSeconds, findRoute, armySpeed, type UnitCounts, HAULER_IDS, haulerCount, unitById, laneName, applyTechEffects, wallBonusAgainst, breachOf, buildingById, seededRng, availableTechs, scoutCatchChance, soldierCount, wallOf, battleSchedule, type BattleRound, type CombatResult } from "@lastthaw/shared";
 import { matchDayAt } from "./clock.js";
 import { armies, battles, jobs, matchRegions, players, regionSightings, playerTechs, tradeRoutes, events } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
@@ -628,6 +628,55 @@ async function scout(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher: Pu
   after(() => publisher.toPlayer(m.id, pid, "army.arrived", { armyId: army.id }));
 }
 
+/** What a battle in progress shows: both sides at the start and now, the bonuses, the playback schedule and the log. */
+export interface BattleLive {
+  mission: "raid" | "conquer";
+  attacker: { playerId: string; name: string; start: UnitCounts; now: UnitCounts };
+  defender: { playerId: string | null; name: string; start: UnitCounts; now: UnitCounts };
+  bonus: { attack: number; defense: number; wallFull: number; wallBonus: number; siege: number; terrain: number; militia: number };
+  schedule: BattleRound[];
+  log: Array<{ round: number; aLoss: UnitCounts; dLoss: UnitCounts; aLeft: number; dLeft: number }>;
+}
+
+/** The result decided on arrival, kept so the end of the playback applies it without recomputing anything. */
+export interface BattleOutcome {
+  result: CombatResult;
+  settlersAlong: number;
+  seed: string;
+  wallFull: number;
+  wallBonus: number;
+  siege: number;
+}
+
+/** Real milliseconds between rounds of a battle's playback; BATTLE_ROUND_MS overrides (0 plays the whole battle at once, as the tests do). */
+export function battleRoundMs(): number {
+  const env = process.env.BATTLE_ROUND_MS;
+  if (env !== undefined && env !== "") return Math.max(0, Number(env) || 0);
+  return balance.battle.roundSeconds * 1000;
+}
+
+function takeLosses(now: UnitCounts, loss: UnitCounts): UnitCounts {
+  const out = { ...now };
+  for (const [k, v] of Object.entries(loss)) out[k] = Math.max(0, (out[k] ?? 0) - v);
+  return out;
+}
+
+/** Play one scheduled round into the live picture. */
+function applyRound(live: BattleLive, round: number): void {
+  const entry = live.schedule[round - 1];
+  if (!entry) return;
+  const [aLoss, dLoss] = entry;
+  live.attacker.now = takeLosses(live.attacker.now, aLoss);
+  live.defender.now = takeLosses(live.defender.now, dLoss);
+  live.log.push({ round, aLoss, dLoss, aLeft: sumUnits(live.attacker.now), dLeft: sumUnits(live.defender.now) });
+  if (live.log.length > 400) live.log.splice(0, live.log.length - 400);
+}
+
+/**
+ * A raid or conquest arrives: the battle is decided here, exactly as it always was, and then played out in short
+ * rounds (one or two units falling a round) that everyone in the match can watch. Nothing changes hands until the
+ * last round; see finishBattle.
+ */
 async function battle(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher: Publisher, after: After): Promise<void> {
   const target = await lockRegion(tx, m, army.targetRegionId, at);
   const region = regionById(army.targetRegionId)!;
@@ -652,8 +701,91 @@ async function battle(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher: P
   // Walls are near-impregnable to men alone; siege engines bring the wall bonus down. Techs and terrain always count.
   const wallFull = Object.keys(balance.combat.wallBreach).reduce((a, id) => a + (buildingById.get(id)?.effect.defense ?? 0) * (target.buildings[id] ?? 0), 0);
   const wallBonus = wallBonusAgainst(target.buildings, fighting);
-  const bonus = effects.defense - wallFull + wallBonus + defenderTech.defense + (balance.combat.terrainDefense[region.terrain] ?? 0);
+  const terrain = balance.combat.terrainDefense[region.terrain] ?? 0;
+  const bonus = effects.defense - wallFull + wallBonus + defenderTech.defense + terrain;
   const result = resolveCombat({ units: fighting, bonus: attackerTech.attack }, { units: defenderUnits, bonus }, seed);
+
+  const attackerName = await playerName(tx, army.playerId);
+  const defenderName = defenderId ? await playerName(tx, defenderId) : "Neutral tribes";
+  const schedule = battleSchedule(result.attackerLosses, result.defenderLosses, seed);
+  const live: BattleLive = {
+    mission: army.mission as "raid" | "conquer",
+    attacker: { playerId: army.playerId, name: attackerName, start: { ...fighting }, now: { ...fighting } },
+    defender: { playerId: defenderId, name: defenderName, start: { ...defenderUnits }, now: { ...defenderUnits } },
+    bonus: { attack: attackerTech.attack, defense: bonus, wallFull, wallBonus, siege: breachOf(fighting), terrain, militia },
+    schedule,
+    log: [],
+  };
+  const outcome: BattleOutcome = { result, settlersAlong, seed, wallFull, wallBonus, siege: breachOf(fighting) };
+  const roundMs = battleRoundMs();
+  const [row] = await tx
+    .insert(battles)
+    .values({ matchId: m.id, regionId: army.targetRegionId, resolvedAt: at, seed, attackerPlayerId: army.playerId, defenderPlayerId: defenderId, report: {}, status: "fighting", startedAt: at, armyId: army.id, round: 0, totalRounds: schedule.length, nextRoundAt: schedule.length ? new Date(at.getTime() + roundMs) : null, live, outcome })
+    .returning();
+  if (roundMs === 0 || schedule.length === 0) {
+    // Nothing to watch (or the tests): the whole fight plays out now.
+    for (let r = 1; r <= schedule.length; r++) applyRound(live, r);
+    return finishBattle(tx, m, { ...row!, live, round: schedule.length }, army, at, publisher, after);
+  }
+  await tx.update(armies).set({ status: "fighting" }).where(eq(armies.id, army.id));
+  await tx.insert(jobs).values({ matchId: m.id, playerId: army.playerId, regionId: army.targetRegionId, kind: "battle_round", refId: row!.id, startsAt: at, endsAt: new Date(at.getTime() + roundMs) });
+  const battleId = row!.id;
+  after(() => publisher.toMatch(m.id, "battle.started", { battleId, regionId: army.targetRegionId }));
+}
+
+/** One round of a battle's playback comes due: a unit or two fall on the live picture; the last round applies the result. */
+export async function playBattleRound(tx: Tx, m: MatchRow, job: JobRow, publisher: Publisher, after: After): Promise<void> {
+  if (!job.refId) throw new Error("battle round without a battle");
+  const [b] = await tx.select().from(battles).where(eq(battles.id, job.refId)).for("update");
+  if (!b || b.status !== "fighting" || !b.live || !b.armyId) return;
+  const live = b.live as BattleLive;
+  const round = b.round + 1;
+  applyRound(live, round);
+  if (round < b.totalRounds) {
+    const nextRoundAt = new Date(job.endsAt.getTime() + battleRoundMs());
+    await tx.update(battles).set({ live, round, nextRoundAt }).where(eq(battles.id, b.id));
+    await tx.insert(jobs).values({ matchId: m.id, playerId: job.playerId, regionId: b.regionId, kind: "battle_round", refId: b.id, startsAt: job.endsAt, endsAt: nextRoundAt });
+    const battleId = b.id;
+    after(() => publisher.toMatch(m.id, "battle.round", { battleId, round, regionId: b.regionId }));
+    return;
+  }
+  const [army] = await tx.select().from(armies).where(eq(armies.id, b.armyId)).for("update");
+  if (!army) {
+    await tx.update(battles).set({ status: "done", live, round, nextRoundAt: null }).where(eq(battles.id, b.id));
+    return;
+  }
+  await finishBattle(tx, m, { ...b, live, round }, army, job.endsAt, publisher, after);
+}
+
+/** The last round is over: losses, loot, conquest, the report, messages and notes, and the army's road home, exactly as a battle always ended. */
+async function finishBattle(tx: Tx, m: MatchRow, b: typeof battles.$inferSelect, army: ArmyRow, at: Date, publisher: Publisher, after: After): Promise<void> {
+  const live = b.live as BattleLive;
+  const { result, settlersAlong, seed } = b.outcome as BattleOutcome;
+  const target = await lockRegion(tx, m, army.targetRegionId, at);
+  const region = regionById(army.targetRegionId)!;
+  const defenderId = target.ownerPlayerId;
+  const close = async (report: Record<string, unknown>) => {
+    await tx.update(battles).set({ status: "done", report, live, round: b.totalRounds, nextRoundAt: null }).where(eq(battles.id, b.id));
+    const battleId = b.id;
+    after(() => publisher.toMatch(m.id, "battle.ended", { battleId, regionId: army.targetRegionId }));
+  };
+
+  // The region changed hands while the fight played out: ours now, or a friend's.
+  if (defenderId === army.playerId) {
+    await close({ regionName: region.name, regionId: region.id, mission: army.mission, attackerName: live.attacker.name, defenderName: live.defender.name, attackerWon: true, rounds: result.rounds, attacker: { before: army.units, losses: {} }, defender: { before: live.defender.start, losses: {} }, loot: {}, conquered: false, note: "the region was already ours" });
+    return deliverUnits(tx, m, army, at, publisher, after);
+  }
+  if (defenderId && (await areAllied(tx, m.id, army.playerId, defenderId))) {
+    await close({ regionName: region.name, regionId: region.id, mission: army.mission, attackerName: live.attacker.name, defenderName: live.defender.name, attackerWon: false, rounds: result.rounds, attacker: { before: army.units, losses: {} }, defender: { before: live.defender.start, losses: {} }, loot: {}, conquered: false, note: "called off" });
+    await notify(tx, m.id, army.playerId, "battle", `Attack on ${region.name} called off: the region is friendly`, { regionId: region.id });
+    return sendHome(tx, m, army, at, army.units, army.cargo, "called off: the region is now friendly");
+  }
+
+  const effects = effectsOf(target.buildings);
+  const fighting = live.attacker.start;
+  const defenderUnits = live.defender.start;
+  const attackerName = live.attacker.name;
+  const defenderName = defenderId ? await playerName(tx, defenderId) : "Neutral tribes";
 
   // Apply defender losses (militia losses cost population).
   const { militia: militiaLost = 0, ...unitLosses } = result.defenderLosses;
@@ -672,8 +804,6 @@ async function battle(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher: P
   const survivors = result.attackerRemaining;
   let loot: Record<string, number> = {};
   let conquered = false;
-  const attackerName = await playerName(tx, army.playerId);
-  const defenderName = defenderId ? await playerName(tx, defenderId) : "Neutral tribes";
 
   if (result.attackerWon && army.mission === "raid") {
     const capacity = carryCapacity(survivors);
@@ -724,7 +854,7 @@ async function battle(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher: P
   await tx.update(matchRegions).set(set).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, army.targetRegionId)));
 
   const report = {
-    walls: { bonus: Math.round(wallBonus * 100) / 100, full: Math.round(wallFull * 100) / 100, siege: breachOf(fighting) },
+    walls: { bonus: Math.round(live.bonus.wallBonus * 100) / 100, full: Math.round(live.bonus.wallFull * 100) / 100, siege: breachOf(fighting) },
     regionName: region.name,
     regionId: army.targetRegionId,
     mission: army.mission,
@@ -737,7 +867,7 @@ async function battle(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher: P
     loot,
     conquered,
   };
-  await tx.insert(battles).values({ matchId: m.id, regionId: army.targetRegionId, resolvedAt: at, seed, attackerPlayerId: army.playerId, defenderPlayerId: defenderId, report });
+  await close(report);
   if (result.attackerWon) await claimBounties(tx, m, army.playerId, army.targetRegionId, defenderId, at);
   // The tribes talk about it in the match chat when it mattered.
   const lossesAll = Object.values(result.attackerLosses).reduce((a, b) => a + b, 0) + Object.values(result.defenderLosses).reduce((a, b) => a + b, 0);
@@ -830,7 +960,7 @@ export async function eliminatePlayer(tx: Tx, m: MatchRow, playerId: string, at:
     .update(jobs)
     .set({ cancelledAt: at })
     .where(and(eq(jobs.matchId, m.id), eq(jobs.playerId, playerId), isNull(jobs.completedAt), isNull(jobs.cancelledAt)));
-  await tx.update(armies).set({ status: "done" }).where(and(eq(armies.matchId, m.id), eq(armies.playerId, playerId), inArray(armies.status, ["outbound", "returning"])));
+  await tx.update(armies).set({ status: "done" }).where(and(eq(armies.matchId, m.id), eq(armies.playerId, playerId), inArray(armies.status, ["outbound", "returning", "fighting"])));
   await tx.delete(tradeRoutes).where(and(eq(tradeRoutes.matchId, m.id), eq(tradeRoutes.playerId, playerId)));
   await tx.update(marketOrders).set({ status: "cancelled" }).where(and(eq(marketOrders.matchId, m.id), eq(marketOrders.playerId, playerId), eq(marketOrders.status, "open")));
   await tx.insert(events).values({ matchId: m.id, at, kind: "player.eliminated", payload: { playerId, reason, by: by?.id ?? null } });

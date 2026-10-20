@@ -77,7 +77,7 @@ export function MatchIntro({ open, onClose, matchName, speed, resourceMult = 1 }
                   <b className="text-slate-100">Move south before the ice.</b> Watch the forecast line on the map. Frozen regions lose everything. Evacuate early; crowded regions spill people into neighbours on their own.
                 </li>
                 <li>
-                  <b className="text-slate-100">Fight, or wall up.</b> Raid for loot or Conquer with soldiers and five Settlers. Walls are near-impregnable to men alone, so bring siege engines. Lose your capital and you are out, and whoever took it takes every region you held.
+                  <b className="text-slate-100">Fight, or wall up.</b> Raid for loot or Conquer with soldiers and five Settlers. Walls are near-impregnable to men alone, so bring siege engines. Every battle plays out under a crossed-swords icon you can click to watch. Lose your capital and you are out, and whoever took it takes every region you held.
                 </li>
                 <li>
                   <b className="text-slate-100">Raid the neutrals first.</b> While other players are protected, the neutral tribes are not: each holds a hoard of copper, tin or iron behind a few warriors. A dozen early soldiers bring home the metal that opens the next age.

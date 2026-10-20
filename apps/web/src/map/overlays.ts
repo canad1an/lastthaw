@@ -26,6 +26,10 @@ export interface OverlayBadge {
   colour: string;
   glyph: string;
   label: string;
+  /** A pulsing ring, for something happening right now. */
+  pulse?: boolean;
+  /** Clicking the badge opens this battle. */
+  battleId?: string;
 }
 
 /** Which overlays are on, remembered on this device. */
@@ -77,6 +81,18 @@ export function advisorBadges(state: MatchStateView): OverlayBadge[] {
   const freya = state.advisors.find((a) => a.kind === "thaw");
   for (const l of freya?.lastReport?.clock ?? []) out.push({ regionId: l.regionId, colour: "#7dd3fc", glyph: "❄", label: l.text });
   return out;
+}
+
+/** Crossed swords, pulsing, on every region where a battle is playing out; clicking opens the battle window. */
+export function battleBadges(state: MatchStateView): OverlayBadge[] {
+  return state.battles.map((b) => ({
+    regionId: b.regionId,
+    colour: "#f43f5e",
+    glyph: "⚔",
+    label: `${b.attackerName} ${b.mission === "raid" ? "raiding" : "attacking"} ${regionById(b.regionId)?.name ?? b.regionId}: round ${b.round} of ${b.totalRounds}. Click to watch.`,
+    pulse: true,
+    battleId: b.id,
+  }));
 }
 
 /** Badges for the enabled overlays, from the current match state. */

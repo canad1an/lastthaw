@@ -4,6 +4,8 @@ process.env.DATABASE_URL ??= "postgres://lastthaw:lastthaw@localhost:5432/lastth
 process.env.REDIS_URL ??= "redis://localhost:6379";
 process.env.SESSION_SECRET ??= "test-secret-test-secret-test-secret";
 process.env.SMTP_PORT ??= "1";
+/** Battles play out at once in tests; the battle test sets a few milliseconds itself to watch the rounds. */
+process.env.BATTLE_ROUND_MS ??= "0";
 
 /** Rate-limit and lockout counters live in Redis and would otherwise carry over from one test run to the next. */
 beforeAll(async () => {

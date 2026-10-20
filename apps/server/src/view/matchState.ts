@@ -1,13 +1,22 @@
 import { and, asc, eq, inArray, isNull, or, sql, gt } from "drizzle-orm";
 import { parseProfile } from "../sim/ai.js";
-import { emptySpecial, regionById, type ArmyView, type IncomingView, type JobView, type MatchStateView, type OwnedRegionView, type SightedRegionView, techEffectsOf, allRegions, wallOf, balance, freezeDayForLatitude, legIndex, advisorReport, campaignView } from "@lastthaw/shared";
+import { emptySpecial, regionById, type ArmyView, type IncomingView, type JobView, type MatchStateView, type OwnedRegionView, type SightedRegionView, type LiveBattleView, techEffectsOf, allRegions, wallOf, balance, freezeDayForLatitude, legIndex, advisorReport, campaignView } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
-import { allianceMembers, alliances, armies, jobs, matchRegions, matches, playerTechs, players, regionSightings, tradeRoutes, refugeeOffers, pacts, mercenaryOffers, dailyObjectives, bounties, regionNotes, advisors } from "../db/schema.js";
+import { allianceMembers, alliances, armies, jobs, matchRegions, matches, playerTechs, players, regionSightings, tradeRoutes, refugeeOffers, pacts, mercenaryOffers, dailyObjectives, bounties, regionNotes, advisors, battles } from "../db/schema.js";
 import { OBJECTIVES } from "../sim/objectives.js";
 import { matchNow, matchDayAt } from "../sim/clock.js";
 import { alliesOf } from "../sim/alliances.js";
 import { countOwnedRegions, projectRegion, resourceMultOf } from "../sim/regions.js";
 import { parseSettings, wageFor } from "../sim/advisors.js";
+import { liveBattleOf } from "../matches/battlesApi.js";
+
+/** Battles playing out in the match right now, for the map's crossed swords. */
+async function liveBattles(db: Db, matchId: string): Promise<LiveBattleView[]> {
+  const rows = await db.select().from(battles).where(and(eq(battles.matchId, matchId), eq(battles.status, "fighting")));
+  if (!rows.length) return [];
+  const names = new Map((await db.select({ id: players.id, name: players.name }).from(players).where(eq(players.matchId, matchId))).map((p) => [p.id, p.name]));
+  return rows.map((b) => liveBattleOf(b, names));
+}
 
 /**
  * The only path from database to a player's screen. Everything a player can
@@ -245,7 +254,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string, o
   const myArmies = await db
     .select()
     .from(armies)
-    .where(and(eq(armies.matchId, matchId), eq(armies.playerId, me.id), inArray(armies.status, ["outbound", "returning"])))
+    .where(and(eq(armies.matchId, matchId), eq(armies.playerId, me.id), inArray(armies.status, ["outbound", "returning", "fighting"])))
     .orderBy(asc(armies.arrivesAt));
   const armyViews: ArmyView[] = myArmies.map((a) => ({
     id: a.id,
@@ -374,6 +383,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string, o
     pacts: pactRows.map((p) => ({ id: p.id, kind: p.kind as "nap" | "ceasefire" | "tribute", aPlayerId: p.aPlayerId, bPlayerId: p.bPlayerId, status: p.status, until: p.until?.toISOString() ?? null, terms: (p.terms ?? {}) as Record<string, unknown> })),
     mercenaries: mercRows.map((o) => ({ id: o.id, company: o.company, unitId: o.unitId, qty: o.qty, iron: o.iron, expiresAt: o.expiresAt.toISOString() })),
     advisorWage,
+    battles: await liveBattles(db, matchId),
     advisors: advisorRows.map((a) => ({
       kind: a.kind,
       hiredAt: a.hiredAt.toISOString(),
@@ -445,7 +455,7 @@ async function buildObserverState(db: Db, m: typeof matches.$inferSelect, matchI
   const inFlight = await db
     .select()
     .from(armies)
-    .where(and(eq(armies.matchId, matchId), inArray(armies.status, ["outbound", "returning"])))
+    .where(and(eq(armies.matchId, matchId), inArray(armies.status, ["outbound", "returning", "fighting"])))
     .orderBy(asc(armies.arrivesAt));
   const armyViews: ArmyView[] = inFlight.map((a) => ({
     id: a.id,
@@ -516,6 +526,7 @@ async function buildObserverState(db: Db, m: typeof matches.$inferSelect, matchI
     mercenaries: [],
     advisors: [],
     advisorWage: {},
+    battles: await liveBattles(db, matchId),
     lastStand: { eligible: false, used: false },
     objective: today ? { day: today.day + 1, label: OBJECTIVES[today.key] ?? today.key, yesterday: yday ? { label: OBJECTIVES[yday.key] ?? yday.key, playerId: yday.winnerPlayerId, value: yday.value ?? 0 } : null } : null,
     bounties: bountyRows.map((b) => ({ id: b.id, kind: b.kind as "region" | "player", regionId: b.regionId, playerId: b.playerId, amount: b.amount, reason: b.reason, expiresAt: b.expiresAt?.toISOString() ?? null })),

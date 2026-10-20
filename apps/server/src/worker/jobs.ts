@@ -5,7 +5,7 @@ import type { Db } from "../db/client.js";
 import { events, jobs, matchRegions, matches, messages, playerTechs, players, armies } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
 import { settleAndLockRegion, type Tx } from "../sim/regions.js";
-import { resolveMission } from "../sim/missions.js";
+import { resolveMission, playBattleRound } from "../sim/missions.js";
 import { applyIceStep } from "../sim/ice.js";
 import { awardMilestone, finishMatch, winHoldExpired } from "../sim/endgame.js";
 import { stormHits, mercenariesLeave } from "../sim/worldEvents.js";
@@ -81,6 +81,8 @@ export async function runDueJobs(db: Db, publisher: Publisher, log: pino.Logger)
         return stormHits(tx, m, job, publisher, after);
       case "merc_expire":
         return mercenariesLeave(tx, m, job);
+      case "battle_round":
+        return playBattleRound(tx, m, job, publisher, after);
       default:
         throw new Error(`no handler for job kind ${job.kind}`);
     }
@@ -165,7 +167,7 @@ export async function runDueJobs(db: Db, publisher: Publisher, log: pino.Logger)
         await tx.update(matchRegions).set({ units }).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, r.regionId)));
         converted += n;
       }
-      const moving = await tx.select({ id: armies.id, units: armies.units }).from(armies).where(and(eq(armies.matchId, m.id), eq(armies.playerId, playerId), inArray(armies.status, ["outbound", "returning"])));
+      const moving = await tx.select({ id: armies.id, units: armies.units }).from(armies).where(and(eq(armies.matchId, m.id), eq(armies.playerId, playerId), inArray(armies.status, ["outbound", "returning", "fighting"])));
       for (const a of moving) {
         const n = a.units[fleet.from] ?? 0;
         if (n <= 0) continue;

@@ -73,6 +73,9 @@ export function useMatchRealtime(matchId: string | null) {
             void qc.invalidateQueries({ queryKey: keys.alliances(msg.matchId) });
             void qc.invalidateQueries({ queryKey: keys.chatAll(msg.matchId) });
           }
+          if (msg.kind === "battle.started" || msg.kind === "battle.round" || msg.kind === "battle.ended") {
+            void qc.invalidateQueries({ queryKey: keys.battles(msg.matchId) });
+          }
           if (msg.kind === "trade.filled") {
             void qc.invalidateQueries({ queryKey: keys.market(msg.matchId) });
             void qc.invalidateQueries({ queryKey: keys.messages(msg.matchId) });

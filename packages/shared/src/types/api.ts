@@ -211,7 +211,7 @@ export type OwnedRegionView = z.infer<typeof ownedRegionView>;
 
 export const jobView = z.object({
   id: z.string(),
-  kind: z.enum(["build", "research", "train", "mission", "ice_step", "win_hold", "match_end", "storm", "merc_expire"]),
+  kind: z.enum(["build", "research", "train", "mission", "ice_step", "win_hold", "match_end", "storm", "merc_expire", "battle_round"]),
   regionId: z.string().nullable(),
   refId: z.string().nullable(),
   level: z.number().nullable(),
@@ -243,7 +243,8 @@ export const armyView = z.object({
   targetRegionId: z.string(),
   units: z.record(z.string(), z.number()),
   cargo: z.record(z.string(), z.number()),
-  status: z.enum(["outbound", "returning", "done"]),
+  /** fighting: arrived at a raid or conquest whose battle is still playing out. */
+  status: z.enum(["outbound", "fighting", "returning", "done"]),
   departsAt: z.string(),
   arrivesAt: z.string(),
   returnsAt: z.string().nullable(),
@@ -272,6 +273,35 @@ export const incomingView = z.object({
   units: z.record(z.string(), z.number()).optional(),
 });
 export type IncomingView = z.infer<typeof incomingView>;
+
+/** A battle in progress (or just over), as everyone in the match sees it on the map. */
+export const liveBattleView = z.object({
+  id: z.string(),
+  regionId: z.string(),
+  mission: z.enum(["raid", "conquer"]),
+  attackerPlayerId: z.string(),
+  attackerName: z.string(),
+  defenderPlayerId: z.string().nullable(),
+  defenderName: z.string(),
+  round: z.number(),
+  totalRounds: z.number(),
+  nextRoundAt: z.string().nullable(),
+  startedAt: z.string(),
+  status: z.enum(["fighting", "done"]),
+});
+export type LiveBattleView = z.infer<typeof liveBattleView>;
+const unitCounts = z.record(z.string(), z.number());
+export const battleSideView = z.object({ playerId: z.string().nullable(), name: z.string(), start: unitCounts, now: unitCounts });
+/** The live window: both sides at the start and now, what the defender has going for it, the rounds so far, the result once over. */
+export const battleDetailView = liveBattleView.extend({
+  regionName: z.string(),
+  attacker: battleSideView,
+  defender: battleSideView,
+  bonus: z.object({ attack: z.number(), defense: z.number(), wallFull: z.number(), wallBonus: z.number(), siege: z.number(), terrain: z.number(), militia: z.number() }),
+  log: z.array(z.object({ round: z.number(), aLoss: unitCounts, dLoss: unitCounts, aLeft: z.number(), dLeft: z.number() })),
+  result: z.object({ attackerWon: z.boolean(), conquered: z.boolean(), loot: z.record(z.string(), z.number()) }).nullable(),
+});
+export type BattleDetailView = z.infer<typeof battleDetailView>;
 
 export const routePreview = z.object({
   path: z.array(z.string()),
@@ -567,6 +597,8 @@ export const matchStateView = z.object({
   advisors: z.array(advisorView).default([]),
   /** What any advisor costs this player per game hour right now: a share of the empire's live output. */
   advisorWage: z.record(z.string(), z.number()).default({}),
+  /** Battles playing out anywhere in the match right now. */
+  battles: z.array(liveBattleView).default([]),
   /** The last stand is open: the ice is a day from the capital and it has not been used. */
   lastStand: z.object({ eligible: z.boolean(), used: z.boolean() }).default({ eligible: false, used: false }),
   /** Today's objective and who took yesterday's. */
@@ -642,6 +674,9 @@ export const EVENT_KINDS = [
   "advisor.settings",
   "advisor.report",
   "advisor.targets",
+  "battle.started",
+  "battle.round",
+  "battle.ended",
 ] as const;
 export type EventKind = (typeof EVENT_KINDS)[number];
 
