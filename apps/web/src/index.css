@@ -13,6 +13,17 @@ body {
   min-height: 100dvh;
 }
 
+/* Every checkbox and radio is the same 16px square. A flex row (label + wrapping
+   description) would otherwise squeeze the box to make room for long text. */
+input[type="checkbox"],
+input[type="radio"] {
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 auto;
+  margin-left: 0;
+  margin-right: 0;
+}
+
 /* Full-page backdrop: the glacier wall and the camps below it, fixed behind every page, plus drifting snow. */
 .backdrop {
   position: fixed;

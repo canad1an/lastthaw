@@ -295,7 +295,7 @@ export function MenuPanelBody({
             <p className="mb-2 text-xs text-slate-400">Map overlays. Each marks your regions with a badge; several can be on at once.</p>
             {OVERLAYS.map((o) => (
               <label key={o.id} className="flex cursor-pointer items-start gap-2 rounded px-1 py-1 hover:bg-slate-900">
-                <input type="checkbox" checked={overlays.has(o.id)} onChange={() => onToggleOverlay(o.id)} className="mt-0.5 h-4 w-4 shrink-0 accent-sky-400" />
+                <input type="checkbox" checked={overlays.has(o.id)} onChange={() => onToggleOverlay(o.id)} className="mt-0.5 accent-sky-400" />
                 <span className="mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-slate-950" style={{ background: o.colour }}>
                   {o.glyph}
                 </span>
