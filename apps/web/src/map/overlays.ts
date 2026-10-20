@@ -63,6 +63,15 @@ export function noteBadges(state: MatchStateView): OverlayBadge[] {
     .map((n) => ({ regionId: n.regionId, colour: NOTE_HEX[n.colour!] ?? "#f8fafc", glyph: "✎", label: `${regionById(n.regionId)?.name ?? n.regionId}${n.text ? `: ${n.text}` : ""}` }));
 }
 
+/** The Military advisor's marks: a red crossed swords on every target, an amber shield on the most exposed border regions. */
+export function advisorBadges(state: MatchStateView): OverlayBadge[] {
+  const max = state.advisors.find((a) => a.kind === "military");
+  if (!max) return [];
+  const out: OverlayBadge[] = max.settings.targets.map((id, i) => ({ regionId: id, colour: "#f43f5e", glyph: "⚔", label: `Target ${i + 1} for the Military advisor: ${regionById(id)?.name ?? id}` }));
+  for (const e of max.lastReport?.exposed ?? []) if (e.exposure >= 1) out.push({ regionId: e.regionId, colour: "#f59e0b", glyph: "⛨", label: e.text });
+  return out;
+}
+
 /** Badges for the enabled overlays, from the current match state. */
 export function overlayBadges(state: MatchStateView, enabled: Set<string>, matchDay: number): OverlayBadge[] {
   if (enabled.size === 0) return [];

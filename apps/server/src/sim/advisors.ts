@@ -4,9 +4,9 @@
  * materials routes and convoys supply what a region cannot pay, moves people the way the player chose, and writes
  * a short report with suggestions after every pass. Wages are charged by the match tick; passes run in the AI process.
  */
-import { and, asc, eq, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, isNull, lte, sql } from "drizzle-orm";
 import type pino from "pino";
-import { balance, availableBuildings, buildingBlockedBy, buildingById, buildingCost, canAfford, computeRates, normalizeAssignment, regionById, unitById, HAULER_IDS, type AdvisorSettings, type AdvisorReport, type AdvisorSuggestion, type Cost, type RegionEconomy, advisorSettings as advisorSettingsSchema } from "@lastthaw/shared";
+import { balance, availableBuildings, buildingBlockedBy, buildingById, buildingCost, canAfford, computeRates, normalizeAssignment, regionById, unitById, HAULER_IDS, type AdvisorKind, type AdvisorSettings, type AdvisorReport, type AdvisorSuggestion, type Cost, type RegionEconomy, advisorSettings as advisorSettingsSchema } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { advisors, jobs, matchRegions, matches, playerTechs, players, tradeRoutes } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
@@ -22,7 +22,9 @@ export type AdvisorRow = typeof advisors.$inferSelect;
 const hourMs = (m: MatchRow) => 3600_000 / m.speed;
 
 /** The hourly wage for an empire of `regions` regions, each resource rounded up. */
-export function wageFor(kind: "economic", regions: number): Record<string, number> {
+export const ADVISOR_NAMES: Record<AdvisorKind, string> = { economic: "Mara, the Economic advisor", military: "Max, the Military advisor" };
+
+export function wageFor(kind: AdvisorKind, regions: number): Record<string, number> {
   const per = balance.advisors[kind].perRegionPerHour;
   const out: Record<string, number> = {};
   for (const [k, v] of Object.entries(per)) out[k] = Math.max(1, Math.ceil(v * Math.max(1, regions)));
@@ -110,11 +112,11 @@ export async function chargeAdvisors(tx: Tx, m: MatchRow, now: Date): Promise<vo
         const line = Object.entries(wage)
           .map(([k, v]) => `${v} ${k}`)
           .join(", ");
-        await notify(tx, m.id, p.id, "system", `Your Economic advisor is unpaid and has stopped working: the wage is ${line} an hour, drawn from your capital first`, { advisor: a.kind, unpaid: true });
+        await notify(tx, m.id, p.id, "system", `Your ${a.kind === "military" ? "Military" : "Economic"} advisor is unpaid and has stopped working: the wage is ${line} an hour, drawn from your capital first`, { advisor: a.kind, unpaid: true });
       }
     } else if (a.unpaidSince) {
       await tx.update(advisors).set({ unpaidSince: null }).where(eq(advisors.id, a.id));
-      await notify(tx, m.id, p.id, "system", "Your Economic advisor has been paid and is back at work", { advisor: a.kind, unpaid: false });
+      await notify(tx, m.id, p.id, "system", `Your ${a.kind === "military" ? "Military" : "Economic"} advisor has been paid and is back at work`, { advisor: a.kind, unpaid: false });
     }
   }
 }
@@ -135,16 +137,14 @@ export async function runAdvisors(db: Db, publisher: Publisher, log: pino.Logger
   let passes = 0;
   for (const m of running) {
     const now = matchNow(m);
-    const due = new Date(now.getTime() - (balance.advisors.economic.passMinutes * 60_000) / m.speed);
-    const rows = await db
-      .select()
-      .from(advisors)
-      .where(and(eq(advisors.matchId, m.id), isNull(advisors.unpaidSince), or(isNull(advisors.lastPassAt), lte(advisors.lastPassAt, due))));
+    const rows = await db.select().from(advisors).where(and(eq(advisors.matchId, m.id), isNull(advisors.unpaidSince)));
     for (const a of rows) {
+      const due = new Date(now.getTime() - (balance.advisors[a.kind].passMinutes * 60_000) / m.speed);
+      if (a.lastPassAt && a.lastPassAt > due) continue;
       try {
         const [p] = await db.select().from(players).where(eq(players.id, a.playerId)).limit(1);
         if (!p || p.eliminatedAt) continue;
-        await economicPass(db, m, p, a, now, publisher);
+        await runPass(db, m, p, a, now, publisher);
         passes += 1;
       } catch (err) {
         log.warn({ err, advisorId: a.id }, "advisor pass failed");
@@ -152,6 +152,15 @@ export async function runAdvisors(db: Db, publisher: Publisher, log: pino.Logger
     }
   }
   return passes;
+}
+
+/** A pass of whichever advisor this is. */
+export async function runPass(db: Db, m: MatchRow, p: PlayerRow, a: AdvisorRow, now: Date, publisher: Publisher): Promise<AdvisorReport> {
+  if (a.kind === "military") {
+    const { militaryPass } = await import("./militaryAdvisor.js");
+    return militaryPass(db, m, p, a, now, publisher);
+  }
+  return economicPass(db, m, p, a, now, publisher);
 }
 
 /** One pass of the Economic advisor: buildings up to the minimums, then people, then the report. */
@@ -237,7 +246,7 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
   if (settings.population === "balanced") moved = await balancePeople(ctx, projected.map((x) => ({ row: x.row, economy: x.economy })), skip);
 
   const suggestions = await suggestionsFor(db, m, p, projected.map((x) => ({ row: x.row, economy: x.economy })), pending, settings, now);
-  const report: AdvisorReport = { at: now.toISOString(), queued, moved, rebalanced, skipped, suggestions };
+  const report: AdvisorReport = { at: now.toISOString(), queued, moved, rebalanced, trained: 0, fortified: 0, exposed: [], skipped, suggestions };
   await db.update(advisors).set({ lastPassAt: now, lastReport: report }).where(eq(advisors.id, a.id));
   await publisher.toPlayer(m.id, p.id, "advisor.report", { kind: a.kind, queued, moved });
   return report;

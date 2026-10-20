@@ -57,7 +57,7 @@ export function MatchIntro({ open, onClose, matchName, speed, resourceMult = 1 }
             </p>
             {speed !== 1 && <p className="mt-1 text-xs text-slate-500">This match runs at {speed}x: a game day passes every {Math.round(1440 / speed)} real minutes.</p>}
             {resourceMult !== 1 && <p className="mt-1 text-xs text-slate-500">Resources come in at {resourceMult}x: everything gathered or mined, food included, is {resourceMult} times the usual.</p>}
-            <p className="mt-1 text-xs text-slate-500">When the empire outgrows your hands, the Advisors menu hires an Economic advisor to keep buildings and people up, for a steep hourly wage.</p>
+            <p className="mt-1 text-xs text-slate-500">When the empire outgrows your hands, the Advisors menu hires Mara to keep buildings and people up and Max to hold the borders and take the regions you mark, each for a steep hourly wage.</p>
           </div>
 
           <div className="space-y-5 px-5 pb-6 text-sm text-slate-300">

@@ -7,7 +7,10 @@ import { advisors, matches, players } from "../db/schema.js";
 import { requireUser } from "../auth/session.js";
 import type { Publisher } from "../realtime/publish.js";
 import { matchNow } from "../sim/clock.js";
-import { drawWage, economicPass, regionsHeld, wageFor } from "../sim/advisors.js";
+import { drawWage, regionsHeld, runPass, wageFor } from "../sim/advisors.js";
+import { advisorTargetBody, balance, regionById } from "@lastthaw/shared";
+import { matchRegions } from "../db/schema.js";
+import { areAllied } from "../sim/alliances.js";
 
 function httpError(statusCode: number, message: string) {
   return Object.assign(new Error(message), { statusCode });
@@ -86,8 +89,33 @@ export async function advisorRoutes(app: FastifyInstance, opts: { db: Db; publis
     if (a.unpaidSince) throw httpError(409, "your advisor is unpaid and will not work until the wage is met");
     const now = matchNow(m);
     if (a.lastPassAt && now.getTime() - a.lastPassAt.getTime() < 60_000 / m.speed) throw httpError(429, "the advisor has just made a pass; give it a minute");
-    const report = await economicPass(db, m, p, a, now, publisher);
+    const report = await runPass(db, m, p, a, now, publisher);
     return { ok: true, report };
   });
 
+
+  /** Mark or unmark a region as a target for the Military advisor, from the map. */
+  app.post("/api/matches/:id/advisors/military/targets", async (req) => {
+    const user = requireUser(req);
+    const { id: matchId } = idParams.parse(req.params);
+    const { regionId, add } = advisorTargetBody.parse(req.body);
+    const { m, p } = await loadContext(matchId, user.id);
+    if (!regionById(regionId)) throw httpError(400, "unknown region");
+    const [a] = await db.select().from(advisors).where(and(eq(advisors.matchId, matchId), eq(advisors.playerId, p.id), eq(advisors.kind, "military"))).limit(1);
+    if (!a) throw httpError(404, "no Military advisor");
+    const settings = advisorSettings.parse(a.settings ?? {});
+    let targets = settings.targets.filter((t) => t !== regionId);
+    if (add) {
+      const [row] = await db.select({ owner: matchRegions.ownerPlayerId, frozenAt: matchRegions.frozenAt }).from(matchRegions).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, regionId))).limit(1);
+      if (row?.owner === p.id) throw httpError(400, "that region is already yours");
+      if (row?.frozenAt) throw httpError(400, "that region is frozen");
+      if (row?.owner && (await areAllied(db, matchId, p.id, row.owner))) throw httpError(400, "that region belongs to an ally");
+      if (targets.length >= balance.advisors.military.maxTargets) throw httpError(400, `at most ${balance.advisors.military.maxTargets} targets at a time`);
+      targets = [...targets, regionId];
+    }
+    await db.update(advisors).set({ settings: { ...settings, targets } }).where(eq(advisors.id, a.id));
+    void m;
+    await publisher.toPlayer(matchId, p.id, "advisor.targets", { targets });
+    return { ok: true, targets };
+  });
 }

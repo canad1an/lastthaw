@@ -1,0 +1,1 @@
+ALTER TABLE "advisors" ADD COLUMN "campaigns" jsonb DEFAULT '[]'::jsonb NOT NULL;

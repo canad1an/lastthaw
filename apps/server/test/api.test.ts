@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { balance, matchStateView, regionById, scoutCatchChance, seededRng } from "@lastthaw/shared";
 import { Publisher } from "../src/realtime/publish.js";
@@ -44,6 +44,16 @@ class Client {
 
 /** Every HTTP route, with its guards: who may call it, what it refuses, what it returns. */
 describe("api routes", () => {
+  // Every test calls from the same address; the per-address request limit is reset between tests so a long suite never trips it.
+  beforeEach(async () => {
+    const r = createRedis();
+    try {
+      const keys = await r.keys("lt-rl:*");
+      if (keys.length) await r.del(...keys);
+    } finally {
+      await r.quit().catch(() => {});
+    }
+  });
   let app: App;
   let db: Db;
   const suffix = Date.now().toString(36);
@@ -523,7 +533,7 @@ describe("api routes", () => {
     {
       const seen = new Set([benCap]);
       let ring = [benCap];
-      for (let hop = 0; hop < 3; hop++) {
+      for (let hop = 0; hop < 4; hop++) {
         const next: string[] = [];
         for (const id of ring) for (const n of regionById(id)?.neighbors ?? []) if (!seen.has(n)) { seen.add(n); next.push(n); near.push(n); }
         ring = next;
@@ -844,6 +854,105 @@ describe("api routes", () => {
       const [spilled] = await db.select({ popWorkers: matchRegions.popWorkers }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
       expect(spilled!.popWorkers).toBeLessThan(still!.popWorkers);
       expect((await Ben.call("POST", `${base}/advisors/economic/fire`, {})).statusCode).toBe(200);
+    } finally {
+      await redis.quit().catch(() => {});
+    }
+  });
+
+  it("the Military advisor: hired for his wage, garrisons and fortifies the border, and runs a campaign from scouting through muster to the conquest of a marked region", async () => {
+    const base = `/api/matches/${gameId}`;
+    await db.delete(pacts).where(eq(pacts.matchId, gameId));
+    const benState = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
+    const cap = benState.me.capitalRegionId!;
+    const benPid = benState.me.playerId;
+    const nowIso = async () => matchStateView.parse((await Ben.call("GET", `${base}/state`)).json()).match.now;
+    const fillCap = async () => {
+      await db.update(matchRegions).set({ food: 4000, wood: 3000, stone: 2500, special: { copper: 80, iron: 80 }, settledAt: new Date(await nowIso()) }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
+    };
+    // A weak neutral tribe on free land next to one of Ben's regions: the target.
+    const ownedIds = benState.owned.map((o) => o.regionId);
+    const around = [...new Set(ownedIds.flatMap((id) => regionById(id)?.neighbors ?? []))].filter((n) => !ownedIds.includes(n));
+    const taken = new Set((await db.select({ regionId: matchRegions.regionId }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), inArray(matchRegions.regionId, around), sql`${matchRegions.ownerPlayerId} is not null`))).map((r) => r.regionId));
+    const N = around.find((n) => !taken.has(n))!;
+    expect(N).toBeTruthy();
+    const adj = ownedIds.find((id) => regionById(id)?.neighbors.includes(N))!;
+    await db
+      .insert(matchRegions)
+      .values({ matchId: gameId, regionId: N, assignment: { ...balance.start.assignment }, settledAt: new Date(await nowIso()), ownerPlayerId: null, popWorkers: 0, units: { warrior: 1 } })
+      .onConflictDoUpdate({ target: [matchRegions.matchId, matchRegions.regionId], set: { ownerPlayerId: null, popWorkers: 0, units: { warrior: 1 }, popOccupiers: 0, popSoldiers: 0, settledAt: new Date(await nowIso()) } });
+    await fillCap();
+    const [capRow] = await db.select({ units: matchRegions.units, buildings: matchRegions.buildings }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
+    await db.update(matchRegions).set({ units: { ...capRow!.units, tracker: 2 }, popWorkers: 60 }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
+    const redis = createRedis();
+    const pub = new Publisher(redis);
+    const skip = async (iso: string) => {
+      const now = await nowIso();
+      const secs = Math.ceil((Date.parse(iso) - Date.parse(now)) / 1000) + 5;
+      if (secs > 0) await db.update(matches).set({ clockOffsetSeconds: sql`${matches.clockOffsetSeconds} + ${secs}` }).where(eq(matches.id, gameId));
+      await runDueJobs(db, pub, logger);
+    };
+    type Campaign = { targetRegionId: string; stage: string; armyId: string | null; need: { qty: number; settlers: number } | null; note: string };
+    const pass = async () => {
+      await db.update(advisors).set({ lastPassAt: null }).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid), eq(advisors.kind, "military")));
+      const r = await Ben.call("POST", `${base}/advisors/military/run`, {});
+      expect(r.statusCode, r.body).toBe(200);
+      const [row] = await db.select().from(advisors).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid), eq(advisors.kind, "military")));
+      return { report: (r.json() as { report: { trained: number; fortified: number; exposed: Array<{ regionId: string }>; skipped: Record<string, number> } }).report, campaigns: row!.campaigns as unknown as Campaign[] };
+    };
+    try {
+      // Hire: his wage leaves the capital.
+      const regions = (await db.select({ n: sql<number>`count(*)::int` }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid), sql`${matchRegions.frozenAt} is null`)))[0]!.n;
+      const wage = wageFor("military", regions);
+      const hired = await Ben.call("POST", `${base}/advisors/military/hire`, {});
+      expect(hired.statusCode, hired.body).toBe(200);
+      expect((hired.json() as { wage: Record<string, number> }).wage).toEqual(wage);
+      expect((await Ben.call("PUT", `${base}/advisors/military/settings`, { stance: "measured", garrison: 4, fortify: true, scoutFirst: true })).statusCode).toBe(200);
+      // The target is marked from the map; own land is refused.
+      expect((await Ben.call("POST", `${base}/advisors/military/targets`, { regionId: cap, add: true })).statusCode).toBe(400);
+      const marked = await Ben.call("POST", `${base}/advisors/military/targets`, { regionId: N, add: true });
+      expect(marked.statusCode, marked.body).toBe(200);
+      const st = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
+      expect(st.advisors.find((a) => a.kind === "military")?.settings.targets).toEqual([N]);
+
+      // Pass 1: the capital is on the front, so it gets soldiers and a tower; the campaign opens with scouts.
+      const p1 = await pass();
+      expect(p1.report.exposed.some((e) => e.regionId === adj)).toBe(true);
+      expect(p1.report.trained).toBeGreaterThan(0);
+      expect(p1.report.fortified).toBeGreaterThan(0);
+      const c1 = p1.campaigns.find((c) => c.targetRegionId === N)!;
+      expect(c1.stage, c1.note).toBe("intel");
+      const [scouts] = await db.select().from(armies).where(and(eq(armies.matchId, gameId), eq(armies.playerId, benPid), eq(armies.mission, "scout"), eq(armies.targetRegionId, N), eq(armies.status, "outbound")));
+      expect(scouts).toBeDefined();
+
+      // The sighting lands; pass 2 musters at the capital and orders what is missing.
+      await skip(scouts!.arrivesAt.toISOString());
+      await fillCap();
+      const p2 = await pass();
+      const c2 = p2.campaigns.find((c) => c.targetRegionId === N)!;
+      expect(c2.stage, c2.note).toBe("muster");
+      expect(c2.need!.qty).toBeGreaterThanOrEqual(3);
+      expect(c2.need!.settlers).toBe(balance.conquest.occupiersRequired);
+
+      // The force is at hand where he musters: pass 3 marches.
+      const staging = (p2.campaigns.find((c) => c.targetRegionId === N) as unknown as { stagingRegionId: string }).stagingRegionId;
+      const [stagingNow] = await db.select({ units: matchRegions.units }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, staging)));
+      await db.update(matchRegions).set({ units: { ...stagingNow!.units, warrior: (stagingNow!.units.warrior ?? 0) + c2.need!.qty + 2, settler: 5 } }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, staging)));
+      const p3 = await pass();
+      const c3 = p3.campaigns.find((c) => c.targetRegionId === N)!;
+      expect(c3.stage, c3.note).toBe("marching");
+      const [force] = await db.select().from(armies).where(eq(armies.id, c3.armyId!));
+      expect(force).toMatchObject({ mission: "conquer", targetRegionId: N, status: "outbound" });
+      expect(force!.units.settler).toBe(5);
+
+      // It arrives and takes the region; pass 4 closes the campaign.
+      await skip(force!.arrivesAt.toISOString());
+      const [won] = await db.select({ owner: matchRegions.ownerPlayerId }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, N)));
+      expect(won?.owner).toBe(benPid);
+      const p4 = await pass();
+      expect(p4.campaigns.find((c) => c.targetRegionId === N)?.stage).toBe("done");
+      expect((await Ben.call("POST", `${base}/advisors/military/fire`, {})).statusCode).toBe(200);
+      // The scouting wrote into Ben's notes; the notes test that follows starts from none.
+      await db.delete(regionNotes).where(and(eq(regionNotes.matchId, gameId), eq(regionNotes.playerId, benPid)));
     } finally {
       await redis.quit().catch(() => {});
     }

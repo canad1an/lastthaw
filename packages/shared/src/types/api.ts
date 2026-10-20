@@ -387,7 +387,7 @@ export type MercenaryOfferView = z.infer<typeof mercenaryOfferView>;
 export const lastStandBody = z.object({ targetRegionId: z.string() });
 
 /** Advisors: hired staff paid by the hour. Only the Economic advisor exists so far. */
-export const advisorKind = z.enum(["economic"]);
+export const advisorKind = z.enum(["economic", "military"]);
 export type AdvisorKind = z.infer<typeof advisorKind>;
 export const advisorSettings = z.object({
   /** Minimum level wanted everywhere the building can stand; 0 or absent leaves it alone. */
@@ -400,8 +400,34 @@ export const advisorSettings = z.object({
   skipRegions: z.array(z.string()).max(500).default([]),
   /** How people are moved: not at all, overflow from crowded regions to neighbours, or balanced across the empire. */
   population: z.enum(["off", "overflow", "balanced"]).default("overflow"),
+  // Military: passive defends only; measured defends and takes the marked targets; aggressive also picks its own and raids.
+  stance: z.enum(["passive", "measured", "aggressive"]).default("measured"),
+  /** Regions to conquer, in order. */
+  targets: z.array(z.string()).max(20).default([]),
+  maxCampaigns: z.number().int().min(1).max(3).default(3),
+  /** Soldiers wanted in every border region (passive doubles it; the capital doubles it again). */
+  garrison: z.number().int().min(0).max(500).default(10),
+  /** Queue Palisade, Walls and a Watchtower on exposed border regions. */
+  fortify: z.boolean().default(true),
+  /** No attack without a fresh sighting or a watchtower view. */
+  scoutFirst: z.boolean().default(true),
+  /** Aggressive only: raid rich weak neighbours with spare soldiers. */
+  raids: z.boolean().default(true),
 });
 export type AdvisorSettings = z.infer<typeof advisorSettings>;
+export const campaignStage = z.enum(["intel", "muster", "marching", "done", "failed"]);
+export const campaignView = z.object({
+  targetRegionId: z.string(),
+  stage: campaignStage,
+  stagingRegionId: z.string().nullable().default(null),
+  need: z.object({ unit: z.string(), qty: z.number(), settlers: z.number(), siege: z.object({ unit: z.string(), qty: z.number() }).nullable().default(null) }).nullable().default(null),
+  armyId: z.string().nullable().default(null),
+  attempts: z.number().default(0),
+  startedAt: z.string(),
+  note: z.string().default(""),
+});
+export type CampaignView = z.infer<typeof campaignView>;
+export const advisorTargetBody = z.object({ regionId: z.string(), add: z.boolean() });
 export const advisorSuggestion = z.object({ regionId: z.string().nullable(), text: z.string() });
 export type AdvisorSuggestion = z.infer<typeof advisorSuggestion>;
 export const advisorReport = z.object({
@@ -410,6 +436,11 @@ export const advisorReport = z.object({
   moved: z.number().default(0),
   /** Regions whose worker shares were changed this pass. */
   rebalanced: z.number().default(0),
+  // Military.
+  trained: z.number().default(0),
+  fortified: z.number().default(0),
+  /** The most exposed border regions, worst first, with a line each. */
+  exposed: z.array(z.object({ regionId: z.string(), exposure: z.number(), text: z.string() })).default([]),
   skipped: z.record(z.string(), z.number()).default({}),
   suggestions: z.array(advisorSuggestion).default([]),
 });
@@ -424,6 +455,8 @@ export const advisorView = z.object({
   settings: advisorSettings,
   lastPassAt: z.string().nullable(),
   lastReport: advisorReport.nullable(),
+  /** Military: the campaigns in hand. */
+  campaigns: z.array(campaignView).default([]),
 });
 export type AdvisorView = z.infer<typeof advisorView>;
 
@@ -578,6 +611,7 @@ export const EVENT_KINDS = [
   "advisor.fired",
   "advisor.settings",
   "advisor.report",
+  "advisor.targets",
 ] as const;
 export type EventKind = (typeof EVENT_KINDS)[number];
 

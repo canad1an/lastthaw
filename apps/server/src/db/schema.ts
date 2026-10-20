@@ -476,7 +476,7 @@ export const advisors = pgTable(
     playerId: uuid("player_id")
       .notNull()
       .references(() => players.id, { onDelete: "cascade" }),
-    kind: text("kind").$type<"economic">().notNull(),
+    kind: text("kind").$type<"economic" | "military">().notNull(),
     hiredAt: timestamp("hired_at", { withTimezone: true }).notNull(),
     /** Paid for up to this moment of match time; the tick charges each whole hour past it. */
     paidUntil: timestamp("paid_until", { withTimezone: true }).notNull(),
@@ -485,6 +485,8 @@ export const advisors = pgTable(
     lastReport: jsonb("last_report").$type<Record<string, unknown>>(),
     /** Set while the wage cannot be met: no passes until it clears. */
     unpaidSince: timestamp("unpaid_since", { withTimezone: true }),
+    /** Military: the campaigns in hand. */
+    campaigns: jsonb("campaigns").$type<Array<Record<string, unknown>>>().notNull().default([]),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [uniqueIndex("advisors_player_kind_idx").on(t.matchId, t.playerId, t.kind)],

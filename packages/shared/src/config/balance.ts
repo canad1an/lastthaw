@@ -380,6 +380,26 @@ export const balance = {
       /** Balanced population: at most this share of a region's people leaves in one pass. */
       balanceSharePerPass: 0.05,
     },
+    /**
+     * The Military advisor: garrisons and walls on exposed border regions, and campaigns against the regions marked
+     * (or, when aggressive, his own picks). A campaign scouts first, musters at the nearest region with a land route a
+     * force forceMargin times the defenders' strength, then conquers; a beaten force musters again retryMargin bigger,
+     * maxAttempts times. Training is supplied by convoys like builds.
+     */
+    military: {
+      perRegionPerHour: { food: 25, wood: 10, stone: 10, copper: 0.1, iron: 0.3 } as Record<string, number>,
+      passMinutes: 30,
+      trainPerPass: 6,
+      fortifyPerPass: 3,
+      forceMargin: 1.5,
+      retryMargin: 1.3,
+      maxAttempts: 2,
+      /** A sighting older than this (game hours) is not good enough to attack on. */
+      sightingMaxHours: 12,
+      maxTargets: 20,
+      /** Training supplied by convoy may owe up to this much per order. */
+      maxOwed: 20000,
+    },
   },
   /**
    * Scouting is not free: a scout slipping into a held region may be caught, and a caught scout files no report.

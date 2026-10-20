@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, isNull, or, sql, gt } from "drizzle-orm";
 import { parseProfile } from "../sim/ai.js";
-import { emptySpecial, regionById, type ArmyView, type IncomingView, type JobView, type MatchStateView, type OwnedRegionView, type SightedRegionView, techEffectsOf, allRegions, wallOf, balance, freezeDayForLatitude, legIndex, advisorReport } from "@lastthaw/shared";
+import { emptySpecial, regionById, type ArmyView, type IncomingView, type JobView, type MatchStateView, type OwnedRegionView, type SightedRegionView, techEffectsOf, allRegions, wallOf, balance, freezeDayForLatitude, legIndex, advisorReport, campaignView } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { allianceMembers, alliances, armies, jobs, matchRegions, matches, playerTechs, players, regionSightings, tradeRoutes, refugeeOffers, pacts, mercenaryOffers, dailyObjectives, bounties, regionNotes, advisors } from "../db/schema.js";
 import { OBJECTIVES } from "../sim/objectives.js";
@@ -382,6 +382,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string, o
       settings: parseSettings(a.settings),
       lastPassAt: a.lastPassAt?.toISOString() ?? null,
       lastReport: a.lastReport ? advisorReport.parse(a.lastReport) : null,
+      campaigns: campaignView.array().parse(a.campaigns ?? []),
     })),
     lastStand: { eligible: lastStandEligible, used: !!me.lastStandAt },
     objective,

@@ -75,6 +75,8 @@ export function RegionBody({ matchId, state, regionId, clockOffsetMs, tab, onTab
       Resources: <span className="text-slate-100">{region.resources.map((r) => r.replace("_", " ")).join(", ")}</span>
     </p>
     {!state.observer && <RegionNotes matchId={matchId} state={state} regionId={regionId} />}
+    {!state.observer && !owned && <TargetToggle matchId={matchId} state={state} regionId={regionId} />}
+    {!state.observer && owned && <ExposureLine state={state} regionId={regionId} />}
     {owned ? (
       <>
         <nav className="flex gap-1 overflow-x-auto border-b border-slate-800 text-sm">
@@ -181,6 +183,46 @@ function ScoutHere({ matchId, state, regionId }: { matchId: string; state: Match
         <p className="text-xs text-slate-500">No Scouts at home. Train some under a region's Train tab: fast and cheap, and the only unit that can scout.</p>
       )}
     </div>
+  );
+}
+
+/** Mark a region for the Military advisor to take, when he is hired. */
+function TargetToggle({ matchId, state, regionId }: { matchId: string; state: MatchStateView; regionId: string }) {
+  const qc = useQueryClient();
+  const max = state.advisors.find((a) => a.kind === "military");
+  const set = useMutation({ mutationFn: (add: boolean) => api.setAdvisorTarget(matchId, regionId, add), onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matchState(matchId) }) });
+  if (!max) return null;
+  const on = max.settings.targets.includes(regionId);
+  const idx = max.settings.targets.indexOf(regionId);
+  const campaign = max.campaigns.find((c) => c.targetRegionId === regionId && c.stage !== "done" && c.stage !== "failed");
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        className={`rounded-md border px-2 py-0.5 text-xs font-medium ${on ? "border-rose-400/60 bg-rose-500/20 text-rose-100 hover:bg-rose-500/30" : "border-rose-400/40 bg-rose-400/10 text-rose-200 hover:bg-rose-400/20"}`}
+        onClick={() => set.mutate(!on)}
+        disabled={set.isPending}
+        title={on ? "Remove this region from the Military advisor's targets" : "Have the Military advisor scout, muster against and take this region"}
+        data-advisor-target
+      >
+        {on ? `⚔ Target ${idx + 1} for the Military advisor (remove)` : "⚔ Target for the Military advisor"}
+      </button>
+      {campaign && <span className="text-xs text-slate-400">{campaign.note || campaign.stage}</span>}
+      <ErrorText>{set.error?.message}</ErrorText>
+    </div>
+  );
+}
+
+/** How exposed one of my regions is, from the Military advisor's last pass. */
+function ExposureLine({ state, regionId }: { state: MatchStateView; regionId: string }) {
+  const max = state.advisors.find((a) => a.kind === "military");
+  const e = max?.lastReport?.exposed.find((x) => x.regionId === regionId);
+  if (!max || !e) return null;
+  const level = e.exposure >= 2 ? ["high", "text-rose-300"] : e.exposure >= 1 ? ["raised", "text-amber-300"] : ["low", "text-emerald-300"];
+  return (
+    <p className="text-xs text-slate-400">
+      Exposure <span className={level[1]}>{level[0]}</span> · {e.text}
+    </p>
   );
 }
 
