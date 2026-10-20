@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { advisorKind, advisorSettings } from "@lastthaw/shared";
 import { idParams } from "./params.js";
 import type { Db } from "../db/client.js";
@@ -38,28 +38,43 @@ export async function advisorRoutes(app: FastifyInstance, opts: { db: Db; publis
     const user = requireUser(req);
     const { id: matchId, kind } = kindParams.parse(req.params);
     const { m, p } = await loadContext(matchId, user.id);
-    const [existing] = await db.select({ id: advisors.id }).from(advisors).where(and(eq(advisors.matchId, matchId), eq(advisors.playerId, p.id), eq(advisors.kind, kind))).limit(1);
-    if (existing) throw httpError(409, "that advisor is already hired");
-    const wage = wageFor(kind, await regionsHeld(db, m, p.id));
+    const [existing] = await db.select().from(advisors).where(and(eq(advisors.matchId, matchId), eq(advisors.playerId, p.id), eq(advisors.kind, kind))).limit(1);
+    if (existing && !existing.firedAt) throw httpError(409, "that advisor is already hired");
     const now = matchNow(m);
+    const hourMs = 3600_000 / m.speed;
+    if (existing?.firedAt) {
+      const back = new Date(existing.firedAt.getTime() + balance.advisors.rehireCooldownHours * hourMs);
+      if (back > now) throw httpError(409, `you fired this advisor; they will take you back in ${Math.max(1, Math.ceil(((back.getTime() - now.getTime()) / 3600_000) * m.speed))} game hour${Math.ceil(((back.getTime() - now.getTime()) / 3600_000) * m.speed) === 1 ? "" : "s"}`);
+    }
+    const wage = wageFor(kind, await regionsHeld(db, m, p.id));
+    // A contract: the first day of wages is paid on hiring, and nothing is refunded on firing.
+    const contract: Record<string, number> = {};
+    for (const [k, v] of Object.entries(wage)) contract[k] = v * balance.advisors.contractHours;
     await db.transaction(async (tx) => {
-      if (!(await drawWage(tx, m, p, wage))) {
-        const line = Object.entries(wage)
+      if (!(await drawWage(tx, m, p, contract))) {
+        const line = Object.entries(contract)
           .map(([k, v]) => `${v} ${k}`)
           .join(", ");
-        throw httpError(409, `you cannot pay the first hour's wage (${line}) from your regions`);
+        throw httpError(409, `hiring takes the first ${balance.advisors.contractHours} hours of wages at once (${line}), and your regions cannot pay it`);
       }
-      await tx.insert(advisors).values({ matchId, playerId: p.id, kind, hiredAt: now, paidUntil: new Date(now.getTime() + 3600_000 / m.speed), settings: advisorSettings.parse({}) });
+      const paidUntil = new Date(now.getTime() + balance.advisors.contractHours * hourMs);
+      if (existing) await tx.update(advisors).set({ hiredAt: now, paidUntil, firedAt: null, unpaidSince: null, lastPassAt: null, campaigns: [] }).where(eq(advisors.id, existing.id));
+      else await tx.insert(advisors).values({ matchId, playerId: p.id, kind, hiredAt: now, paidUntil, settings: advisorSettings.parse({}) });
     });
     await publisher.toPlayer(matchId, p.id, "advisor.hired", { kind });
-    return { ok: true, wage };
+    return { ok: true, wage, contract };
   });
 
   app.post("/api/matches/:id/advisors/:kind/fire", async (req) => {
     const user = requireUser(req);
     const { id: matchId, kind } = kindParams.parse(req.params);
     const { p } = await loadContext(matchId, user.id);
-    const gone = await db.delete(advisors).where(and(eq(advisors.matchId, matchId), eq(advisors.playerId, p.id), eq(advisors.kind, kind))).returning({ id: advisors.id });
+    const [m] = await db.select().from(matches).where(eq(matches.id, matchId)).limit(1);
+    const gone = await db
+      .update(advisors)
+      .set({ firedAt: m ? matchNow(m) : new Date() })
+      .where(and(eq(advisors.matchId, matchId), eq(advisors.playerId, p.id), eq(advisors.kind, kind), isNull(advisors.firedAt)))
+      .returning({ id: advisors.id });
     if (!gone.length) throw httpError(404, "no such advisor");
     await publisher.toPlayer(matchId, p.id, "advisor.fired", { kind });
     return { ok: true };
@@ -73,7 +88,7 @@ export async function advisorRoutes(app: FastifyInstance, opts: { db: Db; publis
     const updated = await db
       .update(advisors)
       .set({ settings: body })
-      .where(and(eq(advisors.matchId, matchId), eq(advisors.playerId, p.id), eq(advisors.kind, kind)))
+      .where(and(eq(advisors.matchId, matchId), eq(advisors.playerId, p.id), eq(advisors.kind, kind), isNull(advisors.firedAt)))
       .returning({ id: advisors.id });
     if (!updated.length) throw httpError(404, "no such advisor");
     await publisher.toPlayer(matchId, p.id, "advisor.settings", { kind });
@@ -84,11 +99,11 @@ export async function advisorRoutes(app: FastifyInstance, opts: { db: Db; publis
     const user = requireUser(req);
     const { id: matchId, kind } = kindParams.parse(req.params);
     const { m, p } = await loadContext(matchId, user.id);
-    const [a] = await db.select().from(advisors).where(and(eq(advisors.matchId, matchId), eq(advisors.playerId, p.id), eq(advisors.kind, kind))).limit(1);
+    const [a] = await db.select().from(advisors).where(and(eq(advisors.matchId, matchId), eq(advisors.playerId, p.id), eq(advisors.kind, kind), isNull(advisors.firedAt))).limit(1);
     if (!a) throw httpError(404, "no such advisor");
     if (a.unpaidSince) throw httpError(409, "your advisor is unpaid and will not work until the wage is met");
     const now = matchNow(m);
-    if (a.lastPassAt && now.getTime() - a.lastPassAt.getTime() < 60_000 / m.speed) throw httpError(429, "the advisor has just made a pass; give it a minute");
+    if (a.lastPassAt && now.getTime() - a.lastPassAt.getTime() < (balance.advisors.runEveryMinutes * 60_000) / m.speed) throw httpError(429, `the advisor made a pass ${Math.max(1, Math.round(((now.getTime() - a.lastPassAt.getTime()) / 60_000) * m.speed))} game minutes ago; Run a pass now works once an hour, and the regular passes carry on`);
     const report = await runPass(db, m, p, a, now, publisher);
     return { ok: true, report };
   });
@@ -101,7 +116,7 @@ export async function advisorRoutes(app: FastifyInstance, opts: { db: Db; publis
     const { regionId, add } = advisorTargetBody.parse(req.body);
     const { m, p } = await loadContext(matchId, user.id);
     if (!regionById(regionId)) throw httpError(400, "unknown region");
-    const [a] = await db.select().from(advisors).where(and(eq(advisors.matchId, matchId), eq(advisors.playerId, p.id), eq(advisors.kind, "military"))).limit(1);
+    const [a] = await db.select().from(advisors).where(and(eq(advisors.matchId, matchId), eq(advisors.playerId, p.id), eq(advisors.kind, "military"), isNull(advisors.firedAt))).limit(1);
     if (!a) throw httpError(404, "no Military advisor");
     const settings = advisorSettings.parse(a.settings ?? {});
     let targets = settings.targets.filter((t) => t !== regionId);

@@ -1,0 +1,1 @@
+ALTER TABLE "advisors" ADD COLUMN "fired_at" timestamp with time zone;

@@ -295,6 +295,13 @@
       "when": 1792514147411,
       "tag": "0041_advisor_campaigns",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1792516627123,
+      "tag": "0042_advisor_fired",
+      "breakpoints": true
     }
   ]
 }

@@ -759,9 +759,10 @@ describe("api routes", () => {
       expect(hired.statusCode, hired.body).toBe(200);
       expect((hired.json() as { wage: Record<string, number> }).wage).toEqual(wage);
       const after = await stockAt(cap);
-      expect(Math.round(before.food - after.food)).toBe(wage.food);
-      expect(Math.round(before.wood - after.wood)).toBe(wage.wood);
-      expect(((before.special as { copper: number }).copper ?? 0) - ((after.special as { copper: number }).copper ?? 0)).toBe(wage.copper);
+      // A day's contract leaves the capital at once.
+      expect(Math.round(before.food - after.food)).toBe(wage.food! * balance.advisors.contractHours);
+      expect(Math.round(before.wood - after.wood)).toBe(wage.wood! * balance.advisors.contractHours);
+      expect(((before.special as { copper: number }).copper ?? 0) - ((after.special as { copper: number }).copper ?? 0)).toBe(wage.copper! * balance.advisors.contractHours);
       expect((await Ben.call("POST", `${base}/advisors/economic/hire`, {})).statusCode).toBe(409);
       let st = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
       expect(st.advisors).toHaveLength(1);
@@ -785,13 +786,13 @@ describe("api routes", () => {
       expect((await Ben.call("POST", `${base}/advisors/economic/run`, {})).statusCode).toBe(429);
 
       // Workers: a capital gathering no food while its store is nearly empty is put back on food by the next pass; a store near its cap gets no more.
-      await db.update(matchRegions).set({ assignment: { food: 0, wood: 0.5, stone: 0.5 }, food: 20, stone: 2900, settledAt: new Date(await nowIso()) }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
+      await db.update(matchRegions).set({ assignment: { food: 0, wood: 0.5, stone: 0.5 }, food: 20, wood: 3500, stone: 2900, settledAt: new Date(await nowIso()) }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
       await db.update(advisors).set({ lastPassAt: null }).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
       const runW = await Ben.call("POST", `${base}/advisors/economic/run`, {});
       expect(runW.statusCode, runW.body).toBe(200);
       expect((runW.json() as { report: { rebalanced: number } }).report.rebalanced).toBeGreaterThan(0);
       const [capAfter] = await db.select({ assignment: matchRegions.assignment }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
-      expect(capAfter!.assignment.food).toBeGreaterThanOrEqual(0.3);
+      expect(capAfter!.assignment.food).toBeGreaterThanOrEqual(0.5);
       expect(capAfter!.assignment.stone).toBeLessThanOrEqual(0.2);
       await fill(4000, 3000, 2500, 60, 60);
 
@@ -836,12 +837,20 @@ describe("api routes", () => {
       const [row3] = await db.select().from(advisors).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
       expect(row3!.unpaidSince).toBeNull();
 
-      // Fire, and rehire with nothing but the hour's wage.
+      // Fire: nothing refunded, and no rehire until a day has passed; then rehire works and keeps the settings.
       expect((await Ben.call("POST", `${base}/advisors/economic/fire`, {})).statusCode).toBe(200);
       st = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
       expect(st.advisors).toEqual([]);
+      const tooSoon = await Ben.call("POST", `${base}/advisors/economic/hire`, {});
+      expect(tooSoon.statusCode).toBe(409);
+      expect(tooSoon.body).toContain("take you back");
+      await db.update(advisors).set({ firedAt: new Date(Date.parse(await nowIso()) - (balance.advisors.rehireCooldownHours + 1) * (3600_000 / benState.match.speed)) }).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid), eq(advisors.kind, "economic")));
+      await fill(4000, 3000, 2500, 60, 60);
       expect((await Ben.call("POST", `${base}/advisors/economic/hire`, {})).statusCode).toBe(200);
+      st = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
+      expect(st.advisors[0]!.settings.minLevels).toEqual({ quarry: 1 });
       expect((await Ben.call("POST", `${base}/advisors/economic/fire`, {})).statusCode).toBe(200);
+      await db.update(advisors).set({ firedAt: new Date(Date.parse(await nowIso()) - (balance.advisors.rehireCooldownHours + 1) * (3600_000 / benState.match.speed)) }).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid), eq(advisors.kind, "economic")));
 
       // No advisor: a crowded capital stays crowded through a tick; with one set to overflow, the surplus spills to a neighbour.
       await db.update(matchRegions).set({ popWorkers: 600, settledAt: new Date(await nowIso()) }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
@@ -850,6 +859,9 @@ describe("api routes", () => {
       expect(Math.round(still!.popWorkers)).toBeGreaterThanOrEqual(590);
       await fill(4000, 3000, 2500, 60, 60);
       expect((await Ben.call("POST", `${base}/advisors/economic/hire`, {})).statusCode).toBe(200);
+      // Rehiring keeps the old settings (balanced); overflow is what this step checks.
+      expect((await Ben.call("PUT", `${base}/advisors/economic/settings`, { population: "overflow" })).statusCode).toBe(200);
+      await db.update(matchRegions).set({ popWorkers: 600 }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
       await tickOnce();
       const [spilled] = await db.select({ popWorkers: matchRegions.popWorkers }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
       expect(spilled!.popWorkers).toBeLessThan(still!.popWorkers);

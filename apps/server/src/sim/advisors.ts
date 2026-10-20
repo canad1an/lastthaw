@@ -85,7 +85,7 @@ export async function regionsHeld(tx: Tx | Db, m: MatchRow, playerId: string): P
  * charge succeeds. It never leaves on its own.
  */
 export async function chargeAdvisors(tx: Tx, m: MatchRow, now: Date): Promise<void> {
-  const rows = await tx.select().from(advisors).where(and(eq(advisors.matchId, m.id), lte(advisors.paidUntil, now)));
+  const rows = await tx.select().from(advisors).where(and(eq(advisors.matchId, m.id), isNull(advisors.firedAt), lte(advisors.paidUntil, now)));
   for (const a of rows) {
     const [p] = await tx.select().from(players).where(eq(players.id, a.playerId)).limit(1);
     if (!p || p.eliminatedAt) {
@@ -127,7 +127,7 @@ export async function overflowPlayerIds(tx: Tx, m: MatchRow): Promise<string[]> 
   const adv = await tx
     .select({ playerId: advisors.playerId })
     .from(advisors)
-    .where(and(eq(advisors.matchId, m.id), eq(advisors.kind, "economic"), isNull(advisors.unpaidSince), sql`${advisors.settings}->>'population' = 'overflow'`));
+    .where(and(eq(advisors.matchId, m.id), eq(advisors.kind, "economic"), isNull(advisors.firedAt), isNull(advisors.unpaidSince), sql`${advisors.settings}->>'population' = 'overflow'`));
   return [...new Set([...ai.map((p) => p.id), ...adv.map((a) => a.playerId)])];
 }
 
@@ -137,7 +137,7 @@ export async function runAdvisors(db: Db, publisher: Publisher, log: pino.Logger
   let passes = 0;
   for (const m of running) {
     const now = matchNow(m);
-    const rows = await db.select().from(advisors).where(and(eq(advisors.matchId, m.id), isNull(advisors.unpaidSince)));
+    const rows = await db.select().from(advisors).where(and(eq(advisors.matchId, m.id), isNull(advisors.firedAt), isNull(advisors.unpaidSince)));
     for (const a of rows) {
       const due = new Date(now.getTime() - (balance.advisors[a.kind].passMinutes * 60_000) / m.speed);
       if (a.lastPassAt && a.lastPassAt > due) continue;

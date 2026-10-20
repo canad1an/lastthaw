@@ -487,6 +487,8 @@ export const advisors = pgTable(
     unpaidSince: timestamp("unpaid_since", { withTimezone: true }),
     /** Military: the campaigns in hand. */
     campaigns: jsonb("campaigns").$type<Array<Record<string, unknown>>>().notNull().default([]),
+    /** Set when fired: the row keeps the settings and the firing time for the rehire wait; cleared on rehire. */
+    firedAt: timestamp("fired_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [uniqueIndex("advisors_player_kind_idx").on(t.matchId, t.playerId, t.kind)],

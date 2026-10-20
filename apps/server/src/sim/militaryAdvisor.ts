@@ -407,7 +407,7 @@ export async function militaryPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
       if (siege) await order(siege.unit, siege.qty - haveSiege - trainingAt(staging.regionId, siege.unit), unitById.get(siege.unit)?.name.toLowerCase() ?? siege.unit);
       if (workersShort) {
         // Mara brings people when she is hired and allowed to move them; otherwise the player is told.
-        const [mara] = await db.select({ settings: advisors.settings, unpaidSince: advisors.unpaidSince }).from(advisors).where(and(eq(advisors.matchId, m.id), eq(advisors.playerId, p.id), eq(advisors.kind, "economic"))).limit(1);
+        const [mara] = await db.select({ settings: advisors.settings, unpaidSince: advisors.unpaidSince }).from(advisors).where(and(eq(advisors.matchId, m.id), eq(advisors.playerId, p.id), eq(advisors.kind, "economic"), isNull(advisors.firedAt))).limit(1);
         const maraMoves = mara && !mara.unpaidSince && parseSettings(mara.settings).population !== "off";
         if (maraMoves) {
           const crowded = owned

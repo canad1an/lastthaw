@@ -99,7 +99,7 @@ export function AdvisorsPanel({ matchId, state, onSelect, clockOffsetMs }: { mat
             {confirm.what === "hire" ? (
               <div className="mt-2 space-y-2 text-sm text-slate-300">
                 <p>
-                  The wage, every game hour, for your {regions} region{regions === 1 ? "" : "s"}:
+                  The wage, every game hour, for your {regions} region{regions === 1 ? "" : "s"}. Hiring takes the first {balance.advisors.contractHours} hours at once:
                 </p>
                 <ul className="grid grid-cols-2 gap-1 rounded border border-slate-800 p-2 text-slate-100 sm:grid-cols-3">
                   {Object.entries(wage).map(([k, v]) => (
@@ -109,10 +109,10 @@ export function AdvisorsPanel({ matchId, state, onSelect, clockOffsetMs }: { mat
                     </li>
                   ))}
                 </ul>
-                <p className="text-xs text-slate-400">The first hour is taken now, from your capital first, then every game hour after. The wage grows with the regions you hold. No hiring fee. If a wage cannot be met {she.toLowerCase()} stops until it is paid. Fire {pronoun} at any time.</p>
+                <p className="text-xs text-slate-400">A {balance.advisors.contractHours}-hour contract is paid now, from your capital first; after that the wage is charged every game hour. The wage grows with the regions you hold. If a wage cannot be met {she.toLowerCase()} stops until it is paid. You can fire {pronoun} at any time, but the contract is not refunded and {she.toLowerCase()} will not come back for {balance.advisors.rehireCooldownHours} game hours.</p>
               </div>
             ) : (
-              <p className="mt-2 text-sm text-slate-300">{she} leaves at once. Builds and training already queued, and armies and convoys already on the road, carry on. You can rehire at any time with no fee.</p>
+              <p className="mt-2 text-sm text-slate-300">{she} leaves at once. Builds and training already queued, and armies and convoys already on the road, carry on. The rest of the paid contract is not refunded, and {she.toLowerCase()} will not take you back for {balance.advisors.rehireCooldownHours} game hours.</p>
             )}
             <div className="mt-5 flex justify-end gap-2">
               <button className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:bg-slate-800" onClick={() => setConfirm(null)} autoFocus>
@@ -176,7 +176,7 @@ export function AdvisorsPanel({ matchId, state, onSelect, clockOffsetMs }: { mat
 
   return (
     <div className="space-y-3 p-3 text-sm">
-      <p className="text-xs text-slate-400">Advisors take routine management off your hands for a steep hourly wage. You hire them and you fire them; there is no fee either way.</p>
+      <p className="text-xs text-slate-400">Advisors take routine management off your hands for a steep hourly wage. Hiring buys the first {balance.advisors.contractHours} hours at once; fire at any time, but nothing is refunded and a fired advisor stays away for {balance.advisors.rehireCooldownHours} game hours.</p>
       {ADVISORS.map((meta) => {
         const a = hired(meta.kind);
         const wage = wageOf(meta.kind);

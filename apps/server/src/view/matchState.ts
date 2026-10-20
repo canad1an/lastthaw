@@ -294,7 +294,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string, o
     .from(pacts)
     .where(and(eq(pacts.matchId, matchId), or(eq(pacts.aPlayerId, me.id), eq(pacts.bPlayerId, me.id)), inArray(pacts.status, ["proposed", "active", "ending", "refused"])))
     .orderBy(asc(pacts.createdAt));
-  const advisorRows = await db.select().from(advisors).where(and(eq(advisors.matchId, matchId), eq(advisors.playerId, me.id)));
+  const advisorRows = await db.select().from(advisors).where(and(eq(advisors.matchId, matchId), eq(advisors.playerId, me.id), isNull(advisors.firedAt)));
   const regionsHeldNow = owned.length;
   const mercRows = await db.select().from(mercenaryOffers).where(and(eq(mercenaryOffers.matchId, matchId), isNull(mercenaryOffers.hiredBy), gt(mercenaryOffers.expiresAt, now))).orderBy(asc(mercenaryOffers.expiresAt));
   const capLat = me.capitalRegionId ? Math.abs(regionById(me.capitalRegionId)?.lat ?? 0) : 0;

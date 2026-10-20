@@ -368,6 +368,10 @@ export const balance = {
    * and makes a pass every passMinutes, queueing at most maxQueuedPerPass builds a pass. No hiring fee.
    */
   advisors: {
+    /** Hiring buys this many game hours of wages at once, with no refund; the same advisor cannot be rehired for rehireCooldownHours after a firing; Run a pass now works once per runEveryMinutes. */
+    contractHours: 24,
+    rehireCooldownHours: 24,
+    runEveryMinutes: 60,
     economic: {
       perRegionPerHour: { food: 30, wood: 20, stone: 15, copper: 0.1, iron: 0.05 } as Record<string, number>,
       passMinutes: 30,
