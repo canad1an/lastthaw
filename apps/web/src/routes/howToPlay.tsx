@@ -259,8 +259,8 @@ const ADVANCED: Array<{ title: string; body: React.ReactNode }> = [
 const steps: Array<{ title: string; body: string }> = [
   { title: "Join a match and pick a capital", body: "In the lobby you are offered a handful of starting regions, spread far from other players. Pick one, or let the game pick when the match starts. You begin with five families and a small store of food, wood and stone." },
   { title: "Set your workers", body: "Drag the three sliders to split your workers between food, wood and stone. Food feeds everyone and grows the population; wood and stone build everything else. The sliders always add up to 100%. Hover anything to see exactly what it will change." },
-  { title: "Build and research", body: "Each region has a build queue with ten slots; research has a ten-deep queue of its own and draws ore and horses from any region you own, so nothing has to be hauled home. Resources are paid when you click. Huts raise your population capacity, Storehouses hold more, gathering buildings raise output. Fire making, Flint tools and Agriculture lead to Bronze working, which opens the next age." },
-  { title: "Hire an advisor", body: "When the empire is too big to run by hand, open the Advisors menu: each advisor is shown with what they do, and Hire shows the wage before you agree. Mara, the Economic advisor, runs buildings, supply, workers and people; Max, the Military advisor, keeps your borders and takes the regions you mark. Set the minimum level you want for each building and the advisor raises them in every region where they can stand, a few builds a pass, letting convoys bring what a region cannot pay if you allow it. She also sets each region's worker shares between food, wood and stone from what the region and the empire need (full stores get no more, waiting builds get what they owe, nobody starves), unless you switch that off. Choose how people are moved: not at all, overflow from crowded regions to neighbours with room, or balanced so every region holds a similar share of its capacity. The advisor also leaves you suggestions: stores near their cap, regions nearly full, ore with no Mine, haulers idle, builds that have waited too long. The wage is steep and charged every game hour from your capital first, scaling with the regions you hold; miss it and the advisor stops until paid. There is no hiring fee: fire and rehire at will. A set-all control puts one minimum on every building at once, each capped at its own maximum, and you adjust single buildings after. Without an Economic advisor nobody moves on their own, so a crowded region stays crowded until you move people. Max works to a stance: passive garrisons and walls your exposed border regions and nothing more; measured also takes the regions you mark from their panel (scouts first unless you say otherwise, then a muster at your nearest region with a land route, then the attack); aggressive also picks weak neighbours himself when the list has room and raids rich ones with spare soldiers. His report names your most exposed regions, and the map shows a red crossed swords on every target and an amber shield on the regions most at risk." },
+  { title: "Build and research", body: "Each region has a build queue with ten slots; research has a ten-deep queue of its own and draws ore and horses from any region you own, so nothing has to be hauled home. A build or training order your region can pay for is paid on the click; one it cannot waits for materials, which convoys bring from your other regions (see the Advisors tab for how hauling works). Huts raise your population capacity, Storehouses hold more, gathering buildings raise output. Fire making, Flint tools and Agriculture lead to Bronze working, which opens the next age." },
+  { title: "Hire an advisor", body: "When the empire is too big to run by hand, open the Advisors menu: each advisor is shown with what they do, and Hire shows the wage before you agree. Mara, the Economic advisor, runs buildings, supply, workers and people; Max, the Military advisor, keeps your borders and takes the regions you mark. The Advisors tab above explains each in full. Set the minimum level you want for each building and the advisor raises them in every region where they can stand, a few builds a pass, letting convoys bring what a region cannot pay if you allow it. She also sets each region's worker shares between food, wood and stone from what the region and the empire need (full stores get no more, waiting builds get what they owe, nobody starves), unless you switch that off. Choose how people are moved: not at all, overflow from crowded regions to neighbours with room, or balanced so every region holds a similar share of its capacity. The advisor also leaves you suggestions: stores near their cap, regions nearly full, ore with no Mine, haulers idle, builds that have waited too long. The wage is steep and charged every game hour from your capital first, scaling with the regions you hold; miss it and the advisor stops until paid. There is no hiring fee: fire and rehire at will. A set-all control puts one minimum on every building at once, each capped at its own maximum, and you adjust single buildings after. Without an Economic advisor nobody moves on their own, so a crowded region stays crowded until you move people. Max works to a stance: passive garrisons and walls your exposed border regions and nothing more; measured also takes the regions you mark from their panel (scouts first unless you say otherwise, then a muster at your nearest region with a land route, then the attack); aggressive also picks weak neighbours himself when the list has room and raids rich ones with spare soldiers. His report names your most exposed regions, and the map shows a red crossed swords on every target and an amber shield on the regions most at risk." },
   { title: "Expand", body: "Train five Settlers and send them on a Settle mission to any empty region next to yours (dashed outlines on the map). They become its first workers. A region over its capacity does not spread out on its own: an Economic advisor (see Hire an advisor) moves the surplus for you, or you move people by hand. To take land someone already holds, send soldiers on a Conquer mission with at least five Settlers; the settlers stay out of the fight and occupy the region if you win. Colonies pay back with haulers: train caravans, upgrade them to Wagons (Bronze) and Trains (Medieval, with Railways on top of Roads) for far more capacity and speed, then set up a trade route under the region's Routes tab (fixed loads or a share of production) and they haul goods to your capital on a schedule. Research Road building, then build Roads once in a region to connect it to every neighbour: legs between two road regions are 40% faster, and roads show on the map. A build you cannot pay for on the spot is supplied for you: what is short is fetched from your capital first, then the nearest regions with stock, by materials routes that size their convoys to the load and retire when it has all arrived. The goods are set aside at the source the moment the route is decided, as a warehouse sets aside a delivery: nothing else can spend them, and the haulers load and leave the moment they arrive. Cancel the build and they go back on the shelf. One convoy serves a build from several regions: it loads where it starts and calls at the nearest other regions holding goods for the same place while it has room, then delivers; a build queued while a convoy is still collecting for that region rides along if there is room, with an extra stop added. Every hauler you own is one pool: a route with none at home calls the nearest spare ones over, idle ones first, so train haulers in any region and they go where the work is. The Logistics menu shows what is on the way and which routes are waiting." },
   { title: "Scout, mark and take notes", body: "Tap a region you know nothing about and, if Scouts are standing in a region of yours, you can send one with a tap. Only Scouts can scout: fast, cheap, trained from the first day. Scouting a held region carries risk: each scout may be caught, with a 5% chance in a quiet village rising by 1% for every ten soldiers standing there, +10% behind a wall, doubled by a Watchtower in or next to the region, and never above 40%; empty land is safe. A caught scout files no report and the region's owner is told whose it was, so send two or three scouts where it matters: the report arrives if any get through. The region panel's scout buttons have a counter for how many to send. The report arrives in your inbox, where any message about a region, a scout report or a battle, has an Open region button; the pop-up for a new message has it too. It centres the map on the region, flashes it so your eye lands on it, and opens its panel, and it is also written into your notes on that region with the day and time, so you always know what you learned and when; things may have changed since. Every battle in a region goes into both sides' notes too: what each brought, what it cost, how it ended. Any region can carry your own notes and a coloured marker: the marker shows as a pin on the map, and nobody else ever sees your notes." },
   { title: "Fight", body: "Train soldiers from your workers. Raids steal unprotected stock; conquests take the region. Travel time depends on distance, terrain and your slowest unit, and the defender hears the moment you set out: a chime, a message naming the region, the rough size and the arrival time, and a red marker on the map with the countdown. A Watchtower (Stone Age, built once) keeps every region next to it in plain view, units and all, and shows the exact make-up of an attacking force once it reaches a region next to the tower's; it also doubles the chance of catching enemy scouts there. Battles resolve themselves on arrival and both sides get a report. Walls, forts, hills and mountains favour the defender." },
@@ -273,15 +273,121 @@ const steps: Array<{ title: string; body: string }> = [
   { title: "Chase the day's prize", body: "Every day has an objective (most regions, most people, biggest larder, most coastal land, most techs or most battles won) worth 100 score to the best player at the day's end. It sits in the bar above the map with its reward; tap it for yesterday's winner and the open bounties. Bounties appear on regions that rebel, on the Horde's camps and on players who refuse tribute; win a battle against them and the reward is delivered to your capital. The Leaderboard shows today's objective, open bounties and a timeline of everything that has happened in the match." },
 ];
 
-type Tab = "basics" | "winning" | "advanced" | "techs" | "buildings" | "units";
+type Tab = "basics" | "winning" | "advisors" | "advanced" | "techs" | "buildings" | "units";
 const TABS: ReadonlyArray<{ id: Tab; label: string }> = [
   { id: "basics", label: "Basics" },
   { id: "winning", label: "Winning and tips" },
+  { id: "advisors", label: "Advisors" },
   { id: "advanced", label: "Advanced" },
   { id: "techs", label: "Tech tree" },
   { id: "buildings", label: "Buildings" },
   { id: "units", label: "Units" },
 ];
+
+const ecoAdv = balance.advisors.economic;
+const mil = balance.advisors.military;
+const wageAt = (per: Record<string, number>, regions: number) =>
+  Object.entries(per)
+    .map(([k, v]) => `${Math.max(1, Math.ceil(v * regions)).toLocaleString("en-US")} ${k}`)
+    .join(", ");
+
+/** The Advisors tab: who they are, what each does, what they cost, and the rules they all share. */
+function AdvisorsSection() {
+  return (
+    <section className="space-y-4">
+      <header>
+        <p className="mb-1 text-xs font-medium uppercase tracking-[0.25em] text-sky-300">Staff for hire</p>
+        <h2 className="display text-xl font-semibold text-white">Advisors: let someone else run the routine</h2>
+        <p className="mt-2 text-sm text-slate-300">
+          Once an empire is more than a handful of regions, opening each one to queue the same upgrades or shuffle the same people is a chore. The Advisors menu in a match hires staff who do it for you, each for a steep wage every game hour. You hire them and you fire them, at any time, with no fee either way. There are two so far.
+        </p>
+      </header>
+
+      <Card className="space-y-3">
+        <div className="flex items-center gap-3">
+          <img src="/advisors/economic.jpg" alt="" className="h-16 w-16 shrink-0 rounded-full" />
+          <div>
+            <h3 className="display font-semibold text-white">Mara, the Economic advisor</h3>
+            <p className="text-xs text-slate-400">Buildings, supply, workers and people.</p>
+          </div>
+        </div>
+        <div className="space-y-2 text-sm leading-relaxed text-slate-300">
+          <p>
+            <b>Minimum levels.</b> You set the minimum level you want for each building, or one level for every building with Apply to all. Each pass she raises any building below its minimum in every region where it can stand (the right age and tech, the right local resource or coast, the building it needs already there), the capital first and then your most populous regions, in the order the land needs them: Huts first when a region is crowded, a Storehouse first when stores are nearly full. At most {ecoAdv.maxQueuedPerPass} builds a pass, never more than one waiting build per region, and never more than {ecoAdv.maxWaitingBuilds} builds waiting on hauling across the empire; beyond that she only queues what a region can pay for itself.
+          </p>
+          <p>
+            <b>Other regions' resources.</b> With this on, a build the region cannot pay for is queued anyway and supplied by convoys exactly like one you queue yourself (see Hauling below). Off, each region pays for its own.
+          </p>
+          <p>
+            <b>Worker shares.</b> Each pass she sets every region's split between food, wood and stone from what the region and the empire need: a store near its cap gets no more, a resource your waiting builds owe gets more, and no region is left to starve. Switch it off and your own sliders stand.
+          </p>
+          <p>
+            <b>People.</b> Nobody moves on their own any more. Choose Off, Overflow (a region over its capacity sends {Math.round(balance.economy.migrationPerHour * 100)}% of the surplus an hour to neighbouring regions of yours with room, as the game once did for everyone) or Balanced (every region toward the same share of its capacity: columns of people leave the fullest regions for the emptiest, at most {Math.round(ecoAdv.balanceSharePerPass * 100)}% of a region's people a pass). Without her hired, a crowded region stays crowded until you move people by hand.
+          </p>
+          <p>
+            <b>Her report</b> after every pass says what was queued, what was skipped and why (unaffordable, queue full, cannot stand there, hauling busy), and leaves suggestions with an Open region button: stores near their cap with no route out, regions nearly full, ore with no Mine, haulers idle, builds that have waited too long. Regions you tick under "leaves alone" she never touches.
+          </p>
+          <p>
+            <b>Wage:</b> {ecoAdv.perRegionPerHour.food} food, {ecoAdv.perRegionPerHour.wood} wood, {ecoAdv.perRegionPerHour.stone} stone, {ecoAdv.perRegionPerHour.copper} copper and {ecoAdv.perRegionPerHour.iron} iron per region per game hour, each rounded up. Five regions: {wageAt(ecoAdv.perRegionPerHour, 5)}. Forty: {wageAt(ecoAdv.perRegionPerHour, 40)}.
+          </p>
+        </div>
+      </Card>
+
+      <Card className="space-y-3">
+        <div className="flex items-center gap-3">
+          <img src="/advisors/military.jpg" alt="" className="h-16 w-16 shrink-0 rounded-full" />
+          <div>
+            <h3 className="display font-semibold text-white">Max, the Military advisor</h3>
+            <p className="text-xs text-slate-400">Borders, garrisons, walls and conquest.</p>
+          </div>
+        </div>
+        <div className="space-y-2 text-sm leading-relaxed text-slate-300">
+          <p>
+            <b>The front.</b> Every pass he lists which of your regions border a rival or a neutral tribe, what faces each one (live from a watchtower, from a scout report, or a guess when nobody has looked), and an exposure score: what faces the region divided by what holds it, walls counted. The five most exposed are in his report with a line each, carry an amber shield on the map, and show their exposure on the region panel.
+          </p>
+          <p>
+            <b>Defence, every stance.</b> You set a garrison, the soldiers wanted in every border region (passive doubles it, the capital doubles it again). He trains the best land soldier of your age toward it, at most {mil.trainPerPass} orders a pass, moves surplus soldiers in from interior regions, and with Fortify on queues a Palisade, then Walls, then a Watchtower where a region is exposed, at most {mil.fortifyPerPass} a pass.
+          </p>
+          <p>
+            <b>Stances.</b> <i>Passive</i>: defence only, even marked targets wait. <i>Measured</i>: defence plus campaigns against the regions you mark, in order. <i>Aggressive</i>: measured, and when your list has room he picks weak neighbours himself; with Raids on he also raids the weakest rich neighbour from a border region with soldiers to spare, one raid a pass.
+          </p>
+          <p>
+            <b>Targets and campaigns.</b> Open any region that is not yours and press ⚔ Target for the Military advisor; it joins his ordered list and gets a red crossed swords on the map. He runs up to three campaigns at once (your choice, one to three). Each one goes: <i>intel</i>, where he sends two Scouts unless you turn Scout first off or a watchtower already sees the region (a sighting older than {mil.sightingMaxHours} game hours is not good enough); <i>muster</i>, at your nearest region with a land route, where he orders a force {mil.forceMargin} times the defenders' strength in your best soldier, siege engines if there is a wall, and the settlers a conquest needs; and <i>marching</i>, the attack itself. Empty land is settled rather than fought for. A beaten force musters again {Math.round((mil.retryMargin - 1) * 100)}% larger; after {mil.maxAttempts} defeats he gives up on that target and tells you. He never attacks allies, pact partners or tribes under beginner protection, and waits when a target is protected or under a pact.
+          </p>
+          <p>
+            <b>Working with Mara.</b> Training he orders is supplied by convoys like any build, and her worker shares already favour what waiting orders owe. When a muster region is short of free workers and Mara is hired with people moves on, she brings a column; otherwise his report asks you to move people or hire her.
+          </p>
+          <p>
+            <b>Wage:</b> {mil.perRegionPerHour.food} food, {mil.perRegionPerHour.wood} wood, {mil.perRegionPerHour.stone} stone, {mil.perRegionPerHour.copper} copper and {mil.perRegionPerHour.iron} iron per region per game hour, each rounded up: iron-heavy, because armies are. Five regions: {wageAt(mil.perRegionPerHour, 5)}. Forty: {wageAt(mil.perRegionPerHour, 40)}.
+          </p>
+        </div>
+      </Card>
+
+      <Card className="space-y-2">
+        <h3 className="display font-semibold text-white">Rules they share</h3>
+        <ul className="list-disc space-y-1 pl-5 text-sm leading-relaxed text-slate-300">
+          <li>The first hour's wage is taken when you hire; after that the match charges every whole game hour, from your capital first and then your other regions. The wage grows with the regions you hold.</li>
+          <li>If any one resource of the wage cannot be found, the advisor stops working and you get one message; work resumes the next time a charge succeeds. Nobody leaves on their own; only Fire ends a contract, and you can rehire at once.</li>
+          <li>Passes run every {ecoAdv.passMinutes} game minutes while the advisor is paid. Run a pass now forces one, once a game minute.</li>
+          <li>Advisors never spend on research, the market or diplomacy, and never touch regions you tick under "leaves alone".</li>
+          <li>Everything they do is a normal order: builds, training, routes and armies they create look and behave exactly as if you had placed them, and you can cancel or recall any of it.</li>
+        </ul>
+      </Card>
+
+      <Card className="space-y-2">
+        <h3 className="display font-semibold text-white">Hauling: how builds and training get their materials</h3>
+        <div className="space-y-2 text-sm leading-relaxed text-slate-300">
+          <p>
+            A build or a training order a region cannot pay for on the spot waits for materials. What is short is set aside at the capital first and then at the regions holding the most of it (small offers last), as a warehouse sets aside a delivery: nothing else can spend it. One convoy loads where it starts and calls at the nearest other regions holding goods for the same place while it has room, then delivers; a new order for that region rides along on a convoy still collecting if there is room. Every hauler you own is one pool: a route with none at home calls the nearest spare ones over, idle ones first, so train haulers anywhere. Cancel the order and the goods go back on the shelf.
+          </p>
+          <p>
+            Two limits keep the roads sane: at most {balance.trade.maxSupplyConvoys} materials convoys and {balance.trade.maxReliefMoves} relief moves of haulers per player on the road at once; the rest wait their turn. The Logistics menu shows the convoys, what is aboard, where they call, and which routes are waiting.
+          </p>
+        </div>
+      </Card>
+    </section>
+  );
+}
 
 export function HowToPlayPage() {
   const [techView, setTechView] = useState<"graph" | "list">("graph");
@@ -364,6 +470,7 @@ export function HowToPlayPage() {
 
         </>
       )}
+      {tab === "advisors" && <AdvisorsSection />}
       {tab === "advanced" && <AdvancedSection open />}
       {tab === "techs" && (
         <>
