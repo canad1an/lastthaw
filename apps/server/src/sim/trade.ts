@@ -177,6 +177,12 @@ async function dispatchSupply(db: Db, m: MatchRow, p: PlayerRow, route: TradeRou
     }
     return "nothing set aside to send (the rest is on its way)";
   }
+  // So many convoys at once would strip the empire of haulers: beyond the cap, the route waits its turn.
+  const busy = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(armies)
+    .where(and(eq(armies.matchId, m.id), eq(armies.playerId, p.id), eq(armies.mission, "transport"), eq(armies.status, "outbound"), sql`jsonb_array_length(${armies.stops}) > 0`));
+  if ((busy[0]?.n ?? 0) >= balance.trade.maxSupplyConvoys) return `waiting: ${busy[0]!.n} materials convoys are already on the road`;
   const ctx = await contextFor(db, m, p);
   const siblings = (
     await db
@@ -288,6 +294,11 @@ async function fetchCaravans(db: Db, m: MatchRow, p: PlayerRow, fromRegionId: st
   const firstComing = coming.find((a) => haulerCount(a.units) > 0);
   if (inFlight >= wanted && firstComing) return `no haulers at home; ${inFlight} coming from ${regionNameOf(firstComing.origin)}`;
   let need = wanted - inFlight;
+  const reliefOut = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(armies)
+    .where(and(eq(armies.matchId, m.id), eq(armies.playerId, p.id), eq(armies.mission, "move"), eq(armies.status, "outbound"), sql`(${armies.cargo}->>'people')::float = 0`));
+  if ((reliefOut[0]?.n ?? 0) >= balance.trade.maxReliefMoves) return `no haulers at home; ${reliefOut[0]!.n} relief moves are already on the road, waiting for one to land`;
 
   const mine = await db
     .select({ regionId: matchRegions.regionId, units: matchRegions.units, frozenAt: matchRegions.frozenAt })

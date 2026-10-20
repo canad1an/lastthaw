@@ -22,6 +22,7 @@ const SKIP_LABEL: Record<string, string> = {
   queueFull: "build queue full",
   blocked: "cannot stand there, or needs another building first",
   notYetAvailable: "needs an age or tech you do not have",
+  haulingBusy: "enough builds already waiting on hauling",
 };
 
 const ECONOMIC_DUTIES = [

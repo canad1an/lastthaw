@@ -183,6 +183,9 @@ export const balance = {
     minSupplyPickupShare: 0.1,
     /** A collecting convoy calls at no more than this many other regions on one trip. */
     maxConvoyCalls: 5,
+    /** A player has at most this many materials convoys on the road, and this many relief moves of haulers in flight, at once. */
+    maxSupplyConvoys: 8,
+    maxReliefMoves: 6,
     /** A region whose stock hits its cap sends this share of the cap to the capital by caravan, automatically. */
     overflowToCapital: true,
     overflowShare: 0.5,
@@ -368,7 +371,9 @@ export const balance = {
     economic: {
       perRegionPerHour: { food: 30, wood: 20, stone: 15, copper: 0.1, iron: 0.05 } as Record<string, number>,
       passMinutes: 30,
-      maxQueuedPerPass: 20,
+      maxQueuedPerPass: 6,
+      /** The advisor never has more than this many builds waiting on materials across the empire; beyond it, only builds a region can pay for itself. */
+      maxWaitingBuilds: 8,
       maxOwed: 20000,
       /** Balanced population: regions more than this share of capacity above the empire's mean fill give people away. */
       balanceBand: 0.1,

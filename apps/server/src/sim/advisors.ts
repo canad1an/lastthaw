@@ -6,11 +6,11 @@
  */
 import { and, asc, eq, isNull, lte, or, sql } from "drizzle-orm";
 import type pino from "pino";
-import { balance, availableBuildings, buildingBlockedBy, buildingById, computeRates, normalizeAssignment, regionById, unitById, HAULER_IDS, type AdvisorSettings, type AdvisorReport, type AdvisorSuggestion, type Cost, type RegionEconomy, advisorSettings as advisorSettingsSchema } from "@lastthaw/shared";
+import { balance, availableBuildings, buildingBlockedBy, buildingById, buildingCost, canAfford, computeRates, normalizeAssignment, regionById, unitById, HAULER_IDS, type AdvisorSettings, type AdvisorReport, type AdvisorSuggestion, type Cost, type RegionEconomy, advisorSettings as advisorSettingsSchema } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { advisors, jobs, matchRegions, matches, playerTechs, players, tradeRoutes } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
-import { matchNow } from "./clock.js";
+import { matchDayAt, matchNow } from "./clock.js";
 import { applyCost, projectRegion, settleAndLockRegion, stockOf, resourceMultOf, traitsOf, type MatchRegionRow, type Tx } from "./regions.js";
 import { queueBuild, sendArmy, type CommandContext } from "./commands.js";
 import { buildOrderFor } from "./ai.js";
@@ -173,6 +173,9 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
   const skipped: Record<string, number> = {};
   const bump = (k: string) => (skipped[k] = (skipped[k] ?? 0) + 1);
   let queued = 0;
+  // Builds waiting on materials pull haulers; the advisor keeps them few, and prefers builds a region can pay for itself.
+  let waitingBuilds = pending.filter((j) => j.kind === "build" && j.waitingFor).length;
+  const matchDay = matchDayAt(m, now);
   const avail = new Map(availableBuildings(p.age, techs).map((b) => [b.id, b]));
 
   // Buildings: the capital first, then the most populous regions; within a region the AI's order, with its nudges.
@@ -206,10 +209,18 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
         break;
       }
       if (queued >= c.maxQueuedPerPass) break;
+      const nextLevel = (row.buildings[id] ?? 0) + here.filter((j) => j.kind === "build" && j.refId === id).length + 1;
+      const payable = canAfford(stockOf(row), buildingCost(def, nextLevel, matchDay, region.neighbors.length));
+      const mayWait = settings.useOtherRegions && !waitingHere && waitingBuilds < c.maxWaitingBuilds;
+      if (!payable && !mayWait) {
+        bump(waitingBuilds >= c.maxWaitingBuilds ? "haulingBusy" : "unaffordable");
+        continue;
+      }
       try {
-        await queueBuild(ctx, row.regionId, id, { allowWait: settings.useOtherRegions && !waitingHere, maxOwed: c.maxOwed });
+        await queueBuild(ctx, row.regionId, id, { allowWait: !payable && mayWait, maxOwed: c.maxOwed });
         queued += 1;
         slots -= 1;
+        if (!payable) waitingBuilds += 1;
       } catch (err) {
         const msg = (err as Error).message ?? "";
         bump(/not enough|too much would have to be shipped/.test(msg) ? "unaffordable" : /queue is full/.test(msg) ? "queueFull" : "blocked");
