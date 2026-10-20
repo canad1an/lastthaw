@@ -75,7 +75,7 @@ export function RegionBody({ matchId, state, regionId, clockOffsetMs, tab, onTab
       Resources: <span className="text-slate-100">{region.resources.map((r) => r.replace("_", " ")).join(", ")}</span>
     </p>
     {!state.observer && <RegionNotes matchId={matchId} state={state} regionId={regionId} />}
-    {!state.observer && !owned && <TargetToggle matchId={matchId} state={state} regionId={regionId} />}
+    {!state.observer && (!owned || state.advisors.some((a) => a.kind === "military" && a.settings.targets.includes(regionId))) && <TargetToggle matchId={matchId} state={state} regionId={regionId} />}
     {!state.observer && owned && <ExposureLine state={state} regionId={regionId} />}
     {owned ? (
       <>

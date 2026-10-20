@@ -133,7 +133,7 @@ async function frontOf(db: Db, m: MatchRow, p: PlayerRow, owned: MatchRegionRow[
 /** One pass of the Military advisor. */
 export async function militaryPass(db: Db, m: MatchRow, p: PlayerRow, a: AdvisorRow, now: Date, publisher: Publisher): Promise<AdvisorReport> {
   const c = balance.advisors.military;
-  const settings = parseSettings(a.settings);
+  let settings = parseSettings(a.settings);
   const techRows = await db.select({ id: playerTechs.techId }).from(playerTechs).where(eq(playerTechs.playerId, p.id));
   const techs = new Set(techRows.map((t) => t.id));
   const ctx: CommandContext = { db, m, p, techs };
@@ -159,6 +159,11 @@ export async function militaryPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
     .from(matchRegions)
     .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.ownerPlayerId, p.id), isNull(matchRegions.frozenAt), isNull(matchRegions.evacuatedAt)));
   const ownedIds = new Set(owned.map((r) => r.regionId));
+  // Anything he was asked to take that is already yours (taken by hand, settled, inherited) comes off the list for good.
+  if (settings.targets.some((t) => ownedIds.has(t))) {
+    settings = { ...settings, targets: settings.targets.filter((t) => !ownedIds.has(t)) };
+    await db.update(advisors).set({ settings }).where(eq(advisors.id, a.id));
+  }
   const pending = await db
     .select({ regionId: jobs.regionId, kind: jobs.kind, refId: jobs.refId, qty: jobs.qty, waitingFor: jobs.waitingFor })
     .from(jobs)
