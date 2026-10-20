@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="240" height="240" role="img" aria-label="Mara, the Economic advisor">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="35%" r="70%">
+      <stop offset="0" stop-color="#1e3a5f"/>
+      <stop offset="1" stop-color="#0b1a2b"/>
+    </radialGradient>
+    <linearGradient id="skin" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f1c9a5"/>
+      <stop offset="1" stop-color="#d9a37c"/>
+    </linearGradient>
+    <linearGradient id="hair" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4a2a17"/>
+      <stop offset="1" stop-color="#2a150a"/>
+    </linearGradient>
+    <linearGradient id="cloak" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8b3a2a"/>
+      <stop offset="1" stop-color="#4f1f14"/>
+    </linearGradient>
+    <linearGradient id="fur" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e8dcc8"/>
+      <stop offset="1" stop-color="#b9a98f"/>
+    </linearGradient>
+    <clipPath id="round"><circle cx="120" cy="120" r="118"/></clipPath>
+  </defs>
+  <circle cx="120" cy="120" r="118" fill="url(#bg)" stroke="#f59e0b" stroke-opacity="0.6" stroke-width="3"/>
+  <g clip-path="url(#round)">
+    <!-- cloak and fur collar -->
+    <path d="M28 250 C40 180 70 162 120 160 C170 162 200 180 212 250 Z" fill="url(#cloak)"/>
+    <path d="M58 250 C66 196 92 176 120 174 C148 176 174 196 182 250 Z" fill="#6b2a1c" opacity="0.8"/>
+    <path d="M70 196 C85 168 100 164 120 166 C140 164 155 168 170 196 C150 186 136 184 120 184 C104 184 90 186 70 196 Z" fill="url(#fur)"/>
+    <!-- neck -->
+    <path d="M102 140 L102 172 C110 182 130 182 138 172 L138 140 Z" fill="#d9a37c"/>
+    <!-- hair back -->
+    <path d="M60 128 C54 70 80 42 120 42 C160 42 186 70 180 128 C182 150 176 166 170 176 L160 172 C168 150 166 120 158 100 C150 80 136 70 120 70 C104 70 90 80 82 100 C74 120 72 150 80 172 L70 176 C64 166 58 150 60 128 Z" fill="url(#hair)"/>
+    <!-- face -->
+    <ellipse cx="120" cy="108" rx="40" ry="48" fill="url(#skin)"/>
+    <!-- ears -->
+    <ellipse cx="80" cy="110" rx="6" ry="9" fill="#e4b48f"/>
+    <ellipse cx="160" cy="110" rx="6" ry="9" fill="#e4b48f"/>
+    <!-- hair front, parted, with a braid over the shoulder -->
+    <path d="M78 96 C82 64 100 52 120 52 C140 52 158 64 162 96 C150 80 138 74 120 74 C102 74 90 80 78 96 Z" fill="url(#hair)"/>
+    <path d="M160 100 C170 122 172 150 166 178 C160 176 156 172 154 170 C160 146 158 122 152 104 Z" fill="url(#hair)"/>
+    <path d="M158 112 c6 10 6 22 2 34 M156 126 c6 8 6 18 2 30" fill="none" stroke="#6b3d22" stroke-width="2" stroke-linecap="round"/>
+    <!-- brows -->
+    <path d="M96 92 C102 87 110 86 116 89" fill="none" stroke="#3b2211" stroke-width="2.6" stroke-linecap="round"/>
+    <path d="M124 89 C130 86 138 87 144 92" fill="none" stroke="#3b2211" stroke-width="2.6" stroke-linecap="round"/>
+    <!-- eyes -->
+    <ellipse cx="106" cy="102" rx="7" ry="4.6" fill="#fff"/>
+    <ellipse cx="134" cy="102" rx="7" ry="4.6" fill="#fff"/>
+    <circle cx="106.5" cy="102.5" r="3.4" fill="#4b6a3a"/>
+    <circle cx="134.5" cy="102.5" r="3.4" fill="#4b6a3a"/>
+    <circle cx="106.5" cy="102.5" r="1.6" fill="#120a05"/>
+    <circle cx="134.5" cy="102.5" r="1.6" fill="#120a05"/>
+    <circle cx="105" cy="101" r="0.9" fill="#fff"/>
+    <circle cx="133" cy="101" r="0.9" fill="#fff"/>
+    <path d="M99 100 C103 96 110 96 113 100" fill="none" stroke="#3b2211" stroke-width="1.4" stroke-linecap="round"/>
+    <path d="M127 100 C131 96 138 96 141 100" fill="none" stroke="#3b2211" stroke-width="1.4" stroke-linecap="round"/>
+    <!-- nose -->
+    <path d="M120 106 C118 116 116 120 118 123 C120 125 123 124 124 122" fill="none" stroke="#c48a66" stroke-width="1.6" stroke-linecap="round"/>
+    <!-- mouth: a small knowing smile -->
+    <path d="M108 134 C114 139 126 139 132 134" fill="none" stroke="#9c4a3c" stroke-width="2.4" stroke-linecap="round"/>
+    <path d="M110 133 C116 131 124 131 130 133" fill="none" stroke="#c9735f" stroke-width="1.2" stroke-linecap="round"/>
+    <!-- cheeks -->
+    <ellipse cx="98" cy="120" rx="7" ry="4" fill="#e9967a" opacity="0.35"/>
+    <ellipse cx="142" cy="120" rx="7" ry="4" fill="#e9967a" opacity="0.35"/>
+    <!-- amber bead necklace: the ledger-keeper's token -->
+    <path d="M100 174 C108 186 132 186 140 174" fill="none" stroke="#c9a66b" stroke-width="1.6"/>
+    <circle cx="120" cy="184" r="4.5" fill="#f59e0b" stroke="#7c4a12" stroke-width="1"/>
+  </g>
+</svg>

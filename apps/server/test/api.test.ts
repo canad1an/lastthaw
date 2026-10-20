@@ -727,7 +727,7 @@ describe("api routes", () => {
     expect(inbox.some((x) => x.subject.startsWith("5 settlers joined the occupiers in"))).toBe(true);
   });
 
-  it("the Economic advisor: hired for an hourly wage with no fee, raises buildings to the minimums set, balances people, is charged by the tick, stops when unpaid, and moves nobody when not hired", async () => {
+  it("the Economic advisor: hired and fired for an hourly wage with no fee, raises buildings to the minimums set, balances people, is charged by the tick, stops when unpaid, and moves nobody when not hired", async () => {
     const base = `/api/matches/${gameId}`;
     const benState = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
     const cap = benState.me.capitalRegionId!;
@@ -815,12 +815,12 @@ describe("api routes", () => {
       const [row3] = await db.select().from(advisors).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
       expect(row3!.unpaidSince).toBeNull();
 
-      // Dismiss, and rehire with nothing but the hour's wage.
-      expect((await Ben.call("POST", `${base}/advisors/economic/dismiss`, {})).statusCode).toBe(200);
+      // Fire, and rehire with nothing but the hour's wage.
+      expect((await Ben.call("POST", `${base}/advisors/economic/fire`, {})).statusCode).toBe(200);
       st = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
       expect(st.advisors).toEqual([]);
       expect((await Ben.call("POST", `${base}/advisors/economic/hire`, {})).statusCode).toBe(200);
-      expect((await Ben.call("POST", `${base}/advisors/economic/dismiss`, {})).statusCode).toBe(200);
+      expect((await Ben.call("POST", `${base}/advisors/economic/fire`, {})).statusCode).toBe(200);
 
       // No advisor: a crowded capital stays crowded through a tick; with one set to overflow, the surplus spills to a neighbour.
       await db.update(matchRegions).set({ popWorkers: 600, settledAt: new Date(await nowIso()) }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
@@ -832,7 +832,7 @@ describe("api routes", () => {
       await tickOnce();
       const [spilled] = await db.select({ popWorkers: matchRegions.popWorkers }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
       expect(spilled!.popWorkers).toBeLessThan(still!.popWorkers);
-      expect((await Ben.call("POST", `${base}/advisors/economic/dismiss`, {})).statusCode).toBe(200);
+      expect((await Ben.call("POST", `${base}/advisors/economic/fire`, {})).statusCode).toBe(200);
     } finally {
       await redis.quit().catch(() => {});
     }

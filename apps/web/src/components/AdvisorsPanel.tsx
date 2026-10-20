@@ -24,93 +24,156 @@ const SKIP_LABEL: Record<string, string> = {
   notYetAvailable: "needs an age or tech you do not have",
 };
 
+const ECONOMIC_DUTIES = [
+  "Raises every building in every region to the minimum levels you set, a few builds a pass, in the order the land needs them.",
+  "Lets the convoys bring what a region cannot pay, from the capital and the nearest stocked regions, when you allow it.",
+  "Moves people the way you choose: not at all, overflow from crowded regions to neighbours, or balanced across the empire.",
+  "Leaves you a report after every pass: what was queued, what was skipped and why, and suggestions that open the region.",
+  "Never spends on research, armies or the market; those stay yours.",
+];
+
 /**
  * Advisors: hired staff who take routine management off your hands for a steep hourly wage.
- * The Economic advisor raises buildings to the minimums you set, lets convoys supply what a region cannot pay,
- * moves people the way you choose, and reports after every pass.
+ * The roster shows each advisor with a portrait and what they do; Hire opens the wage; once hired, Manage opens the settings.
  */
 export function AdvisorsPanel({ matchId, state, onSelect, clockOffsetMs }: { matchId: string; state: MatchStateView; onSelect: (regionId: string) => void; clockOffsetMs: number }) {
   const qc = useQueryClient();
   const refresh = () => void qc.invalidateQueries({ queryKey: keys.matchState(matchId) });
   const economic = state.advisors.find((a) => a.kind === "economic") ?? null;
   const hire = useMutation({ mutationFn: () => api.hireAdvisor(matchId, "economic"), onSuccess: refresh });
-  const dismiss = useMutation({ mutationFn: () => api.dismissAdvisor(matchId, "economic"), onSuccess: refresh });
+  const fire = useMutation({
+    mutationFn: () => api.fireAdvisor(matchId, "economic"),
+    onSuccess: () => {
+      refresh();
+      setView("roster");
+    },
+  });
   const run = useMutation({ mutationFn: () => api.runAdvisor(matchId, "economic"), onSuccess: refresh });
-  const [confirm, setConfirm] = useState<"hire" | "dismiss" | null>(null);
+  const [confirm, setConfirm] = useState<"hire" | "fire" | null>(null);
+  const [view, setView] = useState<"roster" | "economic">("roster");
   const wage = economic?.wage ?? economicWage(state.owned.length);
+  const regions = state.owned.length;
+
+  const dialog =
+    confirm &&
+    createPortal(
+      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm" onClick={() => setConfirm(null)} role="dialog" aria-modal="true">
+        <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-950 p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+          <h2 className="text-lg font-semibold text-white">{confirm === "hire" ? "Hire Mara, the Economic advisor?" : "Fire Mara, the Economic advisor?"}</h2>
+          {confirm === "hire" ? (
+            <div className="mt-2 space-y-2 text-sm text-slate-300">
+              <p>
+                Her wage, every game hour, for your {regions} region{regions === 1 ? "" : "s"}:
+              </p>
+              <ul className="grid grid-cols-2 gap-1 rounded border border-slate-800 p-2 text-slate-100 sm:grid-cols-3">
+                {Object.entries(wage).map(([k, v]) => (
+                  <li key={k} className="flex justify-between gap-2 px-1">
+                    <span className="text-slate-400">{k}</span>
+                    <span className="tabular-nums">{fmt(v)}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="text-xs text-slate-400">The first hour is taken now, from your capital first, then every game hour after. The wage grows with the regions you hold. No hiring fee. If a wage cannot be met she stops until it is paid. Fire her at any time.</p>
+            </div>
+          ) : (
+            <p className="mt-2 text-sm text-slate-300">She leaves at once. Builds already queued and convoys already on the road carry on. You can rehire at any time with no fee.</p>
+          )}
+          <div className="mt-5 flex justify-end gap-2">
+            <button className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:bg-slate-800" onClick={() => setConfirm(null)} autoFocus>
+              Cancel
+            </button>
+            <button
+              className={confirm === "hire" ? "btn-ember rounded-md px-4 py-2 text-sm font-semibold" : "rounded-md border border-rose-500/50 bg-rose-500/20 px-4 py-2 text-sm font-semibold text-rose-100 hover:bg-rose-500/30"}
+              onClick={() => {
+                setConfirm(null);
+                if (confirm === "hire") hire.mutate();
+                else fire.mutate();
+              }}
+            >
+              {confirm === "hire" ? "Yes, hire her" : "Yes, fire her"}
+            </button>
+          </div>
+        </div>
+      </div>,
+      document.body,
+    );
+
+  if (view === "economic" && economic) {
+    return (
+      <div className="space-y-3 p-3 text-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <button className="text-xs text-sky-400 hover:underline" onClick={() => setView("roster")}>
+            ← All advisors
+          </button>
+          <span className={`rounded px-2 py-0.5 text-xs ${economic.unpaid ? "bg-rose-500/20 text-rose-200" : "bg-emerald-500/20 text-emerald-200"}`}>{economic.unpaid ? "unpaid, not working" : "at work"}</span>
+        </div>
+        <Card className="flex items-center gap-3">
+          <img src="/advisors/economic.svg" alt="" className="h-14 w-14 shrink-0 rounded-full" />
+          <div className="min-w-0 flex-1 text-xs text-slate-400">
+            <p className="text-sm font-semibold text-white">Mara, the Economic advisor</p>
+            <p>
+              Wage {wageLine(wage)} an hour · paid until <Countdown until={economic.paidUntil} clockOffsetMs={clockOffsetMs} /> · last pass {economic.lastPassAt ? <Ago at={economic.lastPassAt} clockOffsetMs={clockOffsetMs} /> : "not yet"}
+            </p>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <Button variant="ghost" className="px-2 py-1 text-xs" onClick={() => run.mutate()} disabled={run.isPending || economic.unpaid}>
+                Run a pass now
+              </Button>
+              <button className="rounded border border-rose-500/50 bg-rose-500/10 px-2 py-1 text-xs text-rose-200 hover:bg-rose-500/20" onClick={() => setConfirm("fire")}>
+                Fire
+              </button>
+              <ErrorText>{run.error?.message ?? fire.error?.message}</ErrorText>
+            </div>
+          </div>
+        </Card>
+        <SettingsForm matchId={matchId} state={state} advisor={economic} />
+        {economic.lastReport && <Report advisor={economic} onSelect={onSelect} />}
+        {dialog}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3 p-3 text-sm">
-      <Card className="space-y-2">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h3 className="font-semibold text-white">Economic advisor</h3>
-            <p className="text-xs text-slate-400">Buildings, supply and people across every region, so you do not have to open each one.</p>
+      <p className="text-xs text-slate-400">Advisors take routine management off your hands for a steep hourly wage. You hire them and you fire them; there is no fee either way.</p>
+      <Card className="flex flex-col items-center gap-3 text-center sm:flex-row sm:items-start sm:text-left">
+        <img src="/advisors/economic.svg" alt="Mara, the Economic advisor" className="h-36 w-36 shrink-0 rounded-full shadow-lg" data-advisor-portrait="economic" />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
+            <h3 className="text-base font-semibold text-white">Mara, the Economic advisor</h3>
+            {economic ? (
+              <span className={`rounded px-2 py-0.5 text-xs ${economic.unpaid ? "bg-rose-500/20 text-rose-200" : "bg-emerald-500/20 text-emerald-200"}`}>{economic.unpaid ? "unpaid, not working" : "at work"}</span>
+            ) : (
+              <span className="rounded bg-slate-800 px-2 py-0.5 text-xs text-slate-300">not hired</span>
+            )}
           </div>
-          {economic ? (
-            <span className={`rounded px-2 py-0.5 text-xs ${economic.unpaid ? "bg-rose-500/20 text-rose-200" : "bg-emerald-500/20 text-emerald-200"}`}>{economic.unpaid ? "unpaid, not working" : "at work"}</span>
-          ) : (
-            <span className="rounded bg-slate-800 px-2 py-0.5 text-xs text-slate-300">not hired</span>
-          )}
-        </div>
-        <p className="text-xs text-slate-300">
-          Wage: <span className="text-slate-100">{wageLine(wage)}</span> every game hour, for your {state.owned.length} region{state.owned.length === 1 ? "" : "s"}, drawn from the capital first. No hiring fee; dismiss and rehire at any time.
-        </p>
-        {economic ? (
-          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
-            <span>
-              Paid until <Countdown until={economic.paidUntil} clockOffsetMs={clockOffsetMs} /> · last pass {economic.lastPassAt ? <Ago at={economic.lastPassAt} clockOffsetMs={clockOffsetMs} /> : "not yet"}
+          <p className="mt-1 text-xs text-slate-400">Keeper of stores and roads. Buildings, supply and people across every region, so you do not have to open each one.</p>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-left text-xs text-slate-300">
+            {ECONOMIC_DUTIES.map((d) => (
+              <li key={d}>{d}</li>
+            ))}
+          </ul>
+          <div className="mt-3 flex flex-wrap items-center justify-center gap-2 sm:justify-start">
+            {economic ? (
+              <>
+                <Button onClick={() => setView("economic")}>Manage</Button>
+                <button className="rounded border border-rose-500/50 bg-rose-500/10 px-3 py-2 text-xs text-rose-200 hover:bg-rose-500/20" onClick={() => setConfirm("fire")}>
+                  Fire
+                </button>
+              </>
+            ) : (
+              <Button onClick={() => setConfirm("hire")} disabled={hire.isPending}>
+                Hire
+              </Button>
+            )}
+            <span className="text-xs text-slate-500">
+              {wageLine(wage)} an hour for {regions} region{regions === 1 ? "" : "s"}
             </span>
-            <Button variant="ghost" className="px-2 py-1 text-xs" onClick={() => run.mutate()} disabled={run.isPending || economic.unpaid}>
-              Run a pass now
-            </Button>
-            <button className="rounded border border-rose-500/50 bg-rose-500/10 px-2 py-1 text-xs text-rose-200 hover:bg-rose-500/20" onClick={() => setConfirm("dismiss")}>
-              Dismiss
-            </button>
-            <ErrorText>{run.error?.message ?? dismiss.error?.message}</ErrorText>
+            <ErrorText>{hire.error?.message ?? fire.error?.message}</ErrorText>
           </div>
-        ) : (
-          <div className="flex items-center gap-2">
-            <Button onClick={() => setConfirm("hire")} disabled={hire.isPending}>
-              Hire
-            </Button>
-            <ErrorText>{hire.error?.message}</ErrorText>
-          </div>
-        )}
+        </div>
       </Card>
-
-      {economic && <SettingsForm matchId={matchId} state={state} advisor={economic} />}
-      {economic?.lastReport && <Report advisor={economic} onSelect={onSelect} />}
-
-      {confirm &&
-        createPortal(
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm" onClick={() => setConfirm(null)} role="dialog" aria-modal="true">
-          <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-950 p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-semibold text-white">{confirm === "hire" ? "Hire the Economic advisor?" : "Dismiss the Economic advisor?"}</h2>
-            <p className="mt-2 text-sm text-slate-300">
-              {confirm === "hire"
-                ? `The first hour's wage, ${wageLine(wage)}, is taken now and the same again every game hour from your capital first. If a wage cannot be met the advisor stops until it is paid.`
-                : "The advisor stops at once. Builds already queued and convoys already on the road carry on. You can rehire at any time with no fee."}
-            </p>
-            <div className="mt-5 flex justify-end gap-2">
-              <button className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:bg-slate-800" onClick={() => setConfirm(null)} autoFocus>
-                Cancel
-              </button>
-              <button
-                className="btn-ember rounded-md px-4 py-2 text-sm font-semibold"
-                onClick={() => {
-                  setConfirm(null);
-                  if (confirm === "hire") hire.mutate();
-                  else dismiss.mutate();
-                }}
-              >
-                {confirm === "hire" ? "Yes, hire" : "Yes, dismiss"}
-              </button>
-            </div>
-          </div>
-        </div>,
-          document.body,
-        )}
+      <p className="text-xs text-slate-500">More advisors will join the roster: a Military advisor is next.</p>
+      {dialog}
     </div>
   );
 }
@@ -118,6 +181,7 @@ export function AdvisorsPanel({ matchId, state, onSelect, clockOffsetMs }: { mat
 function SettingsForm({ matchId, state, advisor }: { matchId: string; state: MatchStateView; advisor: AdvisorView }) {
   const qc = useQueryClient();
   const [draft, setDraft] = useState<AdvisorSettings>(advisor.settings);
+  const [allLevel, setAllLevel] = useState(3);
   useEffect(() => setDraft(advisor.settings), [advisor.settings]);
   const save = useMutation({ mutationFn: (s: AdvisorSettings) => api.setAdvisorSettings(matchId, "economic", s), onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matchState(matchId) }) });
   const buildings = useMemo(() => availableBuildings(state.me.age, new Set(state.me.techs)).filter((b) => !b.wonder), [state.me.age, state.me.techs]);
@@ -134,6 +198,24 @@ function SettingsForm({ matchId, state, advisor }: { matchId: string; state: Mat
     <Card className="space-y-3">
       <h3 className="font-semibold text-white">What to keep up</h3>
       <p className="text-xs text-slate-400">The minimum level of each building you want in every region where it can stand (0 leaves it alone). The advisor raises them as resources allow, a few builds per pass, and never adds to a region whose queue is full.</p>
+      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-300">
+        <span>Set every building to</span>
+        <input type="number" min={0} max={50} value={allLevel} onChange={(e) => setAllLevel(Math.max(0, Math.min(50, Number(e.target.value) || 0)))} className="w-16 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-right text-slate-100" data-advisor-all />
+        <Button
+          variant="ghost"
+          className="px-2 py-1 text-xs"
+          onClick={() =>
+            setDraft((d) => {
+              const minLevels: Record<string, number> = {};
+              if (allLevel > 0) for (const b of buildings) minLevels[b.id] = Math.min(allLevel, b.maxLevel);
+              return { ...d, minLevels };
+            })
+          }
+        >
+          Apply to all
+        </Button>
+        <span className="text-slate-500">Each building is capped at its own maximum; 0 clears every minimum. Adjust single buildings below afterwards.</span>
+      </div>
       <div className="grid gap-1 sm:grid-cols-2">
         {buildings.map((b) => (
           <label key={b.id} className="flex items-center justify-between gap-2 rounded border border-slate-800 px-2 py-1 text-xs">

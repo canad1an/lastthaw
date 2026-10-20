@@ -571,7 +571,7 @@ export const EVENT_KINDS = [
   "chat.message",
   "trade.filled",
   "advisor.hired",
-  "advisor.dismissed",
+  "advisor.fired",
   "advisor.settings",
   "advisor.report",
 ] as const;

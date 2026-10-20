@@ -465,7 +465,7 @@ export const pacts = pgTable(
 );
 
 /** Mercenary companies on offer in a match. */
-/** Hired advisors, one row per kind per player per match; dismissing deletes the row. */
+/** Hired advisors, one row per kind per player per match; firing deletes the row. */
 export const advisors = pgTable(
   "advisors",
   {

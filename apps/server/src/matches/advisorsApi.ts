@@ -16,8 +16,8 @@ function httpError(statusCode: number, message: string) {
 const kindParams = idParams.extend({ kind: advisorKind });
 
 /**
- * Advisors: hire, set up, dismiss and prod the Economic advisor. No hiring fee: the first hour's wage is charged on
- * hiring and then every game hour by the tick; dismiss and rehire freely.
+ * Advisors: hire, set up, fire and prod the Economic advisor. No hiring fee: the first hour's wage is charged on
+ * hiring and then every game hour by the tick; fire and rehire freely.
  */
 export async function advisorRoutes(app: FastifyInstance, opts: { db: Db; publisher: Publisher }) {
   const { db, publisher } = opts;
@@ -52,13 +52,13 @@ export async function advisorRoutes(app: FastifyInstance, opts: { db: Db; publis
     return { ok: true, wage };
   });
 
-  app.post("/api/matches/:id/advisors/:kind/dismiss", async (req) => {
+  app.post("/api/matches/:id/advisors/:kind/fire", async (req) => {
     const user = requireUser(req);
     const { id: matchId, kind } = kindParams.parse(req.params);
     const { p } = await loadContext(matchId, user.id);
     const gone = await db.delete(advisors).where(and(eq(advisors.matchId, matchId), eq(advisors.playerId, p.id), eq(advisors.kind, kind))).returning({ id: advisors.id });
     if (!gone.length) throw httpError(404, "no such advisor");
-    await publisher.toPlayer(matchId, p.id, "advisor.dismissed", { kind });
+    await publisher.toPlayer(matchId, p.id, "advisor.fired", { kind });
     return { ok: true };
   });
 
