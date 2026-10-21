@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { availableBuildings, balance, regionById, type AdvisorKind, type AdvisorSettings, type AdvisorView, type MatchStateView } from "@lastthaw/shared";
+import { availableBuildings, balance, buildingBlockedBy, regionById, type AdvisorKind, type AdvisorSettings, type AdvisorView, type MatchStateView } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { Button, Card, ErrorText, fmt } from "./ui.js";
 
@@ -310,6 +310,10 @@ function MilitarySettings({ matchId, state, advisor, onSelect }: { matchId: stri
             <input type="checkbox" checked={draft.raids} onChange={(e) => setDraft((d) => ({ ...d, raids: e.target.checked }))} className="mt-0.5 accent-sky-400" />
             <span>Raids (aggressive only): one a pass, from a border region with soldiers to spare, against the weakest rich neighbour.</span>
           </label>
+          <label className="flex items-start gap-2">
+            <input type="checkbox" checked={draft.disbandIdle} onChange={(e) => setDraft((d) => ({ ...d, disbandIdle: e.target.checked }))} className="mt-0.5 accent-sky-400" />
+            <span>Disband idle soldiers: an interior region holding more than the garrison, with no exposed front to send them to and no muster there, sends the surplus back to work, a few regions a pass. Campaigns raise fresh troops near their target instead of marching old ones across the map.</span>
+          </label>
         </div>
         <details className="text-xs text-slate-300">
           <summary className="cursor-pointer text-slate-400">Regions he leaves alone ({draft.skipRegions.length})</summary>
@@ -617,14 +621,24 @@ function SettingsForm({ matchId, state, advisor }: { matchId: string; state: Mat
         <span className="text-slate-500">Each building is capped at its own maximum; 0 clears every minimum. Adjust single buildings below afterwards.</span>
       </div>
       <div className="grid gap-1 sm:grid-cols-2">
-        {buildings.map((b) => (
+        {buildings.map((b) => {
+          // Where the building can stand, how many regions have it at its top level, and how many meet the minimum set.
+          const eligible = state.owned.filter((o) => !o.frozen && !buildingBlockedBy(b, regionById(o.regionId)!, o.buildings, o.isCapital));
+          const atMax = eligible.filter((o) => (o.buildings[b.id] ?? 0) >= b.maxLevel).length;
+          const min = draft.minLevels[b.id] ?? 0;
+          const atMin = min > 0 ? eligible.filter((o) => (o.buildings[b.id] ?? 0) >= min).length : null;
+          return (
           <label key={b.id} className="flex items-center justify-between gap-2 rounded border border-slate-800 px-2 py-1 text-xs">
             <span className="text-slate-200">
               {b.name} <span className="text-slate-500">max {b.maxLevel}</span>
+              <span className="block text-[11px] text-slate-500" data-building-progress={b.id}>
+                {atMax} / {eligible.length} fully upgraded{atMin !== null ? ` · ${atMin} at level ${min} or more` : ""}
+              </span>
             </span>
             <input type="number" min={0} max={b.maxLevel} value={draft.minLevels[b.id] ?? 0} onChange={(e) => setLevel(b.id, Math.max(0, Math.min(b.maxLevel, Number(e.target.value) || 0)))} className="w-16 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-right text-slate-100" data-advisor-level={b.id} />
           </label>
-        ))}
+          );
+        })}
       </div>
       <label className="flex items-start gap-2 text-xs text-slate-300">
         <input type="checkbox" checked={draft.useOtherRegions} onChange={(e) => setDraft((d) => ({ ...d, useOtherRegions: e.target.checked }))} className="mt-0.5 accent-sky-400" />
@@ -692,6 +706,7 @@ function Report({ advisor, onSelect }: { advisor: AdvisorView; onSelect: (region
         {r.rebalanced ? `, reset the workers of ${r.rebalanced} region${r.rebalanced === 1 ? "" : "s"}` : ""}
         {r.trained ? `, ordered ${fmt(r.trained)} soldiers` : ""}
         {r.fortified ? `, queued ${r.fortified} wall${r.fortified === 1 ? "" : "s"}` : ""}
+        {r.disbanded ? `, sent ${r.disbanded} idle soldier${r.disbanded === 1 ? "" : "s"} back to work` : ""}
         {r.evacuated ? `, evacuated ${r.evacuated} region${r.evacuated === 1 ? "" : "s"}` : ""}
         {r.settled ? `, sent ${r.settled} colon${r.settled === 1 ? "y" : "ies"}` : ""}
         {r.researched ? `, queued ${r.researched} tech${r.researched === 1 ? "" : "s"}` : ""}

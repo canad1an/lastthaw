@@ -455,6 +455,8 @@ export const advisorSettings = z.object({
   scoutFirst: z.boolean().default(true),
   /** Aggressive only: raid rich weak neighbours with spare soldiers. */
   raids: z.boolean().default(true),
+  /** Interior regions holding more than the garrison, with no front to reinforce and no muster there, send the surplus back to work. */
+  disbandIdle: z.boolean().default(true),
   // Warden of the Thaw: evacuate this many game hours before a region freezes; move the capital this many hours before.
   warningHours: z.number().int().min(6).max(120).default(24),
   capitalHours: z.number().int().min(12).max(168).default(48),
@@ -500,6 +502,8 @@ export const advisorReport = z.object({
   // Military.
   trained: z.number().default(0),
   fortified: z.number().default(0),
+  /** Idle soldiers sent back to work this pass. */
+  disbanded: z.number().optional(),
   /** The most exposed border regions, worst first, with a line each. */
   exposed: z.array(z.object({ regionId: z.string(), exposure: z.number(), text: z.string() })).default([]),
   // Warden of the Thaw.

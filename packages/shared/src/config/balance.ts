@@ -185,6 +185,8 @@ export const balance = {
     maxConvoyCalls: 5,
     /** A player has at most this many materials convoys on the road, and this many relief moves of haulers in flight, at once. */
     maxSupplyConvoys: 8,
+    /** ...and one materials convoy for every this many haulers the player owns, whichever is more, so a big fleet is not throttled to eight. */
+    supplyConvoysPerHaulers: 10,
     maxReliefMoves: 6,
     /** A region whose stock hits its cap sends this share of the cap to the capital by caravan, automatically. */
     overflowToCapital: true,
@@ -415,6 +417,8 @@ export const balance = {
       maxTargets: 20,
       /** Training supplied by convoy may owe up to this much per order. */
       maxOwed: 20000,
+      /** With Disband idle on, at most this many interior regions send their surplus soldiers back to work in one pass. */
+      disbandRegionsPerPass: 3,
     },
     /**
      * The Warden of the Thaw: reads the ice schedule, evacuates regions before they freeze, moves the capital out of the

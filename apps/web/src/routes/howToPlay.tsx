@@ -375,6 +375,9 @@ function AdvisorsSection() {
             <b>Working with Mara.</b> Training he orders is supplied by convoys like any build, and her worker shares already favour what waiting orders owe. When a muster region is short of free workers and Mara is hired with people moves on, she brings a column; otherwise his report asks you to move people or hire her.
           </p>
           <p>
+            <b>Idle soldiers.</b> With Disband idle on (the default), an interior region holding more than the garrison, with no exposed front to send them to and no muster there, sends the surplus back to work, a few regions a pass. A campaign raises fresh troops at the muster region near its target instead of marching old ones across the map.
+          </p>
+          <p>
             <b>Wage:</b> the same {Math.round(balance.advisors.outputShare * 100)}% of your hourly output as every advisor.
           </p>
         </div>
@@ -450,7 +453,7 @@ function AdvisorsSection() {
             A build or a training order a region cannot pay for on the spot waits for materials. What is short is set aside at the capital first and then at the regions holding the most of it (small offers last), as a warehouse sets aside a delivery: nothing else can spend it. One convoy loads where it starts and calls at the nearest other regions holding goods for the same place while it has room, then delivers; a new order for that region rides along on a convoy still collecting if there is room. Every hauler you own is one pool: a route with none at home calls the nearest spare ones over, idle ones first, so train haulers anywhere. Cancel the order and the goods go back on the shelf.
           </p>
           <p>
-            Two limits keep the roads sane: at most {balance.trade.maxSupplyConvoys} materials convoys and {balance.trade.maxReliefMoves} relief moves of haulers per player on the road at once; the rest wait their turn. The Logistics menu shows the convoys, what is aboard, where they call, and which routes are waiting.
+            Two limits keep the roads sane: at most {balance.trade.maxSupplyConvoys} materials convoys (one more for every {balance.trade.supplyConvoysPerHaulers} haulers you own) and {balance.trade.maxReliefMoves} relief moves of haulers per player on the road at once; the rest wait their turn. A convoy that finds the region it served at its cap carries the overflow on to the capital before walking home. The Logistics menu shows the convoys, what is aboard, where they call, which routes are waiting, and how many convoys the cap allows.
           </p>
         </div>
       </Card>

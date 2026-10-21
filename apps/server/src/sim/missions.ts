@@ -521,10 +521,62 @@ async function deliverCargo(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publis
     await notify(tx, m.id, target.ownerPlayerId, "trade", `${await playerName(tx, army.playerId)} delivered goods to ${regionById(army.targetRegionId)?.name}`, { regionId: army.targetRegionId, cargo: goods });
   }
   await notify(tx, m.id, army.playerId, "trade", `Goods delivered to ${regionById(army.targetRegionId)?.name}`, { regionId: army.targetRegionId, cargo: goods });
-  // Escorts walk back empty.
-  await sendHome(tx, m, army, at, army.units, {});
+  // A convoy that finds the region it served at its cap carries the overflow on to the capital instead of walking home empty.
+  if (!(await carryOverflowOn(tx, m, army, at))) await sendHome(tx, m, army, at, army.units, {});
   const pid = army.playerId;
   after(() => publisher.toPlayer(m.id, pid, "army.arrived", { armyId: army.id }));
+}
+
+/**
+ * Return trips carry: a convoy that has just delivered to one of its owner's regions, finding that region at its cap for
+ * food, wood or stone, loads the overflow (the same share the overflow pass would send) and goes on to the capital,
+ * walking home from there. One overflow convoy per region at a time and none within overflowEveryHours of the last,
+ * as the overflow pass keeps it. Returns false when there is nothing to carry.
+ */
+async function carryOverflowOn(tx: Tx, m: MatchRow, army: ArmyRow, at: Date): Promise<boolean> {
+  if (!balance.trade.overflowToCapital || haulerCount(army.units) === 0) return false;
+  const [p] = await tx.select({ capital: players.capitalRegionId }).from(players).where(eq(players.id, army.playerId)).limit(1);
+  const capital = p?.capital;
+  if (!capital || capital === army.targetRegionId) return false;
+  const [row] = await tx.select().from(matchRegions).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, army.targetRegionId))).limit(1);
+  if (!row || row.ownerPlayerId !== army.playerId || row.isCapital || row.frozenAt) return false;
+  const recentCutoff = new Date(at.getTime() - (balance.trade.overflowEveryHours * 3600_000) / m.speed);
+  const [busy] = await tx
+    .select({ n: sql<number>`count(*)::int` })
+    .from(armies)
+    .where(and(eq(armies.matchId, m.id), eq(armies.playerId, army.playerId), eq(armies.mission, "transport"), eq(armies.originRegionId, army.targetRegionId), sql`${armies.id} <> ${army.id}`, sql`(${armies.status} = 'outbound' or ${armies.departsAt} > ${recentCutoff.toISOString()}::timestamptz)`));
+  if ((busy?.n ?? 0) > 0) return false;
+  const fx = await ownerTechEffects(tx, army.playerId);
+  const caps = storageCaps(applyTechEffects(effectsOf(row.buildings), fx), false);
+  const cargo: Record<string, number> = {};
+  for (const r of BASE) if (row[r] >= caps[r] * 0.98) cargo[r] = Math.floor(caps[r] * balance.trade.overflowShare);
+  let total = Object.values(cargo).reduce((a, b) => a + b, 0);
+  if (total < 1) return false;
+  const techs = new Set((await tx.select({ id: playerTechs.techId }).from(playerTechs).where(eq(playerTechs.playerId, army.playerId))).map((t) => t.id));
+  const capacity = carryCapacity(army.units, techs);
+  if (capacity < 1) return false;
+  if (total > capacity) {
+    const f = capacity / total;
+    for (const k of Object.keys(cargo)) cargo[k] = Math.floor(cargo[k]! * f);
+    total = Object.values(cargo).reduce((a, b) => a + b, 0);
+    if (total < 1) return false;
+  }
+  const route = findRoute(army.targetRegionId, capital, true);
+  if (!route) return false;
+  const set: Partial<MatchRegionRow> = {};
+  for (const r of BASE) if (cargo[r]) set[r] = Math.max(0, row[r] - cargo[r]!);
+  await tx.update(matchRegions).set(set).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, row.regionId)));
+  const seconds = travelSeconds(route, armySpeed(army.units), m.speed);
+  const arrivesAt = new Date(at.getTime() + seconds * 1000);
+  // The haulers go on as a fresh transport from here, so afterwards they walk home from the capital to this region.
+  await tx.update(armies).set({ status: "done", units: {}, cargo: {} }).where(eq(armies.id, army.id));
+  const [next] = await tx
+    .insert(armies)
+    .values({ matchId: m.id, playerId: army.playerId, mission: "transport", originRegionId: row.regionId, targetRegionId: capital, units: army.units, cargo: { ...cargo, people: 0 }, path: route.path, status: "outbound", departsAt: at, arrivesAt })
+    .returning({ id: armies.id });
+  await tx.insert(jobs).values({ matchId: m.id, playerId: army.playerId, regionId: capital, kind: "mission", refId: next!.id, startsAt: at, endsAt: arrivesAt });
+  await notify(tx, m.id, army.playerId, "trade", `${regionById(row.regionId)?.name} is full: the convoy carries ${Object.entries(cargo).map(([k, v]) => `${v} ${k}`).join(", ")} on to the capital`, { regionId: row.regionId });
+  return true;
 }
 
 /** One line of what a scout saw: owner, people, soldiers and the defences. */
