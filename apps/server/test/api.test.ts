@@ -216,6 +216,7 @@ describe("api routes", () => {
     for (const [method, url] of [
       ["GET", "/api/admin/users"],
       ["GET", "/api/admin/matches"],
+      ["GET", "/api/admin/tournaments"],
       ["GET", "/api/admin/fairplay"],
       ["POST", "/api/admin/fairplay/scan"],
     ] as const) {
@@ -1592,7 +1593,7 @@ describe("api routes", () => {
     expect((await Ann.call("GET", "/api/admin/metrics")).statusCode).toBe(404);
     const metrics = await A.call("GET", "/api/admin/metrics");
     expect(metrics.statusCode).toBe(200);
-    const mt = metrics.json() as { online: { users: unknown[]; sockets: number }; active15m: { id: string }[]; users: { total: number; approved: number }; matches: { open: Array<{ id: string; status: string; humans: number; ai: number; jobs: { open: number } }> }; activity: { battles24h: number } };
+    const mt = metrics.json() as { online: { users: unknown[]; sockets: number }; active15m: { id: string }[]; users: { total: number; verified: number }; matches: { open: Array<{ id: string; status: string; humans: number; ai: number; jobs: { open: number } }> }; activity: { battles24h: number } };
     expect(mt.users.total).toBeGreaterThanOrEqual(4);
     expect(mt.users.verified).toBeGreaterThanOrEqual(2);
     const adminId = await idOf(admin.email);

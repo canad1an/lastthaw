@@ -3,7 +3,8 @@ import { and, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import type { Redis } from "ioredis";
 import { z } from "zod";
 import type { Db } from "../db/client.js";
-import { fairplayFlags, jobs, matchRegions, matches, players, sessions, users } from "../db/schema.js";
+import { fairplayFlags, jobs, matchRegions, matches, players, sessions, tournamentRegistrations, users } from "../db/schema.js";
+import { isTournament, joinOpensAt } from "../matches/registrations.js";
 import type { Publisher } from "../realtime/publish.js";
 import { eliminatePlayer } from "../sim/missions.js";
 import { matchNow } from "../sim/clock.js";
@@ -326,6 +327,42 @@ export async function adminRoutes(app: FastifyInstance, opts: { db: Db; publishe
           tribes: Number(r.tribes),
         };
       }),
+    };
+  });
+
+  /**
+   * Upcoming tournaments and who has registered for each: name, email, when they registered, which reminders went out,
+   * and whether they have since joined the lobby. Tournaments that started in the last day stay listed so the turnout
+   * can be read against the sign-ups.
+   */
+  app.get("/api/admin/tournaments", async (req) => {
+    requireAdmin(req);
+    const since = new Date(Date.now() - 24 * 3600_000);
+    const all = await db.select().from(matches).where(gt(matches.startsAt, since)).orderBy(matches.startsAt);
+    const tournaments = all.filter((m) => isTournament(m.settings));
+    if (tournaments.length === 0) return { tournaments: [] };
+    const ids = tournaments.map((m) => m.id);
+    const regs = await db
+      .select({ matchId: tournamentRegistrations.matchId, userId: tournamentRegistrations.userId, createdAt: tournamentRegistrations.createdAt, remindedDayAt: tournamentRegistrations.remindedDayAt, remindedHourAt: tournamentRegistrations.remindedHourAt, name: users.displayName, email: users.email })
+      .from(tournamentRegistrations)
+      .innerJoin(users, eq(users.id, tournamentRegistrations.userId))
+      .where(inArray(tournamentRegistrations.matchId, ids))
+      .orderBy(tournamentRegistrations.createdAt);
+    const joined = await db.select({ matchId: players.matchId, userId: players.userId }).from(players).where(and(inArray(players.matchId, ids), isNull(players.eliminatedAt)));
+    const joinedKey = new Set(joined.map((p) => `${p.matchId}:${p.userId}`));
+    return {
+      tournaments: tournaments.map((m) => ({
+        id: m.id,
+        name: m.name,
+        status: m.status,
+        startsAt: m.startsAt.toISOString(),
+        lobbyOpensAt: joinOpensAt(m.startsAt).toISOString(),
+        speed: m.speed,
+        joined: joined.filter((p) => p.matchId === m.id).length,
+        registrations: regs
+          .filter((r) => r.matchId === m.id)
+          .map((r) => ({ userId: r.userId, name: r.name, email: r.email, registeredAt: r.createdAt.toISOString(), remindedDay: !!r.remindedDayAt, remindedHour: !!r.remindedHourAt, joined: joinedKey.has(`${m.id}:${r.userId}`) })),
+      })),
     };
   });
 

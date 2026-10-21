@@ -193,10 +193,11 @@ async function post(url: string, body?: unknown) {
   return r.json();
 }
 
-type AdminTab = "metrics" | "accounts" | "players" | "fairplay";
+type AdminTab = "metrics" | "accounts" | "tournaments" | "players" | "fairplay";
 const ADMIN_TABS: Array<{ id: AdminTab; label: string }> = [
   { id: "metrics", label: "Right now" },
   { id: "accounts", label: "Accounts" },
+  { id: "tournaments", label: "Tournaments" },
   { id: "players", label: "Top Players" },
   { id: "fairplay", label: "Fair play" },
 ];
@@ -300,6 +301,7 @@ export function AdminPage() {
       </section>
         </>
       )}
+      {tab === "tournaments" && <Tournaments enabled={!!me.data?.isAdmin} />}
       {tab === "players" && (
         <>
       <PlayerStats enabled={!!me.data?.isAdmin} />
@@ -394,6 +396,79 @@ const AGE_NAMES = ["Stone", "Bronze", "Iron", "Classical", "Medieval", "Industri
 const ago = (iso: string | null) => (iso ? `${Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 3600_000))} h ago` : "never");
 
 /** Everything tracked per account. Only admins see this; players never see each other's figures. */
+interface AdminTournament {
+  id: string;
+  name: string;
+  status: string;
+  startsAt: string;
+  lobbyOpensAt: string;
+  speed: number;
+  joined: number;
+  registrations: Array<{ userId: string; name: string; email: string; registeredAt: string; remindedDay: boolean; remindedHour: boolean; joined: boolean }>;
+}
+
+/** Upcoming tournaments, each with everyone who has registered, and whether they have joined the lobby since. */
+function Tournaments({ enabled }: { enabled: boolean }) {
+  const q = useQuery({
+    queryKey: ["admin", "tournaments"],
+    queryFn: () => fetch("/api/admin/tournaments", { credentials: "include" }).then((r) => (r.ok ? (r.json() as Promise<{ tournaments: AdminTournament[] }>) : Promise.reject(new Error("forbidden")))),
+    enabled,
+    refetchInterval: 60_000,
+  });
+  const when = (iso: string) => new Date(iso).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  const list = q.data?.tournaments ?? [];
+  return (
+    <section className="space-y-3">
+      <h1 className="text-2xl font-semibold">Tournaments</h1>
+      <p className="text-sm text-slate-400">Every tournament still to start, or started in the last day, with everyone who registered for it. Joined means they are in the lobby or playing. Reminders go out by mail a day and an hour before the start.</p>
+      {q.isPending && <p className="text-sm text-slate-500">Loading…</p>}
+      {q.isError && <p className="text-sm text-rose-300">{q.error.message}</p>}
+      {q.data && list.length === 0 && <p className="text-sm text-slate-500">No upcoming tournaments.</p>}
+      {list.map((t) => (
+        <Card key={t.id} className="space-y-2 p-0">
+          <div className="flex flex-wrap items-baseline justify-between gap-2 px-3 pt-3">
+            <div>
+              <span className="font-medium text-white">{t.name}</span>
+              <span className="ml-2 text-xs text-slate-400">
+                {t.status} · {t.speed}x · starts {when(t.startsAt)} · lobby opens {when(t.lobbyOpensAt)}
+              </span>
+            </div>
+            <span className="text-xs text-slate-300">
+              {t.registrations.length} registered · {t.joined} joined
+            </span>
+          </div>
+          {t.registrations.length === 0 ? (
+            <p className="px-3 pb-3 text-sm text-slate-500">Nobody has registered yet.</p>
+          ) : (
+            <table className="w-full min-w-max text-sm">
+              <thead className="text-left text-xs uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-3 py-2">Name</th>
+                  <th className="px-3 py-2">Email</th>
+                  <th className="px-3 py-2">Registered</th>
+                  <th className="px-3 py-2">Reminders</th>
+                  <th className="px-3 py-2">Joined</th>
+                </tr>
+              </thead>
+              <tbody>
+                {t.registrations.map((r) => (
+                  <tr key={r.userId} className="border-t border-slate-800">
+                    <td className="px-3 py-1.5">{r.name}</td>
+                    <td className="px-3 py-1.5 text-slate-400">{r.email}</td>
+                    <td className="px-3 py-1.5 text-slate-400">{when(r.registeredAt)}</td>
+                    <td className="px-3 py-1.5 text-slate-400">{[r.remindedDay && "day", r.remindedHour && "hour"].filter(Boolean).join(", ") || "none yet"}</td>
+                    <td className="px-3 py-1.5">{r.joined ? <span className="text-emerald-300">yes</span> : <span className="text-slate-500">not yet</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </Card>
+      ))}
+    </section>
+  );
+}
+
 function PlayerStats({ enabled }: { enabled: boolean }) {
   const q = useQuery({
     queryKey: ["admin", "player-stats"],
