@@ -14,6 +14,7 @@ const MISSIONS: Array<{ id: MissionKind; label: string; hint: string }> = [
   { id: "reinforce", label: "Reinforce", hint: "Same as move, for allies." },
   { id: "transport", label: "Send resources", hint: "Caravans (500 each) carry goods to your own or an ally's region. For regular deliveries use the Routes tab." },
   { id: "patrol", label: "Patrol", hint: "Ships only: hold the sea lane to the chosen coast for 12 hours and fight any enemy ship that uses it." },
+  { id: "airstrike", label: "Airstrike", hint: "Bombers only: fly straight to the target from an Airfield, strike its defenders and fly home. Nothing is taken or held; walls do not stop bombs, an Anti-air battery shoots a share down." },
   { id: "expedition", label: "Expedition", hint: "Three or more soldiers into a region at least three hops away that you have never seen. They may find an artifact (a free tech), a hoard of iron, a tale that lifts loyalty, or an ambush." },
 ];
 

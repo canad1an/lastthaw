@@ -1,7 +1,7 @@
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { claimBounties } from "./objectives.js";
 import { tribeBattleTalk } from "./tribeVoice.js";
-import { balance, effectsOf, emptySpecial, storageCaps, regionById, resolveCombat, carryCapacity, travelSeconds, findRoute, armySpeed, type UnitCounts, HAULER_IDS, haulerCount, unitById, laneName, applyTechEffects, wallBonusAgainst, breachOf, buildingById, seededRng, availableTechs, scoutCatchChance, soldierCount, wallOf, battleSchedule, type BattleRound, type CombatResult } from "@lastthaw/shared";
+import { balance, effectsOf, emptySpecial, storageCaps, regionById, resolveCombat, carryCapacity, travelSeconds, findRoute, armySpeed, type UnitCounts, HAULER_IDS, haulerCount, unitById, laneName, applyTechEffects, wallBonusAgainst, breachOf, buildingById, seededRng, availableTechs, scoutCatchChance, soldierCount, wallOf, battleSchedule, type BattleRound, type CombatResult, isAirGroup } from "@lastthaw/shared";
 import { matchDayAt } from "./clock.js";
 import { armies, battles, jobs, matchRegions, players, regionSightings, playerTechs, tradeRoutes, events } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
@@ -63,6 +63,8 @@ export async function resolveMission(tx: Tx, m: MatchRow, job: JobRow, publisher
     case "raid":
     case "conquer":
       return battle(tx, m, army, at, publisher, after);
+    case "airstrike":
+      return airstrike(tx, m, army, at, publisher, after);
     case "settle":
       return settleLand(tx, m, army, at, publisher, after);
     case "relocate":
@@ -357,6 +359,67 @@ function pathUsesSea(path: readonly string[]): boolean {
   return path.some((id, i) => i > 0 && !(regionById(path[i - 1]!)?.neighbors.includes(id) ?? true));
 }
 
+/**
+ * An airstrike: the bombers hit the region's defenders once and fly home. Nothing changes hands, nothing is taken, and
+ * walls do not count (bombs come over them); the region's Anti-air battery shoots a share of the planes down on the way out.
+ */
+async function airstrike(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher: Publisher, after: After): Promise<void> {
+  const target = await lockRegion(tx, m, army.targetRegionId, at);
+  const region = regionById(army.targetRegionId)!;
+  const pid = army.playerId;
+  const friendly = target.ownerPlayerId === army.playerId || (target.ownerPlayerId ? await areAllied(tx, m.id, army.playerId, target.ownerPlayerId) : false);
+  if (friendly) {
+    await notify(tx, m.id, army.playerId, "battle", `Airstrike on ${region.name} called off: the region is friendly`, { regionId: region.id });
+    await sendHome(tx, m, army, at, army.units, {}, "called off: the region is friendly");
+    after(() => publisher.toPlayer(m.id, pid, "army.arrived", { armyId: army.id }));
+    return;
+  }
+  const effects = effectsOf(target.buildings);
+  const militia = Math.floor(((target.popWorkers + target.popOccupiers) / 10) * balance.combat.militiaPerTenPeople);
+  const standing: UnitCounts = {};
+  for (const [id, n] of Object.entries(target.units)) if (n > 0 && !unitById.get(id)?.hauler) standing[id] = n;
+  const defenderUnits: UnitCounts = militia > 0 ? addUnits(standing, { militia }) : standing;
+  const attackerTech = await ownerTechEffects(tx, army.playerId);
+  const defenderTech = await ownerTechEffects(tx, target.ownerPlayerId);
+  const terrain = balance.combat.terrainDefense[region.terrain] ?? 0;
+  const bonus = effects.defense + defenderTech.defense + terrain;
+  const result = resolveCombat({ units: army.units, bonus: attackerTech.attack }, { units: defenderUnits, bonus }, `${m.seed}:air:${army.id}:${at.getTime()}`);
+  // Defender losses land: units fall, militia losses cost people.
+  const { militia: militiaLost = 0, ...unitLosses } = result.defenderLosses;
+  const newUnits = { ...target.units };
+  let soldierLoss = 0;
+  for (const [k, v] of Object.entries(unitLosses)) {
+    newUnits[k] = Math.max(0, (newUnits[k] ?? 0) - v);
+    soldierLoss += v;
+  }
+  await tx
+    .update(matchRegions)
+    .set({ units: newUnits, popSoldiers: Math.max(0, target.popSoldiers - soldierLoss), popWorkers: Math.max(0, target.popWorkers - militiaLost * 10 * 0.5) })
+    .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, target.regionId)));
+  // Then the battery: a share of the surviving planes is shot down on the way out.
+  const survivors: UnitCounts = { ...result.attackerRemaining };
+  const shotShare = Math.min(balance.combat.antiAirMax, effects.antiAir);
+  let shot = 0;
+  for (const [id, n] of Object.entries(survivors)) {
+    const down = Math.round(n * shotShare);
+    if (down > 0) {
+      survivors[id] = n - down;
+      shot += down;
+    }
+  }
+  const attackerLosses: UnitCounts = { ...result.attackerLosses };
+  if (shot > 0) for (const [id, n] of Object.entries(result.attackerRemaining)) attackerLosses[id] = (attackerLosses[id] ?? 0) + (n - (survivors[id] ?? 0));
+  const attackerName = await playerName(tx, army.playerId);
+  const defenderName = target.ownerPlayerId ? await playerName(tx, target.ownerPlayerId) : "Neutral tribes";
+  const report = { regionName: region.name, regionId: region.id, mission: "airstrike", attackerName, defenderName, attackerWon: result.attackerWon, rounds: result.rounds, attacker: { before: army.units, losses: attackerLosses }, defender: { before: defenderUnits, losses: result.defenderLosses }, loot: {}, conquered: false, shotDown: shot };
+  const fell = Object.values(result.defenderLosses).reduce((a, b) => a + b, 0);
+  await notify(tx, m.id, army.playerId, "battle", `Airstrike on ${region.name}: ${fell} defender${fell === 1 ? "" : "s"} fell${shot ? `, ${shot} plane${shot === 1 ? "" : "s"} shot down` : ""}`, { regionId: region.id, report });
+  if (target.ownerPlayerId) await notify(tx, m.id, target.ownerPlayerId, "battle", `${attackerName} bombed ${region.name}: ${fell} defender${fell === 1 ? "" : "s"} lost${shot ? `, ${shot} of their planes shot down` : ""}`, { regionId: region.id, report });
+  await tx.insert(events).values({ matchId: m.id, at, kind: "airstrike", payload: { playerId: army.playerId, regionId: region.id, ownerPlayerId: target.ownerPlayerId, fell, shot } });
+  await sendHome(tx, m, army, at, survivors, {});
+  after(() => publisher.toPlayer(m.id, pid, "army.arrived", { armyId: army.id }));
+}
+
 /** Send the army back where it came from, carrying whatever is in cargo. */
 async function sendHome(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, units: UnitCounts, cargo: Record<string, number>, note: string | null = null): Promise<void> {
   if (sumUnits(units) === 0 && Object.values(cargo).every((v) => !v)) {
@@ -365,7 +428,7 @@ async function sendHome(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, units: Uni
   }
   const ctx = await legContextFor(tx, m.id, army.playerId);
   // The way home may use the sea only if the way out did (or the player can sail): a land convoy does not swim back.
-  const route = routeFor(ctx, army.targetRegionId, army.originRegionId, ctx.techs.has(balance.travel.seaTech) || pathUsesSea(army.path)) ?? { path: [army.targetRegionId, army.originRegionId], cost: 1000, usesSea: false };
+  const route = routeFor(ctx, army.targetRegionId, army.originRegionId, ctx.techs.has(balance.travel.seaTech) || pathUsesSea(army.path), units) ?? { path: [army.targetRegionId, army.originRegionId], cost: 1000, usesSea: false };
   const seconds = await legSeconds(tx, m, ctx, route, units, at, 5);
   const returnsAt = new Date(at.getTime() + seconds * 1000);
   await tx.update(armies).set({ status: "returning", units, cargo, returnsAt, note }).where(eq(armies.id, army.id));
@@ -479,7 +542,7 @@ async function deliverCargo(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publis
       if (next) {
         const { tradeRoutes } = await import("../db/schema.js");
         const ctx = await legContextFor(tx, m.id, army.playerId);
-        const route = routeFor(ctx, cur.regionId, next.regionId, ctx.techs.has(balance.travel.seaTech) || pathUsesSea(army.path)) ?? { path: [cur.regionId, next.regionId], cost: 1000, usesSea: false };
+        const route = routeFor(ctx, cur.regionId, next.regionId, ctx.techs.has(balance.travel.seaTech) || pathUsesSea(army.path), army.units) ?? { path: [cur.regionId, next.regionId], cost: 1000, usesSea: false };
         const seconds = await legSeconds(tx, m, ctx, route, army.units, at);
         const arrivesAt = new Date(at.getTime() + seconds * 1000);
         await tx.update(armies).set({ cargo, stops, targetRegionId: next.regionId, path: route.path, departsAt: at, arrivesAt }).where(eq(armies.id, army.id));
@@ -638,10 +701,15 @@ async function scout(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher: Pu
         watchtower = rows.some((r) => effectsOf(r.buildings).watchtower);
       }
     }
-    const chance = scoutCatchChance({ held: !!target.ownerPlayerId, soldiers: soldierCount(target.units), watchtower, wall: wallOf(target.buildings) !== null });
-    if (chance > 0) {
-      const rng = seededRng(`${m.seed}:scout:${army.id}`);
-      for (let i = 0; i < sent; i++) if (rng() < chance) caught += 1;
+    if (isAirGroup(army.units)) {
+      // Nobody on the ground catches a plane; a battery shoots a share down.
+      caught = Math.round(sent * Math.min(balance.combat.antiAirMax, effectsOf(target.buildings).antiAir));
+    } else {
+      const chance = scoutCatchChance({ held: !!target.ownerPlayerId, soldiers: soldierCount(target.units), watchtower, wall: wallOf(target.buildings) !== null });
+      if (chance > 0) {
+        const rng = seededRng(`${m.seed}:scout:${army.id}`);
+        for (let i = 0; i < sent; i++) if (rng() < chance) caught += 1;
+      }
     }
   }
   if (caught >= sent && sent > 0) {

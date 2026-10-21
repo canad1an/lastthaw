@@ -250,7 +250,7 @@ function BattleReport({ report }: { report: BattleReportPayload }) {
   return (
     <div className="ml-6 space-y-1 rounded bg-slate-900/60 p-2 text-xs text-slate-400">
       <p>
-        {report.attackerName} {report.mission}ed {report.regionName} ({report.defenderName}). {report.attackerWon ? "Attacker won" : "Defender held"} after {report.rounds} rounds.
+        {report.attackerName} {report.mission === "airstrike" ? "bombed" : report.mission === "raid" ? "raided" : "attacked"} {report.regionName} ({report.defenderName}). {report.attackerWon ? "Attacker won" : "Defender held"} after {report.rounds} rounds.
         {report.conquered ? " The region was conquered." : ""}
       </p>
       <div className="grid grid-cols-2 gap-2">

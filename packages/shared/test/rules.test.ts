@@ -243,3 +243,19 @@ describe("canoes", () => {
     expect(ids).not.toContain("caravan");
   });
 });
+
+import { airRangeKm, airRoute, isAirGroup } from "../src/rules/travel.js";
+import { distanceKm } from "../src/map/index.js";
+
+describe("aircraft", () => {
+  it("fly alone, within the shortest range aboard, on one straight leg", () => {
+    expect(isAirGroup({ bomber: 3 })).toBe(true);
+    expect(isAirGroup({ bomber: 3, warrior: 1 })).toBe(false);
+    expect(isAirGroup({})).toBe(false);
+    expect(airRangeKm({ bomber: 2, scout_plane: 1 })).toBe(Math.min(unitById.get("bomber")!.rangeKm!, unitById.get("scout_plane")!.rangeKm!));
+    const r = airRoute("cd-katanga", "mm-sagaing");
+    expect(r.path).toEqual(["cd-katanga", "mm-sagaing"]);
+    expect(r.cost).toBeCloseTo(distanceKm("cd-katanga", "mm-sagaing"));
+    expect(r.usesSea).toBe(false);
+  });
+});

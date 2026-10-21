@@ -1,0 +1,1 @@
+ALTER TYPE "public"."mission_kind" ADD VALUE 'airstrike';

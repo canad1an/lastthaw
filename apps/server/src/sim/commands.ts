@@ -5,7 +5,7 @@
  * pays costs up front and returns what it created. Errors carry statusCode.
  */
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
-import { availableUnits, armySpeed, balance, buildingBlockedBy, carryCapacity, buildingById, buildingCost, buildingSeconds, canAfford, effectsOf, findRoute, missingFor, realSeconds, regionById, techById, techCost, techSeconds, trainSeconds, travelSeconds, unitById, unitCost, type Cost, type MissionKind, caravanCarry, techEffectsOf, distanceKm, haulerCarry, HAULER_IDS, splitNaval, seaLegsOf, laneKey, laneName, resolveCombat, laneLimitKm } from "@lastthaw/shared";
+import { availableUnits, armySpeed, balance, buildingBlockedBy, carryCapacity, buildingById, buildingCost, buildingSeconds, canAfford, effectsOf, findRoute, missingFor, realSeconds, regionById, techById, techCost, techSeconds, trainSeconds, travelSeconds, unitById, unitCost, type Cost, type MissionKind, caravanCarry, techEffectsOf, distanceKm, haulerCarry, HAULER_IDS, splitNaval, seaLegsOf, laneKey, laneName, resolveCombat, laneLimitKm, isAirGroup, airRangeKm, airRoute } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { armies, battles, jobs, matchRegions, matches, messages, players, tradeRoutes, regionSightings, playerTechs } from "../db/schema.js";
 import { matchDayAt, matchNow } from "./clock.js";
@@ -344,7 +344,7 @@ export interface SendArmyInput {
   stops?: Array<{ regionId: string; routeId: string | null; take: Record<string, number>; done?: boolean }>;
 }
 
-const HOSTILE: ReadonlySet<MissionKind> = new Set(["raid", "conquer"]);
+const HOSTILE: ReadonlySet<MissionKind> = new Set(["raid", "conquer", "airstrike"]);
 
 export async function sendArmy(ctx: CommandContext, regionId: string, body: SendArmyInput) {
   const { db, m, p, techs } = ctx;
@@ -360,9 +360,16 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
     if (Object.keys(units).every((id) => id === "settler")) throw httpError(400, "settlers cannot fight: send soldiers with them");
     if (body.people > 0) throw httpError(400, "conquest takes settlers as occupiers, not people");
   }
+  // Aircraft fly alone, straight, and only to scout, carry goods or strike.
+  const air = isAirGroup(units);
+  if (!air && Object.keys(units).some((id) => unitById.get(id)?.air)) throw httpError(400, "aircraft fly alone: send ground units separately");
+  if (air && !["scout", "transport", "airstrike"].includes(body.mission)) throw httpError(400, "aircraft scout, carry goods or strike; they cannot move, settle, conquer or patrol");
+  if (body.mission === "airstrike" && !air) throw httpError(400, "only aircraft strike from the air");
+  if (body.mission === "airstrike" && !Object.keys(units).some((id) => (unitById.get(id)?.attack ?? 0) >= 10)) throw httpError(400, "an airstrike needs bombers");
+  if (air && body.people > 0) throw httpError(400, "aircraft carry goods, not people");
   const civilians = Object.keys(units).filter((id) => unitById.get(id)?.civilian && !(body.mission === "conquer" && id === "settler"));
   if ((HOSTILE.has(body.mission) || body.mission === "scout") && civilians.length) throw httpError(400, "caravans cannot raid, conquer or scout; settlers only go along to occupy a conquest");
-  if (body.mission === "scout" && Object.keys(units).some((id) => id !== balance.scoutUnit)) throw httpError(400, "only Scouts can scout an unknown region; train some first");
+  if (body.mission === "scout" && !air && Object.keys(units).some((id) => id !== balance.scoutUnit)) throw httpError(400, "only Scouts can scout an unknown region; train some first");
   if (body.mission === "relocate") throw httpError(400, "move the capital from the region panel");
   if (body.mission === "expedition") {
     const x = balance.events.expedition;
@@ -413,17 +420,22 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
   // Canoes keep to the short lanes.
   const laneLimit = laneLimitKm(units);
   if (hasShips && laneLimit !== null && distanceKm(regionId, body.targetRegionId) > laneLimit) throw httpError(400, `canoes keep to short lanes: that crossing is ${Math.round(distanceKm(regionId, body.targetRegionId))} km, over the ${laneLimit} km a canoe can manage. A Galley or Cog from a Harbor crosses open sea.`);
-  const route = hasShips || body.mission === "patrol"
+  const flightKm = air ? distanceKm(regionId, body.targetRegionId) : 0;
+  if (air && flightKm > airRangeKm(units)) throw httpError(400, `out of range: that is ${Math.round(flightKm)} km and these aircraft fly ${airRangeKm(units)} km`);
+  const route = air
+    ? airRoute(regionId, body.targetRegionId)
+    : hasShips || body.mission === "patrol"
     ? { path: [regionId, body.targetRegionId], cost: distanceKm(regionId, body.targetRegionId) * balance.travel.seaFactor * (harbors.has(regionId) && harbors.has(body.targetRegionId) ? balance.travel.harborBothFactor : harbors.has(regionId) || harbors.has(body.targetRegionId) ? balance.travel.harborOneFactor : 1), usesSea: true }
     : findRoute(regionId, body.targetRegionId, techs.has(balance.travel.seaTech), roads, rails, harbors);
   if (!route) throw httpError(400, techs.has(balance.travel.seaTech) ? "no route to that region" : "no land route; research Shipbuilding to cross the sea");
   const now = matchNow(m);
-  const lanes = seaLegsOf(route.path);
+  const lanes = air ? [] : seaLegsOf(route.path);
 
   const outcome = await db.transaction(async (tx) => {
     await requireRunning(tx, m.id);
     const origin = await settleAndLockRegion(tx, m.id, regionId, now, m.speed, resourceMultOf(m));
     if (origin.ownerPlayerId !== p.id) throw httpError(403, "not your region");
+    if (air && !effectsOf(origin.buildings).airfield) throw httpError(400, "aircraft take off from an Airfield: build one here first");
 
     const [target] = await tx
       .select()
@@ -432,6 +444,7 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
       .limit(1);
     const targetOwner = target?.ownerPlayerId ?? null;
     const friendly = targetOwner === p.id || (targetOwner ? await areAllied(tx, m.id, p.id, targetOwner) : false);
+    if (air && body.mission === "transport" && !effectsOf(target?.buildings ?? {}).airfield) throw httpError(400, "a transport plane lands only where there is an Airfield");
     if ((body.mission === "reinforce" || body.mission === "move" || body.mission === "transport") && !friendly) {
       throw httpError(400, "that region is not yours or an ally's");
     }

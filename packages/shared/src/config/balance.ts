@@ -176,6 +176,8 @@ export const balance = {
     terrainDefense: { hills: 0.15, mountains: 0.35, forest: 0.1, wetland: 0.1 } as Record<string, number>,
     /** Unarmed population defends a little: this many warrior-equivalents per 10 people. */
     militiaPerTenPeople: 0.5,
+    /** Anti-air batteries never shoot down more than this share of the aircraft over a region, however many levels. */
+    antiAirMax: 0.75,
     /** Soldiers lost while a raid is repelled do not take the loot; winners take up to this share of unprotected stock. */
     raidShare: 0.5,
   },
