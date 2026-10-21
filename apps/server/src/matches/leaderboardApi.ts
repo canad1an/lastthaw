@@ -63,7 +63,8 @@ export async function leaderboardRoutes(app: FastifyInstance, opts: { db: Db }) 
         pop: sql<number>`coalesce(sum(${matchRegions.popWorkers} + ${matchRegions.popSoldiers} + ${matchRegions.popOccupiers}), 0)::float`,
       })
       .from(matchRegions)
-      .where(and(eq(matchRegions.matchId, matchId), sql`${matchRegions.ownerPlayerId} is not null`))
+      // Frozen regions are lost to the ice and count for nobody, as in the report and the endgame.
+      .where(and(eq(matchRegions.matchId, matchId), sql`${matchRegions.ownerPlayerId} is not null`, isNull(matchRegions.frozenAt)))
       .groupBy(matchRegions.ownerPlayerId);
     const statBy = new Map(stats.map((s) => [s.owner!, s]));
     const members = await db

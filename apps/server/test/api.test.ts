@@ -1689,4 +1689,30 @@ describe("api routes", () => {
     expect((h.json() as { active: { matchId: string }[] }).active.some((a) => a.matchId === gameId)).toBe(true);
   });
 
+  it("the hall of fame, the standings and the report agree on the winner's regions: frozen ones count for nobody", async () => {
+    const [done] = await db
+      .insert(matches)
+      .values({ name: "Frozen Count", slug: `2026-10-frozen-count-${Date.now().toString(36)}`, speed: 1, seed: "frozen-count", startsAt: new Date(Date.now() - 40 * 86400_000), endsAt: new Date(Date.now() - 10 * 86400_000), finishedAt: new Date(Date.now() - 10 * 86400_000), status: "finished", settings: { kind: "public", createdBy: "nobody" } })
+      .returning({ id: matches.id });
+    try {
+      const [w] = await db.insert(players).values({ matchId: done!.id, name: "Holdfast", isAi: true, age: 4, score: 900 }).returning({ id: players.id });
+      await db.update(matches).set({ winnerPlayerId: w!.id, winKind: "survival" }).where(eq(matches.id, done!.id));
+      const [a, b, c] = allRegions();
+      const row = { matchId: done!.id, ownerPlayerId: w!.id, assignment: { food: 1, wood: 0, stone: 0 }, settledAt: new Date() };
+      await db.insert(matchRegions).values([
+        { ...row, regionId: a!.id },
+        { ...row, regionId: b!.id },
+        { ...row, regionId: c!.id, frozenAt: new Date(Date.now() - 12 * 86400_000) },
+      ]);
+      const hof = (await app.inject({ method: "GET", url: "/api/public/hall-of-fame" })).json() as { matches: Array<{ id: string; winner: { regions: number } | null }> };
+      expect(hof.matches.find((m) => m.id === done!.id)?.winner?.regions).toBe(2);
+      const board = (await Ann.call("GET", `/api/matches/${done!.id}/leaderboard`)).json() as { players: Array<{ id: string; regions: number }> };
+      expect(board.players.find((s) => s.id === w!.id)?.regions).toBe(2);
+      const summary = (await Out.call("GET", `/api/matches/${done!.id}/summary`)).json() as { standings: Array<{ id: string; regions: number }> };
+      expect(summary.standings.find((s) => s.id === w!.id)?.regions).toBe(2);
+    } finally {
+      await db.delete(matches).where(eq(matches.id, done!.id));
+    }
+  });
+
 });

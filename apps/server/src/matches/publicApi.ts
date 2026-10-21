@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { config } from "../config.js";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { AGES, allRegions, balance, iceLatitudeOnDay } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { matchRegions, matches, players, userMatchResults, users, events } from "../db/schema.js";
@@ -144,7 +144,8 @@ export async function publicRoutes(app: FastifyInstance, opts: { db: Db }) {
         ? await db
             .select({ n: sql<number>`count(*)::int` })
             .from(matchRegions)
-            .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.ownerPlayerId, winner.id)))
+            // Regions the winner still held at the end, not those the ice had taken: the same count the report shows.
+            .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.ownerPlayerId, winner.id), isNull(matchRegions.frozenAt)))
         : [];
       out.push({
         id: m.id,
