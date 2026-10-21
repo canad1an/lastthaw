@@ -127,3 +127,32 @@ describe("age data", () => {
     expect(techEffectsOf([]).plagueResist ?? 0).toBe(0);
   });
 });
+
+describe("the hauler ladder", () => {
+  it("every unit's and building's required tech is known no later than its own age", () => {
+    for (const u of unitById.values()) if (u.requires) expect(techById.get(u.requires)?.age, `${u.id} needs ${u.requires}`).toBeLessThanOrEqual(u.age);
+    for (const b of buildingById.values()) if (b.requires) expect(techById.get(b.requires)?.age, `${b.id} needs ${b.requires}`).toBeLessThanOrEqual(b.age);
+  });
+  it("the train, the Railway and Railways arrive together, in the Industrial Age", () => {
+    expect(unitById.get("train")!.age).toBe(5);
+    expect(buildingById.get("railway")!.age).toBe(5);
+    expect(techById.get("railways")!.age).toBe(5);
+  });
+  it("each fleet rebuild comes with its age and carries more and moves faster than the one before", () => {
+    const steps = Object.entries(balance.trade.fleetUpgradeTech)
+      .map(([tech, unit]) => ({ tech: techById.get(tech)!, unit: unitById.get(unit)! }))
+      .sort((a, b) => a.tech.age - b.tech.age);
+    expect(steps.length).toBeGreaterThanOrEqual(4);
+    let carry = unitById.get("caravan")!.carry;
+    let speed = unitById.get("caravan")!.speed;
+    for (const s of steps) {
+      expect(s.tech, "fleet tech exists").toBeTruthy();
+      expect(s.unit?.hauler, `${s.tech.id} rebuilds as a hauler`).toBe(true);
+      expect(s.unit.age).toBeLessThanOrEqual(s.tech.age);
+      expect(s.unit.carry).toBeGreaterThan(carry);
+      expect(s.unit.speed).toBeGreaterThan(speed);
+      carry = s.unit.carry;
+      speed = s.unit.speed;
+    }
+  });
+});

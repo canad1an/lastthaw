@@ -1,6 +1,6 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type pino from "pino";
-import { AGES, buildingById, techById, unitById, balance } from "@lastthaw/shared";
+import { AGES, buildingById, techById, unitById, balance, HAULER_IDS } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { events, jobs, matchRegions, matches, messages, playerTechs, players, armies } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
@@ -145,15 +145,29 @@ export async function runDueJobs(db: Db, publisher: Publisher, log: pino.Logger)
     await tx.insert(playerTechs).values({ matchId: m.id, playerId, techId: def.id, completedAt: job.endsAt }).onConflictDoNothing();
     await notify(tx, m.id, playerId, "research", `${def.name} researched`, { techId: def.id });
     const techIdDone = def.id;
-    const fleet = balance.trade.fleetUpgradeTech[def.id];
-    if (fleet) {
-      await upgradeFleet(fleet.from, fleet.to);
-      // Railways also sweeps up any caravans that were never rebuilt as wagons.
-      if (def.id === "railways") await upgradeFleet("caravan", fleet.to);
-    }
-    async function upgradeFleet(fromId: string, toId: string) {
-      const fleet = { from: fromId, to: toId };
-      // Every caravan, stationed or on the road, becomes the better hauler.
+    const rebuiltAs = balance.trade.fleetUpgradeTech[def.id];
+    if (rebuiltAs) await upgradeFleet(rebuiltAs);
+    /** The hauler ladder: every lesser land hauler, stationed or on the road, becomes the new kind. */
+    async function upgradeFleet(toId: string) {
+      const to = unitById.get(toId);
+      if (!to) return;
+      const lesser = HAULER_IDS.filter((id) => {
+        const u = unitById.get(id);
+        return !!u && !u.naval && u.carry < to.carry;
+      });
+      const rebuild = (units: Record<string, number>): { units: Record<string, number>; n: number } => {
+        const out = { ...units };
+        let n = 0;
+        for (const id of lesser) {
+          const k = out[id] ?? 0;
+          if (k > 0) {
+            n += k;
+            out[id] = 0;
+          }
+        }
+        if (n > 0) out[toId] = (out[toId] ?? 0) + n;
+        return { units: out, n };
+      };
       const regions = await tx
         .select({ regionId: matchRegions.regionId, units: matchRegions.units })
         .from(matchRegions)
@@ -161,20 +175,19 @@ export async function runDueJobs(db: Db, publisher: Publisher, log: pino.Logger)
         .orderBy(matchRegions.regionId);
       let converted = 0;
       for (const r of regions) {
-        const n = r.units[fleet.from] ?? 0;
+        const { units, n } = rebuild(r.units);
         if (n <= 0) continue;
-        const units = { ...r.units, [fleet.from]: 0, [fleet.to]: (r.units[fleet.to] ?? 0) + n };
         await tx.update(matchRegions).set({ units }).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, r.regionId)));
         converted += n;
       }
       const moving = await tx.select({ id: armies.id, units: armies.units }).from(armies).where(and(eq(armies.matchId, m.id), eq(armies.playerId, playerId), inArray(armies.status, ["outbound", "returning", "fighting"])));
       for (const a of moving) {
-        const n = a.units[fleet.from] ?? 0;
+        const { units, n } = rebuild(a.units);
         if (n <= 0) continue;
-        await tx.update(armies).set({ units: { ...a.units, [fleet.from]: 0, [fleet.to]: (a.units[fleet.to] ?? 0) + n } }).where(eq(armies.id, a.id));
+        await tx.update(armies).set({ units }).where(eq(armies.id, a.id));
         converted += n;
       }
-      if (converted) await notify(tx, m.id, playerId, "research", `${converted} ${unitById.get(fleet.from)?.name.toLowerCase() ?? fleet.from}${converted === 1 ? "" : "s"} rebuilt as ${unitById.get(fleet.to)?.name.toLowerCase() ?? fleet.to}s`, { techId: techIdDone, converted });
+      if (converted) await notify(tx, m.id, playerId, "research", `${converted} hauler${converted === 1 ? "" : "s"} rebuilt as ${to.name.toLowerCase()}${converted === 1 ? "" : "s"}`, { techId: techIdDone, converted });
     }
     if (def.advancesTo !== undefined) {
       const [p] = await tx.select().from(players).where(eq(players.id, playerId)).for("update");

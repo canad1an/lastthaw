@@ -1,12 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import { and, eq, inArray, isNull } from "drizzle-orm";
-import { balance, colonizeBody, findRoute, sendArmyBody, travelSeconds, setCapitalBody, regionById, convertBody, rallyBody, unitById, techEffectsOf } from "@lastthaw/shared";
+import { balance, colonizeBody, findRoute, sendArmyBody, travelSeconds, setCapitalBody, regionById, rallyBody, unitById, techEffectsOf } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { armies, jobs, matchRegions, matches, playerTechs, players, tradeRoutes } from "../db/schema.js";
 import { matchNow } from "../sim/clock.js";
 import { requireUser } from "../auth/session.js";
 import type { Publisher } from "../realtime/publish.js";
-import { httpError, requireRunning, sendArmy, type CommandContext, convertUnits } from "../sim/commands.js";
+import { httpError, requireRunning, sendArmy, type CommandContext } from "../sim/commands.js";
 import { disbandUnits, evacuateRegion } from "../sim/evacuate.js";
 import { relocateCapital } from "../sim/capital.js";
 import { waySetsFor } from "../sim/regions.js";
@@ -109,17 +109,6 @@ export async function armyRoutes(app: FastifyInstance, opts: { db: Db; publisher
     const result = await relocateCapital(ctx, regionId);
     await publisher.toPlayer(matchId, ctx.p.id, "army.sent", { armyId: result.armyId, relocate: regionId });
     return { ok: true, armyId: result.armyId, arrivesAt: result.arrivesAt.toISOString(), cargo: result.cargo, path: result.path };
-  });
-
-  /** Upgrade haulers in a region (caravans to wagons, caravans or wagons to trains). */
-  app.post("/api/matches/:id/regions/:regionId/convert", async (req) => {
-    const user = requireUser(req);
-    const { id: matchId, regionId } = regionParams.parse(req.params);
-    const body = convertBody.parse(req.body);
-    const ctx = await loadContext(matchId, user.id);
-    const r = await convertUnits(ctx, regionId, body.from, body.to, body.qty);
-    await publisher.toPlayer(matchId, ctx.p.id, "region.updated", { regionId });
-    return { ok: true, converted: r.converted, cost: r.cost };
   });
 
   /** Disband stationed units: they rejoin the region's workers. */

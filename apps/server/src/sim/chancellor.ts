@@ -21,10 +21,15 @@ type PlayerRow = typeof players.$inferSelect;
 const name = (id: string) => regionById(id)?.name ?? id;
 const BASE = new Set(["food", "wood", "stone"]);
 
-/** The tech a goal works toward: the next age's tech, or a fixed tech for the other goals. */
+/** The tech a goal works toward: the next age's tech, the next step of the hauler ladder, or a fixed tech. */
 export function goalTech(goal: string, age: number): string | null {
   if (goal === "age") return TECHS.find((t) => t.advancesTo === age + 1)?.id ?? null;
-  const fixed: Record<string, string> = { hauling: "railways", walls: "concrete", sea: "navigation" };
+  if (goal === "hauling") {
+    // The first fleet rebuild of this age or a later one; the last of the ladder once past them all.
+    const ladder = Object.keys(balance.trade.fleetUpgradeTech).sort((a, b) => (techById.get(a)?.age ?? 0) - (techById.get(b)?.age ?? 0));
+    return ladder.find((id) => (techById.get(id)?.age ?? 0) >= age) ?? ladder[ladder.length - 1] ?? null;
+  }
+  const fixed: Record<string, string> = { walls: "concrete", sea: "navigation" };
   return fixed[goal] ?? null;
 }
 

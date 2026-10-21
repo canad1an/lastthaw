@@ -17,7 +17,7 @@ export const OVERLAYS: OverlayDef[] = [
   { id: "queue", label: "Empty build queue", description: "Regions with nothing building or training.", colour: "#a78bfa", glyph: "·" },
   { id: "ice", label: "Ice within 3 days", description: "Regions the ice reaches within three days. Evacuate or accept the loss.", colour: "#e0f2fe", glyph: "❄" },
   { id: "noroads", label: "No roads", description: "Regions that could build Roads but have not.", colour: "#94a3b8", glyph: "⌁" },
-  { id: "hidehaulers", label: "Hide haulers", description: "Hides caravans, wagons, trains and cogs on the move. Soldiers, settlers, enemies and the capital wagon still show.", colour: "#64748b", glyph: "≡" },
+  { id: "hidehaulers", label: "Hide haulers", description: "Hides caravans, wagons, freight wagons, trains, lorries and cogs on the move. Soldiers, settlers, enemies and the capital wagon still show.", colour: "#64748b", glyph: "≡" },
   { id: "loyalty", label: "Loyalty", description: "Tints your regions by loyalty: green secure, amber uneasy, red at risk of rebellion. Badge on regions heading down.", colour: "#f43f5e", glyph: "!" },
 ];
 

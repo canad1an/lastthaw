@@ -71,7 +71,7 @@ export function MatchIntro({ open, onClose, matchName, speed, resourceMult = 1 }
                   <b className="text-slate-100">Research.</b> Techs unlock buildings, units and new ages. Each age needs its prerequisites and has an earliest day, so queue the chain early.
                 </li>
                 <li>
-                  <b className="text-slate-100">Spread out.</b> Train five Settlers and send them to empty land next door. Caravans, later Wagons and Trains, haul goods between your regions and feed your builds.
+                  <b className="text-slate-100">Spread out.</b> Train five Settlers and send them to empty land next door. Caravans, later Wagons, Freight wagons, Trains and Lorries, haul goods between your regions and feed your builds.
                 </li>
                 <li>
                   <b className="text-slate-100">Move south before the ice.</b> Watch the forecast line on the map. Frozen regions lose everything. Evacuate early; crowded regions spill people into neighbours on their own.

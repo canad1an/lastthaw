@@ -95,7 +95,9 @@ export function missionLabel(mission: string, units?: Record<string, number>): s
     case "settle":
       return "Settlers";
     case "transport": {
+      if (units?.lorry) return "Lorries";
       if (units?.train) return "Trains";
+      if (units?.freight_wagon) return "Freight wagons";
       if (units?.wagon) return "Wagons";
       return "Caravans";
     }

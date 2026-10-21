@@ -513,7 +513,7 @@ function ThawSettings({ matchId, state, advisor, onSelect }: { matchId: string; 
 
 const GOALS: ReadonlyArray<[AdvisorSettings["researchGoal"], string, string]> = [
   ["age", "The next age", "every prerequisite of the age's tech in order, then the tech itself the day it opens."],
-  ["hauling", "Hauling", "the path to Railways: wheels, harness, wagons, engineering and the furnaces trains need."],
+  ["hauling", "Hauling", "the next hauler: Wagon building, then Wainwrights, Railways and Internal combustion, each rebuilding your whole fleet."],
   ["walls", "Walls", "the path to Concrete: masonry, fortification, mathematics and engineering."],
   ["sea", "The sea", "the path to Navigation: sailing, carpentry, shipbuilding and cartography."],
   ["off", "No research", "the queue is yours alone."],
@@ -612,6 +612,12 @@ function SettingsForm({ matchId, state, advisor }: { matchId: string; state: Mat
       return { ...d, minLevels };
     });
   const regions = [...state.owned].sort((a, b) => Number(b.isCapital) - Number(a.isCapital) || (regionById(a.regionId)?.name ?? "").localeCompare(regionById(b.regionId)?.name ?? ""));
+  // A clean slate after new minimums: every queued build cancelled and refunded, materials routes dropped, optionally your own routes too.
+  const [slate, setSlate] = useState<{ routes: boolean } | null>(null);
+  const clean = useMutation({ mutationFn: (routes: boolean) => api.cleanSlate(matchId, routes), onSuccess: () => { setSlate(null); void qc.invalidateQueries({ queryKey: keys.matchState(matchId) }); } });
+  const queuedBuilds = state.jobs.filter((j) => j.kind === "build").length;
+  const materialsRoutes = state.routes.filter((r) => r.target).length;
+  const ownRoutes = state.routes.length - materialsRoutes;
   return (
     <Card className="space-y-3">
       <h3 className="font-semibold text-white">What to keep up</h3>
@@ -704,7 +710,31 @@ function SettingsForm({ matchId, state, advisor }: { matchId: string; state: Mat
         </Button>
         {save.isSuccess && !dirty && <span className="text-xs text-emerald-300">Saved.</span>}
         <ErrorText>{save.error?.message}</ErrorText>
+        <button type="button" className="ml-auto rounded border border-rose-500/40 bg-rose-500/10 px-2 py-1 text-xs text-rose-200 hover:bg-rose-500/20" onClick={() => setSlate({ routes: false })} disabled={clean.isPending} data-clean-slate>
+          Clean slate…
+        </button>
       </div>
+      {slate && (
+        <div className="space-y-2 rounded border border-rose-500/40 bg-rose-950/20 p-3 text-xs text-slate-300" data-clean-slate-confirm>
+          <p>
+            Cancel all {queuedBuilds} queued build{queuedBuilds === 1 ? "" : "s"} with a full refund and drop the {materialsRoutes} materials route{materialsRoutes === 1 ? "" : "s"}, putting their set-aside goods back on the shelf. Training and research carry on. The advisor starts fresh from the minimums above on the next pass.
+          </p>
+          <label className="flex items-start gap-2">
+            <input type="checkbox" checked={slate.routes} onChange={(e) => setSlate({ routes: e.target.checked })} className="mt-0.5 accent-rose-400" />
+            <span>Also remove my own {ownRoutes} trade route{ownRoutes === 1 ? "" : "s"}.</span>
+          </label>
+          <div className="flex items-center gap-2">
+            <button type="button" className="rounded bg-rose-500/80 px-3 py-1 font-semibold text-white hover:bg-rose-500" onClick={() => clean.mutate(slate.routes)} disabled={clean.isPending}>
+              {clean.isPending ? "Clearing…" : "Clear everything"}
+            </button>
+            <button type="button" className="rounded border border-slate-700 px-3 py-1 text-slate-300 hover:bg-slate-800" onClick={() => setSlate(null)}>
+              Keep it
+            </button>
+            <ErrorText>{clean.error?.message}</ErrorText>
+          </div>
+        </div>
+      )}
+      {clean.isSuccess && !slate && <p className="text-xs text-emerald-300">Cleared {clean.data.builds} build{clean.data.builds === 1 ? "" : "s"} and {clean.data.routes} route{clean.data.routes === 1 ? "" : "s"}.</p>}
     </Card>
   );
 }

@@ -174,7 +174,7 @@ export function HomePage() {
           <Pillar
             icon={<IconFlame />}
             title="Seven ages, one tech tree"
-            body="Fire making to Railways. Each age unlocks buildings, units and a deeper reach across the map. Being first to an age earns a bonus everyone else can see."
+            body="Fire making to Aviation. Each age unlocks buildings, units and a deeper reach across the map. Being first to an age earns a bonus everyone else can see."
           />
           <Pillar
             icon={<IconShield />}

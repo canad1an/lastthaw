@@ -140,12 +140,11 @@ export const api = {
   nameSuggestion: () => request<{ name: string }>("GET", "/api/matches/name-suggestion"),
   rally: (id: string, includeMissions: boolean) =>
     request<{ ok: true; groups: number; soldiers: number; recalled: number; skipped: string[] }>("POST", `/api/matches/${id}/rally`, { includeMissions }),
-  convert: (id: string, regionId: string, body: { from: string; to: string; qty: number }) =>
-    request<{ ok: true; converted: number; cost: Record<string, number> }>("POST", `/api/matches/${id}/regions/${regionId}/convert`, body),
   disband: (id: string, regionId: string, units: Record<string, number>) =>
     request<{ ok: true; disbanded: number }>("POST", `/api/matches/${id}/regions/${regionId}/disband`, { units }),
   recallArmy: (id: string, armyId: string) => request<{ ok: true; returnsAt: string }>("POST", `/api/matches/${id}/armies/${armyId}/recall`, {}),
   cancelJob: (id: string, jobId: string) => request<{ ok: true }>("POST", `/api/matches/${id}/jobs/${jobId}/cancel`, {}),
+  cleanSlate: (id: string, routes: boolean) => request<{ ok: true; builds: number; routes: number }>("POST", `/api/matches/${id}/builds/clean-slate`, { routes }),
   messages: (id: string) => request<MessagesResponse>("GET", `/api/matches/${id}/messages`),
   markMessagesRead: (id: string) => request<{ ok: true }>("POST", `/api/matches/${id}/messages/read`, {}),
   devStart: (id: string) => request<{ ok: true; started: boolean }>("POST", `/api/matches/${id}/dev/start`, {}),

@@ -22,8 +22,8 @@ const RESEARCH_ORDER = [
   "mining", "irrigation", "writing", "the_wheel", "wagon_building", "pottery", "herbal_medicine", "road_building", "bronze_weapons", "iron_working",
   "masonry", "crop_rotation", "iron_tools", "mathematics", "iron_weapons", "siegecraft", "drill",
   "engineering", "heavy_plough", "philosophy", "logistics", "civil_service", "steel", "shipbuilding", "chivalry",
-  "three_field_system", "railways", "guilds", "blast_furnace", "plate_armour", "siege_engines", "scholasticism", "industrialisation",
-  "steam_power", "telegraph", "rifling", "vaccination", "electronics",
+  "three_field_system", "guilds", "wainwrights", "blast_furnace", "plate_armour", "siege_engines", "scholasticism", "industrialisation",
+  "steam_power", "railways", "telegraph", "rifling", "vaccination", "electronics",
   "oral_tradition", "trapping", "basketry", "salt_curing", "shelter_building", "tribal_councils", "copper_smelting", "harness", "calendar", "brick_making", "shield_wall", "sailing", "surveying", "quarrying", "carpentry", "fortification", "coinage", "scouting", "cartography", "navigation", "architecture", "concrete", "literature", "metallurgy", "professional_army", "provincial_administration", "currency", "water_mills", "iron_casting", "crossbows", "gunpowder", "trade_fairs", "banking", "compass", "printing_press", "coal_mining", "steel_mills", "textile_mills", "canning", "public_schools", "railway_signalling", "mass_production", "dynamite", "sanitation", "internal_combustion", "radio", "mass_media", "computers", "assembly_line", "refrigeration", "antibiotics", "aviation", "mechanised_agriculture", "nuclear_power",
   "electricity", "combined_arms", "radar", "synthetic_fertilizer", "ballistics", "satellites",
 ];
