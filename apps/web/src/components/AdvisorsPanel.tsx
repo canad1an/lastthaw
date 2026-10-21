@@ -647,7 +647,7 @@ function SettingsForm({ matchId, state, advisor }: { matchId: string; state: Mat
             <span className="text-slate-200">
               {b.name} <span className="text-slate-500">max {b.maxLevel}</span>
               <span className="block text-[11px] text-slate-500" data-building-progress={b.id}>
-                {atMax} / {eligible.length} at max level{atMin !== null ? ` · ${atMin} at level ${min} or more` : ""}{building ? ` · ${building} building now` : ""}
+                {atMin !== null ? `${atMin} / ${eligible.length} at level ${min} or more` : `no minimum set · ${atMax} / ${eligible.length} at max level`}{building ? ` · ${building} building now` : ""}
               </span>
             </span>
             <input type="number" min={0} max={b.maxLevel} value={draft.minLevels[b.id] ?? 0} onChange={(e) => setLevel(b.id, Math.max(0, Math.min(b.maxLevel, Number(e.target.value) || 0)))} className="w-16 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-right text-slate-100" data-advisor-level={b.id} />
