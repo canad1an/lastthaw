@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "matches_welcome_for_idx" ON "matches" USING btree (("settings"->>'welcomeFor')) WHERE "matches"."settings"->>'welcomeFor' is not null;

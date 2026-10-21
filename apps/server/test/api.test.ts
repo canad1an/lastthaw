@@ -26,6 +26,7 @@ process.env.DATABASE_URL ??= "postgres://lastthaw:lastthaw@localhost:5432/lastth
 process.env.SESSION_SECRET ??= "test-secret-test-secret-test-secret";
 // Routes are exercised as they run in production: no dev tools, so admin and beta gates are real.
 process.env.DEV_TOOLS = "false";
+process.env.WELCOME_MATCHES ??= "50";
 process.env.SMTP_PORT ??= "1";
 
 type App = Awaited<ReturnType<typeof buildApp>>;
@@ -161,6 +162,18 @@ describe("api routes", () => {
     expect((await Ann.call("POST", "/api/auth/verify", { token: t.token })).statusCode).toBe(200);
     expect((await Ann.call("GET", "/api/auth/me")).json()).toMatchObject({ emailVerified: true });
     expect((await Ann.call("POST", "/api/auth/verify", { token: t.token })).statusCode).toBe(400);
+    // The first confirmation made her a game of her own: public, hers, starting half an hour out, with her seated in it.
+    const { createWelcomeMatch, welcomeMatchOf } = await import("../src/matches/welcomeMatch.js");
+    const welcome = await welcomeMatchOf(db, uid);
+    expect(welcome).not.toBeNull();
+    expect(welcome!.startsAt.getTime() - Date.now()).toBeGreaterThan(25 * 60_000);
+    expect(welcome!.startsAt.getTime() - Date.now()).toBeLessThanOrEqual(30 * 60_000);
+    const [wm] = await db.select().from(matches).where(eq(matches.id, welcome!.id));
+    expect(wm!.settings).toMatchObject({ createdBy: uid, kind: "public", welcome: true, welcomeFor: uid });
+    expect((await db.select({ id: players.id }).from(players).where(and(eq(players.matchId, welcome!.id), eq(players.userId, uid)))).length).toBe(1);
+    // Asking again gives the same game, never a second; and the cap, once reached, gives nothing.
+    expect((await createWelcomeMatch(db, { id: uid, displayName: ann.displayName }))?.id).toBe(welcome!.id);
+    expect(await createWelcomeMatch(db, { id: await idOf(outsider.email), displayName: "Out" }, undefined, { cap: 0 })).toBeNull();
     // Already verified: resend is a no-op that still answers ok.
     expect((await Ann.call("POST", "/api/auth/resend-verification", {})).statusCode).toBe(200);
     // The six-digit code from the mail works too, only for the account it was sent to, and only once.
@@ -173,6 +186,11 @@ describe("api routes", () => {
     expect((await Ann.call("POST", "/api/auth/verify", { code })).statusCode).toBe(200);
     expect((await Ann.call("POST", "/api/auth/verify", { code })).statusCode).toBe(400);
     expect((await Ann.call("POST", "/api/auth/verify", {})).statusCode).toBe(400);
+    // Confirming again made no second game, and as its creator she may cancel it from the lobby.
+    expect((await db.select({ id: matches.id }).from(matches).where(sql`${matches.settings}->>'welcomeFor' = ${uid}`)).length).toBe(1);
+    expect((await Ben.call("DELETE", `/api/matches/${welcome!.id}`)).statusCode).toBe(403);
+    expect((await Ann.call("DELETE", `/api/matches/${welcome!.id}`)).statusCode).toBe(200);
+    expect(await welcomeMatchOf(db, uid)).toBeNull();
     // Ben verifies; the outsider never does, so Out stands for an account that has not confirmed its email.
     await db.update(users).set({ emailVerifiedAt: new Date() }).where(eq(users.email, ben.email));
   });

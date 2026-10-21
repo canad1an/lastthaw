@@ -154,20 +154,30 @@ export function verificationMail(displayName: string, token: string, code: strin
 }
 
 /** Sent once, the moment an email is confirmed: what to do first, and the Discord where the players and the news are. */
-export function welcomeMail(displayName: string) {
+export function welcomeMail(displayName: string, game?: { name: string; slug: string; startsAt: Date; speed: number }) {
+  const site = config().PUBLIC_URL;
+  const gameUrl = game ? `${site}/match/${game.slug}` : null;
   return renderMail({
-    subject: "Welcome to Last Thaw",
-    preheader: "Your email is confirmed. Pick a capital, and come and find the other tribes on Discord.",
+    subject: game ? `Welcome to Last Thaw: your game "${game.name}" is waiting` : "Welcome to Last Thaw",
+    preheader: game ? `We made a game just for you. It starts ${whenUtc(game.startsAt)}.` : "Your email is confirmed. Pick a capital, and come and find the other tribes on Discord.",
     greeting: `Welcome, ${displayName}`,
     paragraphs: [
-      `You are in. The lobby at ${config().PUBLIC_URL} lists the matches you can join: pick a capital on the real map, set your five settlers to work, and build before the frost reaches your latitude. A new weekly match opens every Monday, and nobody can attack you for your first ${balance.match.protectionDays} game days.`,
+      ...(game
+        ? [
+            `We have made a game just for you: "${game.name}", a public match at ${game.speed}x speed that starts ${whenUtc(game.startsAt)}. You are already in it and it is yours: open it, pick a capital on the real map, and start it early or cancel it whenever you like from the match page. Other players may join you, and AI tribes fill the empty seats when it begins.`,
+            `Set your five settlers to work and build before the frost reaches your latitude. Nobody can attack you for your first ${balance.match.protectionDays} game days. A new weekly match opens every Monday too.`,
+          ]
+        : [
+            `You are in. The lobby at ${site} lists the matches you can join: pick a capital on the real map, set your five settlers to work, and build before the frost reaches your latitude. A new weekly match opens every Monday, and nobody can attack you for your first ${balance.match.protectionDays} game days.`,
+          ]),
       "The other tribes are on our Discord. That is where every update and fix is announced, where bugs are reported, and where players trade notes, form alliances and find each other between matches. Come and say hello.",
     ],
     facts: [
+      ...(game && gameUrl ? [{ label: "Your game", value: gameUrl }, { label: "Starts", value: whenUtc(game.startsAt) }] : []),
       { label: "Discord", value: DISCORD_INVITE_URL },
-      { label: "How to play", value: `${config().PUBLIC_URL}/how-to-play` },
+      { label: "How to play", value: `${site}/how-to-play` },
     ],
-    cta: { label: "Join the Discord", url: DISCORD_INVITE_URL },
+    cta: gameUrl ? { label: "Open your game", url: gameUrl } : { label: "Join the Discord", url: DISCORD_INVITE_URL },
     note: "You get this once. Match news reaches you on the site and on Discord, not by mail.",
   });
 }

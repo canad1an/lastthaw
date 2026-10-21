@@ -167,7 +167,12 @@ export const matches = pgTable(
     settings: jsonb("settings").notNull().default({}),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("matches_status_idx").on(t.status), uniqueIndex("matches_slug_idx").on(t.slug)],
+  (t) => [
+    index("matches_status_idx").on(t.status),
+    uniqueIndex("matches_slug_idx").on(t.slug),
+    // One welcome game per new player, whatever races: the user id it was made for, from the settings.
+    uniqueIndex("matches_welcome_for_idx").on(sql`(${t.settings}->>'welcomeFor')`).where(sql`${t.settings}->>'welcomeFor' is not null`),
+  ],
 );
 
 export const players = pgTable(

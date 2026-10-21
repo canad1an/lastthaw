@@ -12,6 +12,7 @@ import { emailTokens, sessions, users, players, matches } from "../db/schema.js"
 import { hashPassword, hashToken, newToken, verifyPassword } from "./password.js";
 import { createSession, destroySession, requireUser } from "./session.js";
 import { resetMail, sendMail, verificationMail, welcomeMail } from "../mail.js";
+import { createWelcomeMatch } from "../matches/welcomeMatch.js";
 
 const VERIFY_HOURS = 24;
 const RESET_HOURS = 1;
@@ -149,10 +150,18 @@ export async function authRoutes(app: FastifyInstance, opts: { db: Db; redis: Re
       await tx.update(users).set({ emailVerifiedAt: now }).where(eq(users.id, row.userId));
       return u && !u.verified ? u : null;
     });
-    // The welcome, once: the first confirmation sends it, a repeat of the link or code does not.
-    if (firstTime && (await mailAllowed("welcome", firstTime.email))) {
-      const mail = welcomeMail(firstTime.displayName);
-      void sendMail(firstTime.email, mail.subject, mail.text, mail.html);
+    // The welcome, once: the first confirmation sends it, a repeat of the link or code does not. The first few hundred
+    // newcomers also get a game of their own, made before the mail goes so the mail can point at it; if that fails
+    // for any reason the plain welcome still goes.
+    if (firstTime) {
+      const game = await createWelcomeMatch(db, { id: row.userId, displayName: firstTime.displayName }, app.log).catch((err) => {
+        app.log.warn({ err, userId: row.userId }, "welcome match failed");
+        return null;
+      });
+      if (await mailAllowed("welcome", firstTime.email)) {
+        const mail = welcomeMail(firstTime.displayName, game ? { name: game.name, slug: game.slug, startsAt: game.startsAt, speed: game.speed } : undefined);
+        void sendMail(firstTime.email, mail.subject, mail.text, mail.html);
+      }
     }
     return { ok: true };
   });
