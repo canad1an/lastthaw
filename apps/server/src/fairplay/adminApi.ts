@@ -57,7 +57,6 @@ export async function adminRoutes(app: FastifyInstance, opts: { db: Db; publishe
       .select({
         total: sql<number>`count(*)::int`,
         verified: sql<number>`count(*) filter (where ${users.emailVerifiedAt} is not null)::int`,
-        approved: sql<number>`count(*) filter (where ${users.approvedAt} is not null)::int`,
         suspended: sql<number>`count(*) filter (where ${users.suspendedAt} is not null)::int`,
         new24h: sql<number>`count(*) filter (where ${users.createdAt} > ${h24.toISOString()}::timestamptz)::int`,
         new7d: sql<number>`count(*) filter (where ${users.createdAt} > ${d7.toISOString()}::timestamptz)::int`,
@@ -230,40 +229,15 @@ export async function adminRoutes(app: FastifyInstance, opts: { db: Db; publishe
     return { ok: true };
   });
 
-  /** Every account, newest first, with approve (lets an account in before its email is verified) and revoke. */
+  /** Every account, newest first: who they are, when they signed up, and whether the email is verified. */
   app.get("/api/admin/users", async (req) => {
     requireAdmin(req);
     const rows = await db
-      .select({ id: users.id, email: users.email, displayName: users.displayName, createdAt: users.createdAt, emailVerifiedAt: users.emailVerifiedAt, approvedAt: users.approvedAt, suspendedAt: users.suspendedAt, lastLoginAt: users.lastLoginAt, isAdmin: users.isAdmin })
+      .select({ id: users.id, email: users.email, displayName: users.displayName, createdAt: users.createdAt, emailVerifiedAt: users.emailVerifiedAt, suspendedAt: users.suspendedAt, lastLoginAt: users.lastLoginAt, isAdmin: users.isAdmin, isModerator: users.isModerator })
       .from(users)
       .orderBy(desc(users.createdAt))
       .limit(500);
-    return { users: rows.map((u) => ({ ...u, createdAt: u.createdAt.toISOString(), emailVerifiedAt: u.emailVerifiedAt?.toISOString() ?? null, approvedAt: u.approvedAt?.toISOString() ?? null, suspendedAt: u.suspendedAt?.toISOString() ?? null, lastLoginAt: u.lastLoginAt?.toISOString() ?? null })) };
-  });
-
-  app.post("/api/admin/users/:id/approve", async (req) => {
-    requireAdmin(req);
-    const id = idParams.parse(req.params).id;
-    await db.update(users).set({ approvedAt: new Date() }).where(eq(users.id, id));
-    return { ok: true };
-  });
-
-  // Admin rights: an admin may grant them to another account or take them back, never from themselves (so there is always one left).
-  app.post("/api/admin/users/:id/admin", async (req) => {
-    const me = requireAdmin(req);
-    const id = idParams.parse(req.params).id;
-    const { admin } = z.object({ admin: z.boolean() }).parse(req.body ?? {});
-    if (id === me.id && !admin) throw Object.assign(new Error("you cannot remove your own admin rights"), { statusCode: 400 });
-    const [row] = await db.update(users).set(admin ? { isAdmin: true, approvedAt: sql`coalesce(${users.approvedAt}, now())` } : { isAdmin: false }).where(eq(users.id, id)).returning({ id: users.id });
-    if (!row) throw Object.assign(new Error("no such user"), { statusCode: 404 });
-    return { ok: true };
-  });
-
-  app.post("/api/admin/users/:id/revoke", async (req) => {
-    requireAdmin(req);
-    const id = idParams.parse(req.params).id;
-    await db.update(users).set({ approvedAt: null }).where(eq(users.id, id));
-    return { ok: true };
+    return { users: rows.map((u) => ({ ...u, createdAt: u.createdAt.toISOString(), emailVerifiedAt: u.emailVerifiedAt?.toISOString() ?? null, suspendedAt: u.suspendedAt?.toISOString() ?? null, lastLoginAt: u.lastLoginAt?.toISOString() ?? null })) };
   });
 
   /**

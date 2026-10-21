@@ -70,7 +70,7 @@ function LobbyChat({ meId, approved }: { meId: string; approved: boolean }) {
           if (text.trim()) send.mutate(text.trim());
         }}
       >
-        <Input value={text} onChange={(e) => setText(e.target.value)} maxLength={500} placeholder={approved ? "Say something to everyone in the lobby" : "Chat opens once your account is approved"} disabled={!approved} />
+        <Input value={text} onChange={(e) => setText(e.target.value)} maxLength={500} placeholder={approved ? "Say something to everyone in the lobby" : "Chat opens once your email is verified"} disabled={!approved} />
         <Button type="submit" disabled={!approved || !text.trim() || send.isPending}>
           Send
         </Button>

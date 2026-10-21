@@ -330,6 +330,13 @@
       "when": 1792609758308,
       "tag": "0046_chancellor_book",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1792610183994,
+      "tag": "0047_moderators",
+      "breakpoints": true
     }
   ]
 }

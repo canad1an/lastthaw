@@ -35,7 +35,7 @@ function toView(u: {
     displayName: u.displayName,
     emailVerified: u.emailVerifiedAt !== null,
     isAdmin: u.isAdmin,
-    approved: u.isAdmin || !!u.emailVerifiedAt || !!u.approvedAt || config().DEV_TOOLS,
+    approved: u.isAdmin || !!u.emailVerifiedAt || config().DEV_TOOLS,
     canRename: u.canRename ?? false,
     tagline: u.tagline ?? null,
     bio: u.bio ?? null,

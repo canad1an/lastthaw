@@ -203,7 +203,7 @@ describe("api routes", () => {
     expect((await app.inject({ method: "PATCH", url: "/api/me/profile", payload: { tagline: "nope" } })).statusCode).toBe(401);
   });
 
-  it("the gate is a verified email: unverified accounts see the lobby but cannot join or create; admins may still approve and revoke", async () => {
+  it("the gate is a verified email: unverified accounts see the lobby but cannot join or create", async () => {
     const list = await Out.call("GET", "/api/matches");
     expect(list.statusCode).toBe(200);
     expect(Array.isArray(list.json())).toBe(true);
@@ -228,23 +228,19 @@ describe("api routes", () => {
     const usersList = await A.call("GET", "/api/admin/users");
     expect(usersList.statusCode).toBe(200);
     expect(JSON.stringify(usersList.json())).toContain(ann.displayName);
-    // An admin's approval lets an unverified account in (invited players); revoking takes that back.
+    // There is no approval any more: an unverified account stays out until the email is verified, and the old routes are gone.
     const outId = await idOf(outsider.email);
-    expect((await A.call("POST", `/api/admin/users/${outId}/approve`, {})).statusCode).toBe(200);
-    expect((await Out.call("GET", "/api/auth/me")).json()).toMatchObject({ approved: true });
-    expect((await A.call("POST", `/api/admin/users/${outId}/revoke`, {})).statusCode).toBe(200);
+    expect((await A.call("POST", `/api/admin/users/${outId}/approve`, {})).statusCode).toBe(404);
+    expect((await A.call("POST", `/api/admin/users/${outId}/revoke`, {})).statusCode).toBe(404);
+    expect((await A.call("POST", `/api/admin/users/${benId}/admin`, { admin: true })).statusCode).toBe(404);
     expect((await Out.call("GET", "/api/auth/me")).json()).toMatchObject({ approved: false });
-    expect((await A.call("POST", `/api/admin/users/${benId}/approve`, {})).statusCode).toBe(200);
-    expect((await A.call("POST", `/api/admin/users/${annId}/approve`, {})).statusCode).toBe(200);
-    // Admin rights can be handed on and taken back, but never dropped by the last admin on themselves.
-    expect((await Ann.call("POST", `/api/admin/users/${benId}/admin`, { admin: true })).statusCode).toBeGreaterThanOrEqual(400);
-    expect((await A.call("POST", `/api/admin/users/${annId}/admin`, { admin: true })).statusCode).toBe(200);
-    expect((await Ann.call("GET", "/api/auth/me")).json()).toMatchObject({ isAdmin: true, approved: true });
-    expect((await Ann.call("POST", `/api/admin/users/${benId}/approve`, {})).statusCode).toBe(200);
-    expect((await Ann.call("POST", `/api/admin/users/${annId}/admin`, { admin: false })).statusCode).toBe(400);
-    expect((await A.call("POST", `/api/admin/users/${annId}/admin`, { admin: false })).statusCode).toBe(200);
-    expect((await Ann.call("GET", "/api/auth/me")).json()).toMatchObject({ isAdmin: false });
-    expect((await A.call("POST", `/api/admin/users/${annId}/admin`, { admin: "yes" })).statusCode).toBe(400);
+    await db.update(users).set({ approvedAt: new Date() }).where(eq(users.id, outId));
+    expect((await Out.call("GET", "/api/auth/me")).json()).toMatchObject({ approved: false });
+    await db.update(users).set({ approvedAt: null }).where(eq(users.id, outId));
+    const listed = (usersList.json() as { users: { id: string; isModerator: boolean; emailVerifiedAt: string | null }[] }).users;
+    expect(listed.find((u) => u.id === annId)).toMatchObject({ isModerator: false });
+    expect(listed.find((u) => u.id === annId)?.emailVerifiedAt).toBeTruthy();
+    expect(listed.find((u) => u.id === outId)?.emailVerifiedAt).toBeNull();
   });
 
   it("suspension locks the account out until it is lifted", async () => {
@@ -1598,7 +1594,7 @@ describe("api routes", () => {
     expect(metrics.statusCode).toBe(200);
     const mt = metrics.json() as { online: { users: unknown[]; sockets: number }; active15m: { id: string }[]; users: { total: number; approved: number }; matches: { open: Array<{ id: string; status: string; humans: number; ai: number; jobs: { open: number } }> }; activity: { battles24h: number } };
     expect(mt.users.total).toBeGreaterThanOrEqual(4);
-    expect(mt.users.approved).toBeGreaterThanOrEqual(2);
+    expect(mt.users.verified).toBeGreaterThanOrEqual(2);
     const adminId = await idOf(admin.email);
     expect(mt.active15m.some((u) => u.id === adminId)).toBe(true);
     const row = mt.matches.open.find((m) => m.id === gameId);

@@ -81,7 +81,7 @@ export const sessionPlugin = fp(async (app: FastifyInstance, opts: { db: Db }) =
         .catch(() => {});
     }
     req.sessionId = row.sessionId;
-    req.user = { id: row.id, email: row.email, displayName: row.displayName, emailVerified: row.emailVerifiedAt !== null, isAdmin: row.isAdmin, approved: row.isAdmin || row.emailVerifiedAt !== null || row.approvedAt !== null || config().DEV_TOOLS, canRename: row.canRename, tagline: row.tagline, bio: row.bio, location: row.location, createdAt: row.createdAt.toISOString() };
+    req.user = { id: row.id, email: row.email, displayName: row.displayName, emailVerified: row.emailVerifiedAt !== null, isAdmin: row.isAdmin, approved: row.isAdmin || row.emailVerifiedAt !== null || config().DEV_TOOLS, canRename: row.canRename, tagline: row.tagline, bio: row.bio, location: row.location, createdAt: row.createdAt.toISOString() };
   });
 });
 

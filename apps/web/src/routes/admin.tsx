@@ -22,17 +22,25 @@ interface BetaUser {
   displayName: string;
   createdAt: string;
   emailVerifiedAt: string | null;
-  approvedAt: string | null;
   suspendedAt: string | null;
   lastLoginAt: string | null;
   isAdmin: boolean;
+  isModerator: boolean;
+}
+
+/** What an account is: its role if it has one, else whether the email has been verified. */
+function accountStatus(u: BetaUser): { text: string; tone: string } {
+  if (u.isAdmin) return { text: "Admin", tone: "text-sky-200" };
+  if (u.isModerator) return { text: "Moderator", tone: "text-violet-200" };
+  if (u.emailVerifiedAt) return { text: "Member", tone: "text-emerald-300" };
+  return { text: "Unverified", tone: "text-slate-500" };
 }
 
 interface Metrics {
   at: string;
   online: { users: Array<{ id: string; name: string; matches: string[] }>; sockets: number; anonymous: number; processes: number };
   active15m: Array<{ id: string; name: string; lastSeenAt: string }>;
-  users: { total: number; verified: number; approved: number; suspended: number; new24h: number; new7d: number; loggedIn24h: number; loggedIn7d: number };
+  users: { total: number; verified: number; suspended: number; new24h: number; new7d: number; loggedIn24h: number; loggedIn7d: number };
   matches: {
     finished: number;
     finished24h: number;
@@ -94,7 +102,7 @@ function LiveMetrics() {
         <Stat n={d.active15m.length} label="active last 15 min" />
         <Stat n={running.length} label="matches running" />
         <Stat n={running.reduce((a, m) => a + m.humans, 0)} label="humans in matches" />
-        <Stat n={d.users.total} label={`accounts (${d.users.approved} approved)`} />
+        <Stat n={d.users.total} label={`accounts (${d.users.verified} verified)`} />
         <Stat n={d.users.new7d} label={`new this week (${d.users.new24h} today)`} />
         <Stat n={d.users.loggedIn24h} label="logged in today" />
         <Stat n={d.activity.battles24h} label="battles today" />
@@ -189,7 +197,7 @@ type AdminTab = "metrics" | "accounts" | "players" | "fairplay";
 const ADMIN_TABS: Array<{ id: AdminTab; label: string }> = [
   { id: "metrics", label: "Right now" },
   { id: "accounts", label: "Accounts" },
-  { id: "players", label: "Players" },
+  { id: "players", label: "Top Players" },
   { id: "fairplay", label: "Fair play" },
 ];
 
@@ -211,12 +219,6 @@ export function AdminPage() {
     queryKey: ["admin", "users"],
     queryFn: () => fetch("/api/admin/users", { credentials: "include" }).then((r) => (r.ok ? (r.json() as Promise<{ users: BetaUser[] }>) : Promise.reject(new Error("forbidden")))),
     enabled: !!me.data?.isAdmin,
-  });
-  const approve = useMutation({ mutationFn: (id: string) => post(`/api/admin/users/${id}/approve`), onSuccess: () => void qc.invalidateQueries({ queryKey: ["admin"] }) });
-  const revoke = useMutation({ mutationFn: (id: string) => post(`/api/admin/users/${id}/revoke`), onSuccess: () => void qc.invalidateQueries({ queryKey: ["admin"] }) });
-  const setAdmin = useMutation({
-    mutationFn: ({ id, admin }: { id: string; admin: boolean }) => post(`/api/admin/users/${id}/admin`, { admin }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["admin"] }),
   });
   const kick = useMutation({ mutationFn: (v: { matchId: string; userId: string }) => post(`/api/admin/matches/${v.matchId}/kick/${v.userId}`), onSuccess: () => void qc.invalidateQueries({ queryKey: ["admin"] }) });
   const act = (u: { id: string; displayName?: string; suspendedAt?: string | null }, matchId: string | null) => (
@@ -266,53 +268,32 @@ export function AdminPage() {
         <>
       <section className="space-y-2">
         <h1 className="text-2xl font-semibold">Accounts</h1>
-        <p className="text-sm text-slate-400">Every account. A verified email is all it takes to play; approve lets someone in before they verify, and suspend shuts them out.</p>
+        <p className="text-sm text-slate-400">Every account, newest first. Nobody plays until their email is verified; a verified account is a Member. Suspensions are handled from the fair-play tab.</p>
         <Card className="overflow-x-auto p-0">
           <table className="w-full min-w-max text-sm">
             <thead className="text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
-                <th className="px-3 py-2">Player</th>
+                <th className="px-3 py-2">Name</th>
                 <th className="px-3 py-2">Email</th>
                 <th className="px-3 py-2">Signed up</th>
                 <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2"></th>
               </tr>
             </thead>
             <tbody>
-              {(usersQ.data?.users ?? []).map((u) => (
-                <tr key={u.id} className="border-t border-slate-800">
-                  <td className="px-3 py-1.5">{u.displayName}</td>
-                  <td className="px-3 py-1.5 text-slate-400">{u.email}</td>
-                  <td className="px-3 py-1.5 text-slate-400">{new Date(u.createdAt).toLocaleDateString()}</td>
-                  <td className="px-3 py-1.5">
-                    {u.suspendedAt ? <span className="text-rose-300">suspended</span> : u.approvedAt ? <span className="text-emerald-300">approved</span> : !u.emailVerifiedAt ? <span className="text-slate-500">unverified</span> : <span className="text-amber-300">waiting</span>}
-                    {u.isAdmin && <span className="ml-2 rounded bg-sky-500/20 px-1.5 py-0.5 text-xs text-sky-200">admin</span>}
-                  </td>
-                  <td className="space-x-1 px-3 py-1.5 text-right">
-                    {u.id !== me.data?.id && (
-                      <Button
-                        variant="ghost"
-                        className="px-2 py-1 text-xs"
-                        title={u.isAdmin ? "Take back admin rights" : "Grant admin rights: the admin page, approvals, pausing and starting matches"}
-                        onClick={() => {
-                          if (window.confirm(u.isAdmin ? `Remove admin rights from ${u.displayName}?` : `Make ${u.displayName} an admin? They will see everything on this page and can approve, suspend and kick players.`)) setAdmin.mutate({ id: u.id, admin: !u.isAdmin });
-                        }}
-                      >
-                        {u.isAdmin ? "remove admin" : "make admin"}
-                      </Button>
-                    )}
-                    {u.approvedAt ? (
-                      <Button variant="ghost" className="px-2 py-1 text-xs" onClick={() => revoke.mutate(u.id)}>
-                        revoke
-                      </Button>
-                    ) : (
-                      <Button className="px-2 py-1 text-xs" onClick={() => approve.mutate(u.id)}>
-                        approve
-                      </Button>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {(usersQ.data?.users ?? []).map((u) => {
+                const st = accountStatus(u);
+                return (
+                  <tr key={u.id} className="border-t border-slate-800">
+                    <td className="px-3 py-1.5">{u.displayName}</td>
+                    <td className="px-3 py-1.5 text-slate-400">{u.email}</td>
+                    <td className="px-3 py-1.5 text-slate-400">{new Date(u.createdAt).toLocaleDateString()}</td>
+                    <td className="px-3 py-1.5">
+                      <span className={st.tone}>{st.text}</span>
+                      {u.suspendedAt && <span className="ml-2 rounded bg-rose-500/20 px-1.5 py-0.5 text-xs text-rose-200">suspended</span>}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </Card>

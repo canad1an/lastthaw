@@ -16,7 +16,9 @@ export const users = pgTable(
     /** Invited accounts start with a placeholder name and may pick their tribe name once. */
     canRename: boolean("can_rename").notNull().default(false),
     isAdmin: boolean("is_admin").notNull().default(false),
-    /** An admin's approval: lets an account in before its email is verified (invited players). */
+    /** A moderator: a role kept for later, with no controls behind it yet. */
+    isModerator: boolean("is_moderator").notNull().default(false),
+    /** Kept from the beta, when an admin could let an account in before its email was verified. No longer read. */
     approvedAt: timestamp("approved_at", { withTimezone: true }),
     /** Set by an admin: the account cannot log in and its sessions are gone until cleared. */
     suspendedAt: timestamp("suspended_at", { withTimezone: true }),
