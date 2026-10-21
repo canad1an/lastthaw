@@ -74,9 +74,9 @@ export function HeroMap({ className = "" }: { className?: string }) {
         <span className="hidden sm:inline">ice beyond {hud.lat}°</span>
       </div>
       {cap.big && (
-        <div key={cap.n} className="hero-cap pointer-events-none absolute left-1/2 top-[9%] z-10 w-[min(92%,760px)] -translate-x-1/2 rounded-full px-4 pb-3 pt-2 text-center">
+        <div key={cap.n} className="hero-cap pointer-events-none absolute left-1/2 top-[34%] z-10 sm:top-[9%] w-[min(92%,760px)] -translate-x-1/2 rounded-full px-4 pb-3 pt-2 text-center">
           <p className="hero-cap-big display text-[clamp(18px,3.4vw,40px)] font-bold leading-tight tracking-wide text-white">{cap.big}</p>
-          <p className="mt-1 text-[clamp(11px,1.3vw,15px)] text-slate-200">{cap.small}</p>
+          <p className="mt-1 hidden text-[clamp(11px,1.3vw,15px)] text-slate-200 sm:block">{cap.small}</p>
         </div>
       )}
       <div className="absolute bottom-4 left-3 z-10 hidden max-w-[60%] gap-1 sm:grid" aria-live="off">

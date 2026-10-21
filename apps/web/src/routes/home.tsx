@@ -52,24 +52,23 @@ export function HomePage() {
 
   return (
     <main>
-      {/* Hero */}
+      {/* Hero: a short pitch, then the match playing out on the map, above the fold */}
       <section className="relative overflow-hidden">
-        <div className="mx-auto grid max-w-6xl gap-10 px-4 pb-16 pt-12 sm:pt-20 lg:grid-cols-[1.15fr_0.85fr] lg:items-center lg:pb-24">
-          <div>
-            <p className="rise mb-4 inline-flex items-center gap-2 rounded-full border border-sky-400/30 bg-slate-950/60 px-3 py-1 text-xs font-medium uppercase tracking-[0.25em] text-sky-200">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400" />
-              Free browser strategy · 30 real days
-            </p>
-            <h1 className="display rise rise-2 text-5xl font-bold leading-[1.02] sm:text-6xl lg:text-7xl">
-              <span className="frost-text">The ice is coming.</span>
-              <br />
-              <span className="ember-text">Build an empire first.</span>
-            </h1>
-            <p className="shadow-copy rise rise-3 mt-6 max-w-xl text-lg leading-relaxed text-slate-200">
-              Start with five settlers somewhere on the real Earth. Gather, build, research and raid your way through the ages while a
-              glacier swallows the map from both poles. A hundred rivals. One winner. Hard end date.
-            </p>
-            <div className="rise rise-4 mt-8 flex flex-wrap items-center gap-3">
+        <div className="mx-auto max-w-6xl px-4 pb-5 pt-5 sm:pt-7">
+          <p className="rise mb-3 inline-flex items-center gap-2 rounded-full border border-sky-400/30 bg-slate-950/60 px-3 py-1 text-xs font-medium uppercase tracking-[0.25em] text-sky-200">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400" />
+            Free browser strategy · 30 real days
+          </p>
+          <h1 className="display rise rise-2 text-3xl font-bold leading-[1.05] sm:text-5xl">
+            <span className="frost-text">The ice is coming.</span> <span className="ember-text">Build an empire first.</span>
+          </h1>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-x-8 gap-y-3">
+            <div className="min-w-0 flex-1 basis-[30rem]">
+              <p className="shadow-copy rise rise-3 max-w-2xl text-base leading-relaxed text-slate-200">
+                Start with five settlers somewhere on the real Earth. Gather, build, research and raid your way through the ages while a glacier swallows the map from both poles. A hundred rivals. One winner. Hard end date.
+              </p>
+            </div>
+            <div className="rise rise-4 flex shrink-0 flex-wrap items-center gap-3">
               {me.data ? (
                 <Link to="/matches" className="btn-ember display rounded-md px-6 py-3 text-base font-semibold">
                   Find a match
@@ -83,13 +82,28 @@ export function HomePage() {
                 How it works
               </Link>
               {next && (
-                <span className="shadow-copy text-sm text-slate-300">
+                <span className="shadow-copy w-full text-sm text-slate-300 sm:w-auto lg:w-full">
                   Next match <span className="text-slate-100">{next.name}</span> opens in{" "}
                   <span className="tabular-nums text-amber-200">{formatCountdown((Date.parse(next.startsAt) - now) / 1000)}</span>
                 </span>
               )}
             </div>
-            <dl className="rise rise-4 mt-10 grid grid-cols-2 gap-4 sm:grid-cols-4">
+          </div>
+        </div>
+        <div className="mx-auto max-w-6xl px-4 pb-12">
+          <div className="glass overflow-hidden rounded-2xl">
+            <HeroMap className="aspect-[2000/820] w-full bg-[#0a1f33]" />
+          </div>
+        </div>
+      </section>
+
+      {/* The numbers and the way in */}
+      <section className="mx-auto max-w-6xl px-4 pb-16">
+        <div className="grid gap-10 lg:grid-cols-[1.15fr_0.85fr] lg:items-center">
+          <div>
+            <h2 className="display text-2xl font-semibold text-white sm:text-3xl">A world to win before the ice takes it</h2>
+            <p className="mt-2 max-w-xl text-slate-300">Thirty days on the real map. Claim land, conquer rivals, cross the seas, and keep your people south of the ice.</p>
+            <dl className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
               <Stat n="408" label="real regions" />
               <Stat n="30" label="days per match" />
               <Stat n={String(AGES.length)} label="ages to climb" />
@@ -97,7 +111,7 @@ export function HomePage() {
             </dl>
           </div>
 
-          <div id="signup" className="rise rise-3 glass glass-strong scroll-mt-20 rounded-2xl p-6 sm:p-7">
+          <div id="signup" className="glass glass-strong scroll-mt-20 rounded-2xl p-6 sm:p-7">
             {me.data ? (
               <>
                 <h2 className="display text-2xl font-semibold text-white">Welcome back, {me.data.displayName}.</h2>
@@ -114,22 +128,6 @@ export function HomePage() {
               </>
             )}
           </div>
-        </div>
-      </section>
-
-      {/* Live map */}
-      <section className="mx-auto max-w-6xl px-4 pb-16">
-        <div className="glass overflow-hidden rounded-2xl">
-          <div className="flex flex-wrap items-end justify-between gap-3 border-b border-slate-700/50 px-5 py-4">
-            <div>
-              <h2 className="display text-xl font-semibold text-white">A world to win before the ice takes it</h2>
-              <p className="text-sm text-slate-400">Thirty days on the real map. Claim land, conquer rivals, cross the seas, and keep your people south of the ice.</p>
-            </div>
-            <Link to="/how-to-play" className="text-sm text-sky-300 hover:text-white">
-              How it plays
-            </Link>
-          </div>
-          <HeroMap className="aspect-[2000/820] w-full bg-[#0a1f33]" />
         </div>
       </section>
 
