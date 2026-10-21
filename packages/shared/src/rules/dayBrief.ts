@@ -20,6 +20,8 @@ export function newOnDay(day: number): string[] {
   if (opens(ev.horde.fromDay)) out.push(`${ev.horde.name} can ride out of the ice from today, against the richest region in reach.`);
   if (opens(ev.horde.catapultsFromDay)) out.push(`${ev.horde.name} brings catapults from today: a wall alone will not hold it.`);
   if (opens(ev.horde.lateDay)) out.push(`${ev.horde.name} rides out more often from today.`);
+  if (opens(balance.match.alliancesEndDay - 1)) out.push("Last day of alliances: every alliance dissolves when this day ends, and none can be formed after. Settle what you owe your allies today.");
+  if (opens(balance.match.alliancesEndDay)) out.push("Every alliance has dissolved: from today each tribe stands alone, and no new alliance can be formed.");
   if (day === balance.match.lengthDays) out.push("The last day. When it ends the ice stops, and the tribe with the most people alive in unfrozen land wins.");
   return out;
 }

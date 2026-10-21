@@ -268,7 +268,7 @@ const ADVANCED: Array<{ title: string; body: React.ReactNode }> = [
           <b>Tribute</b>: demand a resource and an amount from another tribe; they have {ev.diplomacy.tributeHours} hours to pay it from their capital, and you may demand from the same tribe once every {ev.diplomacy.tributeCooldownHours} hours. A refusal gives you {ev.diplomacy.causeForWarHours} hours of cause for war, during which your raids on them carry {ev.diplomacy.lootMult}x loot, and puts a bounty on the refuser. AI tribes pay when the demand is under a tenth of their capital stock.
         </li>
         <li>
-          <b>Alliances</b> are separate and stronger: shared vision, reinforcing and shipping goods to each other, private chat, and the chance to win together. Hordes respect nobody's pacts.
+          <b>Alliances</b> are separate and stronger: shared vision, reinforcing and shipping goods to each other, private chat, and together their regions count toward the {Math.round(balance.win.regionShareForEarlyWin * 100)}% early win (the alliance leader is recorded as the winner). They are temporary: as day {balance.match.alliancesEndDay + 1} begins every alliance dissolves and none can be founded or joined after, so the last days are every tribe for itself, and the Last Thaw on day {balance.match.lengthDays} names a single winner. Hordes respect nobody's pacts.
         </li>
       </ul>
     ),
@@ -533,6 +533,7 @@ export function HowToPlayPage() {
             <b>House rules.</b> One account per person, and play by hand. Scripts, bots and browser agents that play for you are not allowed: the game logs every command and flags accounts whose play has a machine's rhythm, and those accounts are suspended.
           </li>
           <li>Tournaments are the scheduled weekly matches at 1x and the only ranked ones: they count toward the Hall of Fame and its titles (Survivor, Conqueror, Builder, Explorer). Register any time; you are enrolled when it starts whether or not you come to the lobby, which opens an hour before so you can pick your capital. Skip it and a starting region is picked for you; and if you were registered but are somehow not in, Join still works during the first three days. Anyone with a verified email can create a public or private game at up to {balance.match.maxGameSpeed}x, which is the whole match in about four hours, one game at a time; private games need an invite code to join. The creator also picks the game's resource rate (1x to 5x): everything gathered or mined, food included, comes in at that rate, separately from the speed, so a 1x game at 2x resources is still a real month with twice the goods. Tournaments are always 1x. The creator may end a game early at any time: it finishes with no winner, and its report stays at its address saying so.</li>
+          <li>As day {balance.match.alliancesEndDay + 1} begins every alliance dissolves and no new one can be formed: the last days are every tribe for itself.</li>
           <li>When day 30 ends the map falls into the winter night for two hours: the ice has stopped, the winner is named, and the final report is one click away.</li>
         </ul>
       </section>

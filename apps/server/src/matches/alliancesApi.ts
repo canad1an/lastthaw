@@ -7,6 +7,7 @@ import { requireUser } from "../auth/session.js";
 import type { Publisher } from "../realtime/publish.js";
 import { httpError } from "../sim/commands.js";
 import { countOwnedRegions, type Tx } from "../sim/regions.js";
+import { ALLIANCES_END_DAY_SHOWN, alliancesOpen } from "../sim/alliances.js";
 import { idParams } from "./params.js";
 
 type PlayerRow = typeof players.$inferSelect;
@@ -45,11 +46,19 @@ export async function allianceRoutes(app: FastifyInstance, opts: { db: Db; publi
     for (const id of ids) await publisher.toPlayer(matchId, id, "alliance.updated", payload);
   }
 
+  /** Alliances are temporary: nothing is founded, offered or joined once alliancesEndDay whole days have gone. */
+  async function requireSeason(matchId: string): Promise<void> {
+    const [m] = await db.select().from(matches).where(eq(matches.id, matchId)).limit(1);
+    if (!m) throw httpError(404, "match not found");
+    if (m.status === "running" && !alliancesOpen(m)) throw httpError(409, `alliances have ended for this match: from day ${ALLIANCES_END_DAY_SHOWN} every tribe stands alone`);
+  }
+
   app.post("/api/matches/:id/alliances", async (req, reply) => {
     const user = requireUser(req);
     const matchId = idParams.parse(req.params).id;
     const body = createAllianceBody.parse(req.body);
     const p = await myPlayer(matchId, user.id);
+    await requireSeason(matchId);
 
     const created = await db.transaction(async (tx) => {
       if (await membershipOf(tx, p.id)) throw httpError(409, "you are already in an alliance");
@@ -74,6 +83,7 @@ export async function allianceRoutes(app: FastifyInstance, opts: { db: Db; publi
     const matchId = idParams.parse(req.params).id;
     const body = allianceInviteBody.parse(req.body);
     const p = await myPlayer(matchId, user.id);
+    await requireSeason(matchId);
 
     const allianceId = await db.transaction(async (tx) => {
       const mine = await membershipOf(tx, p.id);
@@ -107,6 +117,7 @@ export async function allianceRoutes(app: FastifyInstance, opts: { db: Db; publi
     const matchId = idParams.parse(req.params).id;
     const body = allianceIdBody.parse(req.body);
     const p = await myPlayer(matchId, user.id);
+    await requireSeason(matchId);
 
     const members = await db.transaction(async (tx) => {
       if (await membershipOf(tx, p.id)) throw httpError(409, "you are already in an alliance");

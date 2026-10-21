@@ -25,6 +25,11 @@ export const balance = {
     startOptions: 6,
     /** Minimum great-circle distance between two players' capitals, in km. */
     minCapitalSpacingKm: 900,
+    /**
+     * Alliances are temporary: when this many whole days have gone (as day alliancesEndDay + 1 begins) every alliance
+     * dissolves, and none can be founded or joined from then on, so the last days are every tribe for itself.
+     */
+    alliancesEndDay: 24,
     /** Capitals are offered no further from the equator than this; the ice ends at 28°, so a start beyond 40° is a lost cause. */
     maxStartLatitude: 40,
   },

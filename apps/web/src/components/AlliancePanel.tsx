@@ -1,3 +1,4 @@
+import { balance } from "@lastthaw/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import type { MatchStateView } from "@lastthaw/shared";
@@ -79,6 +80,7 @@ export function AlliancePanel({ matchId, state }: { matchId: string; state: Matc
           <Button type="submit" disabled={create.isPending || name.trim().length < 2 || tag.length < 2}>
             Found alliance
           </Button>
+          <p className="text-xs text-slate-500">Alliances are temporary: every one dissolves as day {balance.match.alliancesEndDay + 1} begins, and none can be formed after. Together you count toward the early win; the Last Thaw names one winner.</p>
           <ErrorText>{create.error?.message ?? accept.error?.message ?? decline.error?.message}</ErrorText>
         </form>
         {q.data && q.data.alliances.length > 0 && (

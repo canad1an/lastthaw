@@ -13,6 +13,8 @@ describe("the morning brief's news", () => {
     expect(newOnDay(balance.events.storm.fromDay + 1).some((s) => s.startsWith("Blizzards"))).toBe(true);
     expect(newOnDay(balance.events.horde.fromDay + 1).some((s) => s.includes("can ride out"))).toBe(true);
     expect(newOnDay(balance.match.lengthDays).some((s) => s.startsWith("The last day"))).toBe(true);
+    expect(newOnDay(balance.match.alliancesEndDay).some((s) => s.startsWith("Last day of alliances"))).toBe(true);
+    expect(newOnDay(balance.match.alliancesEndDay + 1).some((s) => s.startsWith("Every alliance has dissolved"))).toBe(true);
   });
 
   it("every age after the Bronze Age opens on exactly one day", () => {
