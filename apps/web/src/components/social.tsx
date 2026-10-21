@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
+import { DISCORD_INVITE_URL } from "@lastthaw/shared";
 
 /** Where the game lives off-site. Add X, Facebook and the rest here as they open; every place that shows icons reads this list. */
 export const SOCIAL_LINKS: Array<{ name: string; href: string; icon: ReactNode }> = [
-  { name: "Discord", href: "https://discord.gg/5MTKKnh33U", icon: <DiscordIcon /> },
+  { name: "Discord", href: DISCORD_INVITE_URL, icon: <DiscordIcon /> },
 ];
 
 export function DiscordIcon({ className = "" }: { className?: string }) {

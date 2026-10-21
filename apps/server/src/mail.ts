@@ -1,5 +1,5 @@
 import nodemailer, { type Transporter } from "nodemailer";
-import { balance } from "@lastthaw/shared";
+import { balance, DISCORD_INVITE_URL } from "@lastthaw/shared";
 import { config } from "./config.js";
 import { logger, maskEmail } from "./logger.js";
 
@@ -138,6 +138,25 @@ export function verificationMail(displayName: string, token: string, code: strin
     facts: [{ label: "Your code", value: code }],
     cta: { label: "Confirm my email", url },
     note: "The code and the link are valid for 24 hours. If you did not sign up, you can ignore this message.",
+  });
+}
+
+/** Sent once, the moment an email is confirmed: what to do first, and the Discord where the players and the news are. */
+export function welcomeMail(displayName: string) {
+  return renderMail({
+    subject: "Welcome to Last Thaw",
+    preheader: "Your email is confirmed. Pick a capital, and come and find the other tribes on Discord.",
+    greeting: `Welcome, ${displayName}`,
+    paragraphs: [
+      `You are in. The lobby at ${config().PUBLIC_URL} lists the matches you can join: pick a capital on the real map, set your five families to work, and build before the frost reaches your latitude. A new weekly match opens every Monday, and nobody can attack you for your first ${balance.match.protectionDays} game days.`,
+      "The other tribes are on our Discord. That is where every update and fix is announced, where bugs are reported, and where players trade notes, form alliances and find each other between matches. Come and say hello.",
+    ],
+    facts: [
+      { label: "Discord", value: DISCORD_INVITE_URL },
+      { label: "How to play", value: `${config().PUBLIC_URL}/how-to-play` },
+    ],
+    cta: { label: "Join the Discord", url: DISCORD_INVITE_URL },
+    note: "You get this once. Match news reaches you on the site and on Discord, not by mail.",
   });
 }
 
