@@ -28,6 +28,18 @@ export async function sendMail(to: string, subject: string, text: string, html?:
   }
 }
 
+/** Every Last Thaw operations mail (nightly reports and the like) comes from and goes to this mailbox. */
+export const ADMIN_ADDRESS = "admin@lastthaw.com";
+
+/** The operations mail: from admin@lastthaw.com to admin@lastthaw.com. Unlike player mail it throws, so the sender knows it failed. */
+export function adminReportMessage(subject: string, text: string) {
+  return { from: `Last Thaw <${ADMIN_ADDRESS}>`, to: ADMIN_ADDRESS, subject, text };
+}
+
+export async function sendAdminReport(subject: string, text: string): Promise<void> {
+  await getTransport().sendMail(adminReportMessage(subject, text));
+}
+
 // ---------------------------------------------------------------------------
 // Layout: every mail is the same dark card over an aurora band, with a title,
 // a few paragraphs, an optional fact box and one button. Inline styles only,
