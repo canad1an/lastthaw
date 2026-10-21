@@ -97,6 +97,10 @@ export class HeroWar {
   private phase = -1;
   private winner = -1;
   private lastNews = 0;
+  /** On a narrow, tall screen only part of the world fits: the camera pans to the latest big moment. */
+  private camX = 1000;
+  private focusX = 1000;
+  private focusAt = -99;
   gt = 0;
 
   constructor(private canvas: HTMLCanvasElement, private on: HeroEvents, private reduce: boolean) {
@@ -128,7 +132,7 @@ export class HeroWar {
     const r = this.canvas.getBoundingClientRect();
     this.dpr = Math.min(2, window.devicePixelRatio || 1);
     this.W = Math.max(280, r.width);
-    this.H = (this.W * VB.h) / VB.w;
+    this.H = r.height > 10 ? r.height : (this.W * VB.h) / VB.w;
     this.canvas.width = Math.round(this.W * this.dpr);
     this.canvas.height = Math.round(this.H * this.dpr);
   }
@@ -145,6 +149,8 @@ export class HeroWar {
     this.wakes = [];
     this.busy.clear();
     this.gt = 0;
+    this.camX = this.focusX = 1000;
+    this.focusAt = -99;
     this.lastAct = 0;
     this.lastIce = 0;
     this.phase = -1;
@@ -193,7 +199,12 @@ export class HeroWar {
     }
   }
 
-  private news(text: string, t: number, big = false) {
+  private news(text: string, t: number, big = false, x?: number) {
+    // The camera moves on at most every few seconds, so a phone viewer can follow it.
+    if (x !== undefined && this.gt - this.focusAt > 3.5) {
+      this.focusX = x;
+      this.focusAt = this.gt;
+    }
     if (!big && this.gt - this.lastNews < 0.9) return;
     this.lastNews = this.gt;
     this.on.news(text, t >= 0 ? this.tribes[t]!.color : "#e8f4fb");
@@ -277,7 +288,7 @@ export class HeroWar {
           op.bombs++;
           this.boom(to.x + (this.rng() - 0.5) * 30, to.y + (this.rng() - 0.5) * 20, 1.2);
           this.flashT[op.to] = gt;
-          if (op.bombs === 1) this.news(`${this.tribes[op.t]!.name} bombed ${to.name}`, op.t);
+          if (op.bombs === 1) this.news(`${this.tribes[op.t]!.name} bombed ${to.name}`, op.t, false, to.x);
         }
         if (p >= 1) op.done = true;
         continue;
@@ -296,7 +307,7 @@ export class HeroWar {
           this.setOwner(op.to, op.t);
           op.done = true;
           this.busy.delete(op.to);
-          if (op.kind === "ship") this.news(`${this.tribes[op.t]!.name} landed in ${to.name}`, op.t);
+          if (op.kind === "ship") this.news(`${this.tribes[op.t]!.name} landed in ${to.name}`, op.t, false, to.x);
           continue;
         }
         op.battle = { t0: gt, dur: 2.2 + this.rng() * 1.2, def: this.owner[op.to]!, win: this.rng() < 0.66 };
@@ -312,7 +323,7 @@ export class HeroWar {
           this.busy.delete(op.to);
           if (b.win && this.owner[op.to] === b.def) {
             this.setOwner(op.to, op.t);
-            this.news(`${this.tribes[op.t]!.name} took ${to.name} from ${this.tribes[b.def]!.name}`, op.t);
+            this.news(`${this.tribes[op.t]!.name} took ${to.name} from ${this.tribes[b.def]!.name}`, op.t, false, to.x);
             for (let i = 0; i < 4; i++) this.boom(to.x + (this.rng() - 0.5) * 16, to.y + (this.rng() - 0.5) * 12, 0.8);
           }
         }
@@ -368,9 +379,18 @@ export class HeroWar {
 
   draw() {
     const c = this.ctx, W = this.W, H = this.H, gt = this.gt, R = this.R;
-    const sc = W / VB.w;
+    // Wide screens fit the whole width; tall ones fit the height and pan.
+    const sc = Math.max(W / VB.w, H / VB.h);
+    const half = W / sc / 2;
+    if (half * 2 >= VB.w - 1) this.camX = VB.w / 2;
+    else {
+      const target = Math.max(half, Math.min(VB.w - half, this.focusX));
+      this.camX += (target - this.camX) * 0.03;
+      this.camX = Math.max(half, Math.min(VB.w - half, this.camX));
+    }
+    const ox = W / 2 - this.camX * sc;
     const oy = H / 2 - (VB.y + VB.h / 2) * sc;
-    const S = (x: number, y: number): [number, number] => [x * sc, y * sc + oy];
+    const S = (x: number, y: number): [number, number] => [x * sc + ox, y * sc + oy];
     c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     const g = c.createLinearGradient(0, 0, 0, H);
     g.addColorStop(0, "#0b2038");
@@ -378,7 +398,7 @@ export class HeroWar {
     g.addColorStop(1, "#0b2038");
     c.fillStyle = g;
     c.fillRect(0, 0, W, H);
-    c.setTransform(this.dpr * sc, 0, 0, this.dpr * sc, 0, this.dpr * oy);
+    c.setTransform(this.dpr * sc, 0, 0, this.dpr * sc, this.dpr * ox, this.dpr * oy);
     const lw = 1 / sc;
     for (let i = 0; i < this.n; i++) {
       const o = this.owner[i]!;
@@ -435,7 +455,7 @@ export class HeroWar {
 
     // Screen space: units keep a readable size whatever the width.
     c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    const u = Math.max(0.75, Math.min(2, W / 1100));
+    const u = Math.max(0.85, Math.min(2, (sc * VB.w) / 1100));
     for (const w of this.wakes) {
       const [x, y] = S(w.x, w.y);
       const a = 1 - (gt - w.t) / 2.2;

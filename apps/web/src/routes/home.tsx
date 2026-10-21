@@ -92,7 +92,7 @@ export function HomePage() {
         </div>
         <div className="mx-auto max-w-6xl px-4 pb-12">
           <div className="glass overflow-hidden rounded-2xl">
-            <HeroMap className="aspect-[2000/820] w-full bg-[#0a1f33]" />
+            <HeroMap className="aspect-[4/3] w-full bg-[#0a1f33] sm:aspect-[2000/820]" />
           </div>
         </div>
       </section>
