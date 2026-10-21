@@ -1,6 +1,7 @@
 import type { z } from "zod";
 import { reportClientError } from "../errorReport.js";
-import { alliancesResponse, chatResponse, marketResponse, matchStateView, matchSummary, userView, type AdvisorKind, type AdvisorSettings, type BattleDetailView, type FinanceView, type LiveBattleView, type ChatMessageView, type MarketOrderView, type TradeResource } from "@lastthaw/shared";
+import { APP_VERSION } from "../version.js";
+import { healthResponse, shouldReloadForNewVersion, alliancesResponse, chatResponse, marketResponse, matchStateView, matchSummary, userView, type AdvisorKind, type AdvisorSettings, type BattleDetailView, type FinanceView, type LiveBattleView, type ChatMessageView, type MarketOrderView, type TradeResource } from "@lastthaw/shared";
 
 export class ApiError extends Error {
   constructor(
@@ -28,6 +29,22 @@ function deviceId(): string {
   }
 }
 
+const RELOADED_FOR = "lt_reloaded_for";
+
+/** True when the server runs a different build than this page and the page is reloading into it. */
+async function reloadIfOutdated(): Promise<boolean> {
+  try {
+    const health = healthResponse.safeParse(await fetch("/api/health", { cache: "no-store" }).then((r) => r.json()));
+    const server = health.success ? health.data.version : null;
+    if (!shouldReloadForNewVersion(APP_VERSION, server, sessionStorage.getItem(RELOADED_FOR))) return false;
+    sessionStorage.setItem(RELOADED_FOR, server!);
+    location.reload();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function request<T>(method: string, url: string, body?: unknown, schema?: z.ZodType<T>): Promise<T> {
   const init: RequestInit = { method, credentials: "include", headers: { "x-device": deviceId() } };
   if (body !== undefined) {
@@ -52,6 +69,8 @@ async function request<T>(method: string, url: string, body?: unknown, schema?: 
   if (!schema) return json as T;
   const parsed = schema.safeParse(json);
   if (!parsed.success) {
+    // A page left open across a deploy cannot read the new server's answers; reload into the new build instead.
+    if (await reloadIfOutdated()) throw parsed.error;
     reportClientError("schema", new Error(parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ").slice(0, 600)), { request: `${method} ${url}`, status: res.status });
     throw parsed.error;
   }
