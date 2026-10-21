@@ -429,6 +429,9 @@ function AdvisorsSection() {
             <b>Buying.</b> What your waiting builds and training still owe (less what the materials routes already hold and the convoys carry), what the next research lacks, and what his own listings are asking for, is bought from other players' open offers: the cheapest one not above fair by more than your overpay margin, paid from whichever of your regions holds the most of the price beyond your reserve share of its cap, the capital when tied; at most {chan.buysPerPass} buys a pass.
           </p>
           <p>
+            <b>His book.</b> Under his settings, History lists everything he has done on the market, newest first: each listing as it goes up (and whether it was withdrawn), each sale with the buyer named, and each purchase with the seller named, with the price as a share of fair.
+          </p>
+          <p>
             <b>Wage:</b> the same {Math.round(balance.advisors.outputShare * 100)}% of your hourly output as every advisor.
           </p>
         </div>

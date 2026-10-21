@@ -193,7 +193,7 @@ export async function chancellorPass(db: Db, m: MatchRow, p: PlayerRow, a: Advis
           continue;
         }
         const payer = pick.payer;
-        const err = await attempt(() => acceptMarketOrder(db, m, p, pick.o.id, payer.row.regionId));
+        const err = await attempt(() => acceptMarketOrder(db, m, p, pick.o.id, payer.row.regionId, true));
         if (err) bump("blocked");
         else {
           bought += 1;
@@ -236,7 +236,7 @@ export async function chancellorPass(db: Db, m: MatchRow, p: PlayerRow, a: Advis
             if (open.length >= settings.maxOrders) break;
             const askAmount = Math.max(1, fairAmount(res, lotAmount, ask));
             const err = await attempt(async () => {
-              const o = await createMarketOrder(db, m, p, { regionId: row.regionId, offerResource: res, offerAmount: lotAmount, askResource: ask, askAmount });
+              const o = await createMarketOrder(db, m, p, { regionId: row.regionId, offerResource: res, offerAmount: lotAmount, askResource: ask, askAmount }, true);
               open.push(o);
             });
             if (err) {

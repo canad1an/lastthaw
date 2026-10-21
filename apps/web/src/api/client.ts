@@ -1,7 +1,7 @@
 import type { z } from "zod";
 import { reportClientError } from "../errorReport.js";
 import { APP_VERSION } from "../version.js";
-import { healthResponse, shouldReloadForNewVersion, alliancesResponse, chatResponse, marketResponse, matchStateView, matchSummary, userView, type AdvisorKind, type AdvisorSettings, type BattleDetailView, type FinanceView, type LiveBattleView, type ChatMessageView, type MarketOrderView, type TradeResource } from "@lastthaw/shared";
+import { healthResponse, shouldReloadForNewVersion, alliancesResponse, chatResponse, marketResponse, matchStateView, matchSummary, userView, type AdvisorKind, type AdvisorSettings, type BattleDetailView, type FinanceView, type LiveBattleView, type ChatMessageView, type MarketOrderView, type TradeResource, type ChancellorEvent } from "@lastthaw/shared";
 
 export class ApiError extends Error {
   constructor(
@@ -144,6 +144,7 @@ export const api = {
     request<{ ok: true; disbanded: number }>("POST", `/api/matches/${id}/regions/${regionId}/disband`, { units }),
   recallArmy: (id: string, armyId: string) => request<{ ok: true; returnsAt: string }>("POST", `/api/matches/${id}/armies/${armyId}/recall`, {}),
   cancelJob: (id: string, jobId: string) => request<{ ok: true }>("POST", `/api/matches/${id}/jobs/${jobId}/cancel`, {}),
+  chancellorHistory: (id: string) => request<{ events: ChancellorEvent[] }>("GET", `/api/matches/${id}/advisors/chancellor/history`),
   chancellorCleanSlate: (id: string) => request<{ ok: true; listings: number; research: number; passed: boolean }>("POST", `/api/matches/${id}/advisors/chancellor/clean-slate`, {}),
   cleanSlate: (id: string, routes: boolean) => request<{ ok: true; builds: number; routes: number; passed: boolean }>("POST", `/api/matches/${id}/builds/clean-slate`, { routes }),
   messages: (id: string) => request<MessagesResponse>("GET", `/api/matches/${id}/messages`),

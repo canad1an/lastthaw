@@ -534,6 +534,24 @@ export const advisorView = z.object({
 });
 export type AdvisorView = z.infer<typeof advisorView>;
 
+/** One line of the Chancellor's book: what he listed, sold, withdrew or bought, and with whom. */
+export const chancellorEvent = z.object({
+  id: z.string(),
+  at: z.string(),
+  action: z.enum(["listed", "sold", "withdrawn", "bought"]),
+  /** What left your stores (for a listing, what went on the shelf). */
+  gave: z.object({ resource: z.string(), amount: z.number() }),
+  /** What came in, or was asked for. */
+  got: z.object({ resource: z.string(), amount: z.number() }),
+  regionId: z.string().nullable(),
+  with: z.string().nullable(),
+  /** The price asked per unit of worth offered: 1 is the fair price. Above it is a good sale, or a dear purchase. */
+  ofFair: z.number(),
+  /** A listing still on the market. */
+  open: z.boolean(),
+});
+export type ChancellorEvent = z.infer<typeof chancellorEvent>;
+
 export const refugeeOfferView = z.object({
   id: z.string(),
   regionId: z.string(),

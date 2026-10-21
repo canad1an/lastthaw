@@ -155,7 +155,7 @@ export async function marketRoutes(app: FastifyInstance, opts: { db: Db; publish
 }
 
 /** Post an offer: the goods are escrowed from the region at once. At most MAX_OPEN_ORDERS open per player, within MARKET_MAX_RATIO of fair. */
-export async function createMarketOrder(db: Db, m: MatchRow, p: PlayerRow, body: { regionId: string; offerResource: TradeResource; offerAmount: number; askResource: TradeResource; askAmount: number }): Promise<OrderRow> {
+export async function createMarketOrder(db: Db, m: MatchRow, p: PlayerRow, body: { regionId: string; offerResource: TradeResource; offerAmount: number; askResource: TradeResource; askAmount: number }, byAdvisor = false): Promise<OrderRow> {
   const matchId = m.id;
   if (body.offerResource === body.askResource) throw httpError(400, "offer and ask must differ");
   // A gift dressed as a trade is how alts feed a main account: both sides must be within reason of each other.
@@ -185,6 +185,7 @@ export async function createMarketOrder(db: Db, m: MatchRow, p: PlayerRow, body:
         askResource: body.askResource,
         askAmount: body.askAmount,
         status: "open",
+        placedByAdvisor: byAdvisor,
       })
       .returning();
     if (!o) throw new Error("order insert failed");
@@ -219,7 +220,7 @@ export async function cancelMarketOrder(db: Db, m: MatchRow, p: PlayerRow, order
 }
 
 /** Fill an open order: the buyer's region pays the ask and receives the offer; the seller is paid at the order's region (or their capital). */
-export async function acceptMarketOrder(db: Db, m: MatchRow, p: PlayerRow, orderId: string, regionId: string) {
+export async function acceptMarketOrder(db: Db, m: MatchRow, p: PlayerRow, orderId: string, regionId: string, byAdvisor = false) {
   const now = matchNow(m);
 return db.transaction(async (tx) => {
     const o = await lockOrder(tx, m.id, orderId);
@@ -250,7 +251,7 @@ return db.transaction(async (tx) => {
     if (sellerRow && sellerRow.ownerPlayerId !== seller.id) sellerRow = null;
     const sellerGot = sellerRow ? await credit(tx, sellerRow, askRes, o.askAmount) : 0;
 
-    await tx.update(marketOrders).set({ status: "filled", filledByPlayerId: p.id, filledAt: now }).where(eq(marketOrders.id, o.id));
+    await tx.update(marketOrders).set({ status: "filled", filledByPlayerId: p.id, filledAt: now, filledByAdvisor: byAdvisor }).where(eq(marketOrders.id, o.id));
     await tx.insert(transfers).values([
       { matchId: m.id, fromPlayerId: seller.id, toPlayerId: p.id, resource: offerRes, amount: o.offerAmount, via: "trade" },
       { matchId: m.id, fromPlayerId: p.id, toPlayerId: seller.id, resource: askRes, amount: o.askAmount, via: "trade" },

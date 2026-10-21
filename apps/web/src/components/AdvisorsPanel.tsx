@@ -1,7 +1,7 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { availableBuildings, balance, buildingBlockedBy, regionById, type AdvisorKind, type AdvisorSettings, type AdvisorView, type MatchStateView } from "@lastthaw/shared";
+import { availableBuildings, balance, buildingBlockedBy, regionById, type AdvisorKind, type AdvisorSettings, type AdvisorView, type ChancellorEvent, type MatchStateView } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { Button, Card, ErrorText, fmt } from "./ui.js";
 
@@ -616,7 +616,49 @@ function ChancellorSettings({ matchId, state, advisor }: { matchId: string; stat
         </div>
       )}
       {clean.isSuccess && !slate && <p className="text-xs text-emerald-300">Withdrew {clean.data.listings} listing{clean.data.listings === 1 ? "" : "s"} and cancelled {clean.data.research} research{clean.data.passed ? "; the Chancellor has made a fresh pass" : ""}.</p>}
+      <ChancellorHistory matchId={matchId} lastPassAt={advisor.lastPassAt} />
     </Card>
+  );
+}
+
+/** The Chancellor's book: everything he has listed, sold, withdrawn or bought, newest first. */
+function ChancellorHistory({ matchId, lastPassAt }: { matchId: string; lastPassAt: string | null }) {
+  const [open, setOpen] = useState(false);
+  const q = useQuery({ queryKey: [...keys.matchState(matchId), "chancellor-history", lastPassAt], queryFn: () => api.chancellorHistory(matchId), enabled: open, staleTime: 30_000 });
+  const n = (v: number) => Math.round(v).toLocaleString("en-US");
+  const line = (e: ChancellorEvent) => {
+    const where = e.regionId ? regionById(e.regionId)?.name ?? e.regionId : null;
+    switch (e.action) {
+      case "listed":
+        return `Listed ${n(e.gave.amount)} ${e.gave.resource} for ${n(e.got.amount)} ${e.got.resource}${where ? ` from ${where}` : ""}${e.open ? " (still up)" : ""}`;
+      case "withdrawn":
+        return `Listed ${n(e.gave.amount)} ${e.gave.resource} for ${n(e.got.amount)} ${e.got.resource}${where ? ` from ${where}` : ""}, later withdrawn`;
+      case "sold":
+        return `Sold ${n(e.gave.amount)} ${e.gave.resource} to ${e.with} for ${n(e.got.amount)} ${e.got.resource}`;
+      case "bought":
+        return `Bought ${n(e.got.amount)} ${e.got.resource} from ${e.with} for ${n(e.gave.amount)} ${e.gave.resource}`;
+    }
+  };
+  const tone: Record<ChancellorEvent["action"], string> = { listed: "text-slate-300", withdrawn: "text-slate-500", sold: "text-emerald-300", bought: "text-sky-300" };
+  return (
+    <details className="rounded border border-slate-800 bg-slate-950/40 p-2 text-xs" open={open} onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)} data-chancellor-history>
+      <summary className="cursor-pointer text-slate-300">History: what Theo has bought and sold</summary>
+      {q.isPending && open && <p className="mt-2 text-slate-500">Reading his book…</p>}
+      <ErrorText>{q.error?.message}</ErrorText>
+      {q.data && q.data.events.length === 0 && <p className="mt-2 text-slate-500">Nothing yet. His trades will be listed here as he makes them.</p>}
+      {q.data && q.data.events.length > 0 && (
+        <ul className="mt-2 max-h-72 space-y-1 overflow-y-auto">
+          {q.data.events.map((e) => (
+            <li key={e.id} className="flex gap-2">
+              <span className="w-28 shrink-0 tabular-nums text-slate-500">{new Date(e.at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+              <span className={tone[e.action]}>
+                {line(e)} <span className="text-slate-500">({Math.round(e.ofFair * 100)}% of fair)</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </details>
   );
 }
 

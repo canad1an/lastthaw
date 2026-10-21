@@ -1254,6 +1254,12 @@ describe("api routes", () => {
       expect(mine.length).toBeLessThanOrEqual(3);
       // Ore is asked for in small lots that a tribe can pay.
       for (const o of mine) if (["copper", "tin", "iron", "horses"].includes(o.askResource)) expect(o.askAmount, `${o.offerAmount} ${o.offerResource} for ${o.askAmount} ${o.askResource}`).toBeLessThanOrEqual(balance.advisors.chancellor.maxAskOre);
+      // His book reads back from the orders he touched: the purchase of Ann's stone, and every listing he placed.
+      const book = await Ben.call("GET", `${base}/advisors/chancellor/history`);
+      expect(book.statusCode, book.body).toBe(200);
+      const events = (book.json() as { events: { action: string; with: string | null; got: { resource: string }; open: boolean }[] }).events;
+      expect(events.filter((e) => e.action === "bought" && e.got.resource === filled!.offerResource).length, JSON.stringify(events)).toBe(1);
+      expect(events.filter((e) => e.action === "listed" && e.open).length).toBe(mine.length);
       // A clean slate withdraws his listings, cancels the queued research with a refund, and he passes again at once.
       const slate = await Ben.call("POST", `${base}/advisors/chancellor/clean-slate`, {});
       expect(slate.statusCode, slate.body).toBe(200);

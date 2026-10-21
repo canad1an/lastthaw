@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { advisorKind, advisorSettings, type AdvisorKind } from "@lastthaw/shared";
 import { idParams } from "./params.js";
 import type { Db } from "../db/client.js";
@@ -9,7 +9,7 @@ import type { Publisher } from "../realtime/publish.js";
 import { matchNow } from "../sim/clock.js";
 import { drawWageUpTo, runPass, startedWork, wageFor } from "../sim/advisors.js";
 import { config } from "../config.js";
-import { advisorTargetBody, balance, regionById } from "@lastthaw/shared";
+import { advisorTargetBody, balance, regionById, RESOURCE_WORTH, type ChancellorEvent } from "@lastthaw/shared";
 import { matchRegions } from "../db/schema.js";
 import { areAllied } from "../sim/alliances.js";
 import { cancelMarketOrder } from "./marketApi.js";
@@ -160,6 +160,39 @@ export async function advisorRoutes(app: FastifyInstance, opts: { db: Db; publis
     }
     await publisher.toPlayer(matchId, p.id, "region.updated", {});
     return { ok: true, listings, research: queued.length, passed };
+  });
+
+  /**
+   * The Chancellor's book: every listing he placed and every offer he took, newest first, read back from the market
+   * orders he touched. A listing he placed is one line when it goes up and another when someone buys it.
+   */
+  app.get("/api/matches/:id/advisors/chancellor/history", async (req) => {
+    const user = requireUser(req);
+    const matchId = idParams.parse(req.params).id;
+    const [p] = await db.select().from(players).where(and(eq(players.matchId, matchId), eq(players.userId, user.id))).limit(1);
+    if (!p) throw httpError(403, "not a player in this match");
+    const rows = await db
+      .select()
+      .from(marketOrders)
+      .where(and(eq(marketOrders.matchId, matchId), or(and(eq(marketOrders.playerId, p.id), eq(marketOrders.placedByAdvisor, true)), and(eq(marketOrders.filledByPlayerId, p.id), eq(marketOrders.filledByAdvisor, true)))))
+      .orderBy(desc(sql`coalesce(${marketOrders.filledAt}, ${marketOrders.createdAt})`))
+      .limit(300);
+    const others = [...new Set(rows.flatMap((o) => [o.playerId, o.filledByPlayerId]).filter((id): id is string => !!id && id !== p.id))];
+    const names = new Map<string, string>();
+    if (others.length) for (const r of await db.select({ id: players.id, name: players.name }).from(players).where(inArray(players.id, others))) names.set(r.id, r.name);
+    const worth = (res: string, n: number) => n * (RESOURCE_WORTH[res] ?? 1);
+    const events: ChancellorEvent[] = [];
+    for (const o of rows) {
+      const ofFair = worth(o.askResource, o.askAmount) / Math.max(1e-9, worth(o.offerResource, o.offerAmount));
+      if (o.playerId === p.id) {
+        events.push({ id: `${o.id}:listed`, at: o.createdAt.toISOString(), action: o.status === "cancelled" ? "withdrawn" : "listed", gave: { resource: o.offerResource, amount: o.offerAmount }, got: { resource: o.askResource, amount: o.askAmount }, regionId: o.regionId, with: null, ofFair, open: o.status === "open" });
+        if (o.status === "filled" && o.filledAt) events.push({ id: `${o.id}:sold`, at: o.filledAt.toISOString(), action: "sold", gave: { resource: o.offerResource, amount: o.offerAmount }, got: { resource: o.askResource, amount: o.askAmount }, regionId: o.regionId, with: names.get(o.filledByPlayerId ?? "") ?? "someone", ofFair, open: false });
+      } else if (o.filledAt) {
+        events.push({ id: `${o.id}:bought`, at: o.filledAt.toISOString(), action: "bought", gave: { resource: o.askResource, amount: o.askAmount }, got: { resource: o.offerResource, amount: o.offerAmount }, regionId: null, with: names.get(o.playerId) ?? "someone", ofFair, open: false });
+      }
+    }
+    events.sort((a, b) => b.at.localeCompare(a.at));
+    return { events };
   });
 
   /** Mark or unmark a region as a target for the Military advisor, from the map. */

@@ -1,0 +1,2 @@
+ALTER TABLE "market_orders" ADD COLUMN "placed_by_advisor" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "market_orders" ADD COLUMN "filled_by_advisor" boolean DEFAULT false NOT NULL;

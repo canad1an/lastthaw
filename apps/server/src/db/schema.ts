@@ -789,6 +789,9 @@ export const marketOrders = pgTable(
     askAmount: doublePrecision("ask_amount").notNull(),
     status: text("status").notNull().default("open"),
     filledByPlayerId: uuid("filled_by_player_id"),
+    /** The Chancellor's hand: listed by him, or bought by him, so his history can be read back from the orders. */
+    placedByAdvisor: boolean("placed_by_advisor").notNull().default(false),
+    filledByAdvisor: boolean("filled_by_advisor").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     filledAt: timestamp("filled_at", { withTimezone: true }),
   },
