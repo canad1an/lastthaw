@@ -4,6 +4,7 @@ import { armySpeed, balance, regionById, unitById, formatCountdown, type MatchSt
 import { api, keys } from "../api/client.js";
 import { play } from "../audio/sound.js";
 import { Button, Card, ErrorText, fmt } from "./ui.js";
+import { UnitIcon } from "./UnitIcon.js";
 import { Countdown } from "./Countdown.js";
 
 const MISSIONS: Array<{ id: MissionKind; label: string; hint: string }> = [
@@ -115,7 +116,10 @@ export function SendArmy({
         <ul className="space-y-1">
           {available.map(([id, n]) => (
             <li key={id} className="grid grid-cols-[1fr_6rem_3rem] items-center gap-2">
-              <span>{unitById.get(id)?.name ?? id}</span>
+              <span className="flex items-center gap-1.5">
+                <UnitIcon id={id} className="h-5 w-5 text-slate-300" />
+                {unitById.get(id)?.name ?? id}
+              </span>
               <input
                 type="range"
                 min={0}

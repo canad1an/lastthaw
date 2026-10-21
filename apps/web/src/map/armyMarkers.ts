@@ -14,10 +14,28 @@ export interface ArmyMarker {
   mission: string;
   /** A sea convoy: any ship among the units, drawn as a boat whatever the mission. */
   naval: boolean;
+  /** The unit drawn on the marker: the most numerous kind in the convoy, or null when the units are unknown. */
+  lead: string | null;
   /** Region names along the current leg, origin → destination. */
   routeNames: string[];
   /** Destination region id for highlighting. */
   destinationId: string;
+}
+
+/** The kind that stands for a convoy on the map: the most numerous, a soldier before a hauler at a tie. */
+export function leadUnit(units: Record<string, number>): string | null {
+  let best: string | null = null;
+  let bestN = 0;
+  for (const [id, n] of Object.entries(units)) {
+    if (n <= 0) continue;
+    const u = unitById.get(id);
+    const score = n + (u && !u.civilian && !u.hauler ? 0.5 : 0);
+    if (score > bestN) {
+      best = id;
+      bestN = score;
+    }
+  }
+  return best;
 }
 
 /** Point `p` (0..1) of the way along a polyline, by distance. */
@@ -81,6 +99,7 @@ export function armyMarkers(armies: ArmyView[], incoming: IncomingView[], nowMs:
       hostile: false,
       mission: a.mission,
       naval: Object.entries(a.units).some(([id, n]) => n > 0 && unitById.get(id)?.naval),
+      lead: leadUnit(a.units),
       title: a.mission === "patrol" && !returning ? `Patrol on the ${laneName(a.lane ?? "")} lane` : `${missionLabel(a.mission, a.units)} ${returning ? "returning to" : "→"} ${dest}`,
       lines: [
         returning && a.note ? a.note : "",
@@ -105,6 +124,7 @@ export function armyMarkers(armies: ArmyView[], incoming: IncomingView[], nowMs:
       hostile: true,
       mission: i.mission,
       naval: !!i.units && Object.entries(i.units).some(([id, n]) => n > 0 && unitById.get(id)?.naval),
+      lead: i.units ? leadUnit(i.units) : null,
       title: `${i.fromPlayerName} ${i.mission === "raid" ? "raiding" : "attacking"} ${r.name}`,
       lines: [
         i.units

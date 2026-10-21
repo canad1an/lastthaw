@@ -4,6 +4,7 @@ import { AGES, availableBuildings, availableUnits, buildingBlockedBy, balance, b
 import { api, keys } from "../api/client.js";
 import { useNow } from "../hooks/useNow.js";
 import { Button, Card, ErrorText, fmt, signed } from "./ui.js";
+import { UnitIcon } from "./UnitIcon.js";
 import { Countdown, CostLine, JobTime } from "./Countdown.js";
 import { SendArmy } from "./ArmyPanel.js";
 import { ColonizePanel } from "./ColonizePanel.js";
@@ -676,6 +677,7 @@ function TrainTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
                 trigger={
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
+                      <UnitIcon id={u.id} className="h-6 w-6 text-slate-200" />
                       <span className="font-medium">{u.name}</span>
                       {(owned.units[u.id] ?? 0) > 0 && <span className="rounded bg-slate-800 px-1.5 text-xs text-slate-300">{fmt(owned.units[u.id]!)} here</span>}
                       <span className="text-xs text-slate-500">
@@ -794,7 +796,10 @@ function ArmyTab({ matchId, owned, state }: { matchId: string; owned: OwnedRegio
         <ul className="space-y-1">
           {entries.map(([id, n]) => (
             <li key={id} className="flex items-center justify-between gap-2">
-              <span>{unitById.get(id)?.name ?? id}</span>
+              <span className="flex items-center gap-1.5">
+                <UnitIcon id={id} className="h-5 w-5 text-slate-300" />
+                {unitById.get(id)?.name ?? id}
+              </span>
               <span className="flex items-center gap-2">
                 <span className="tabular-nums text-slate-300">{n}</span>
                 <input

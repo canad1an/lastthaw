@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
 import { allRegions, balance, freezeDayForLatitude, iceExposure, iceLatitudeOnDay, world, type MapRegion, regionById } from "@lastthaw/shared";
 import type { ArmyMarker } from "./armyMarkers.js";
+import { UnitStrokes } from "../components/UnitIcon.js";
 
 export type RegionPaint = {
   fill?: string;
@@ -376,16 +377,13 @@ export function WorldMap({ paint, selected, onSelect, focus, flyTo, className = 
                   </g>
                 ) : (
                   // Enemy attacks pulse rose; my own military (raid, conquer, reinforce) is orange with a sword; civil traffic is blue.
-                  <circle r={7} fill={a.hostile ? "#f43f5e" : MILITARY.has(a.mission) ? "#f97316" : "#38bdf8"} stroke="#0b1a2b" strokeWidth={1.5} />
+                  <circle r={a.lead ? 9 : 7} fill={a.hostile ? "#f43f5e" : MILITARY.has(a.mission) ? "#f97316" : "#38bdf8"} stroke="#0b1a2b" strokeWidth={1.5} />
                 )}
                 {a.mission !== "relocate" &&
-                  (a.naval ? (
-                    // A boat: hull, mast and sail, whatever the ships are doing.
-                    <g fill="#0b1a2b" stroke="#0b1a2b" strokeWidth={1} strokeLinejoin="round" strokeLinecap="round">
-                      <path d="M-5 1.2h10l-2.2 3h-5.6z" />
-                      <path d="M0 1.2v-5.4" fill="none" strokeWidth={1.2} />
-                      <path d="M0.6 -4.4l3.6 4.6h-3.6z" />
-                      <path d="M-0.6 -3l-3.2 3.8h3.2z" />
+                  (a.lead ? (
+                    // The kind the convoy is made of, drawn dark on the disc: a canoe is a canoe, an archer a bow.
+                    <g transform="scale(0.58) translate(-12 -12)">
+                      <UnitStrokes id={a.lead} color="#0b1a2b" />
                     </g>
                   ) : a.hostile || MILITARY.has(a.mission) ? (
                     <g stroke="#0b1a2b" strokeWidth={1.4} strokeLinecap="round" fill="none">
