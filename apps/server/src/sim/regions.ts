@@ -150,7 +150,7 @@ export async function setCapital(tx: Tx, matchId: string, playerId: string, regi
 }
 
 /** Regions with Roads and with Railways that this player may use: their own and their allies'. */
-export async function waySetsFor(db: Db | Tx, matchId: string, playerId: string, allies: readonly string[]): Promise<{ roads: Set<string>; rails: Set<string>; harbors: Set<string> }> {
+export async function waySetsFor(db: Db | Tx, matchId: string, playerId: string, allies: readonly string[]): Promise<{ roads: Set<string>; rails: Set<string>; harbors: Set<string>; stations: Map<string, number> }> {
   const owners = [playerId, ...allies];
   const rows = await db
     .select({ regionId: matchRegions.regionId, buildings: matchRegions.buildings })
@@ -159,7 +159,13 @@ export async function waySetsFor(db: Db | Tx, matchId: string, playerId: string,
   const roads = new Set(rows.filter((r) => ((r.buildings as Record<string, number>).roads ?? 0) >= 1).map((r) => r.regionId));
   const rails = new Set(rows.filter((r) => ((r.buildings as Record<string, number>).railway ?? 0) >= 1).map((r) => r.regionId));
   const harbors = new Set(rows.filter((r) => ((r.buildings as Record<string, number>).harbor ?? 0) >= 1).map((r) => r.regionId));
-  return { roads, rails, harbors };
+  // Waystations: the share each region cuts from hauler legs ending there.
+  const stations = new Map<string, number>();
+  for (const r of rows) {
+    const haul = effectsOf(r.buildings as Record<string, number>).haul;
+    if (haul > 0) stations.set(r.regionId, haul);
+  }
+  return { roads, rails, harbors, stations };
 }
 
 /** Regions with Roads that this player may use: their own and their allies'. */

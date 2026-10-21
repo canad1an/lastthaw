@@ -404,7 +404,7 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
     const cap = carryCapacity(units, techs) + (HOSTILE.has(body.mission) ? 0 : body.people * balance.travel.carryPerPerson);
     if (goods > cap) throw httpError(400, `not enough carrying capacity: these units and people carry ${cap}, you are sending ${Math.round(goods)}. Caravans carry ${caravanCarry(techs)} each.`);
   }
-  const { roads, rails, harbors } = await waySetsFor(db, m.id, p.id, await alliesOf(db, m.id, p.id));
+  const { roads, rails, harbors, stations } = await waySetsFor(db, m.id, p.id, await alliesOf(db, m.id, p.id));
   const origin0 = regionById(regionId);
   // Ships sail one lane: coast to coast, directly. Patrols sit on that lane.
   const directLane = !!origin0 && origin0.seaRoutes.includes(body.targetRegionId);
@@ -510,7 +510,7 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
     const sunkNow = unitCount - sailing;
     // Roads are already in the route cost: legs between road regions are shorter.
     const walking = unitById.get("settler")?.speed ?? 4;
-    const seconds = body.mission === "patrol" ? (balance.naval.patrolHours * 3600) / m.speed : await legSeconds(tx, m, { techs, roads, rails, harbors }, route, sailing ? units : {}, now, walking);
+    const seconds = body.mission === "patrol" ? (balance.naval.patrolHours * 3600) / m.speed : await legSeconds(tx, m, { techs, roads, rails, harbors, stations }, route, sailing ? units : {}, now, walking);
     const newUnits = { ...origin.units };
     for (const [id, n] of Object.entries(units)) newUnits[id] = (newUnits[id] ?? 0) - n;
     // Ships sunk on the lane leave the region too.

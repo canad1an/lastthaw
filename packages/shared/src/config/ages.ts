@@ -39,8 +39,8 @@ export interface BuildingEffect {
   harbor?: boolean;
   /** Eyes on the border: an attacking force is seen in full once it reaches a region next to this one. */
   watchtower?: boolean;
-  /** Reduces travel time for armies leaving or entering, per level. */
-
+  /** Waystations: each level shortens every hauler leg that ends in this region by this share. Armies gain nothing. */
+  haul?: number;
 }
 
 export type BuildingCategory = "growth" | "production" | "storage" | "defense" | "training" | "transport" | "loyalty" | "wonder";
@@ -52,7 +52,7 @@ export const BUILDING_CATEGORIES: ReadonlyArray<{ id: BuildingCategory; name: st
   { id: "storage", name: "Storage", hint: "Bigger stores, and stock hidden from raiders.", icon: "🏺" },
   { id: "defense", name: "Defence", hint: "Built once each. Near-impregnable to soldiers alone; siege engines breach them.", icon: "🛡" },
   { id: "training", name: "Training & research", hint: "Faster soldiers and faster science.", icon: "📜" },
-  { id: "transport", name: "Transport", hint: "Roads, rails and harbours that speed up every trip.", icon: "🛣" },
+  { id: "transport", name: "Transport", hint: "Roads, rails, waystations and harbours that speed up every trip.", icon: "🛣" },
   { id: "loyalty", name: "Loyalty", hint: "Keep conquered people from rebelling.", icon: "⚜" },
   { id: "wonder", name: "Wonder", hint: "Finish it first and the match is yours. Everyone is told the moment you begin.", icon: "🔥" },
 ];
@@ -183,6 +183,7 @@ export const BUILDINGS: readonly BuildingDef[] = [
   { id: "walls", category: "defense", name: "Stone walls", age: 2, description: "Solid walls around the settlement. Built once, on top of a Palisade.", maxLevel: 1, cost: { stone: 2500, wood: 600 }, baseSeconds: 900, effect: { defense: 1.2 }, requires: "masonry", requiresBuilding: "palisade" },
   { id: "roads", category: "transport", name: "Roads", age: 1, description: "Paved roads to every neighbouring region. Built once; legs between two road regions are much faster, and the region is easier to hold.", maxLevel: 1, cost: { stone: 80, wood: 40 }, perNeighbor: true, baseSeconds: 600, effect: { loyalty: 0.1 }, requires: "road_building" },
   { id: "railway", category: "transport", name: "Railway", age: 5, description: "Rails to every neighbouring region that also has them. Built once on top of Roads; legs between two railway regions are far faster.", maxLevel: 1, cost: { stone: 400, iron: 20 }, perNeighbor: true, baseSeconds: 1800, effect: { loyalty: 0.05 }, requires: "railways", requiresBuilding: "roads" },
+  { id: "waystation", category: "transport", name: "Waystation", age: 2, description: "Stables, stores and fresh teams for convoys arriving here. Each level makes every hauler leg that ends in this region 2% shorter, up to 30%. Armies gain nothing from it.", maxLevel: 10, cost: { wood: 300, stone: 200 }, baseSeconds: 900, effect: { haul: 0.02 }, requires: "road_building", requiresBuilding: "roads" },
   { id: "temple", category: "loyalty", name: "Temple", age: 2, description: "Binds a conquered people to their new rulers. Built once: raises loyalty and keeps turning workers into occupiers until the region has enough, however much it grows.", maxLevel: 1, cost: { stone: 1500, wood: 800, food: 500 }, baseSeconds: 2400, effect: { loyalty: 0.2 } },
   { id: "barracks", category: "training", name: "Barracks", age: 2, description: "Trains soldiers faster.", maxLevel: 10, cost: { wood: 300, stone: 150 }, baseSeconds: 400, effect: { trainSpeed: 0.1 } },
   // Classical

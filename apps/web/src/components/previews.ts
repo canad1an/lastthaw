@@ -56,6 +56,7 @@ export function buildingPreview(def: BuildingDef, level: number, buildings: Reco
       rows.push({ label: "Extracts", before: "nothing here", after: `needs ${Object.keys(e.extract).join("/")} in the region` });
     }
   }
+  if (e.haul) rows.push({ label: "Hauler legs ending here", before: `${pct(Math.min(balance.travel.waystationMaxCut, before.haul))} shorter`, after: `${pct(Math.min(balance.travel.waystationMaxCut, after.haul))} shorter`, tone: "up" });
   if (e.defense) rows.push({ label: "Defence bonus", before: `+${pct(before.defense)}`, after: `+${pct(after.defense)}`, tone: "up" });
   if (e.loyalty) rows.push({ label: "Loyalty bonus", before: `+${pct(before.loyalty)}`, after: `+${pct(after.loyalty)}`, tone: "up" });
   if (e.trainSpeed) rows.push({ label: "Training speed", before: `+${pct(before.trainSpeed)}`, after: `+${pct(after.trainSpeed)}`, tone: "up" });

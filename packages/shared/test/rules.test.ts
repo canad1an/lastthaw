@@ -207,3 +207,22 @@ describe("moving groups are named by their best hauler", () => {
     expect(missionLabel("transport", { caravan: 1 })).toBe("Caravans");
   });
 });
+
+import { haulFactor, isHaulerConvoy } from "../src/rules/travel.js";
+import { effectsOf } from "../src/rules/buildings.js";
+
+describe("waystations", () => {
+  it("count per level, cut every hauler leg ending in their region, multiply along the route and stop at the cap", () => {
+    expect(effectsOf({ waystation: 3 }).haul).toBeCloseTo(0.06);
+    const stations = new Map([["b", 0.1], ["c", 0.5]]);
+    expect(haulFactor(["a", "b"], stations)).toBeCloseTo(0.9);
+    expect(haulFactor(["a", "b", "c"], stations)).toBeCloseTo(0.9 * (1 - balance.travel.waystationMaxCut));
+    expect(haulFactor(["b", "a"], stations)).toBe(1);
+  });
+  it("serve convoys of land haulers only", () => {
+    expect(isHaulerConvoy({ wagon: 2 })).toBe(true);
+    expect(isHaulerConvoy({ wagon: 2, warrior: 1 })).toBe(false);
+    expect(isHaulerConvoy({ cog: 1 })).toBe(false);
+    expect(isHaulerConvoy({})).toBe(false);
+  });
+});

@@ -4,7 +4,7 @@
  * techs and the weather on the path count on every leg, not only the first.
  */
 import { and, eq, gt, inArray, sql } from "drizzle-orm";
-import { armySpeed, balance, findRoute, techEffectsOf, travelSeconds, unitById, type Route, type UnitCounts } from "@lastthaw/shared";
+import { armySpeed, balance, findRoute, haulFactor, isHaulerConvoy, techEffectsOf, travelSeconds, unitById, type Route, type UnitCounts } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { matchRegions, playerTechs } from "../db/schema.js";
 import { alliesOf } from "./alliances.js";
@@ -17,6 +17,8 @@ export interface LegContext {
   roads: ReadonlySet<string>;
   rails: ReadonlySet<string>;
   harbors: ReadonlySet<string>;
+  /** Waystations: the share each region cuts from hauler legs ending there. */
+  stations: ReadonlyMap<string, number>;
 }
 
 export async function legContextFor(db: Db | Tx, matchId: string, playerId: string): Promise<LegContext> {
@@ -44,10 +46,11 @@ export async function stormOnPath(tx: Db | Tx, matchId: string, path: readonly s
 
 /**
  * Real seconds for `units` to cover `route` setting out at `at`: the slowest unit's pace (or `walking` when people
- * travel alone), the player's travel techs, and the weather on the path.
+ * travel alone), the player's travel techs, the waystations along the way for a pure hauler convoy, and the weather.
  */
 export async function legSeconds(tx: Db | Tx, m: MatchRow, ctx: LegContext, route: Route, units: UnitCounts, at: Date, walking = unitById.get("settler")?.speed ?? 4): Promise<number> {
   const moving = Object.values(units).some((n) => n > 0);
   const speed = (moving ? armySpeed(units) : walking) * (1 + techEffectsOf(ctx.techs).travel);
-  return travelSeconds(route, speed, m.speed) * (await stormOnPath(tx, m.id, route.path, at));
+  const stations = isHaulerConvoy(units) ? haulFactor(route.path, ctx.stations) : 1;
+  return travelSeconds(route, speed, m.speed) * stations * (await stormOnPath(tx, m.id, route.path, at));
 }

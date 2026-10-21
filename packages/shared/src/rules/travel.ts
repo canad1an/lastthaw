@@ -1,4 +1,5 @@
 import { balance } from "../config/balance.js";
+import { unitById } from "../config/ages.js";
 import { distanceKm, regionById } from "../map/index.js";
 import { scaledDuration } from "./time.js";
 
@@ -80,6 +81,22 @@ export function findRoute(origin: string, target: string, allowSea: boolean, roa
   }
   path.reverse();
   return { path, cost: dist.get(target)!, usesSea };
+}
+
+/** True when every unit in the group is a land hauler: a convoy, which waystations serve; a single soldier along makes it an army. */
+export function isHaulerConvoy(units: Record<string, number>): boolean {
+  const ids = Object.entries(units).filter(([, n]) => n > 0).map(([id]) => id);
+  return ids.length > 0 && ids.every((id) => unitById.get(id)?.hauler && !unitById.get(id)?.naval);
+}
+
+/**
+ * What a convoy's waystations are worth on a path: each region entered cuts the leg ending there by its haul share
+ * (capped), and the cuts multiply along the way. The origin is not entered and counts for nothing.
+ */
+export function haulFactor(path: readonly string[], haulOf: ReadonlyMap<string, number>, maxCut = balance.travel.waystationMaxCut): number {
+  let f = 1;
+  for (let i = 1; i < path.length; i++) f *= 1 - Math.min(maxCut, Math.max(0, haulOf.get(path[i]!) ?? 0));
+  return f;
 }
 
 /** Real seconds for an army of `speedKmPerHour` to cover a route at match speed. */

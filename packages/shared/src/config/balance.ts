@@ -145,6 +145,8 @@ export const balance = {
     roadOneFactor: 0.8,
     /** A leg between two Railway regions (yours or an ally's) is this much shorter. */
     railBothFactor: 0.4,
+    /** Waystation levels never cut a hauler leg by more than this share, however many levels stack. */
+    waystationMaxCut: 0.3,
     /** A sea leg is this much shorter with a Harbour (yours or an ally's) at both ends, or at one end. */
     harborBothFactor: 0.5,
     harborOneFactor: 0.75,
