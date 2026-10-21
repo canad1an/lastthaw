@@ -652,7 +652,18 @@ function TrainTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
     mutationFn: ({ unitId, n }: { unitId: string; n: number }) => api.train(matchId, owned.regionId, unitId, n),
     onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matchState(matchId) }),
   });
-  const stock = stockOf(live.e);
+  // What is here, and what the whole empire holds: an order the region cannot pay for is queued anyway and supplied by
+  // caravan from the capital and the other regions, exactly like a build.
+  const local = stockOf(live.e);
+  const stock: Record<string, number> = { ...local };
+  for (const o of state.owned) {
+    if (o.regionId === owned.regionId || o.frozen) continue;
+    for (const [k, v] of Object.entries({ food: o.food, wood: o.wood, stone: o.stone, ...o.special })) stock[k] = (stock[k] ?? 0) + v;
+  }
+  const fromElsewhere = (cost: Record<string, number | undefined>) =>
+    Object.entries(cost)
+      .filter(([k, v]) => (v ?? 0) > (local[k] ?? 0) && (stock[k] ?? 0) >= (v ?? 0))
+      .map(([k, v]) => `${fmt((v ?? 0) - (local[k] ?? 0))} ${k}`);
   const list = availableUnits(state.me.age, techs);
   const here = (us: UnitDef[]) => us.reduce((a, u) => a + (owned.units[u.id] ?? 0), 0);
   const groups = [
@@ -688,7 +699,10 @@ function TrainTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
                     {needs ? (
                       <p className="text-xs text-rose-400">needs {u.needsResource ? `${u.needsResource} here` : u.naval && !region.coastal ? "a coast" : `a ${buildingById.get(u.needsBuilding ?? "")?.name ?? u.needsBuilding} here`}</p>
                     ) : (
-                      <p><CostLine cost={cost} stock={stock} suffix={formatCountdown(secs)} /></p>
+                      <p>
+                        <CostLine cost={cost} stock={stock} suffix={formatCountdown(secs)} />
+                        {fromElsewhere(cost).length > 0 && <span className="ml-1 text-xs text-sky-300">({fromElsewhere(cost).join(", ")} will come by caravan from {owned.isCapital ? "other regions" : "the capital or other regions"}; training starts when it arrives)</span>}
+                      </p>
                     )}
                     {u.minBatch && <p className="text-xs text-slate-500">trained in groups of at least {u.minBatch}</p>}
                   </div>

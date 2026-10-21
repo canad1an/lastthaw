@@ -773,6 +773,14 @@ describe("api routes", () => {
       expect((cleared.json() as { builds: number }).builds).toBeGreaterThanOrEqual(1);
       expect((await db.select().from(jobs).where(and(eq(jobs.matchId, gameId), eq(jobs.playerId, benPid), eq(jobs.kind, "build"), sql`${jobs.completedAt} is null`, sql`${jobs.cancelledAt} is null`))).length).toBe(0);
       expect((await routesTo(D)).filter((r) => r.forJobId)).toEqual([]);
+      // Training is supplied the same way: D has nothing, so the warriors' food and wood are set aside elsewhere and routed in.
+      const trained = await Ben.call("POST", `${base}/regions/${D}/train`, { unitId: "warrior", qty: 2 });
+      expect(trained.statusCode, trained.body).toBe(200);
+      const [tj] = await db.select().from(jobs).where(eq(jobs.id, (trained.json() as { jobId: string }).jobId));
+      expect(tj!.kind).toBe("train");
+      expect((tj!.waitingFor as { food?: number; wood?: number }).food).toBeGreaterThan(0);
+      expect((await routesTo(D)).filter((r) => r.forJobId === tj!.id).length).toBeGreaterThan(0);
+      expect((await Ben.call("POST", `${base}/jobs/${tj!.id}/cancel`, {})).statusCode).toBe(200);
     } finally {
       await redis.quit().catch(() => {});
     }

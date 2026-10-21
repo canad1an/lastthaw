@@ -219,7 +219,8 @@ export async function queueTrain(ctx: CommandContext, regionId: string, unitId: 
     const stock = stockOf(row);
     if (!canAfford(stock, cost)) {
       // Supplied by convoy, like a build: pay what is here, owe the rest, set it aside at the capital and the nearest stocked regions.
-      if (!opts.allowWait) throw httpError(409, `not enough ${missingFor(stock, cost).join(", ")}`);
+      // Players always may (as with builds); the advisors say when they would rather not.
+      if (!(opts.allowWait ?? true)) throw httpError(409, `not enough ${missingFor(stock, cost).join(", ")}`);
       const mine = await tx
         .select({ regionId: matchRegions.regionId })
         .from(matchRegions)
