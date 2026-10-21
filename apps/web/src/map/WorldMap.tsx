@@ -2,6 +2,10 @@ import { memo, useCallback, useEffect, useRef, useState, type PointerEvent as Re
 import { allRegions, balance, freezeDayForLatitude, iceExposure, iceLatitudeOnDay, world, type MapRegion, regionById } from "@lastthaw/shared";
 import type { ArmyMarker } from "./armyMarkers.js";
 import { UnitStrokes, unitPicture } from "../components/UnitIcon.js";
+import coastPoints from "./coastPoints.json";
+
+/** Where a region meets the sea: a point on its outline mid-shore, computed from the map (tools: coast-points). */
+const COAST: Record<string, { x: number; y: number; a: number } | undefined> = coastPoints as Record<string, { x: number; y: number; a: number }>;
 import { unitById } from "@lastthaw/shared";
 
 export type RegionPaint = {
@@ -30,6 +34,8 @@ export interface WorldMapProps {
   ice?: { latitude: number; forecast: boolean; day: number };
   /** Region ids to mark with a flag (the player's capital). */
   flags?: string[];
+  /** Region ids with a harbour: drawn on the region's shore, on the water side. */
+  harbors?: string[];
   /** Region ids drawn with an "unclaimed" dashed outline. */
   dashed?: string[];
   /** Armies to draw as moving markers. */
@@ -88,7 +94,7 @@ const MAX_K = 28;
  * Rendering ~400 paths is cheap; the expensive part is re-rendering on every
  * state change, so the static layer is memoized and only the paint changes.
  */
-export function WorldMap({ paint, selected, onSelect, focus, flyTo, className = "", ice, flags = [], dashed = [], armies = [], roads = [], badges = [], storms = [], thaws = [], onBadgeClick }: WorldMapProps) {
+export function WorldMap({ paint, selected, onSelect, focus, flyTo, className = "", ice, flags = [], harbors = [], dashed = [], armies = [], roads = [], badges = [], storms = [], thaws = [], onBadgeClick }: WorldMapProps) {
   const [hoverArmy, setHoverArmy] = useState<string | null>(null);
   const [routeArmy, setRouteArmy] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -331,6 +337,25 @@ export function WorldMap({ paint, selected, onSelect, focus, flyTo, className = 
                 <text x={dx} y={battle ? 0 : -9} textAnchor="middle" dominantBaseline="central" fontSize={7} fontWeight={700} fill="#0b1a2b">
                   {b.glyph}
                 </text>
+              </g>
+            );
+          })}
+          {harbors.map((id) => {
+            const p = COAST[id];
+            if (!p) return null;
+            const s = unitsPerPx / view.k;
+            // The harbour sits on the shore, nudged a little toward the water, with its picture when one is there and a drawn quay beneath it.
+            const dx = Math.cos((p.a * Math.PI) / 180) * 4;
+            const dy = Math.sin((p.a * Math.PI) / 180) * 4;
+            return (
+              <g key={id} transform={`translate(${p.x + dx * s} ${p.y + dy * s}) scale(${s})`} style={{ pointerEvents: "none" }}>
+                <g fill="#0f172a" stroke="#0f172a" strokeWidth={1.2} strokeLinejoin="round">
+                  <path d="M-9 3h18v3H-9z" fill="#b45309" />
+                  <path d="M-7 6v4M-2 6v4M3 6v4M8 6v4" />
+                  <path d="M-3 3V-9" />
+                  <path d="M-3 -9l7 7h-7z" fill="#f8fafc" />
+                </g>
+                <image href="/buildings/harbor.png" x={-14} y={-16} width={28} height={28} preserveAspectRatio="xMidYMid meet" />
               </g>
             );
           })}

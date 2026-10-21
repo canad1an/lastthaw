@@ -570,6 +570,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
           className={`h-full w-full ${picking ? "cursor-crosshair" : ""}`}
           ice={ice}
           flags={state.me.capitalRegionId ? [state.me.capitalRegionId] : []}
+          harbors={state.owned.filter((o) => o.effects.harbor).map((o) => o.regionId)}
           dashed={state.frontier}
           armies={markers}
           roads={roadLinks}
