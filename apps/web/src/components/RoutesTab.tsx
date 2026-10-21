@@ -70,7 +70,7 @@ export function RoutesTab({ matchId, state, owned, clockOffsetMs, allRoutes = fa
   return (
     <div className="space-y-3 text-sm">
       <p className="text-xs text-slate-400">
-        {caravans === 0 ? "No haulers" : haulersHome.map((h) => `${h.n} ${h.name}${h.n === 1 ? "" : "s"}`).join(", ")} at home · the best carries {perCaravan}. Train more under Train; upgrade them under Units. Roads and railways speed them up.
+        {caravans === 0 ? "No haulers" : haulersHome.map((h) => `${h.n} ${h.name}${h.n === 1 ? "" : "s"}`).join(", ")} at home · the best carries {perCaravan}. Train more under Train; each hauler tech rebuilds the whole fleet as the better kind. Roads and railways speed them up.
       </p>
 
       {routes.length > 0 && (

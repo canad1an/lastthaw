@@ -513,7 +513,7 @@ function ThawSettings({ matchId, state, advisor, onSelect }: { matchId: string; 
 
 const GOALS: ReadonlyArray<[AdvisorSettings["researchGoal"], string, string]> = [
   ["age", "The next age", "every prerequisite of the age's tech in order, then the tech itself the day it opens."],
-  ["hauling", "Hauling", "the path to Railways: wheels, harness, wagons, engineering and the furnaces trains need."],
+  ["hauling", "Hauling", "the next hauler: Wagon building, then Wainwrights, Railways and Internal combustion, each rebuilding your whole fleet."],
   ["walls", "Walls", "the path to Concrete: masonry, fortification, mathematics and engineering."],
   ["sea", "The sea", "the path to Navigation: sailing, carpentry, shipbuilding and cartography."],
   ["off", "No research", "the queue is yours alone."],

@@ -747,36 +747,6 @@ function supplyCaravans(load: Record<string, number>, regionsOfMine: Array<{ uni
   return Math.max(1, Math.min(balance.trade.maxSupplyCaravans, Math.ceil(total / carry)));
 }
 
-/** Upgrade haulers in place: caravans to wagons, caravans or wagons to trains. Costs per unit, needs the unit's tech. */
-export async function convertUnits(ctx: CommandContext, regionId: string, from: string, to: string, qty: number) {
-  const { db, m, p, techs } = ctx;
-  const src = unitById.get(from);
-  const dst = unitById.get(to);
-  if (!src?.hauler || !dst?.hauler) throw httpError(400, "only haulers can be upgraded");
-  if (dst.carry <= src.carry) throw httpError(400, `${dst.name} is not an upgrade of ${src.name}`);
-  if (dst.age > p.age) throw httpError(400, `${dst.name} needs a later age`);
-  if (dst.requires && !techs.has(dst.requires)) throw httpError(400, `${dst.name} needs ${techById.get(dst.requires)?.name ?? dst.requires}`);
-  const per = balance.trade.convertCost[to];
-  if (!per) throw httpError(400, "that upgrade is not available");
-  return db.transaction(async (tx) => {
-    await requireRunning(tx, m.id);
-    const now = matchNow(m);
-    const row = await settleAndLockRegion(tx, m.id, regionId, now, m.speed, resourceMultOf(m));
-    if (row.ownerPlayerId !== p.id) throw httpError(403, "not your region");
-    const have = row.units[from] ?? 0;
-    const n = Math.min(qty, have);
-    if (n < 1) throw httpError(409, `no ${src.name}s here to upgrade`);
-    const cost: Record<string, number> = {};
-    for (const [k, v] of Object.entries(per)) cost[k] = v * n;
-    const stock = stockOf(row);
-    if (!canAfford(stock, cost as Cost)) throw httpError(409, `not enough ${missingFor(stock, cost as Cost).join(", ")} here`);
-    const paid = await applyCost(tx, row, cost as Cost);
-    await recordSpend(tx, m, p.id, "military", cost);
-    const units = { ...paid.units, [from]: have - n, [to]: (paid.units[to] ?? 0) + n };
-    await tx.update(matchRegions).set({ units }).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, regionId)));
-    return { converted: n, cost };
-  });
-}
 
 /**
  * Self-healing for builds waiting on materials: if the region's own stock now

@@ -38,7 +38,7 @@ export function LogisticsPanel({ state, onSelect }: { state: MatchStateView; onS
       ? {
           tone: "text-amber-300",
           text: `Short of haulers: ${stalled.length} route${stalled.length === 1 ? "" : "s"} waiting and ${fullNoHaulers.length} full region${fullNoHaulers.length === 1 ? "" : "s"} with none at home. Train more under a region's Train tab${
-            !state.me.techs.includes("wagon_building") ? ", or research Wagon building: it turns every caravan into a wagon that carries 1,200" : !state.me.techs.includes("railways") ? ", or research Railways in the Medieval Age: it turns every wagon into a train" : ""
+            !state.me.techs.includes("wagon_building") ? ", or research Wagon building: it turns every caravan into a wagon that carries 1,200" : ", or research the next hauler tech (Wainwrights, Railways, Internal combustion): each rebuilds your whole fleet as the better kind"
           }.`,
         }
       : waitingTurn > 0

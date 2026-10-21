@@ -140,8 +140,6 @@ export const api = {
   nameSuggestion: () => request<{ name: string }>("GET", "/api/matches/name-suggestion"),
   rally: (id: string, includeMissions: boolean) =>
     request<{ ok: true; groups: number; soldiers: number; recalled: number; skipped: string[] }>("POST", `/api/matches/${id}/rally`, { includeMissions }),
-  convert: (id: string, regionId: string, body: { from: string; to: string; qty: number }) =>
-    request<{ ok: true; converted: number; cost: Record<string, number> }>("POST", `/api/matches/${id}/regions/${regionId}/convert`, body),
   disband: (id: string, regionId: string, units: Record<string, number>) =>
     request<{ ok: true; disbanded: number }>("POST", `/api/matches/${id}/regions/${regionId}/disband`, { units }),
   recallArmy: (id: string, armyId: string) => request<{ ok: true; returnsAt: string }>("POST", `/api/matches/${id}/armies/${armyId}/recall`, {}),

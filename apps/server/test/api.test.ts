@@ -406,7 +406,6 @@ describe("api routes", () => {
     expect((await Ann.call("POST", `${base}/armies/00000000-0000-0000-0000-000000000000/recall`, {})).statusCode).toBe(404);
     expect((await Ann.call("POST", `${base}/capital`, { regionId: benCap })).statusCode).toBeGreaterThanOrEqual(400);
     expect((await Ann.call("POST", `${base}/regions/${cap}/evacuate`, { toRegionId: benCap })).statusCode).toBeGreaterThanOrEqual(400);
-    expect((await Ann.call("POST", `${base}/regions/${cap}/convert`, { from: "caravan", to: "wagon", qty: 1 })).statusCode).toBeGreaterThanOrEqual(400);
     expect((await Ann.call("POST", `${base}/regions/${cap}/disband`, { units: { warrior: 1000 } })).statusCode).toBeGreaterThanOrEqual(400);
     expect((await Ann.call("POST", `${base}/regions/${cap}/colonize`, { targetRegionId: benCap, settlers: 5 })).statusCode).toBeGreaterThanOrEqual(400);
     expect((await Ann.call("POST", `${base}/regions/${cap}/routes`, { toRegionId: benCap, mode: "fixed", load: { food: 10 } })).statusCode).toBeGreaterThanOrEqual(400);
@@ -1401,8 +1400,9 @@ describe("api routes", () => {
     const at = new Date(await nowIso());
     await db
       .insert(matchRegions)
-      .values({ matchId: gameId, regionId: N, assignment: { ...balance.start.assignment }, settledAt: at, ownerPlayerId: benPid, popWorkers: 5, buildings: { roads: 1 } })
-      .onConflictDoUpdate({ target: [matchRegions.matchId, matchRegions.regionId], set: { ownerPlayerId: benPid, popWorkers: 5, settledAt: at, buildings: { roads: 1 } } });
+      // Stores well under their caps, or the convoy would carry overflow on to the capital instead of walking home.
+      .values({ matchId: gameId, regionId: N, assignment: { ...balance.start.assignment }, settledAt: at, ownerPlayerId: benPid, popWorkers: 5, buildings: { roads: 1 }, food: 100, wood: 0, stone: 0, units: {} })
+      .onConflictDoUpdate({ target: [matchRegions.matchId, matchRegions.regionId], set: { ownerPlayerId: benPid, popWorkers: 5, settledAt: at, buildings: { roads: 1 }, food: 100, wood: 0, stone: 0, units: {} } });
     const [capRow] = await db.select({ units: matchRegions.units, buildings: matchRegions.buildings }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
     await db.update(matchRegions).set({ units: { ...capRow!.units, caravan: (capRow!.units.caravan ?? 0) + 1 }, buildings: { ...capRow!.buildings, roads: 1 }, food: 2000, settledAt: at }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
     await db.insert(playerTechs).values({ matchId: gameId, playerId: benPid, techId: "harness", completedAt: at }).onConflictDoNothing();

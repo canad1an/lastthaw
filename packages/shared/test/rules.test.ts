@@ -197,3 +197,13 @@ describe("legs of a march", () => {
     expect(legIndex(1, 0, 0, 5)).toBe(0);
   });
 });
+
+describe("moving groups are named by their best hauler", () => {
+  it("lorries, trains, freight wagons, wagons, caravans", () => {
+    expect(missionLabel("transport", { lorry: 1, wagon: 2 })).toBe("Lorries");
+    expect(missionLabel("transport", { train: 1 })).toBe("Trains");
+    expect(missionLabel("transport", { freight_wagon: 3 })).toBe("Freight wagons");
+    expect(missionLabel("transport", { wagon: 3 })).toBe("Wagons");
+    expect(missionLabel("transport", { caravan: 1 })).toBe("Caravans");
+  });
+});

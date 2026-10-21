@@ -1,4 +1,4 @@
-import { BUILDINGS, TECHS, UNITS, balance, computeRates, effectsOf, regionById, storageCaps, techById, type BuildingDef, type RegionEconomy, type TechDef, type UnitDef, AGES } from "@lastthaw/shared";
+import { BUILDINGS, TECHS, UNITS, balance, computeRates, effectsOf, regionById, storageCaps, techById, type BuildingDef, type RegionEconomy, type TechDef, type UnitDef, AGES, unitById } from "@lastthaw/shared";
 import type { Delta } from "./Tooltip.js";
 import { fmt, signed } from "./ui.js";
 
@@ -62,7 +62,8 @@ export function buildingPreview(def: BuildingDef, level: number, buildings: Reco
   if (e.researchSpeed) rows.push({ label: "Research speed", before: `+${pct(before.researchSpeed)}`, after: `+${pct(after.researchSpeed)}`, tone: "up" });
   if (def.perNeighbor) rows.push({ label: "Connects to", before: "", after: `${region.neighbors.length} neighbouring regions`, tone: "up" });
   if (e.harbor) rows.push({ label: "Sea legs", before: "", after: `${Math.round((1 - balance.travel.harborBothFactor) * 100)}% faster to another harbour, ${Math.round((1 - balance.travel.harborOneFactor) * 100)}% faster to open coast`, tone: "up" });
-  if (def.perNeighbor) rows.push({ label: "Travel on road legs", before: "", after: `${Math.round((1 - balance.travel.roadBothFactor) * 100)}% faster (both ends), ${Math.round((1 - balance.travel.roadOneFactor) * 100)}% (one end)`, tone: "up" });
+  if (def.perNeighbor && def.id === "railway") rows.push({ label: "Travel on rail legs", before: "", after: `${Math.round((1 - balance.travel.railBothFactor) * 100)}% faster between two railway regions`, tone: "up" });
+  else if (def.perNeighbor) rows.push({ label: "Travel on road legs", before: "", after: `${Math.round((1 - balance.travel.roadBothFactor) * 100)}% faster (both ends), ${Math.round((1 - balance.travel.roadOneFactor) * 100)}% (one end)`, tone: "up" });
   if (e.harbor) rows.push({ label: "Sea routes", before: before.harbor ? "yes" : "no", after: "yes", tone: "up" });
 
   const summary = describeBuilding(def);
@@ -122,6 +123,8 @@ export function techPreview(def: TechDef): { summary: string; unlocks: string[] 
   if (def.id === balance.travel.seaTech) unlocks.push("armies may cross sea routes");
   const carry = balance.trade.caravanCarryTechs[def.id];
   if (carry) unlocks.push(`caravans carry ${Math.round(carry * 100)}% more`);
+  const rebuiltAs = balance.trade.fleetUpgradeTech[def.id];
+  if (rebuiltAs) unlocks.push(`every hauler you have is rebuilt as a ${unitById.get(rebuiltAs)?.name.toLowerCase() ?? rebuiltAs}`);
   const fx = def.effect;
   if (fx) {
     const p = (v: number) => `${v >= 0 ? "+" : ""}${Math.round(v * 100)}%`;

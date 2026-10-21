@@ -144,7 +144,7 @@ export const balance = {
     roadBothFactor: 0.6,
     roadOneFactor: 0.8,
     /** A leg between two Railway regions (yours or an ally's) is this much shorter. */
-    railBothFactor: 0.3,
+    railBothFactor: 0.4,
     /** A sea leg is this much shorter with a Harbour (yours or an ally's) at both ends, or at one end. */
     harborBothFactor: 0.5,
     harborOneFactor: 0.75,
@@ -198,10 +198,11 @@ export const balance = {
     overflowShare: 0.5,
     /** A region sends at most one overflow convoy per this many game hours, so the stores go in a few big loads instead of a stream of small ones. */
     overflowEveryHours: 8,
-    /** Upgrading one hauler into the next kind costs this per unit (on top of needing the tech). */
-    convertCost: {} as Record<string, Record<string, number>>,
-    /** Finishing these techs rebuilds the whole fleet (at home or on the road) as the better hauler. */
-    fleetUpgradeTech: { wagon_building: { from: "caravan", to: "wagon" }, railways: { from: "wagon", to: "train" } } as Record<string, { from: string; to: string }>,
+    /**
+     * Finishing one of these techs rebuilds the whole land fleet (every lesser hauler, at home or on the road) as the
+     * named kind: the hauler ladder, one step an age from the Bronze Age on.
+     */
+    fleetUpgradeTech: { wagon_building: "wagon", wainwrights: "freight_wagon", railways: "train", internal_combustion: "lorry" } as Record<string, string>,
     /** Techs that raise how much each hauler carries (added together: +50% and +50% = 2x). */
     caravanCarryTechs: { the_wheel: 0.5, engineering: 0.5, scholasticism: 1.0 } as Record<string, number>,
   },
