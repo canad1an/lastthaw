@@ -164,7 +164,7 @@ export function welcomeMail(displayName: string, game?: { name: string; slug: st
     paragraphs: [
       ...(game
         ? [
-            `We have made a game just for you: "${game.name}", a public match at ${game.speed}x speed that starts ${whenUtc(game.startsAt)}. You are already in it and it is yours: open it, pick a capital on the real map, and start it early or cancel it whenever you like from the match page. Other players may join you, and AI tribes fill the empty seats when it begins.`,
+            `We have made a game just for you: "${game.name}", a public match at ${game.speed}x speed that starts ${whenUtc(game.startsAt)}. You are already in it and it is yours: open it, pick a capital on the real map, and start it early or cancel it whenever you like from the match page. Other players may join you, and AI tribes fill the empty seats when it begins. If you do not come back for a day the game closes by itself, so nothing is left running for you.`,
             `Set your five settlers to work and build before the frost reaches your latitude. Nobody can attack you for your first ${balance.match.protectionDays} game days. A new weekly match opens every Monday too.`,
           ]
         : [

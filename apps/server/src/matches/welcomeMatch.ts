@@ -1,8 +1,11 @@
 import { randomBytes } from "node:crypto";
-import { sql } from "drizzle-orm";
+import { and, eq, inArray, lt, sql } from "drizzle-orm";
 import type { Db } from "../db/client.js";
-import { matches, players } from "../db/schema.js";
+import { matches, players, sessions, users } from "../db/schema.js";
 import { config } from "../config.js";
+import type { Publisher } from "../realtime/publish.js";
+import { matchNow } from "../sim/clock.js";
+import { finishMatch } from "../sim/endgame.js";
 import { matchLengthSeconds } from "./start.js";
 import { uniqueSlug } from "./slug.js";
 import { pickMatchName } from "../worker/weekly.js";
@@ -31,7 +34,7 @@ export async function createWelcomeMatch(
 ): Promise<WelcomeMatch | null> {
   const cap = opts.cap ?? config().WELCOME_MATCHES;
   const minutes = opts.minutes ?? config().WELCOME_MATCH_MINUTES;
-  const speed = opts.speed ?? 10;
+  const speed = opts.speed ?? 1;
   const existing = await welcomeMatchOf(db, user.id);
   if (existing) return existing;
   const [made] = await db.select({ n: sql<number>`count(*)::int` }).from(matches).where(sql`${matches.settings}->>'welcome' = 'true'`);
@@ -66,6 +69,47 @@ export async function createWelcomeMatch(
     log?.warn({ err, userId: user.id }, "welcome match not created");
     return null;
   }
+}
+
+/**
+ * A welcome game whose player has gone quiet is closed: once the game is older than the idle limit and the player has
+ * not been seen (no request on any session, no login) for that long, a game still in the lobby is cancelled and a
+ * running one is ended early, exactly as its creator could have done. Returns how many were closed.
+ */
+export async function closeIdleWelcomeMatches(db: Db, publisher: Publisher, log?: { info: (obj: unknown, msg: string) => void; warn: (obj: unknown, msg: string) => void }, opts: { idleHours?: number } = {}): Promise<number> {
+  const idleHours = opts.idleHours ?? config().WELCOME_MATCH_IDLE_HOURS;
+  const cutoff = new Date(Date.now() - idleHours * 3600_000);
+  const open = await db
+    .select()
+    .from(matches)
+    .where(and(inArray(matches.status, ["lobby", "running"]), sql`${matches.settings}->>'welcome' = 'true'`, lt(matches.createdAt, cutoff)));
+  let closed = 0;
+  for (const m of open) {
+    const ownerId = (m.settings as { welcomeFor?: string }).welcomeFor;
+    if (!ownerId) continue;
+    const [seen] = await db
+      .select({ last: sql<string | null>`greatest(max(${sessions.lastSeenAt}), max(${users.lastLoginAt}))` })
+      .from(users)
+      .leftJoin(sessions, eq(sessions.userId, users.id))
+      .where(eq(users.id, ownerId));
+    const last = seen?.last ? new Date(seen.last) : null;
+    if (last && last > cutoff) continue;
+    try {
+      if (m.status === "lobby") {
+        await db.delete(matches).where(eq(matches.id, m.id));
+        await publisher.toMatch(m.id, "match.cancelled", { name: m.name });
+      } else {
+        const after: Array<() => Promise<void>> = [];
+        await db.transaction((tx) => finishMatch(tx, m, matchNow(m), publisher, (fn) => void after.push(fn), null, "ended"));
+        for (const fn of after) await fn().catch(() => {});
+      }
+      closed += 1;
+      log?.info({ matchId: m.id, name: m.name, status: m.status, ownerId, lastSeen: last?.toISOString() ?? null }, "welcome game closed: player idle");
+    } catch (err) {
+      log?.warn({ err, matchId: m.id }, "welcome game could not be closed");
+    }
+  }
+  return closed;
 }
 
 /** The welcome match already made for this player, if any. */

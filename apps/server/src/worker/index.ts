@@ -9,6 +9,7 @@ import { runDueJobs } from "./jobs.js";
 import { runMatchTicks } from "../sim/tick.js";
 import { ensureWeeklyMatch } from "./weekly.js";
 import { sendTournamentReminders } from "../matches/registrations.js";
+import { closeIdleWelcomeMatches } from "../matches/welcomeMatch.js";
 import { runTradeRoutes, runOverflow } from "../sim/trade.js";
 import { detectAutomation, detectMultiAccounts, pruneActions } from "../fairplay/detect.js";
 import { cleanupSessions } from "../auth/session.js";
@@ -74,6 +75,9 @@ await Promise.all([
   every(60_000, "weekly", () => ensureWeeklyMatch(db, log)),
   every(60_000, "reminders", async () => {
     await sendTournamentReminders(db, log);
+  }),
+  every(5 * 60_000, "welcome games", async () => {
+    await closeIdleWelcomeMatches(db, publisher, log);
   }),
   every(60_000, "orphaned jobs", async () => {
     const n = await cancelOrphanedJobs(db);

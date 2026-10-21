@@ -16,7 +16,7 @@ import { newToken } from "../src/auth/password.js";
 import { SIM_SPEED, createSimMatch } from "../src/scripts/nightlySim.js";
 import { inviteUser } from "../src/scripts/inviteUser.js";
 import { sendTournamentReminders } from "../src/matches/registrations.js";
-import { tournamentRegistrations } from "../src/db/schema.js";
+import { tournamentRegistrations, sessions } from "../src/db/schema.js";
 import { chargeAdvisors, wageFor } from "../src/sim/advisors.js";
 import { economyNow } from "../src/sim/ledger.js";
 import { logger } from "../src/logger.js";
@@ -163,13 +163,14 @@ describe("api routes", () => {
     expect((await Ann.call("GET", "/api/auth/me")).json()).toMatchObject({ emailVerified: true });
     expect((await Ann.call("POST", "/api/auth/verify", { token: t.token })).statusCode).toBe(400);
     // The first confirmation made her a game of her own: public, hers, starting half an hour out, with her seated in it.
-    const { createWelcomeMatch, welcomeMatchOf } = await import("../src/matches/welcomeMatch.js");
+    const { createWelcomeMatch, welcomeMatchOf, closeIdleWelcomeMatches } = await import("../src/matches/welcomeMatch.js");
     const welcome = await welcomeMatchOf(db, uid);
     expect(welcome).not.toBeNull();
     expect(welcome!.startsAt.getTime() - Date.now()).toBeGreaterThan(25 * 60_000);
     expect(welcome!.startsAt.getTime() - Date.now()).toBeLessThanOrEqual(30 * 60_000);
     const [wm] = await db.select().from(matches).where(eq(matches.id, welcome!.id));
     expect(wm!.settings).toMatchObject({ createdBy: uid, kind: "public", welcome: true, welcomeFor: uid });
+    expect(wm!.speed).toBe(1);
     expect((await db.select({ id: players.id }).from(players).where(and(eq(players.matchId, welcome!.id), eq(players.userId, uid)))).length).toBe(1);
     // Asking again gives the same game, never a second; and the cap, once reached, gives nothing.
     expect((await createWelcomeMatch(db, { id: uid, displayName: ann.displayName }))?.id).toBe(welcome!.id);
@@ -189,7 +190,14 @@ describe("api routes", () => {
     // Confirming again made no second game, and as its creator she may cancel it from the lobby.
     expect((await db.select({ id: matches.id }).from(matches).where(sql`${matches.settings}->>'welcomeFor' = ${uid}`)).length).toBe(1);
     expect((await Ben.call("DELETE", `/api/matches/${welcome!.id}`)).statusCode).toBe(403);
-    expect((await Ann.call("DELETE", `/api/matches/${welcome!.id}`)).statusCode).toBe(200);
+    // While she is active the idle sweep leaves it; once she has been away a day (game and all her activity backdated), it closes.
+    const quiet = new Publisher(createRedis());
+    expect(await closeIdleWelcomeMatches(db, quiet, undefined, { idleHours: 1 })).toBe(0);
+    const old = new Date(Date.now() - 2 * 3600_000);
+    await db.update(matches).set({ createdAt: old }).where(eq(matches.id, welcome!.id));
+    await db.update(sessions).set({ lastSeenAt: old }).where(eq(sessions.userId, uid));
+    await db.update(users).set({ lastLoginAt: old }).where(eq(users.id, uid));
+    expect(await closeIdleWelcomeMatches(db, quiet, undefined, { idleHours: 1 })).toBe(1);
     expect(await welcomeMatchOf(db, uid)).toBeNull();
     // Ben verifies; the outsider never does, so Out stands for an account that has not confirmed its email.
     await db.update(users).set({ emailVerifiedAt: new Date() }).where(eq(users.email, ben.email));

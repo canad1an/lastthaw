@@ -31,6 +31,8 @@ const schema = z.object({
   WELCOME_MATCHES: z.coerce.number().int().min(0).default(50),
   /** How long after the email is confirmed that welcome game starts. */
   WELCOME_MATCH_MINUTES: z.coerce.number().int().min(1).default(30),
+  /** A welcome game is cancelled or ended early once its player has not been seen for this long. */
+  WELCOME_MATCH_IDLE_HOURS: z.coerce.number().int().min(1).default(24),
 });
 
 export type Config = z.infer<typeof schema>;
