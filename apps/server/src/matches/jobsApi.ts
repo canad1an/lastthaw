@@ -1,71 +1,23 @@
 import type { FastifyInstance } from "fastify";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
+import { z } from "zod";
 import { balance, buildBody, researchBody, trainBody, type Cost } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
-import { jobs, matches, playerTechs, players, tradeRoutes } from "../db/schema.js";
+import { jobs, matches, matchRegions, playerTechs, players, tradeRoutes } from "../db/schema.js";
 import { requireUser } from "../auth/session.js";
 import type { Publisher } from "../realtime/publish.js";
 import { matchNow } from "../sim/clock.js";
 import { recordSpend } from "../sim/ledger.js";
-import { applyCost, settleAndLockRegion, resourceMultOf } from "../sim/regions.js";
-import { httpError, pendingRegionJobs, queueBuild, queueResearch, queueTrain, type CommandContext } from "../sim/commands.js";
+import { applyCost, settleAndLockRegion, resourceMultOf, type Tx } from "../sim/regions.js";
+import { httpError, pendingRegionJobs, queueBuild, queueResearch, queueTrain, returnHeld, type CommandContext, type PlayerRow } from "../sim/commands.js";
+import type { MatchRow } from "../worker/jobs.js";
+
+const cleanSlateBody = z.object({ routes: z.boolean().default(false) });
 import { idParams, regionParams, jobParams } from "./params.js";
 
-/** Build, train and research endpoints. Resources are paid when a job is queued. */
-export async function jobRoutes(app: FastifyInstance, opts: { db: Db; publisher: Publisher }) {
-  const { db, publisher } = opts;
-
-  async function loadContext(matchId: string, userId: string): Promise<CommandContext> {
-    const [m] = await db.select().from(matches).where(eq(matches.id, matchId)).limit(1);
-    if (!m) throw httpError(404, "match not found");
-    if (m.status !== "running") throw httpError(409, "the match is not running");
-    if (m.pausedAt) throw httpError(409, "the match is paused");
-    const [p] = await db
-      .select()
-      .from(players)
-      .where(and(eq(players.matchId, matchId), eq(players.userId, userId)))
-      .limit(1);
-    if (!p) throw httpError(403, "not your match");
-    const techRows = await db.select({ id: playerTechs.techId }).from(playerTechs).where(eq(playerTechs.playerId, p.id));
-    return { db, m, p, techs: new Set(techRows.map((t) => t.id)) };
-  }
-
-  app.post("/api/matches/:id/regions/:regionId/build", async (req) => {
-    const user = requireUser(req);
-    const { id: matchId, regionId } = regionParams.parse(req.params);
-    const { buildingId } = buildBody.parse(req.body);
-    const ctx = await loadContext(matchId, user.id);
-    const job = await queueBuild(ctx, regionId, buildingId);
-    await publisher.toPlayer(matchId, ctx.p.id, "region.updated", { regionId });
-    return { ok: true, jobId: job.id, endsAt: job.endsAt.toISOString() };
-  });
-
-  app.post("/api/matches/:id/regions/:regionId/train", async (req) => {
-    const user = requireUser(req);
-    const { id: matchId, regionId } = regionParams.parse(req.params);
-    const { unitId, qty } = trainBody.parse(req.body);
-    const ctx = await loadContext(matchId, user.id);
-    const job = await queueTrain(ctx, regionId, unitId, qty);
-    await publisher.toPlayer(matchId, ctx.p.id, "region.updated", { regionId });
-    return { ok: true, jobId: job.id, endsAt: job.endsAt.toISOString() };
-  });
-
-  app.post("/api/matches/:id/research", async (req) => {
-    const user = requireUser(req);
-    const matchId = idParams.parse(req.params).id;
-    const { techId } = researchBody.parse(req.body);
-    const ctx = await loadContext(matchId, user.id);
-    const job = await queueResearch(ctx, techId);
-    await publisher.toPlayer(matchId, ctx.p.id, "region.updated", { regionId: ctx.p.capitalRegionId });
-    return { ok: true, jobId: job.id, endsAt: job.endsAt.toISOString() };
-  });
-
-  /** Cancel a pending job. Full refund if it has not started, partial once started. Later jobs shift earlier. */
-  app.post("/api/matches/:id/jobs/:jobId/cancel", async (req) => {
-    const user = requireUser(req);
-    const { id: matchId, jobId } = jobParams.parse(req.params);
-    const { m, p } = await loadContext(matchId, user.id);
-    await db.transaction(async (tx) => {
+/** Cancel one pending job of the player's: refund it, put back what was set aside for it, pull later jobs forward. */
+export async function cancelPendingJob(tx: Tx, m: MatchRow, p: PlayerRow, jobId: string): Promise<void> {
+  const matchId = m.id;
       const now = matchNow(m);
       const [job] = await tx.select().from(jobs).where(eq(jobs.id, jobId)).for("update");
       if (!job || job.matchId !== matchId || job.playerId !== p.id) throw httpError(404, "job not found");
@@ -138,8 +90,102 @@ export async function jobRoutes(app: FastifyInstance, opts: { db: Db; publisher:
             .where(eq(jobs.id, l.id));
         }
       }
-    });
+}
+
+/**
+ * A clean slate for the builder: every queued build is cancelled and refunded, every materials route is dropped with
+ * its set-aside goods back on the shelf, and, when asked, the player's own trade routes go too. Training and research
+ * are left alone. Returns what was cleared.
+ */
+export async function cleanSlate(tx: Tx, m: MatchRow, p: PlayerRow, ownRoutes: boolean): Promise<{ builds: number; routes: number }> {
+  const pending = await tx
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(and(eq(jobs.matchId, m.id), eq(jobs.playerId, p.id), eq(jobs.kind, "build"), isNull(jobs.completedAt), isNull(jobs.cancelledAt)))
+    .orderBy(desc(jobs.startsAt), desc(jobs.id));
+  for (const j of pending) await cancelPendingJob(tx, m, p, j.id);
+  const mine = await tx.select({ regionId: matchRegions.regionId }).from(matchRegions).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.ownerPlayerId, p.id))).orderBy(asc(matchRegions.regionId));
+  let routes = 0;
+  for (const r of mine) {
+    const left = await tx.select({ id: tradeRoutes.id }).from(tradeRoutes).where(and(eq(tradeRoutes.matchId, m.id), eq(tradeRoutes.toRegionId, r.regionId), sql`${tradeRoutes.forJobId} is not null`));
+    if (!left.length) continue;
+    routes += left.length;
+    await returnHeld(tx, m, r.regionId);
+  }
+  if (ownRoutes) {
+    const gone = await tx.delete(tradeRoutes).where(and(eq(tradeRoutes.matchId, m.id), eq(tradeRoutes.playerId, p.id))).returning({ id: tradeRoutes.id });
+    routes += gone.length;
+  }
+  return { builds: pending.length, routes };
+}
+
+/** Build, train and research endpoints. Resources are paid when a job is queued. */
+export async function jobRoutes(app: FastifyInstance, opts: { db: Db; publisher: Publisher }) {
+  const { db, publisher } = opts;
+
+  async function loadContext(matchId: string, userId: string): Promise<CommandContext> {
+    const [m] = await db.select().from(matches).where(eq(matches.id, matchId)).limit(1);
+    if (!m) throw httpError(404, "match not found");
+    if (m.status !== "running") throw httpError(409, "the match is not running");
+    if (m.pausedAt) throw httpError(409, "the match is paused");
+    const [p] = await db
+      .select()
+      .from(players)
+      .where(and(eq(players.matchId, matchId), eq(players.userId, userId)))
+      .limit(1);
+    if (!p) throw httpError(403, "not your match");
+    const techRows = await db.select({ id: playerTechs.techId }).from(playerTechs).where(eq(playerTechs.playerId, p.id));
+    return { db, m, p, techs: new Set(techRows.map((t) => t.id)) };
+  }
+
+  app.post("/api/matches/:id/regions/:regionId/build", async (req) => {
+    const user = requireUser(req);
+    const { id: matchId, regionId } = regionParams.parse(req.params);
+    const { buildingId } = buildBody.parse(req.body);
+    const ctx = await loadContext(matchId, user.id);
+    const job = await queueBuild(ctx, regionId, buildingId);
+    await publisher.toPlayer(matchId, ctx.p.id, "region.updated", { regionId });
+    return { ok: true, jobId: job.id, endsAt: job.endsAt.toISOString() };
+  });
+
+  app.post("/api/matches/:id/regions/:regionId/train", async (req) => {
+    const user = requireUser(req);
+    const { id: matchId, regionId } = regionParams.parse(req.params);
+    const { unitId, qty } = trainBody.parse(req.body);
+    const ctx = await loadContext(matchId, user.id);
+    const job = await queueTrain(ctx, regionId, unitId, qty);
+    await publisher.toPlayer(matchId, ctx.p.id, "region.updated", { regionId });
+    return { ok: true, jobId: job.id, endsAt: job.endsAt.toISOString() };
+  });
+
+  app.post("/api/matches/:id/research", async (req) => {
+    const user = requireUser(req);
+    const matchId = idParams.parse(req.params).id;
+    const { techId } = researchBody.parse(req.body);
+    const ctx = await loadContext(matchId, user.id);
+    const job = await queueResearch(ctx, techId);
+    await publisher.toPlayer(matchId, ctx.p.id, "region.updated", { regionId: ctx.p.capitalRegionId });
+    return { ok: true, jobId: job.id, endsAt: job.endsAt.toISOString() };
+  });
+
+  /** Cancel a pending job. Full refund if it has not started, partial once started. Later jobs shift earlier. */
+  app.post("/api/matches/:id/jobs/:jobId/cancel", async (req) => {
+    const user = requireUser(req);
+    const { id: matchId, jobId } = jobParams.parse(req.params);
+    const { m, p } = await loadContext(matchId, user.id);
+    await db.transaction((tx) => cancelPendingJob(tx, m, p, jobId));
     await publisher.toPlayer(matchId, p.id, "region.updated", {});
     return { ok: true };
+  });
+
+  /** Clean slate: cancel every queued build, drop the materials routes (goods back on the shelf) and, if asked, the player's own routes. */
+  app.post("/api/matches/:id/builds/clean-slate", async (req) => {
+    const user = requireUser(req);
+    const matchId = idParams.parse(req.params).id;
+    const { routes } = cleanSlateBody.parse(req.body ?? {});
+    const { m, p } = await loadContext(matchId, user.id);
+    const cleared = await db.transaction((tx) => cleanSlate(tx, m, p, routes));
+    await publisher.toPlayer(matchId, p.id, "region.updated", {});
+    return { ok: true, ...cleared };
   });
 }

@@ -751,6 +751,18 @@ describe("api routes", () => {
       const restored = await stockAt(start);
       for (const [k, v] of Object.entries(startHeld)) expect(Math.round(restored[k as "wood" | "stone"] - before[k as "wood" | "stone"])).toBe(v);
       expect((await routesTo(D)).filter((r) => r.forJobId === job2)).toEqual([]);
+
+      // A clean slate: a new short build at D queues with a materials route; clearing cancels every build, refunds it and drops the routes.
+      // Empty stores as of now (the old settle time would let hours of production pay the build on the spot).
+      await claim(D, { food: 0, wood: 0, stone: 0, settledAt: new Date(matchStateView.parse((await Ben.call("GET", `${base}/state`)).json()).match.now) });
+      const slateBuild = await Ben.call("POST", `${base}/regions/${D}/build`, { buildingId: "storehouse" });
+      expect(slateBuild.statusCode, slateBuild.body).toBe(200);
+      expect((await routesTo(D)).length).toBeGreaterThan(0);
+      const cleared = await Ben.call("POST", `${base}/builds/clean-slate`, { routes: false });
+      expect(cleared.statusCode, cleared.body).toBe(200);
+      expect((cleared.json() as { builds: number }).builds).toBeGreaterThanOrEqual(1);
+      expect((await db.select().from(jobs).where(and(eq(jobs.matchId, gameId), eq(jobs.playerId, benPid), eq(jobs.kind, "build"), sql`${jobs.completedAt} is null`, sql`${jobs.cancelledAt} is null`))).length).toBe(0);
+      expect((await routesTo(D)).filter((r) => r.forJobId)).toEqual([]);
     } finally {
       await redis.quit().catch(() => {});
     }
