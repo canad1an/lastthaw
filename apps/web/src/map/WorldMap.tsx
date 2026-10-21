@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useRef, useState, type PointerEvent as Re
 import { allRegions, balance, freezeDayForLatitude, iceExposure, iceLatitudeOnDay, world, type MapRegion, regionById } from "@lastthaw/shared";
 import type { ArmyMarker } from "./armyMarkers.js";
 import { UnitStrokes, unitPicture } from "../components/UnitIcon.js";
+import { unitById } from "@lastthaw/shared";
 
 export type RegionPaint = {
   fill?: string;
@@ -46,6 +47,11 @@ export interface WorldMapProps {
 
 /** Missions drawn as military (orange, sword) rather than civil traffic. */
 const MILITARY = new Set(["raid", "conquer", "reinforce", "patrol"]);
+
+/** More than one kind on foot or wheels together. A ship or an aircraft carrying the rest is not mixed: it shows as itself. */
+function isMixed(a: ArmyMarker): boolean {
+  return a.kinds.length > 1 && !a.kinds.some((id) => unitById.get(id)?.naval || unitById.get(id)?.air);
+}
 
 const TERRAIN_FILL: Record<string, string> = {
   plains: "#6b8f3a",
@@ -377,10 +383,38 @@ export function WorldMap({ paint, selected, onSelect, focus, flyTo, className = 
                   </g>
                 ) : (
                   // Enemy attacks pulse rose; my own military (raid, conquer, reinforce) is orange with a sword; civil traffic is blue.
-                  <circle r={a.lead ? 9 : 7} fill={a.hostile ? "#f43f5e" : MILITARY.has(a.mission) ? "#f97316" : "#38bdf8"} stroke="#0b1a2b" strokeWidth={1.5} />
+                  <circle r={isMixed(a) && hoverArmy === a.id ? 24 : a.lead ? 9 : 7} fill={a.hostile ? "#f43f5e" : MILITARY.has(a.mission) ? "#f97316" : "#38bdf8"} stroke="#0b1a2b" strokeWidth={1.5} />
                 )}
                 {a.mission !== "relocate" &&
-                  (a.lead && unitPicture(a.lead) ? (
+                  (isMixed(a) && hoverArmy === a.id ? (
+                    // A mixed force under the pointer opens up: every kind in it, in a ring, most numerous first from the top.
+                    <g>
+                      {a.kinds.slice(0, 6).map((id, i, all) => {
+                        const ang = -Math.PI / 2 + (i * 2 * Math.PI) / all.length;
+                        const r = all.length === 1 ? 0 : 13;
+                        const x = Math.cos(ang) * r;
+                        const y = Math.sin(ang) * r;
+                        const pic = unitPicture(id);
+                        return pic ? (
+                          <image key={id} href={pic} x={x - 8} y={y - 8} width={16} height={16} preserveAspectRatio="xMidYMid meet" style={{ pointerEvents: "none" }} />
+                        ) : (
+                          <g key={id} transform={`translate(${x} ${y}) scale(0.62) translate(-12 -12)`}>
+                            <UnitStrokes id={id} color="#0b1a2b" />
+                          </g>
+                        );
+                      })}
+                    </g>
+                  ) : isMixed(a) ? (
+                    // A mixed force at rest: a group, three heads and shoulders, until it is looked at.
+                    <g fill="#0b1a2b">
+                      <circle cx={-3.6} cy={-1.6} r={1.9} />
+                      <circle cx={3.6} cy={-1.6} r={1.9} />
+                      <circle cx={0} cy={-3.2} r={2.2} />
+                      <path d="M-7 5.5c0-2.6 1.5-4.2 3.4-4.2s3.4 1.6 3.4 4.2z" />
+                      <path d="M0.2 5.5c0-2.6 1.5-4.2 3.4-4.2s3.4 1.6 3.4 4.2z" />
+                      <path d="M-3.9 5.5c0-3.2 1.7-5 3.9-5s3.9 1.8 3.9 5z" />
+                    </g>
+                  ) : a.lead && unitPicture(a.lead) ? (
                     // The kind the convoy is made of, as its picture on the disc.
                     <image href={unitPicture(a.lead)!} x={-7.5} y={-7.5} width={15} height={15} preserveAspectRatio="xMidYMid meet" style={{ pointerEvents: "none" }} />
                   ) : a.lead ? (

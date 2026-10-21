@@ -14,28 +14,36 @@ export interface ArmyMarker {
   mission: string;
   /** A sea convoy: any ship among the units, drawn as a boat whatever the mission. */
   naval: boolean;
-  /** The unit drawn on the marker: the most numerous kind in the convoy, or null when the units are unknown. */
+  /** The unit drawn on the marker: a ship if any, else an aircraft, else the most numerous kind; null when the units are unknown. */
   lead: string | null;
+  /** Every kind in the convoy, most numerous first, so a mixed force can show each of them when looked at. */
+  kinds: string[];
   /** Region names along the current leg, origin → destination. */
   routeNames: string[];
   /** Destination region id for highlighting. */
   destinationId: string;
 }
 
-/** The kind that stands for a convoy on the map: the most numerous, a soldier before a hauler at a tie. */
+/** Every kind present, most numerous first (soldiers before haulers at a tie). */
+export function kindsOf(units: Record<string, number>): string[] {
+  return Object.entries(units)
+    .filter(([, n]) => n > 0)
+    .sort((a, b) => score(b[0], b[1]) - score(a[0], a[1]))
+    .map(([id]) => id);
+}
+
+function score(id: string, n: number): number {
+  const u = unitById.get(id);
+  return n + (u && !u.civilian && !u.hauler ? 0.5 : 0);
+}
+
+/**
+ * The kind that stands for a convoy on the map. What carries the rest wins: a ship if any ship is in it (a canoe with
+ * five settlers is a canoe), else an aircraft; otherwise the most numerous kind.
+ */
 export function leadUnit(units: Record<string, number>): string | null {
-  let best: string | null = null;
-  let bestN = 0;
-  for (const [id, n] of Object.entries(units)) {
-    if (n <= 0) continue;
-    const u = unitById.get(id);
-    const score = n + (u && !u.civilian && !u.hauler ? 0.5 : 0);
-    if (score > bestN) {
-      best = id;
-      bestN = score;
-    }
-  }
-  return best;
+  const kinds = kindsOf(units);
+  return kinds.find((id) => unitById.get(id)?.naval) ?? kinds.find((id) => unitById.get(id)?.air) ?? kinds[0] ?? null;
 }
 
 /** Point `p` (0..1) of the way along a polyline, by distance. */
@@ -100,6 +108,7 @@ export function armyMarkers(armies: ArmyView[], incoming: IncomingView[], nowMs:
       mission: a.mission,
       naval: Object.entries(a.units).some(([id, n]) => n > 0 && unitById.get(id)?.naval),
       lead: leadUnit(a.units),
+      kinds: kindsOf(a.units),
       title: a.mission === "patrol" && !returning ? `Patrol on the ${laneName(a.lane ?? "")} lane` : `${missionLabel(a.mission, a.units)} ${returning ? "returning to" : "→"} ${dest}`,
       lines: [
         returning && a.note ? a.note : "",
@@ -125,6 +134,7 @@ export function armyMarkers(armies: ArmyView[], incoming: IncomingView[], nowMs:
       mission: i.mission,
       naval: !!i.units && Object.entries(i.units).some(([id, n]) => n > 0 && unitById.get(id)?.naval),
       lead: i.units ? leadUnit(i.units) : null,
+      kinds: i.units ? kindsOf(i.units) : [],
       title: `${i.fromPlayerName} ${i.mission === "raid" ? "raiding" : "attacking"} ${r.name}`,
       lines: [
         i.units
