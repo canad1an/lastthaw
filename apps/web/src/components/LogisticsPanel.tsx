@@ -72,7 +72,7 @@ export function LogisticsPanel({ state, onSelect }: { state: MatchStateView; onS
           : {totalHome} at home, {totalRoad} on the road.
         </p>
         <p className="mt-1 text-xs text-slate-500">
-          Every hauler is one pool: a route with none at home calls the nearest spare ones over, idle ones first. Train them anywhere; they go where the work is. Idle capacity at home: {fmt(capacityHome)}.
+          Every hauler is one pool: a route with none at home calls the nearest spare ones over, idle ones first. Train them anywhere; they go where the work is. Idle capacity at home: {fmt(capacityHome)}. To make trips shorter, build Waystations (Iron Age, on Roads) in the regions your convoys arrive in most: each level cuts those legs by 2%, up to 30%, and the savings multiply along a route.
         </p>
       </div>
       <p className={`text-xs ${verdict.tone}`}>{verdict.text}</p>

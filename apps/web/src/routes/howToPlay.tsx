@@ -141,7 +141,7 @@ const ADVANCED: Array<{ title: string; body: React.ReactNode }> = [
         <p>
           Distance is real great-circle distance, scaled, at the speed of your slowest unit. Each leg is multiplied by the terrain being entered (table above); entering a coastal or river region is{" "}
           {mult(balance.travel.waterwayFactor)}. Roads at both ends make a leg {mult(balance.travel.roadBothFactor)}, at one end {mult(balance.travel.roadOneFactor)}; Railways at both ends {mult(balance.travel.railBothFactor)}.
-          Allied roads and rails count as yours. A Waystation (Iron Age, built on Roads) cuts every hauler leg that ends in its region by {Math.round((buildingById.get("waystation")?.effect.haul ?? 0) * 100)}% per level, up to {Math.round(balance.travel.waystationMaxCut * 100)}%; the cuts multiply along a route, and armies gain nothing from them.
+          Allied roads and rails count as yours. A Waystation (Iron Age, built on Roads) is a coaching inn for convoys: every hauler leg that ends in its region is {Math.round((buildingById.get("waystation")?.effect.haul ?? 0) * 100)}% shorter per level, up to {Math.round(balance.travel.waystationMaxCut * 100)}%, and the savings multiply along a route, so three level-10 Waystations in a row halve a trip. Build them where your convoys arrive most, along your freight corridors and in the capital; armies and ships gain nothing from them.
         </p>
         <p className="mt-2">
           Canoes (Sailing, Bronze Age) cross lanes up to {balance.travel.canoeMaxLaneKm} km; sea lanes open fully with Shipbuilding and run at {mult(balance.travel.seaFactor)}, or {mult(balance.travel.harborBothFactor)} with a Harbor at both ends. Every travelling person carries {balance.travel.carryPerPerson} goods. The
