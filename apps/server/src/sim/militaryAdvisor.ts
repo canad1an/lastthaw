@@ -50,7 +50,7 @@ const name = (id: string) => regionById(id)?.name ?? id;
 function bestSoldier(age: number, techs: ReadonlySet<string>, regionId: string) {
   const region = regionById(regionId);
   return availableUnits(age, techs)
-    .filter((u) => !u.naval && !u.civilian && !u.hauler && !u.hidden && !u.breach && (!u.needsResource || region?.resources.includes(u.needsResource)))
+    .filter((u) => !u.naval && !u.air && !u.civilian && !u.hauler && !u.hidden && !u.breach && (!u.needsResource || region?.resources.includes(u.needsResource)))
     .sort((a, b) => b.attack + b.defense - (a.attack + a.defense))[0];
 }
 

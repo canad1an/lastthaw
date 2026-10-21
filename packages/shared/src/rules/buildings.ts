@@ -19,6 +19,9 @@ export interface RegionEffects {
   watchtower: boolean;
   /** Share cut from every hauler leg ending here (waystation levels), before the cap in balance.travel.waystationMaxCut. */
   haul: number;
+  airfield: boolean;
+  /** Share of attacking aircraft shot down, before the cap in balance.combat.antiAirMax. */
+  antiAir: number;
 }
 
 export function effectsOf(buildings: Record<string, number>): RegionEffects {
@@ -36,6 +39,8 @@ export function effectsOf(buildings: Record<string, number>): RegionEffects {
     harbor: false,
     watchtower: false,
     haul: 0,
+    airfield: false,
+    antiAir: 0,
   };
   for (const [id, level] of Object.entries(buildings)) {
     const def = buildingById.get(id);
@@ -54,6 +59,8 @@ export function effectsOf(buildings: Record<string, number>): RegionEffects {
     if (f.harbor) e.harbor = true;
     if (f.watchtower) e.watchtower = true;
     if (f.haul) e.haul += f.haul * level;
+    if (f.airfield) e.airfield = true;
+    if (f.antiAir) e.antiAir += f.antiAir * level;
   }
   return e;
 }

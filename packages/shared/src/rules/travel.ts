@@ -83,6 +83,24 @@ export function findRoute(origin: string, target: string, allowSea: boolean, roa
   return { path, cost: dist.get(target)!, usesSea };
 }
 
+/** True when every unit in the group flies: aircraft go straight, alone, and only between airfields' reach. */
+export function isAirGroup(units: Record<string, number>): boolean {
+  const ids = Object.entries(units).filter(([, n]) => n > 0).map(([id]) => id);
+  return ids.length > 0 && ids.every((id) => unitById.get(id)?.air);
+}
+
+/** How far a flight may go, in km: the shortest range among the aircraft in the group. */
+export function airRangeKm(units: Record<string, number>): number {
+  let r = Infinity;
+  for (const [id, n] of Object.entries(units)) if (n > 0 && unitById.get(id)?.air) r = Math.min(r, unitById.get(id)!.rangeKm ?? 0);
+  return r === Infinity ? 0 : r;
+}
+
+/** A flight: one straight leg at great-circle distance, no terrain, water, roads or lanes. */
+export function airRoute(from: string, to: string): Route {
+  return { path: [from, to], cost: distanceKm(from, to), usesSea: false };
+}
+
 /** The longest sea lane a group may cross, in km, when it holds a short-lane boat; null when nothing limits it. */
 export function laneLimitKm(units: Record<string, number>): number | null {
   for (const [id, n] of Object.entries(units)) if (n > 0 && unitById.get(id)?.shortLanes) return balance.travel.canoeMaxLaneKm;
@@ -117,7 +135,10 @@ export function missionLabel(mission: string, units?: Record<string, number>): s
   switch (mission) {
     case "settle":
       return "Settlers";
+    case "airstrike":
+      return "Airstrike";
     case "transport": {
+      if (units?.transport_plane) return "Transport planes";
       if (units?.lorry) return "Lorries";
       if (units?.train) return "Trains";
       if (units?.freight_wagon) return "Freight wagons";
@@ -131,7 +152,7 @@ export function missionLabel(mission: string, units?: Record<string, number>): s
     case "reinforce":
       return "Reinforcements";
     case "scout":
-      return "Scouts";
+      return units?.scout_plane ? "Scout planes" : "Scouts";
     case "patrol":
       return "Patrol";
     case "expedition":

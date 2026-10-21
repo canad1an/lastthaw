@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { and, asc, eq, inArray, sql, desc } from "drizzle-orm";
-import { allRegions, balance, effectsOf, fairAmount, matchStateView, regionById, RESOURCE_WORTH, scoutCatchChance, seededRng, storageCaps, findRoute, travelSeconds, unitById, techEffectsOf } from "@lastthaw/shared";
+import { allRegions, balance, effectsOf, fairAmount, matchStateView, regionById, RESOURCE_WORTH, scoutCatchChance, seededRng, storageCaps, findRoute, travelSeconds, unitById, techEffectsOf, distanceKm } from "@lastthaw/shared";
 import { Publisher } from "../src/realtime/publish.js";
 import { runDueJobs } from "../src/worker/jobs.js";
 import { buildApp } from "../src/api/app.js";
@@ -1428,29 +1428,56 @@ describe("api routes", () => {
     // Without roads or Harness the same caravan would take longer.
     const bare = travelSeconds(findRoute(cap, N, false)!, unitById.get("caravan")!.speed, benState.match.speed) * 1000;
     expect(outbound).toBeLessThan(bare);
-    // It arrives and walks home: the return leg is priced the same way, so it takes as long as the way out, not the bare time.
+    // The walk home is priced by the same helper the arrival uses: legs are not symmetric (the terrain entered sets the
+    // cost), so the homeward leg is checked against the formula on the reverse route, and against the bare reverse time.
     const redis = createRedis();
-    const pub = new Publisher(redis);
     try {
-      const secs = Math.ceil((out!.arrivesAt.getTime() - Date.parse(await nowIso())) / 1000) + 2;
-      if (secs > 0) await db.update(matches).set({ clockOffsetSeconds: sql`${matches.clockOffsetSeconds} + ${secs}` }).where(eq(matches.id, gameId));
-      await runDueJobs(db, pub, logger);
-      // The return leg is its own mission job (the walk home may already be over on a short route).
-      const [home] = await db.select().from(jobs).where(and(eq(jobs.refId, armyId), eq(jobs.kind, "mission"))).orderBy(desc(jobs.startsAt)).limit(1);
-      expect(home).toBeDefined();
-      expect(Math.abs(home!.startsAt.getTime() - out!.arrivesAt.getTime())).toBeLessThan(1000);
-      const homeward = home!.endsAt.getTime() - home!.startsAt.getTime();
-      // Legs are not symmetric (the terrain entered sets the cost), so the way home is checked against the same formula
-      // run on the reverse route with Ben's roads and techs, and against the bare reverse time it used to take.
-      const { legContextFor } = await import("../src/sim/legs.js");
+      const { legContextFor, legSeconds, routeFor } = await import("../src/sim/legs.js");
+      const [mrow] = await db.select().from(matches).where(eq(matches.id, gameId));
       const ctx = await legContextFor(db, gameId, benPid);
+      const back = routeFor(ctx, N, cap, false, { caravan: 1 })!;
+      const homeward = (await legSeconds(db, mrow!, ctx, back, { caravan: 1 }, out!.arrivesAt)) * 1000;
       const expected = travelSeconds(findRoute(N, cap, false, ctx.roads, ctx.rails, ctx.harbors)!, unitById.get("caravan")!.speed * (1 + techEffectsOf(ctx.techs).travel), benState.match.speed) * 1000;
       const bareBack = travelSeconds(findRoute(N, cap, false)!, unitById.get("caravan")!.speed, benState.match.speed) * 1000;
       expect(Math.abs(homeward - expected)).toBeLessThan(1500);
       expect(homeward).toBeLessThan(bareBack);
+      expect(ctx.techs.has("harness")).toBe(true);
     } finally {
       await redis.quit().catch(() => {});
       await db.delete(playerTechs).where(and(eq(playerTechs.playerId, benPid), eq(playerTechs.techId, "harness")));
+    }
+  });
+
+  it("aircraft fly alone from an Airfield, within their range, straight to the target; an airstrike needs bombers", async () => {
+    const base = `/api/matches/${gameId}`;
+    const state = matchStateView.parse((await Ann.call("GET", `${base}/state`)).json());
+    const cap = state.me.capitalRegionId!;
+    const annId = state.me.playerId;
+    const [annRow] = await db.select({ age: players.age }).from(players).where(eq(players.id, annId));
+    const [capRow] = await db.select({ units: matchRegions.units, buildings: matchRegions.buildings }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
+    await db.update(players).set({ age: 6 }).where(eq(players.id, annId));
+    await db.update(matchRegions).set({ units: { ...capRow!.units, bomber: 4, warrior: (capRow!.units.warrior ?? 0) + 2 } }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
+    const far = allRegions().map((r) => ({ id: r.id, km: distanceKm(cap, r.id) })).sort((a, b) => b.km - a.km)[0]!;
+    const near = regionById(cap)!.neighbors[0]!;
+    try {
+      // Ground units cannot strike; planes do not mix with them; and nothing flies without an Airfield.
+      expect((await Ann.call("POST", `${base}/regions/${cap}/send`, { mission: "airstrike", targetRegionId: near, units: { warrior: 2 }, people: 0, cargo: {} })).body).toContain("only aircraft strike");
+      expect((await Ann.call("POST", `${base}/regions/${cap}/send`, { mission: "airstrike", targetRegionId: near, units: { bomber: 2, warrior: 1 }, people: 0, cargo: {} })).body).toContain("fly alone");
+      expect((await Ann.call("POST", `${base}/regions/${cap}/send`, { mission: "airstrike", targetRegionId: near, units: { bomber: 2 }, people: 0, cargo: {} })).body).toContain("Airfield");
+      await db.update(matchRegions).set({ buildings: { ...capRow!.buildings, roads: 1, airfield: 1 } }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
+      // Beyond the bombers' range the flight is refused; next door it goes, straight, on a path of two.
+      expect((await Ann.call("POST", `${base}/regions/${cap}/send`, { mission: "airstrike", targetRegionId: far.id, units: { bomber: 2 }, people: 0, cargo: {} })).body).toContain("out of range");
+      const sent = await Ann.call("POST", `${base}/regions/${cap}/send`, { mission: "airstrike", targetRegionId: near, units: { bomber: 2 }, people: 0, cargo: {} });
+      expect(sent.statusCode, sent.body).toBe(200);
+      const [army] = await db.select().from(armies).where(eq(armies.id, (sent.json() as { armyId: string }).armyId));
+      expect(army!.mission).toBe("airstrike");
+      expect(army!.path).toEqual([cap, near]);
+      expect(army!.arrivesAt.getTime() - army!.departsAt.getTime()).toBeLessThan(travelSeconds(findRoute(cap, near, false)!, unitById.get("warrior")!.speed, state.match.speed) * 1000);
+      await db.update(armies).set({ status: "done" }).where(eq(armies.id, army!.id));
+      await db.update(jobs).set({ cancelledAt: new Date() }).where(and(eq(jobs.refId, army!.id), eq(jobs.kind, "mission")));
+    } finally {
+      await db.update(players).set({ age: annRow!.age }).where(eq(players.id, annId));
+      await db.update(matchRegions).set({ units: capRow!.units, buildings: capRow!.buildings }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
     }
   });
 

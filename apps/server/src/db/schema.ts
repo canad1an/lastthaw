@@ -285,7 +285,7 @@ export const jobs = pgTable(
   ],
 );
 
-export const missionKind = pgEnum("mission_kind", ["raid", "conquer", "reinforce", "move", "transport", "scout", "settle", "relocate", "patrol", "expedition"]);
+export const missionKind = pgEnum("mission_kind", ["raid", "conquer", "reinforce", "move", "transport", "scout", "settle", "relocate", "patrol", "expedition", "airstrike"]);
 export const armyStatus = pgEnum("army_status", ["outbound", "returning", "done", "fighting"]);
 
 export const armies = pgTable(

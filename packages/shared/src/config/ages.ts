@@ -41,6 +41,10 @@ export interface BuildingEffect {
   watchtower?: boolean;
   /** Waystations: each level shortens every hauler leg that ends in this region by this share. Armies gain nothing. */
   haul?: number;
+  /** Aircraft take off from and land at a region with this. */
+  airfield?: boolean;
+  /** Share of attacking aircraft shot down per level, up to balance.combat.antiAirMax. */
+  antiAir?: number;
 }
 
 export type BuildingCategory = "growth" | "production" | "storage" | "defense" | "training" | "transport" | "loyalty" | "wonder";
@@ -112,6 +116,9 @@ export interface UnitDef {
   naval?: boolean;
   /** A small boat: keeps to sea lanes no longer than balance.travel.canoeMaxLaneKm. */
   shortLanes?: boolean;
+  /** Aircraft: flies straight between any two regions within rangeKm of its Airfield, over land, sea and terrain alike, never mixed with ground units. */
+  air?: boolean;
+  rangeKm?: number;
   /** Region must have this building to train here (ships need a Harbor). */
   needsBuilding?: string;
   /** Hired, not trained: the company leaves after its contract. */
@@ -183,9 +190,11 @@ export const BUILDINGS: readonly BuildingDef[] = [
   // Iron
   { id: "forge", category: "training", name: "Forge", age: 2, description: "Works iron faster; speeds up training.", maxLevel: 10, cost: { wood: 200, stone: 200, iron: 20 }, baseSeconds: 400, effect: { trainSpeed: 0.06, extract: { iron: 0.8 } }, requires: "iron_working" },
   { id: "walls", category: "defense", name: "Stone walls", age: 2, description: "Solid walls around the settlement. Built once, on top of a Palisade.", maxLevel: 1, cost: { stone: 2500, wood: 600 }, baseSeconds: 900, effect: { defense: 1.2 }, requires: "masonry", requiresBuilding: "palisade" },
+  { id: "anti_air", category: "defense", name: "Anti-air battery", age: 6, description: "Radar-laid guns. Each level shoots down 15% of the bombers and scout planes that come over the region, up to 75%.", maxLevel: 5, cost: { iron: 300, stone: 10000 }, baseSeconds: 1800, effect: { antiAir: 0.15 }, requires: "radar" },
   { id: "roads", category: "transport", name: "Roads", age: 1, description: "Paved roads to every neighbouring region. Built once; legs between two road regions are much faster, and the region is easier to hold.", maxLevel: 1, cost: { stone: 80, wood: 40 }, perNeighbor: true, baseSeconds: 600, effect: { loyalty: 0.1 }, requires: "road_building" },
   { id: "railway", category: "transport", name: "Railway", age: 5, description: "Rails to every neighbouring region that also has them. Built once on top of Roads; legs between two railway regions are far faster.", maxLevel: 1, cost: { stone: 400, iron: 20 }, perNeighbor: true, baseSeconds: 1800, effect: { loyalty: 0.05 }, requires: "railways", requiresBuilding: "roads" },
   { id: "waystation", category: "transport", name: "Waystation", age: 2, description: "Stables, stores and fresh teams for convoys arriving here. Each level makes every hauler leg that ends in this region 2% shorter, up to 30%. Armies gain nothing from it.", maxLevel: 10, cost: { wood: 300, stone: 200 }, baseSeconds: 900, effect: { haul: 0.02 }, requires: "road_building", requiresBuilding: "roads" },
+  { id: "airfield", category: "transport", name: "Airfield", age: 6, description: "A runway, hangars and fuel. Aircraft take off from here and transport planes land only where there is one. Built once, on Roads.", maxLevel: 1, cost: { stone: 20000, iron: 400 }, baseSeconds: 3600, effect: { airfield: true }, requires: "aviation", requiresBuilding: "roads" },
   { id: "temple", category: "loyalty", name: "Temple", age: 2, description: "Binds a conquered people to their new rulers. Built once: raises loyalty and keeps turning workers into occupiers until the region has enough, however much it grows.", maxLevel: 1, cost: { stone: 1500, wood: 800, food: 500 }, baseSeconds: 2400, effect: { loyalty: 0.2 } },
   { id: "barracks", category: "training", name: "Barracks", age: 2, description: "Trains soldiers faster.", maxLevel: 10, cost: { wood: 300, stone: 150 }, baseSeconds: 400, effect: { trainSpeed: 0.1 } },
   // Classical
@@ -255,6 +264,9 @@ export const UNITS: readonly UnitDef[] = [
   { id: "tank", name: "Tank", age: 6, description: "Armour and a gun on tracks: fast and nearly unstoppable.", attack: 140, defense: 70, speed: 20, carry: 80, cost: { iron: 150, wood: 500 }, baseSeconds: 900, requires: "combined_arms", breach: 4 },
   { id: "artillery", name: "Artillery", age: 6, description: "Long guns that flatten anything in range.", attack: 200, defense: 10, speed: 5, carry: 0, cost: { iron: 120, wood: 600 }, baseSeconds: 900, requires: "ballistics", breach: 10 },
   { id: "destroyer", name: "Destroyer", age: 6, description: "Fast, gunned and radar-guided.", attack: 250, defense: 200, speed: 24, carry: 800, cost: { iron: 800, wood: 2000 }, baseSeconds: 1500, requires: "electronics", naval: true, needsBuilding: "harbor" },
+  { id: "scout_plane", name: "Scout plane", age: 6, description: "Flies straight to any region within 3,000 km of an Airfield, looks it over and flies home. Nobody on the ground can catch it; only an Anti-air battery can shoot it down.", attack: 1, defense: 2, speed: 80, carry: 0, cost: { iron: 60, wood: 800 }, baseSeconds: 300, requires: "aviation", needsBuilding: "airfield", air: true, rangeKm: 3000 },
+  { id: "transport_plane", name: "Transport plane", age: 6, description: "Carries 1,500 goods straight to another Airfield within 2,500 km, over land and sea alike: hours become minutes, for what matters most.", attack: 0, defense: 2, speed: 60, carry: 1500, cost: { iron: 120, wood: 1500 }, baseSeconds: 600, requires: "aviation", needsBuilding: "airfield", air: true, rangeKm: 2500, civilian: true },
+  { id: "bomber", name: "Bomber", age: 6, description: "Flies straight to any region within 2,500 km, strikes its defenders from the air and flies home. Takes nothing and holds nothing; walls do not stop bombs, an Anti-air battery does.", attack: 150, defense: 20, speed: 50, carry: 0, cost: { iron: 200, wood: 1500 }, baseSeconds: 900, requires: "aviation", needsBuilding: "airfield", air: true, rangeKm: 2500 },
 ];
 
 // ---------------------------------------------------------------------------
@@ -370,7 +382,7 @@ export const TECHS: readonly TechDef[] = [
   { id: "assembly_line", name: "Assembly line", age: 6, description: "Everything built on moving lines: soldiers trained far faster.", cost: {iron: 3000, wood: 60000}, baseSeconds: 8640, requires: ["mass_production", "electricity"], effect: {trainSpeed: 0.3} },
   { id: "refrigeration", name: "Refrigeration", age: 6, description: "Cold stores that never thaw.", cost: {iron: 2500, stone: 50000}, baseSeconds: 7200, requires: ["electricity"], effect: {storage: 0.3} },
   { id: "antibiotics", name: "Antibiotics", age: 6, description: "Infections that once killed are cured in days.", cost: {food: 150000, iron: 2000}, baseSeconds: 8640, requires: ["sanitation"], effect: {growth: 0.4} },
-  { id: "aviation", name: "Aviation", age: 6, description: "Aircraft carry word and men across the map.", cost: {iron: 5000, wood: 80000}, baseSeconds: 10800, requires: ["internal_combustion"], effect: {travel: 0.3} },
+  { id: "aviation", name: "Aviation", age: 6, description: "Aircraft: unlocks the Airfield, the Scout plane, the Transport plane and the Bomber.", cost: {iron: 5000, wood: 80000}, baseSeconds: 10800, requires: ["internal_combustion"], effect: {travel: 0.3} },
   { id: "combined_arms", name: "Combined arms", age: 6, description: "Infantry, armour and guns fighting as one: unlocks Infantry and the Tank.", cost: {iron: 4000, food: 150000}, baseSeconds: 10800, requires: ["internal_combustion", "rifling"], effect: {attack: 0.3, defense: 0.2} },
   { id: "ballistics", name: "Ballistics", age: 6, description: "Fire control for long guns: unlocks Artillery.", cost: {iron: 2000, stone: 40000}, baseSeconds: 6480, requires: ["combined_arms", "computers"] },
   { id: "synthetic_fertilizer", name: "Synthetic fertilizer", age: 6, description: "Nitrogen from the air: fields yield more.", cost: {iron: 1500, food: 100000}, baseSeconds: 8640, requires: ["electricity"], effect: {yield: {food: 0.3}} },
