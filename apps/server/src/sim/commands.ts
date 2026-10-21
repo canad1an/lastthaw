@@ -197,8 +197,10 @@ export async function queueTrain(ctx: CommandContext, regionId: string, unitId: 
   if (def.needsResource && !(def.cost[def.needsResource] ?? 0) && !region?.resources.includes(def.needsResource)) throw httpError(400, `${def.name} can only be trained where there are ${def.needsResource}`);
   if (def.naval && !region?.coastal) throw httpError(400, `${def.name}s are built on a coast`);
   if (def.minBatch && qty < def.minBatch) throw httpError(400, `${def.name}s are trained in groups of at least ${def.minBatch}`);
-  if (def.hauler) {
-    const better = availableUnits(p.age, techs).find((u) => u.hauler && u.carry > def.carry);
+  // The fleet ladder (caravan, wagon, freight wagon, train, lorry) replaces its old rungs, since every one is rebuilt by the
+  // next tech. Ships and aircraft are their own crafts: a canoe is still built beside a cog, and never outranked by a wagon.
+  if (def.hauler && !def.naval && !def.air) {
+    const better = availableUnits(p.age, techs).find((u) => u.hauler && !u.naval && !u.air && u.carry > def.carry);
     if (better) throw httpError(400, `${def.name}s are no longer built; train ${better.name}s instead`);
   }
 

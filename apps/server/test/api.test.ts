@@ -380,6 +380,19 @@ describe("api routes", () => {
     expect((await Ann.call("POST", `${base}/regions/${cap}/train`, { unitId: "dragon", qty: 1 })).statusCode).toBe(400);
     expect((await Ann.call("POST", `${base}/regions/${cap}/train`, { unitId: "sellsword", qty: 1 })).statusCode).toBe(400);
     {
+      // A canoe is a boat, not a rung of the wagon ladder: wagons never make it "no longer built". Only a coast decides.
+      {
+        const [row] = await db.select({ age: players.age, id: players.id }).from(players).where(and(eq(players.matchId, gameId), eq(players.userId, await idOf(ann.email))));
+        await db.update(players).set({ age: Math.max(1, row!.age) }).where(eq(players.id, row!.id));
+        await db.insert(playerTechs).values([{ matchId: gameId, playerId: row!.id, techId: "sailing", completedAt: new Date() }, { matchId: gameId, playerId: row!.id, techId: "the_wheel", completedAt: new Date() }, { matchId: gameId, playerId: row!.id, techId: "wagon_building", completedAt: new Date() }]).onConflictDoNothing();
+        const canoe = await Ann.call("POST", `${base}/regions/${cap}/train`, { unitId: "canoe", qty: 1 });
+        expect(canoe.body).not.toContain("no longer built");
+        if (regionById(cap)!.coastal) expect(canoe.statusCode, canoe.body).toBe(200);
+        else expect(canoe.body).toContain("coast");
+        await db.update(jobs).set({ cancelledAt: new Date() }).where(and(eq(jobs.matchId, gameId), eq(jobs.playerId, row!.id), eq(jobs.kind, "train"), sql`${jobs.completedAt} is null`));
+        await db.delete(playerTechs).where(and(eq(playerTechs.playerId, row!.id), inArray(playerTechs.techId, ["sailing", "the_wheel", "wagon_building"])));
+        await db.update(players).set({ age: row!.age }).where(eq(players.id, row!.id));
+      }
       // Mounted units are paid for from the stores: horses hauled in serve as well as wild herds, and none in store means no chariot.
       const [annRow] = await db.select({ age: players.age, id: players.id }).from(players).where(and(eq(players.matchId, gameId), eq(players.userId, await idOf(ann.email))));
       const [capRow] = await db.select({ special: matchRegions.special, food: matchRegions.food, wood: matchRegions.wood, popWorkers: matchRegions.popWorkers }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
