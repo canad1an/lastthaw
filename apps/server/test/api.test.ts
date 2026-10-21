@@ -4,6 +4,7 @@ import { allRegions, balance, effectsOf, fairAmount, matchStateView, regionById,
 import { Publisher } from "../src/realtime/publish.js";
 import { runDueJobs } from "../src/worker/jobs.js";
 import { buildApp } from "../src/api/app.js";
+import { forcePass } from "../src/matches/advisorsApi.js";
 import { createDb, type Db } from "../src/db/client.js";
 import { emailTokens, fairplayFlags, matches, playerActions, players, users, matchRegions, regionNotes, tradeRoutes, jobs, armies, pacts, advisors, messages, marketOrders, battles } from "../src/db/schema.js";
 import { runMatchTicks } from "../src/sim/tick.js";
@@ -69,6 +70,23 @@ describe("api routes", () => {
   let Out: Client;
   const created: string[] = [];
   const idOf = async (email: string) => (await db.select({ id: users.id }).from(users).where(eq(users.email, email)))[0]!.id;
+
+  /**
+   * A forced advisor pass, as the dev-only route does it (in play passes come on the advisor's own clock and nothing
+   * hurries them), shaped like a reply so the checks read the same.
+   */
+  const forcePassAs = async (who: { email: string }, kind: "economic" | "military" | "thaw" | "chancellor", matchId: string) => {
+    const redis = createRedis();
+    try {
+      const r = await forcePass(db, new Publisher(redis), matchId, await idOf(who.email), kind);
+      return { statusCode: 200, body: JSON.stringify(r), json: () => r as unknown };
+    } catch (e) {
+      const err = e as Error & { statusCode?: number };
+      return { statusCode: err.statusCode ?? 500, body: err.message, json: () => ({ error: err.message }) as unknown };
+    } finally {
+      await redis.quit().catch(() => {});
+    }
+  };
 
   beforeAll(async () => {
     db = createDb();
@@ -789,6 +807,8 @@ describe("api routes", () => {
       expect(Math.round(before.wood - after.wood)).toBe(0);
       expect(Math.round(before.copper - after.copper)).toBe(0);
       expect((await Ben.call("POST", `${base}/advisors/economic/hire`, {})).statusCode).toBe(409);
+      // Nobody can hurry an advisor in play: the forced-pass route exists only with dev tools on.
+      expect((await Ben.call("POST", `${base}/advisors/economic/run`, {})).statusCode).toBe(404);
       let st = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
       expect(st.advisors).toHaveLength(1);
       expect(st.advisors[0]).toMatchObject({ kind: "economic", unpaid: false, wage, settings: { population: "overflow", useOtherRegions: true } });
@@ -802,20 +822,28 @@ describe("api routes", () => {
       // A pass: a Quarry is queued wherever one is missing and can stand; a second pass straight away is refused.
       const lacking = st.owned.filter((o) => !(o.buildings.quarry ?? 0)).length;
       expect(lacking).toBeGreaterThan(0);
-      const run = await Ben.call("POST", `${base}/advisors/economic/run`, {});
+      // Passes wait for the first hour's wage: hiring is free, so nothing runs until the tick has charged it.
+      const early = await forcePassAs(ben, "economic", gameId);
+      expect(early.statusCode, early.body).toBe(409);
+      {
+        const at = new Date(await nowIso());
+        const [mrow] = await db.select().from(matches).where(eq(matches.id, gameId));
+        await db.transaction((tx) => chargeAdvisors(tx, mrow!, at));
+      }
+      const run = await forcePassAs(ben, "economic", gameId);
       expect(run.statusCode, run.body).toBe(200);
       const report = (run.json() as { report: { queued: number; skipped: Record<string, number> } }).report;
       expect(report.queued).toBeGreaterThan(0);
       const quarryJobs = await db.select().from(jobs).where(and(eq(jobs.matchId, gameId), eq(jobs.playerId, benPid), eq(jobs.kind, "build"), eq(jobs.refId, "quarry"), sql`${jobs.completedAt} is null`, sql`${jobs.cancelledAt} is null`));
       expect(quarryJobs.length).toBe(report.queued);
-      expect((await Ben.call("POST", `${base}/advisors/economic/run`, {})).statusCode).toBe(429);
+      expect((await forcePassAs(ben, "economic", gameId)).statusCode).toBe(429);
 
       // Workers: a capital gathering no food while its store is nearly empty is put back on food by the next pass; a store near its cap gets no more.
       const [capRow] = await db.select({ buildings: matchRegions.buildings, isCapital: matchRegions.isCapital }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
       const capCaps = storageCaps(effectsOf(capRow!.buildings), capRow!.isCapital);
       await db.update(matchRegions).set({ assignment: { food: 0, wood: 0.5, stone: 0.5 }, food: 20, wood: Math.floor(capCaps.wood * 0.97), stone: Math.floor(capCaps.stone * 0.97), settledAt: new Date(await nowIso()) }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
       await db.update(advisors).set({ lastPassAt: null }).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
-      const runW = await Ben.call("POST", `${base}/advisors/economic/run`, {});
+      const runW = await forcePassAs(ben, "economic", gameId);
       expect(runW.statusCode, runW.body).toBe(200);
       expect((runW.json() as { report: { rebalanced: number } }).report.rebalanced).toBeGreaterThan(0);
       const [capAfter] = await db.select({ assignment: matchRegions.assignment }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
@@ -826,7 +854,7 @@ describe("api routes", () => {
       // Balanced people: a swollen capital sends a column to an emptier region of Ben's.
       await db.update(matchRegions).set({ popWorkers: 600, settledAt: new Date(await nowIso()) }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
       await db.update(advisors).set({ lastPassAt: null }).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
-      const run2 = await Ben.call("POST", `${base}/advisors/economic/run`, {});
+      const run2 = await forcePassAs(ben, "economic", gameId);
       expect(run2.statusCode, run2.body).toBe(200);
       expect((run2.json() as { report: { moved: number } }).report.moved).toBeGreaterThan(0);
       const columns = await db.select().from(armies).where(and(eq(armies.matchId, gameId), eq(armies.playerId, benPid), eq(armies.mission, "move"), eq(armies.status, "outbound"), eq(armies.originRegionId, cap)));
@@ -857,7 +885,7 @@ describe("api routes", () => {
       await tickOnce();
       const [row2] = await db.select().from(advisors).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
       expect(row2!.unpaidSince).not.toBeNull();
-      expect((await Ben.call("POST", `${base}/advisors/economic/run`, {})).statusCode).toBe(409);
+      expect((await forcePassAs(ben, "economic", gameId)).statusCode).toBe(409);
       const told = await db.select().from(messages).where(and(eq(messages.matchId, gameId), eq(messages.playerId, benPid), sql`${messages.payload}->>'unpaid' = 'true'`));
       expect(told.length).toBe(1);
       // Paid again: back at work.
@@ -877,13 +905,22 @@ describe("api routes", () => {
       // A swollen capital gathers so much that a day's wage would outgrow the stores: thin it before rehiring.
       await db.update(matchRegions).set({ popWorkers: 150 }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid), sql`${matchRegions.popWorkers} > 150`));
       await fill(12000, 12000, 9000, 100, 100);
+      let rehireWage: Record<string, number> = {};
       {
         const rehired = await Ben.call("POST", `${base}/advisors/economic/hire`, {});
         expect(rehired.statusCode, rehired.body).toBe(200);
+        rehireWage = (rehired.json() as { wage: Record<string, number> }).wage;
       }
       st = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
       expect(st.advisors[0]!.settings.minLevels).toEqual({ quarry: 1 });
-      expect((await Ben.call("POST", `${base}/advisors/economic/fire`, {})).statusCode).toBe(200);
+      // Fired before the first hour was ever charged: that hour is billed on the way out, so a hire and a firing are never free.
+      const bFire = await totalStock();
+      const fired = await Ben.call("POST", `${base}/advisors/economic/fire`, {});
+      expect(fired.statusCode, fired.body).toBe(200);
+      expect((fired.json() as { charged: Record<string, number> }).charged.food).toBe(rehireWage.food);
+      const aFire = await totalStock();
+      expect(bFire.food - aFire.food).toBeGreaterThanOrEqual(rehireWage.food! - 1);
+      expect(bFire.food - aFire.food).toBeLessThan(rehireWage.food! + 50);
       await db.update(advisors).set({ firedAt: new Date(Date.parse(await nowIso()) - (balance.advisors.rehireCooldownHours + 1) * (3600_000 / benState.match.speed)) }).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid), eq(advisors.kind, "economic")));
 
       // No advisor: a crowded capital stays crowded through a tick; with one set to overflow, the surplus spills to a neighbour.
@@ -943,7 +980,7 @@ describe("api routes", () => {
     type Campaign = { targetRegionId: string; stage: string; armyId: string | null; need: { qty: number; settlers: number } | null; note: string };
     const pass = async () => {
       await db.update(advisors).set({ lastPassAt: null }).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid), eq(advisors.kind, "military")));
-      const r = await Ben.call("POST", `${base}/advisors/military/run`, {});
+      const r = await forcePassAs(ben, "military", gameId);
       expect(r.statusCode, r.body).toBe(200);
       const [row] = await db.select().from(advisors).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid), eq(advisors.kind, "military")));
       return { report: (r.json() as { report: { trained: number; fortified: number; exposed: Array<{ regionId: string }>; skipped: Record<string, number> } }).report, campaigns: row!.campaigns as unknown as Campaign[] };
@@ -1065,7 +1102,9 @@ describe("api routes", () => {
       expect(hired.statusCode, hired.body).toBe(200);
       expect((hired.json() as { wage: Record<string, number> }).wage.food).toBeGreaterThan(0);
       expect((await Ben.call("PUT", `${base}/advisors/thaw/settings`, { warningHours: 24, capitalHours: 48, destination: "safest", moveCapital: true, settle: true })).statusCode).toBe(200);
-      const r = await Ben.call("POST", `${base}/advisors/thaw/run`, {});
+      // The first hour is charged by the tick before she works; here it is simply marked paid.
+      await db.update(advisors).set({ paidUntil: sql`${advisors.hiredAt} + interval '1 minute'` }).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid), eq(advisors.kind, "thaw")));
+      const r = await forcePassAs(ben, "thaw", gameId);
       expect(r.statusCode, r.body).toBe(200);
       const report = (r.json() as { report: { evacuated: number; settled: number; trained: number; clock: Array<{ regionId: string; hoursLeft: number }>; suggestions: Array<{ text: string }> } }).report;
       // Nunavut is on the clock and has been emptied toward Manitoba; the capital wagon follows.
@@ -1121,7 +1160,8 @@ describe("api routes", () => {
       expect((hired.json() as { wage: Record<string, number> }).wage.food).toBeGreaterThan(0);
       expect((await Ben.call("PUT", `${base}/advisors/chancellor/settings`, { researchGoal: "age", sell: true, buy: true, sellAbove: 0.8, overpay: 1.25, reserveShare: 0.3, maxOrders: 3 })).statusCode).toBe(200);
       await fillEmpire(gameId, benPid, { food: 12000, wood: 12000, stone: 9000, copper: 100, iron: 100 });
-      const r = await Ben.call("POST", `${base}/advisors/chancellor/run`, {});
+      await db.update(advisors).set({ paidUntil: sql`${advisors.hiredAt} + interval '1 minute'` }).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid), eq(advisors.kind, "chancellor")));
+      const r = await forcePassAs(ben, "chancellor", gameId);
       expect(r.statusCode, r.body).toBe(200);
       const report = (r.json() as { report: { researched: number; listed: number; bought: number; suggestions: Array<{ text: string }> } }).report;
       // Research: techs on the way to the next age are queued, prerequisites first.

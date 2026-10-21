@@ -97,6 +97,52 @@ export async function drawWage(tx: Tx, m: MatchRow, p: PlayerRow, wage: Record<s
   return true;
 }
 
+/**
+ * Take as much of `wage` as the empire holds, capital first, and return what was taken. The parting bill when an advisor
+ * is fired: nothing is refused, what the stores cannot cover is let go.
+ */
+export async function drawWageUpTo(tx: Tx, m: MatchRow, p: PlayerRow, wage: Record<string, number>): Promise<Record<string, number>> {
+  const mine = await tx
+    .select({ regionId: matchRegions.regionId })
+    .from(matchRegions)
+    .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.ownerPlayerId, p.id), isNull(matchRegions.frozenAt)))
+    .orderBy(asc(matchRegions.regionId));
+  const now = matchNow(m);
+  const rows: MatchRegionRow[] = [];
+  for (const r of mine) rows.push(await settleAndLockRegion(tx, m.id, r.regionId, now, m.speed, resourceMultOf(m)));
+  const capital = rows.find((r) => r.regionId === p.capitalRegionId);
+  const ordered = capital ? [capital, ...rows.filter((r) => r !== capital)] : rows;
+  const remaining: Record<string, number> = { ...wage };
+  const taken: Record<string, number> = {};
+  for (const r of ordered) {
+    const have = stockOf(r);
+    const take: Record<string, number> = {};
+    for (const [k, v] of Object.entries(remaining)) {
+      const t = Math.min(v, have[k] ?? 0);
+      if (t > 0) take[k] = t;
+    }
+    if (Object.keys(take).length) {
+      await applyCost(tx, r, take as Cost);
+      await recordSpend(tx, m, p.id, "advisors", take);
+      for (const [k, t] of Object.entries(take)) {
+        taken[k] = (taken[k] ?? 0) + t;
+        remaining[k] = (remaining[k] ?? 0) - t;
+        if (remaining[k]! <= 1e-9) delete remaining[k];
+      }
+    }
+    if (Object.keys(remaining).length === 0) break;
+  }
+  return taken;
+}
+
+/**
+ * An advisor works only once the first hour's wage has been charged (by the tick after the hire). Hiring is free, so
+ * without this a hire, a pass and a firing inside one tick would cost nothing.
+ */
+export function startedWork(a: { hiredAt: Date; paidUntil: Date }): boolean {
+  return a.paidUntil.getTime() > a.hiredAt.getTime();
+}
+
 export async function regionsHeld(tx: Tx | Db, m: MatchRow, playerId: string): Promise<number> {
   const [r] = await tx.select({ n: sql<number>`count(*)::int` }).from(matchRegions).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.ownerPlayerId, playerId), isNull(matchRegions.frozenAt)));
   return r?.n ?? 0;
@@ -162,6 +208,7 @@ export async function runAdvisors(db: Db, publisher: Publisher, log: pino.Logger
     const now = matchNow(m);
     const rows = await db.select().from(advisors).where(and(eq(advisors.matchId, m.id), isNull(advisors.firedAt), isNull(advisors.unpaidSince)));
     for (const a of rows) {
+      if (!startedWork(a)) continue;
       const due = new Date(now.getTime() - (balance.advisors[a.kind].passMinutes * 60_000) / m.speed);
       if (a.lastPassAt && a.lastPassAt > due) continue;
       try {

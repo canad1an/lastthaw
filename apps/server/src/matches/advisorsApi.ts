@@ -1,13 +1,14 @@
 import type { FastifyInstance } from "fastify";
 import { and, eq, isNull } from "drizzle-orm";
-import { advisorKind, advisorSettings } from "@lastthaw/shared";
+import { advisorKind, advisorSettings, type AdvisorKind } from "@lastthaw/shared";
 import { idParams } from "./params.js";
 import type { Db } from "../db/client.js";
 import { advisors, matches, players } from "../db/schema.js";
 import { requireUser } from "../auth/session.js";
 import type { Publisher } from "../realtime/publish.js";
 import { matchNow } from "../sim/clock.js";
-import { runPass, wageFor } from "../sim/advisors.js";
+import { drawWageUpTo, runPass, startedWork, wageFor } from "../sim/advisors.js";
+import { config } from "../config.js";
 import { advisorTargetBody, balance, regionById } from "@lastthaw/shared";
 import { matchRegions } from "../db/schema.js";
 import { areAllied } from "../sim/alliances.js";
@@ -22,6 +23,27 @@ const kindParams = idParams.extend({ kind: advisorKind });
  * Advisors: hire, set up, fire and prod the Economic advisor. No hiring fee: the first hour's wage is charged on
  * hiring and then every game hour by the tick; fire and rehire freely.
  */
+/**
+ * A pass right now, with the same rules the advisor's own clock applies: the match must be running, the advisor hired,
+ * paid, past its first charged hour, and not run within the last runEveryMinutes. Reached only from the dev-only route
+ * and from tests: in play, passes come on the advisor's schedule and nothing hurries them.
+ */
+export async function forcePass(db: Db, publisher: Publisher, matchId: string, userId: string, kind: AdvisorKind) {
+  const [m] = await db.select().from(matches).where(eq(matches.id, matchId)).limit(1);
+  if (!m) throw httpError(404, "match not found");
+  if (m.status !== "running") throw httpError(409, "the match is not running");
+  const [p] = await db.select().from(players).where(and(eq(players.matchId, matchId), eq(players.userId, userId))).limit(1);
+  if (!p) throw httpError(403, "not your match");
+  const [a] = await db.select().from(advisors).where(and(eq(advisors.matchId, matchId), eq(advisors.playerId, p.id), eq(advisors.kind, kind), isNull(advisors.firedAt))).limit(1);
+  if (!a) throw httpError(404, "no such advisor");
+  if (a.unpaidSince) throw httpError(409, "your advisor is unpaid and will not work until the wage is met");
+  if (!startedWork(a)) throw httpError(409, "the first hour's wage is charged at the next tick, within five minutes of hiring; passes start once it is paid");
+  const now = matchNow(m);
+  if (a.lastPassAt && now.getTime() - a.lastPassAt.getTime() < (balance.advisors.runEveryMinutes * 60_000) / m.speed) throw httpError(429, `the advisor made a pass ${Math.max(1, Math.round(((now.getTime() - a.lastPassAt.getTime()) / 60_000) * m.speed))} game minutes ago`);
+  const report = await runPass(db, m, p, a, now, publisher);
+  return { ok: true, report };
+}
+
 export async function advisorRoutes(app: FastifyInstance, opts: { db: Db; publisher: Publisher }) {
   const { db, publisher } = opts;
 
@@ -59,16 +81,28 @@ export async function advisorRoutes(app: FastifyInstance, opts: { db: Db; publis
   app.post("/api/matches/:id/advisors/:kind/fire", async (req) => {
     const user = requireUser(req);
     const { id: matchId, kind } = kindParams.parse(req.params);
-    const { p } = await loadContext(matchId, user.id);
-    const [m] = await db.select().from(matches).where(eq(matches.id, matchId)).limit(1);
-    const gone = await db
-      .update(advisors)
-      .set({ firedAt: m ? matchNow(m) : new Date() })
-      .where(and(eq(advisors.matchId, matchId), eq(advisors.playerId, p.id), eq(advisors.kind, kind), isNull(advisors.firedAt)))
-      .returning({ id: advisors.id });
-    if (!gone.length) throw httpError(404, "no such advisor");
+    const { m, p } = await loadContext(matchId, user.id);
+    const now = matchNow(m);
+    const hourMs = 3600_000 / m.speed;
+    const charged = await db.transaction(async (tx) => {
+      const [a] = await tx.select().from(advisors).where(and(eq(advisors.matchId, matchId), eq(advisors.playerId, p.id), eq(advisors.kind, kind), isNull(advisors.firedAt))).for("update");
+      if (!a) throw httpError(404, "no such advisor");
+      // The hours used since the last charge are billed on the way out, and at least one if none was ever charged, so a
+      // hire, a pass and a firing are never free. What the stores cannot cover is let go.
+      const used = Math.ceil(Math.max(0, now.getTime() - a.paidUntil.getTime()) / hourMs);
+      const hours = startedWork(a) ? used : Math.max(1, used);
+      let taken: Record<string, number> = {};
+      if (hours > 0) {
+        const wage = await wageFor(tx, m, p.id);
+        const bill: Record<string, number> = {};
+        for (const [k, v] of Object.entries(wage)) bill[k] = v * hours;
+        taken = await drawWageUpTo(tx, m, p, bill);
+      }
+      await tx.update(advisors).set({ firedAt: now, paidUntil: now }).where(eq(advisors.id, a.id));
+      return taken;
+    });
     await publisher.toPlayer(matchId, p.id, "advisor.fired", { kind });
-    return { ok: true };
+    return { ok: true, charged };
   });
 
   app.put("/api/matches/:id/advisors/:kind/settings", async (req) => {
@@ -86,17 +120,12 @@ export async function advisorRoutes(app: FastifyInstance, opts: { db: Db; publis
     return { ok: true, settings: body };
   });
 
+  /** Local testing only: in play nobody can hurry an advisor, so this route does not exist without DEV_TOOLS. */
   app.post("/api/matches/:id/advisors/:kind/run", async (req) => {
     const user = requireUser(req);
     const { id: matchId, kind } = kindParams.parse(req.params);
-    const { m, p } = await loadContext(matchId, user.id);
-    const [a] = await db.select().from(advisors).where(and(eq(advisors.matchId, matchId), eq(advisors.playerId, p.id), eq(advisors.kind, kind), isNull(advisors.firedAt))).limit(1);
-    if (!a) throw httpError(404, "no such advisor");
-    if (a.unpaidSince) throw httpError(409, "your advisor is unpaid and will not work until the wage is met");
-    const now = matchNow(m);
-    if (a.lastPassAt && now.getTime() - a.lastPassAt.getTime() < (balance.advisors.runEveryMinutes * 60_000) / m.speed) throw httpError(429, `the advisor made a pass ${Math.max(1, Math.round(((now.getTime() - a.lastPassAt.getTime()) / 60_000) * m.speed))} game minutes ago; Run a pass now works once an hour, and the regular passes carry on`);
-    const report = await runPass(db, m, p, a, now, publisher);
-    return { ok: true, report };
+    if (!config().DEV_TOOLS) throw httpError(404, "passes cannot be forced: the advisor works on their own clock");
+    return forcePass(db, publisher, matchId, user.id, kind);
   });
 
 

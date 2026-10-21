@@ -377,7 +377,7 @@ export const balance = {
     maxRounds: 150,
   },
   advisors: {
-    /** Nothing is paid on hiring (the wage starts at the next tick); the same advisor cannot be rehired for rehireCooldownHours after a firing, so hire-and-fire buys nothing; Run a pass now works once per runEveryMinutes. */
+    /** Nothing is paid on hiring (the wage starts at the next tick); the same advisor cannot be rehired for rehireCooldownHours after a firing, so hire-and-fire buys nothing; passes run on the advisor's own clock and cannot be forced (the run endpoint exists for local testing only, once per runEveryMinutes). */
     rehireCooldownHours: 24,
     runEveryMinutes: 60,
     /**

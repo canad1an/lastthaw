@@ -110,7 +110,6 @@ export const api = {
   hireAdvisor: (id: string, kind: AdvisorKind) => request<{ ok: true; wage: Record<string, number> }>("POST", `/api/matches/${id}/advisors/${kind}/hire`, {}),
   fireAdvisor: (id: string, kind: AdvisorKind) => request<{ ok: true }>("POST", `/api/matches/${id}/advisors/${kind}/fire`, {}),
   setAdvisorSettings: (id: string, kind: AdvisorKind, settings: AdvisorSettings) => request<{ ok: true }>("PUT", `/api/matches/${id}/advisors/${kind}/settings`, settings),
-  runAdvisor: (id: string, kind: AdvisorKind) => request<{ ok: true }>("POST", `/api/matches/${id}/advisors/${kind}/run`, {}),
   finance: (id: string) => request<FinanceView>("GET", `/api/matches/${id}/finance`),
   battles: (id: string, all = false) => request<LiveBattleView[]>("GET", `/api/matches/${id}/battles${all ? "?all=1" : ""}`),
   battle: (id: string, battleId: string) => request<BattleDetailView>("GET", `/api/matches/${id}/battles/${battleId}`),

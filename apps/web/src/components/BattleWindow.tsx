@@ -115,7 +115,6 @@ function Battle({ b, now, myPlayerId, onClose, onSelectRegion, replayKey, onRepl
             ))}
           </ol>
         </div>
-        <p className="mt-2 text-[11px] text-slate-500">The result was decided when the army arrived, by the usual rules; the fight plays out a unit or two every {balance.battle.roundSeconds} seconds so you can watch it. Nothing changes hands until the last round. Every battle is kept for the whole match: find it again under Battles, or from its report in your inbox.</p>
         </div>
       </div>
     </>
