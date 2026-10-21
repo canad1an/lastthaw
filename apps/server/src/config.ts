@@ -28,6 +28,8 @@ const schema = z.object({
     .default("false")
     .transform((v) => v === "true" || v === "1"),
   /** How many new players (counted from the first one after this shipped) get a game of their own made at sign-up. 0 turns it off. */
+  /** Accounts that never confirmed their email are deleted after this many days. 0 keeps them. */
+  PURGE_UNVERIFIED_DAYS: z.coerce.number().int().min(0).default(14),
   WELCOME_MATCHES: z.coerce.number().int().min(0).default(50),
   /** How long after the email is confirmed that welcome game starts. */
   WELCOME_MATCH_MINUTES: z.coerce.number().int().min(1).default(30),

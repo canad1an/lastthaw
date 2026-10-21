@@ -30,6 +30,7 @@ export function SignupForm({ compact = false }: { compact?: boolean }) {
       </Field>
       <Field label="Email">
         <Input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" required />
+        <span className="block text-xs normal-case tracking-normal text-slate-500">Use a real address: we send a confirmation link, and nothing opens until you click it. Accounts that never confirm are deleted after two weeks.</span>
       </Field>
       <Field label="Password">
         <Input type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} placeholder="8+ characters" required />

@@ -12,7 +12,7 @@ import { sendTournamentReminders } from "../matches/registrations.js";
 import { closeIdleWelcomeMatches } from "../matches/welcomeMatch.js";
 import { runTradeRoutes, runOverflow } from "../sim/trade.js";
 import { detectAutomation, detectMultiAccounts, pruneActions } from "../fairplay/detect.js";
-import { cleanupSessions } from "../auth/session.js";
+import { cleanupSessions, purgeUnverified } from "../auth/session.js";
 import { balance } from "@lastthaw/shared";
 import { cancelOrphanedJobs } from "../sim/endgame.js";
 
@@ -90,6 +90,8 @@ await Promise.all([
   every(6 * 3600_000, "sessions", async () => {
     const n = await cleanupSessions(db);
     if (n.sessions || n.tokens) log.info(n, "expired sessions and tokens removed");
+    const purged = await purgeUnverified(db);
+    if (purged) log.info({ purged }, "unverified sign-ups older than the limit removed");
   }),
   every(balance.fairplay.scanMinutes * 60_000, "fairplay", async () => {
     const n = (await detectMultiAccounts(db)) + (await detectAutomation(db));

@@ -203,6 +203,25 @@ describe("api routes", () => {
     await db.update(users).set({ emailVerifiedAt: new Date() }).where(eq(users.email, ben.email));
   });
 
+  it("sign-ups that never verify are purged after the limit; fresh ones, admins and anyone in a match stay", async () => {
+    const { purgeUnverified } = await import("../src/auth/session.js");
+    const old = new Date(Date.now() - 20 * 86400_000);
+    const mk = async (email: string, extra: Partial<typeof users.$inferInsert> = {}) =>
+      (await db.insert(users).values({ email, displayName: `Purge ${email.split("@")[0]}`, passwordHash: "x", createdAt: old, ...extra }).returning({ id: users.id }))[0]!.id;
+    const stale = await mk(`stale-${suffix}@example.test`);
+    const fresh = await mk(`fresh-${suffix}@example.test`, { createdAt: new Date() });
+    const boss = await mk(`boss-${suffix}@example.test`, { isAdmin: true });
+    const verified = await mk(`ok-${suffix}@example.test`, { emailVerifiedAt: new Date() });
+    expect(await purgeUnverified(db, 14)).toBeGreaterThanOrEqual(1);
+    const left = new Set((await db.select({ id: users.id }).from(users).where(inArray(users.id, [stale, fresh, boss, verified]))).map((u) => u.id));
+    expect(left.has(stale)).toBe(false);
+    expect(left.has(fresh)).toBe(true);
+    expect(left.has(boss)).toBe(true);
+    expect(left.has(verified)).toBe(true);
+    expect(await purgeUnverified(db, 0)).toBe(0);
+    await db.delete(users).where(inArray(users.id, [fresh, boss, verified]));
+  });
+
   it("forgot never reveals accounts; reset changes the password and ends every session", async () => {
     expect((await app.inject({ method: "POST", url: "/api/auth/forgot", payload: { email: `ghost-${suffix}@example.test` } })).statusCode).toBe(200);
     expect((await app.inject({ method: "POST", url: "/api/auth/forgot", payload: { email: ben.email } })).statusCode).toBe(200);

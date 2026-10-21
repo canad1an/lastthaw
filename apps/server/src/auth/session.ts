@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import fp from "fastify-plugin";
 import { and, eq, gt, lt, or, sql } from "drizzle-orm";
 import type { Db } from "../db/client.js";
-import { emailTokens, sessionSightings, sessions, users } from "../db/schema.js";
+import { emailTokens, sessionSightings, sessions, users, players } from "../db/schema.js";
 import { config } from "../config.js";
 import { hashToken, newToken } from "./password.js";
 
@@ -137,6 +137,28 @@ export function requireVerified(req: FastifyRequest): SessionUser {
 }
 
 /** Drop sessions that expired or went idle, and email tokens that are used or expired. Run from the worker. */
+/**
+ * Sign-ups that never confirmed their email are dropped after a fortnight (PURGE_UNVERIFIED_DAYS): they could never play,
+ * and their tribe names go back on the shelf. Admins, moderators and anyone who ever joined a match are never touched.
+ */
+export async function purgeUnverified(db: Db, days = config().PURGE_UNVERIFIED_DAYS): Promise<number> {
+  if (days <= 0) return 0;
+  const cutoff = new Date(Date.now() - days * 86400_000);
+  const gone = await db
+    .delete(users)
+    .where(
+      and(
+        sql`${users.emailVerifiedAt} is null`,
+        lt(users.createdAt, cutoff),
+        eq(users.isAdmin, false),
+        eq(users.isModerator, false),
+        sql`not exists (select 1 from ${players} where ${players.userId} = ${users.id})`,
+      ),
+    )
+    .returning({ id: users.id });
+  return gone.length;
+}
+
 export async function cleanupSessions(db: Db): Promise<{ sessions: number; tokens: number }> {
   const now = new Date();
   const idleCutoff = new Date(now.getTime() - IDLE_DAYS * 86400_000);
