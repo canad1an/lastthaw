@@ -1,6 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { ageTheme } from "../ageTheme.js";
 import { useChatWatch, type ChatToast } from "./chatWatch.js";
@@ -24,6 +24,16 @@ import { AdvisorsPanel } from "./AdvisorsPanel.js";
 
 export type MenuId = "messages" | "battles" | "sound" | "alliance" | "chat" | "market" | "players" | "leaderboard" | "view" | "empire" | "logistics" | "advisors" | "tech";
 type Menu = MenuId | "menu";
+
+/** The bar's four tabs, each a family of panels: the dropdown shows the family's panels as tabs of its own. */
+export const MENU_GROUPS: ReadonlyArray<{ id: string; label: string; items: readonly MenuId[] }> = [
+  { id: "talk", label: "Talk", items: ["messages", "chat", "alliance"] },
+  { id: "war", label: "War", items: ["battles", "players", "leaderboard"] },
+  { id: "empire", label: "Empire", items: ["empire", "logistics", "market", "advisors", "tech"] },
+  { id: "settings", label: "Settings", items: ["view", "sound"] },
+];
+const TITLES: Record<Menu, string> = { messages: "Messages", battles: "Battles", sound: "Sound", alliance: "Alliance", chat: "Chat", market: "Market", players: "Players", leaderboard: "Leaderboard", view: "View", empire: "Resources", logistics: "Logistics", advisors: "Advisors", tech: "Tech tree", menu: "Menu" };
+const groupOf = (m: Menu) => MENU_GROUPS.find((g) => (g.items as readonly string[]).includes(m)) ?? null;
 
 export interface MenuEntry {
   id: MenuId;
@@ -131,23 +141,67 @@ export function TopMenu({
     clearToast();
     clearChatToast();
   };
+  const entryOf = (id: MenuId) => entries.find((e) => e.id === id);
+  // The last panel opened in each family, so a family tab reopens where it was left; a panel with an alert takes precedence.
+  const lastIn = useRef<Record<string, MenuId>>({});
+  useEffect(() => {
+    if (open && open !== "menu") {
+      const g = groupOf(open);
+      if (g) lastIn.current[g.id] = open;
+    }
+  }, [open]);
+  const openGroup = (g: (typeof MENU_GROUPS)[number]) => {
+    const current = open && open !== "menu" ? groupOf(open) : null;
+    if (current?.id === g.id) {
+      toggle(open!);
+      return;
+    }
+    const alerting = g.items.find((id) => entryOf(id)?.tone === "alert");
+    toggle(alerting ?? lastIn.current[g.id] ?? g.items[0]!);
+  };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(null);
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const Tab = ({ id, label, badge, tone }: { id: Menu; label: string; badge?: string | number | undefined; tone?: "alert" | undefined }) => (
-    <button
-      onClick={() => toggle(id)}
-      className={`flex shrink-0 items-center gap-1.5 rounded px-2 py-1 text-sm ${open === id ? "bg-slate-800 text-white" : "text-slate-300 hover:bg-slate-800 hover:text-white"}`}
-    >
-      <span>{label}</span>
-      {badge !== undefined && badge !== 0 && badge !== "" && (
-        <span className={`rounded px-1.5 py-0.5 text-xs ${tone === "alert" ? "bg-rose-500/30 text-rose-200" : "bg-slate-700 text-slate-300"}`}>{badge}</span>
-      )}
-    </button>
-  );
+  const Badge = ({ badge, tone }: { badge?: string | number | undefined; tone?: "alert" | undefined }) =>
+    badge !== undefined && badge !== 0 && badge !== "" ? <span className={`rounded px-1.5 py-0.5 text-xs ${tone === "alert" ? "bg-rose-500/30 text-rose-200" : "bg-slate-700 text-slate-300"}`}>{badge}</span> : null;
+  /** A family on the bar: its alerts roll up into one badge, or the count of quiet badges among its panels. */
+  const GroupTab = ({ g }: { g: (typeof MENU_GROUPS)[number] }) => {
+    const items = g.items.map(entryOf).filter((e): e is MenuEntry => !!e);
+    const alerting = items.filter((e) => e.tone === "alert" && e.badge !== undefined && e.badge !== 0 && e.badge !== "");
+    const active = !!open && open !== "menu" && groupOf(open)?.id === g.id;
+    const badge = alerting.length ? alerting.map((e) => e.badge).join(" · ") : undefined;
+    return (
+      <button
+        onClick={() => openGroup(g)}
+        className={`flex shrink-0 items-center gap-1.5 rounded px-2 py-1 text-sm ${active ? "bg-slate-800 text-white" : "text-slate-300 hover:bg-slate-800 hover:text-white"}`}
+        title={items.map((e) => e.label).join(", ")}
+      >
+        <span>{g.label}</span>
+        <Badge badge={badge} tone={alerting.length ? "alert" : undefined} />
+      </button>
+    );
+  };
+  /** The panels of the open family, as tabs along the top of the dropdown. */
+  const familyTabs = open && open !== "menu" && groupOf(open) ? (
+    <div className="flex gap-1 overflow-x-auto border-b border-slate-800 px-2 py-1.5">
+      {groupOf(open)!.items.map((id) => {
+        const e = entryOf(id);
+        return (
+          <button
+            key={id}
+            onClick={() => setOpen(id)}
+            className={`flex shrink-0 items-center gap-1.5 rounded px-2.5 py-1 text-sm ${open === id ? "bg-slate-800 text-white" : "text-slate-300 hover:bg-slate-800 hover:text-white"}`}
+          >
+            <span>{e?.label ?? TITLES[id]}</span>
+            <Badge badge={e?.badge} tone={e?.tone} />
+          </button>
+        );
+      })}
+    </div>
+  ) : null;
 
   const latest = toast ? (
     <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -204,15 +258,15 @@ export function TopMenu({
         {state.observer ? <span className="inline-flex h-7 shrink-0 items-center rounded-md border border-violet-400/50 bg-violet-500/10 px-2 text-xs font-medium text-violet-100" title="You are looking in as an admin: every region, army and march is in view, and nothing here can be changed">Admin view</span> : <AgeChip age={state.me.age} />}
         <ObjectiveChip state={state} onOpen={() => toggle("players")} />
         <div className="mx-1 h-5 w-px bg-slate-800" />
-        {entries.map((e) => (
-          <Tab key={e.id} id={e.id} label={e.label} badge={e.badge} tone={e.tone} />
+        {MENU_GROUPS.map((g) => (
+          <GroupTab key={g.id} g={g} />
         ))}
         <div className="mx-2 h-5 w-px bg-slate-800" />
         {latest}
       </div>
       <Ticker matchId={matchId} nudge={state.match.now} onSelectRegion={onSelectRegion} />
       {open && (
-        <Dropdown onClose={() => setOpen(null)} title={{ messages: "Messages", battles: "Battles", sound: "Sound", alliance: "Alliance", chat: "Chat", market: "Market", players: "Players", leaderboard: "Leaderboard", view: "View", empire: "Resources", logistics: "Logistics", advisors: "Advisors", tech: "Tech tree", menu: "Menu" }[open]}>
+        <Dropdown onClose={() => setOpen(null)} title={open !== "menu" && groupOf(open) ? `${groupOf(open)!.label} · ${TITLES[open]}` : TITLES[open]} tabs={familyTabs}>
           {open === "menu" && (
             <div className="grid grid-cols-2 gap-2 p-3">
               {entries.map((e) => (
@@ -381,7 +435,7 @@ export function MenuPanelBody({
 }
 
 /** Every menu opens as a centred overlay on top of the map: wide enough for tables and the tech tree, scrollable, closed by the X, Escape or a click outside. */
-function Dropdown({ children, onClose, title }: { children: ReactNode; onClose: () => void; title?: string }) {
+function Dropdown({ children, onClose, title, tabs }: { children: ReactNode; onClose: () => void; title?: string; tabs?: ReactNode }) {
   return (
     <div className="fixed inset-0 z-40 flex items-start justify-center bg-slate-950/70 p-0 pt-11 backdrop-blur-sm sm:p-6 sm:pt-14" onClick={onClose}>
       <div
@@ -396,6 +450,7 @@ function Dropdown({ children, onClose, title }: { children: ReactNode; onClose: 
             ✕
           </button>
         </div>
+        {tabs}
         <div className="min-h-0 flex-1 overflow-auto">{children}</div>
       </div>
     </div>
