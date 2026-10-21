@@ -1,9 +1,9 @@
 import type { FastifyInstance } from "fastify";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { advisorKind, advisorSettings, type AdvisorKind } from "@lastthaw/shared";
 import { idParams } from "./params.js";
 import type { Db } from "../db/client.js";
-import { advisors, matches, players } from "../db/schema.js";
+import { advisors, jobs, marketOrders, matches, players } from "../db/schema.js";
 import { requireUser } from "../auth/session.js";
 import type { Publisher } from "../realtime/publish.js";
 import { matchNow } from "../sim/clock.js";
@@ -12,6 +12,8 @@ import { config } from "../config.js";
 import { advisorTargetBody, balance, regionById } from "@lastthaw/shared";
 import { matchRegions } from "../db/schema.js";
 import { areAllied } from "../sim/alliances.js";
+import { cancelMarketOrder } from "./marketApi.js";
+import { cancelPendingJob } from "./jobsApi.js";
 
 function httpError(statusCode: number, message: string) {
   return Object.assign(new Error(message), { statusCode });
@@ -128,6 +130,37 @@ export async function advisorRoutes(app: FastifyInstance, opts: { db: Db; publis
     return forcePass(db, publisher, matchId, user.id, kind);
   });
 
+
+  /**
+   * The Chancellor's clean slate: every open listing of the player's is withdrawn (goods back on the shelf), every
+   * queued research is cancelled and refunded, and a hired, paid Chancellor makes a fresh pass at once from the settings.
+   */
+  app.post("/api/matches/:id/advisors/chancellor/clean-slate", async (req) => {
+    const user = requireUser(req);
+    const matchId = idParams.parse(req.params).id;
+    const { m, p } = await loadContext(matchId, user.id);
+    const open = await db.select({ id: marketOrders.id }).from(marketOrders).where(and(eq(marketOrders.matchId, matchId), eq(marketOrders.playerId, p.id), eq(marketOrders.status, "open")));
+    let listings = 0;
+    for (const o of open) {
+      await cancelMarketOrder(db, m, p, o.id);
+      listings += 1;
+    }
+    const queued = await db
+      .select({ id: jobs.id })
+      .from(jobs)
+      .where(and(eq(jobs.matchId, matchId), eq(jobs.playerId, p.id), eq(jobs.kind, "research"), isNull(jobs.completedAt), isNull(jobs.cancelledAt)))
+      .orderBy(asc(jobs.startsAt));
+    // Later first, so the refund of each is whole and nothing shifts under the next.
+    for (const j of [...queued].reverse()) await db.transaction((tx) => cancelPendingJob(tx, m, p, j.id));
+    let passed = false;
+    const [theo] = await db.select().from(advisors).where(and(eq(advisors.matchId, matchId), eq(advisors.playerId, p.id), eq(advisors.kind, "chancellor"), isNull(advisors.firedAt))).limit(1);
+    if (theo && !theo.unpaidSince && startedWork(theo)) {
+      await runPass(db, m, p, theo, matchNow(m), publisher);
+      passed = true;
+    }
+    await publisher.toPlayer(matchId, p.id, "region.updated", {});
+    return { ok: true, listings, research: queued.length, passed };
+  });
 
   /** Mark or unmark a region as a target for the Military advisor, from the map. */
   app.post("/api/matches/:id/advisors/military/targets", async (req) => {

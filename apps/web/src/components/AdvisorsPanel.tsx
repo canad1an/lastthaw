@@ -526,6 +526,10 @@ function ChancellorSettings({ matchId, state, advisor }: { matchId: string; stat
   useSavedSettings(advisor.settings, setDraft);
   const save = useMutation({ mutationFn: (s: AdvisorSettings) => api.setAdvisorSettings(matchId, "chancellor", s), onSuccess: refresh });
   const dirty = JSON.stringify(draft) !== JSON.stringify(advisor.settings);
+  // A clean slate: every listing withdrawn, every queued research cancelled and refunded, then a fresh pass from the settings.
+  const [slate, setSlate] = useState(false);
+  const clean = useMutation({ mutationFn: () => api.chancellorCleanSlate(matchId), onSuccess: () => { setSlate(false); refresh(); } });
+  const queuedResearch = state.jobs.filter((j) => j.kind === "research").length;
   const regions = useMemo(() => [...state.owned].sort((a, b) => Number(b.isCapital) - Number(a.isCapital) || (regionById(a.regionId)?.name ?? "").localeCompare(regionById(b.regionId)?.name ?? "")), [state.owned]);
   const pct = (v: number) => Math.round(v * 100);
   const fromPct = (s: string, lo: number, hi: number) => Math.max(lo, Math.min(hi, (Number(s) || lo * 100) / 100));
@@ -591,7 +595,27 @@ function ChancellorSettings({ matchId, state, advisor }: { matchId: string; stat
         </Button>
         {save.isSuccess && !dirty && <span className="text-xs text-emerald-300">Saved.</span>}
         <ErrorText>{save.error?.message}</ErrorText>
+        <button type="button" className="ml-auto rounded border border-rose-500/40 bg-rose-500/10 px-2 py-1 text-xs text-rose-200 hover:bg-rose-500/20" onClick={() => setSlate(true)} disabled={clean.isPending} data-chancellor-clean-slate>
+          Clean slate…
+        </button>
       </div>
+      {slate && (
+        <div className="space-y-2 rounded border border-rose-500/40 bg-rose-950/20 p-3 text-xs text-slate-300">
+          <p>
+            Withdraw every open listing of yours (the goods go back on the shelf) and cancel all {queuedResearch} queued research with a full refund. The Chancellor then makes a fresh pass at once from the settings above.
+          </p>
+          <div className="flex items-center gap-2">
+            <button type="button" className="rounded bg-rose-500/80 px-3 py-1 font-semibold text-white hover:bg-rose-500" onClick={() => clean.mutate()} disabled={clean.isPending}>
+              {clean.isPending ? "Clearing…" : "Clear everything"}
+            </button>
+            <button type="button" className="rounded border border-slate-700 px-3 py-1 text-slate-300 hover:bg-slate-800" onClick={() => setSlate(false)}>
+              Keep it
+            </button>
+            <ErrorText>{clean.error?.message}</ErrorText>
+          </div>
+        </div>
+      )}
+      {clean.isSuccess && !slate && <p className="text-xs text-emerald-300">Withdrew {clean.data.listings} listing{clean.data.listings === 1 ? "" : "s"} and cancelled {clean.data.research} research{clean.data.passed ? "; the Chancellor has made a fresh pass" : ""}.</p>}
     </Card>
   );
 }

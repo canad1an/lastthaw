@@ -1241,6 +1241,13 @@ describe("api routes", () => {
       expect(mine.length).toBeLessThanOrEqual(3);
       // Ore is asked for in small lots that a tribe can pay.
       for (const o of mine) if (["copper", "tin", "iron", "horses"].includes(o.askResource)) expect(o.askAmount, `${o.offerAmount} ${o.offerResource} for ${o.askAmount} ${o.askResource}`).toBeLessThanOrEqual(balance.advisors.chancellor.maxAskOre);
+      // A clean slate withdraws his listings, cancels the queued research with a refund, and he passes again at once.
+      const slate = await Ben.call("POST", `${base}/advisors/chancellor/clean-slate`, {});
+      expect(slate.statusCode, slate.body).toBe(200);
+      const cleared = slate.json() as { listings: number; research: number; passed: boolean };
+      expect(cleared.listings).toBe(mine.length);
+      expect(cleared.research).toBeGreaterThanOrEqual(1);
+      expect(cleared.passed).toBe(true);
       expect((await Ben.call("POST", `${base}/advisors/chancellor/fire`, {})).statusCode).toBe(200);
     } finally {
       await db.delete(jobs).where(eq(jobs.id, job!.id));
