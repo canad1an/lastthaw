@@ -10,7 +10,7 @@ import type { Db } from "../db/client.js";
 import { armies, battles, jobs, matchRegions, matches, messages, players, tradeRoutes, regionSightings, playerTechs } from "../db/schema.js";
 import { matchDayAt, matchNow } from "./clock.js";
 import { wonderStarted } from "./endgame.js";
-import { stormFactorFor } from "./worldEvents.js";
+import { legSeconds } from "./legs.js";
 import { peaceBetween } from "./diplomacy.js";
 import { applyCost, settleAndLockRegion, stockOf, type MatchRegionRow, type Tx, waySetsFor, resourceMultOf, ownerTechEffects } from "./regions.js";
 import { recordSpend } from "./ledger.js";
@@ -510,8 +510,7 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
     const sunkNow = unitCount - sailing;
     // Roads are already in the route cost: legs between road regions are shorter.
     const walking = unitById.get("settler")?.speed ?? 4;
-    const weather = await stormFactorFor(tx, m.id, route.path, now);
-    const seconds = body.mission === "patrol" ? (balance.naval.patrolHours * 3600) / m.speed : travelSeconds(route, (sailing ? armySpeed(units) : walking) * (1 + techEffectsOf(techs).travel), m.speed) * weather;
+    const seconds = body.mission === "patrol" ? (balance.naval.patrolHours * 3600) / m.speed : await legSeconds(tx, m, { techs, roads, rails, harbors }, route, sailing ? units : {}, now, walking);
     const newUnits = { ...origin.units };
     for (const [id, n] of Object.entries(units)) newUnits[id] = (newUnits[id] ?? 0) - n;
     // Ships sunk on the lane leave the region too.

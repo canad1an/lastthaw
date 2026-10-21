@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
-import { allRegions, balance, effectsOf, fairAmount, matchStateView, regionById, RESOURCE_WORTH, scoutCatchChance, seededRng, storageCaps } from "@lastthaw/shared";
+import { and, asc, eq, inArray, sql, desc } from "drizzle-orm";
+import { allRegions, balance, effectsOf, fairAmount, matchStateView, regionById, RESOURCE_WORTH, scoutCatchChance, seededRng, storageCaps, findRoute, travelSeconds, unitById, techEffectsOf } from "@lastthaw/shared";
 import { Publisher } from "../src/realtime/publish.js";
 import { runDueJobs } from "../src/worker/jobs.js";
 import { buildApp } from "../src/api/app.js";
@@ -966,7 +966,8 @@ describe("api routes", () => {
       const charged = (fired.json() as { charged: Record<string, number> }).charged;
       expect(Math.abs(worthOf(charged) - worthOf(rehireWage))).toBeLessThan(1);
       const aFire = await totalStock();
-      expect(valueDrop(bFire, aFire)).toBeGreaterThanOrEqual(worthOf(rehireWage) - 1);
+      // Production accrues between the two readings, so the drop is checked within a small band.
+      expect(valueDrop(bFire, aFire)).toBeGreaterThanOrEqual(worthOf(rehireWage) - 50);
       expect(valueDrop(bFire, aFire)).toBeLessThan(worthOf(rehireWage) + 50);
       await db.update(advisors).set({ firedAt: new Date(Date.parse(await nowIso()) - (balance.advisors.rehireCooldownHours + 1) * (3600_000 / benState.match.speed)) }).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid), eq(advisors.kind, "economic")));
 
@@ -1373,6 +1374,69 @@ describe("api routes", () => {
       process.env.BATTLE_ROUND_MS = wasRoundMs ?? "0";
       await redis.quit().catch(() => {});
       await db.delete(regionNotes).where(and(eq(regionNotes.matchId, gameId), eq(regionNotes.regionId, T)));
+    }
+  });
+
+  it("a convoy's walk home is priced like its way out: roads and travel techs count on every leg", async () => {
+    const base = `/api/matches/${gameId}`;
+    const benState = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
+    const cap = benState.me.capitalRegionId!;
+    const benPid = benState.me.playerId;
+    const nowIso = async () => matchStateView.parse((await Ben.call("GET", `${base}/state`)).json()).match.now;
+    // A free neighbour becomes Ben's, with Roads at both ends and Harness known: the trip there is shorter than the bare map says.
+    // The nearest unclaimed region within three hops (earlier tests took the capital's neighbours).
+    const near: string[] = [];
+    {
+      const seen = new Set([cap]);
+      let ring = [cap];
+      for (let hop = 0; hop < 3; hop++) {
+        const next: string[] = [];
+        for (const id of ring) for (const n of regionById(id)?.neighbors ?? []) if (!seen.has(n)) { seen.add(n); next.push(n); near.push(n); }
+        ring = next;
+      }
+    }
+    const claimed = new Set((await db.select({ regionId: matchRegions.regionId }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), inArray(matchRegions.regionId, near), sql`${matchRegions.ownerPlayerId} is not null`))).map((r) => r.regionId));
+    const N = near.find((n) => !claimed.has(n))!;
+    expect(N).toBeTruthy();
+    const at = new Date(await nowIso());
+    await db
+      .insert(matchRegions)
+      .values({ matchId: gameId, regionId: N, assignment: { ...balance.start.assignment }, settledAt: at, ownerPlayerId: benPid, popWorkers: 5, buildings: { roads: 1 } })
+      .onConflictDoUpdate({ target: [matchRegions.matchId, matchRegions.regionId], set: { ownerPlayerId: benPid, popWorkers: 5, settledAt: at, buildings: { roads: 1 } } });
+    const [capRow] = await db.select({ units: matchRegions.units, buildings: matchRegions.buildings }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
+    await db.update(matchRegions).set({ units: { ...capRow!.units, caravan: (capRow!.units.caravan ?? 0) + 1 }, buildings: { ...capRow!.buildings, roads: 1 }, food: 2000, settledAt: at }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
+    await db.insert(playerTechs).values({ matchId: gameId, playerId: benPid, techId: "harness", completedAt: at }).onConflictDoNothing();
+    const sent = await Ben.call("POST", `${base}/regions/${cap}/send`, { mission: "transport", targetRegionId: N, units: { caravan: 1 }, people: 0, cargo: { food: 50 } });
+    expect(sent.statusCode, sent.body).toBe(200);
+    const armyId = (sent.json() as { armyId: string }).armyId;
+    const [out] = await db.select().from(armies).where(eq(armies.id, armyId));
+    const outbound = out!.arrivesAt.getTime() - out!.departsAt.getTime();
+    // Without roads or Harness the same caravan would take longer.
+    const bare = travelSeconds(findRoute(cap, N, false)!, unitById.get("caravan")!.speed, benState.match.speed) * 1000;
+    expect(outbound).toBeLessThan(bare);
+    // It arrives and walks home: the return leg is priced the same way, so it takes as long as the way out, not the bare time.
+    const redis = createRedis();
+    const pub = new Publisher(redis);
+    try {
+      const secs = Math.ceil((out!.arrivesAt.getTime() - Date.parse(await nowIso())) / 1000) + 2;
+      if (secs > 0) await db.update(matches).set({ clockOffsetSeconds: sql`${matches.clockOffsetSeconds} + ${secs}` }).where(eq(matches.id, gameId));
+      await runDueJobs(db, pub, logger);
+      // The return leg is its own mission job (the walk home may already be over on a short route).
+      const [home] = await db.select().from(jobs).where(and(eq(jobs.refId, armyId), eq(jobs.kind, "mission"))).orderBy(desc(jobs.startsAt)).limit(1);
+      expect(home).toBeDefined();
+      expect(Math.abs(home!.startsAt.getTime() - out!.arrivesAt.getTime())).toBeLessThan(1000);
+      const homeward = home!.endsAt.getTime() - home!.startsAt.getTime();
+      // Legs are not symmetric (the terrain entered sets the cost), so the way home is checked against the same formula
+      // run on the reverse route with Ben's roads and techs, and against the bare reverse time it used to take.
+      const { legContextFor } = await import("../src/sim/legs.js");
+      const ctx = await legContextFor(db, gameId, benPid);
+      const expected = travelSeconds(findRoute(N, cap, false, ctx.roads, ctx.rails, ctx.harbors)!, unitById.get("caravan")!.speed * (1 + techEffectsOf(ctx.techs).travel), benState.match.speed) * 1000;
+      const bareBack = travelSeconds(findRoute(N, cap, false)!, unitById.get("caravan")!.speed, benState.match.speed) * 1000;
+      expect(Math.abs(homeward - expected)).toBeLessThan(1500);
+      expect(homeward).toBeLessThan(bareBack);
+    } finally {
+      await redis.quit().catch(() => {});
+      await db.delete(playerTechs).where(and(eq(playerTechs.playerId, benPid), eq(playerTechs.techId, "harness")));
     }
   });
 

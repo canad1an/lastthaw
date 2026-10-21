@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { and, eq, inArray, isNull } from "drizzle-orm";
-import { balance, colonizeBody, findRoute, sendArmyBody, travelSeconds, setCapitalBody, regionById, convertBody, rallyBody, unitById } from "@lastthaw/shared";
+import { balance, colonizeBody, findRoute, sendArmyBody, travelSeconds, setCapitalBody, regionById, convertBody, rallyBody, unitById, techEffectsOf } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { armies, jobs, matchRegions, matches, playerTechs, players, tradeRoutes } from "../db/schema.js";
 import { matchNow } from "../sim/clock.js";
@@ -42,7 +42,7 @@ export async function armyRoutes(app: FastifyInstance, opts: { db: Db; publisher
     const { roads, rails, harbors } = await waySetsFor(db, m.id, p.id, await alliesOf(db, m.id, p.id));
     const route = findRoute(q.from, q.to, techs.has(balance.travel.seaTech), roads, rails, harbors);
     if (!route) throw httpError(400, techs.has(balance.travel.seaTech) ? "no route" : "no land route; Shipbuilding allows sea crossings");
-    const speed = Number(q.speed ?? 5) || 5;
+    const speed = (Number(q.speed ?? 5) || 5) * (1 + techEffectsOf(techs).travel);
     return { path: route.path, seconds: travelSeconds(route, speed, m.speed), usesSea: route.usesSea };
   });
 

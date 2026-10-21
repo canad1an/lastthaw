@@ -9,6 +9,7 @@ import { settleAndLockRegion, type MatchRegionRow, type Tx, setCapital, ownerTec
 import { notify, type JobRow, type MatchRow } from "../worker/jobs.js";
 import { areAllied, alliesOf } from "./alliances.js";
 import { receiveMaterials } from "./commands.js";
+import { legContextFor, legSeconds, routeFor, type LegContext } from "./legs.js";
 import { clearMilitaryTargets } from "./advisorTargets.js";
 import { causeForWar } from "./diplomacy.js";
 
@@ -211,6 +212,7 @@ export async function sweepEvacuated(tx: Tx, m: MatchRow, now: Date): Promise<vo
   const owners = [...new Set(rows.map((r) => r.ownerPlayerId!))];
   const ps = await tx.select().from(players).where(inArray(players.id, owners));
   const byOwner = new Map(ps.map((p) => [p.id, p]));
+  const ctxOf = new Map<string, LegContext>();
   for (const r of rows) {
     const p = byOwner.get(r.ownerPlayerId!);
     const capital = p?.capitalRegionId;
@@ -221,12 +223,11 @@ export async function sweepEvacuated(tx: Tx, m: MatchRow, now: Date): Promise<vo
     const people = Math.floor(row.popWorkers + row.popOccupiers + 0.000001);
     const stock = stockOf(row);
     if (sumUnits(units) > 0 || people > 0) {
-      const techRows = await tx.select({ id: playerTechs.techId }).from(playerTechs).where(eq(playerTechs.playerId, p.id));
-      const techs = new Set(techRows.map((t) => t.id));
-      const { roads, rails, harbors } = await waySetsFor(tx, m.id, p.id, await alliesOf(tx, m.id, p.id));
-      const route = findRoute(r.regionId, capital, techs.has(balance.travel.seaTech), roads, rails, harbors);
+      let ctx = ctxOf.get(p.id);
+      if (!ctx) ctxOf.set(p.id, (ctx = await legContextFor(tx, m.id, p.id)));
+      const route = routeFor(ctx, r.regionId, capital);
       if (route) {
-        const capacity = carryCapacity(units, techs) + people * balance.travel.carryPerPerson;
+        const capacity = carryCapacity(units, ctx.techs) + people * balance.travel.carryPerPerson;
         const cargo: Record<string, number> = {};
         let left = capacity;
         for (const k of ["food", "wood", "stone", ...Object.keys(stock).filter((x) => !["food", "wood", "stone"].includes(x))]) {
@@ -237,7 +238,7 @@ export async function sweepEvacuated(tx: Tx, m: MatchRow, now: Date): Promise<vo
           }
           if (left <= 0) break;
         }
-        const seconds = travelSeconds(route, sumUnits(units) ? armySpeed(units) : (unitById.get("settler")?.speed ?? 4), m.speed);
+        const seconds = await legSeconds(tx, m, ctx, route, units, now);
         const arrivesAt = new Date(now.getTime() + seconds * 1000);
         const [a] = await tx
           .insert(armies)
@@ -284,9 +285,7 @@ export async function sweepEvacuated(tx: Tx, m: MatchRow, now: Date): Promise<vo
 async function gatherCaravans(tx: Tx, m: MatchRow, playerId: string, targetRegionId: string, at: Date): Promise<number> {
   const [p] = await tx.select().from(players).where(eq(players.id, playerId)).limit(1);
   if (!p) return 0;
-  const techRows = await tx.select({ id: playerTechs.techId }).from(playerTechs).where(eq(playerTechs.playerId, playerId));
-  const techs = new Set(techRows.map((t) => t.id));
-  const { roads, rails, harbors } = await waySetsFor(tx, m.id, playerId, await alliesOf(tx, m.id, playerId));
+  const ctx = await legContextFor(tx, m.id, playerId);
   const rows = await tx
     .select({ regionId: matchRegions.regionId, units: matchRegions.units, frozenAt: matchRegions.frozenAt })
     .from(matchRegions)
@@ -295,14 +294,14 @@ async function gatherCaravans(tx: Tx, m: MatchRow, playerId: string, targetRegio
   let sent = 0;
   for (const r of rows) {
     if (r.regionId === targetRegionId || r.frozenAt || haulerCount(r.units) <= 0) continue;
-    const route = findRoute(r.regionId, targetRegionId, techs.has(balance.travel.seaTech), roads, rails, harbors);
+    const route = routeFor(ctx, r.regionId, targetRegionId);
     if (!route) continue;
     const row = await settleAndLockRegion(tx, m.id, r.regionId, at, m.speed, resourceMultOf(m));
     const going: UnitCounts = {};
     for (const id of HAULER_IDS) if ((row.units[id] ?? 0) > 0 && !unitById.get(id)?.naval) going[id] = row.units[id]!;
     const have = sumUnits(going);
     if (have <= 0) continue;
-    const seconds = travelSeconds(route, armySpeed(going), m.speed);
+    const seconds = await legSeconds(tx, m, ctx, route, going, at);
     const units = { ...row.units };
     for (const id of Object.keys(going)) units[id] = 0;
     await tx.update(matchRegions).set({ units, popSoldiers: Math.max(0, row.popSoldiers - have) }).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, r.regionId)));
@@ -353,14 +352,21 @@ async function settleLand(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publishe
   after(() => publisher.toPlayer(m.id, pid, "region.conquered", { regionId: army.targetRegionId }));
 }
 
+/** True when two consecutive regions of a path are not land neighbours: that leg was a sea crossing. */
+function pathUsesSea(path: readonly string[]): boolean {
+  return path.some((id, i) => i > 0 && !(regionById(path[i - 1]!)?.neighbors.includes(id) ?? true));
+}
+
 /** Send the army back where it came from, carrying whatever is in cargo. */
 async function sendHome(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, units: UnitCounts, cargo: Record<string, number>, note: string | null = null): Promise<void> {
   if (sumUnits(units) === 0 && Object.values(cargo).every((v) => !v)) {
     await tx.update(armies).set({ status: "done", units, cargo }).where(eq(armies.id, army.id));
     return;
   }
-  const route = findRoute(army.targetRegionId, army.originRegionId, true) ?? { path: [army.targetRegionId, army.originRegionId], cost: 1000, usesSea: false };
-  const seconds = travelSeconds(route, sumUnits(units) ? armySpeed(units) : 5, m.speed);
+  const ctx = await legContextFor(tx, m.id, army.playerId);
+  // The way home may use the sea only if the way out did (or the player can sail): a land convoy does not swim back.
+  const route = routeFor(ctx, army.targetRegionId, army.originRegionId, ctx.techs.has(balance.travel.seaTech) || pathUsesSea(army.path)) ?? { path: [army.targetRegionId, army.originRegionId], cost: 1000, usesSea: false };
+  const seconds = await legSeconds(tx, m, ctx, route, units, at, 5);
   const returnsAt = new Date(at.getTime() + seconds * 1000);
   await tx.update(armies).set({ status: "returning", units, cargo, returnsAt, note }).where(eq(armies.id, army.id));
   await tx.insert(jobs).values({ matchId: m.id, playerId: army.playerId, regionId: army.originRegionId, kind: "mission", refId: army.id, startsAt: at, endsAt: returnsAt });
@@ -472,8 +478,9 @@ async function deliverCargo(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publis
       const next = stops.find((s) => !s.done);
       if (next) {
         const { tradeRoutes } = await import("../db/schema.js");
-        const route = findRoute(cur.regionId, next.regionId, true) ?? { path: [cur.regionId, next.regionId], cost: 1000, usesSea: false };
-        const seconds = travelSeconds(route, armySpeed(army.units), m.speed);
+        const ctx = await legContextFor(tx, m.id, army.playerId);
+        const route = routeFor(ctx, cur.regionId, next.regionId, ctx.techs.has(balance.travel.seaTech) || pathUsesSea(army.path)) ?? { path: [cur.regionId, next.regionId], cost: 1000, usesSea: false };
+        const seconds = await legSeconds(tx, m, ctx, route, army.units, at);
         const arrivesAt = new Date(at.getTime() + seconds * 1000);
         await tx.update(armies).set({ cargo, stops, targetRegionId: next.regionId, path: route.path, departsAt: at, arrivesAt }).where(eq(armies.id, army.id));
         await tx.insert(jobs).values({ matchId: m.id, playerId: army.playerId, regionId: next.regionId, kind: "mission", refId: army.id, startsAt: at, endsAt: arrivesAt });
@@ -552,8 +559,8 @@ async function carryOverflowOn(tx: Tx, m: MatchRow, army: ArmyRow, at: Date): Pr
   for (const r of BASE) if (row[r] >= caps[r] * 0.98) cargo[r] = Math.floor(caps[r] * balance.trade.overflowShare);
   let total = Object.values(cargo).reduce((a, b) => a + b, 0);
   if (total < 1) return false;
-  const techs = new Set((await tx.select({ id: playerTechs.techId }).from(playerTechs).where(eq(playerTechs.playerId, army.playerId))).map((t) => t.id));
-  const capacity = carryCapacity(army.units, techs);
+  const ctx = await legContextFor(tx, m.id, army.playerId);
+  const capacity = carryCapacity(army.units, ctx.techs);
   if (capacity < 1) return false;
   if (total > capacity) {
     const f = capacity / total;
@@ -561,12 +568,12 @@ async function carryOverflowOn(tx: Tx, m: MatchRow, army: ArmyRow, at: Date): Pr
     total = Object.values(cargo).reduce((a, b) => a + b, 0);
     if (total < 1) return false;
   }
-  const route = findRoute(army.targetRegionId, capital, true);
+  const route = routeFor(ctx, army.targetRegionId, capital);
   if (!route) return false;
   const set: Partial<MatchRegionRow> = {};
   for (const r of BASE) if (cargo[r]) set[r] = Math.max(0, row[r] - cargo[r]!);
   await tx.update(matchRegions).set(set).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, row.regionId)));
-  const seconds = travelSeconds(route, armySpeed(army.units), m.speed);
+  const seconds = await legSeconds(tx, m, ctx, route, army.units, at);
   const arrivesAt = new Date(at.getTime() + seconds * 1000);
   // The haulers go on as a fresh transport from here, so afterwards they walk home from the capital to this region.
   await tx.update(armies).set({ status: "done", units: {}, cargo: {} }).where(eq(armies.id, army.id));
