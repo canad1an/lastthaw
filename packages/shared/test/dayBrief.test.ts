@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { balance } from "../src/config/balance.js";
 import { newOnDay } from "../src/rules/dayBrief.js";
+import { techById } from "../src/config/ages.js";
 
 describe("the morning brief's news", () => {
-  it("opens the Iron Age on day 5, when Iron working may first be started", () => {
-    expect(newOnDay(5).some((s) => s.startsWith("The Iron Age opens: Iron working"))).toBe(true);
-    expect(newOnDay(4).some((s) => s.includes("Iron Age"))).toBe(false);
+  it("opens the Iron Age on the morning Iron working may first be started, and not the day before", () => {
+    const day = techById.get("iron_working")!.earliestDay! + 1;
+    expect(newOnDay(day).some((s) => s.startsWith("The Iron Age opens: Iron working"))).toBe(true);
+    expect(newOnDay(day - 1).some((s) => s.includes("Iron Age"))).toBe(false);
   });
 
   it("names the end of protection, the first blizzards, the Horde and the last day on their days", () => {

@@ -152,7 +152,11 @@ export interface TechDef {
   effect?: TechEffect;
   /** Completing this tech moves the player to this age. Announced to everyone. */
   advancesTo?: AgeIndex;
-  /** Cannot be started before this match day (0-based): the hard pacing floor for age advances. */
+  /**
+   * Cannot be started before this match day (0-based): the hard pacing floor for age advances. Kept low on purpose
+   * (Iron 2, Classical 4, Medieval 7, Industrial 10, Modern 13) so that a strong economy reaches the late ages with
+   * half the match still to play; the age costs do the rest of the pacing.
+   */
   earliestDay?: number;
 }
 
@@ -284,7 +288,7 @@ export const TECHS: readonly TechDef[] = [
   { id: "herbal_medicine", name: "Herbal medicine", age: 1, description: "Fewer die young: people grow faster.", cost: {food: 1500, wood: 500}, baseSeconds: 900, effect: {growth: 0.2, plagueResist: 0.5} },
   { id: "sailing", name: "Sailing", age: 1, description: "Rafts and sails along the coast. Leads to Shipbuilding.", cost: {wood: 1200, food: 400}, baseSeconds: 900, requires: ["fishing_nets"] },
   { id: "surveying", name: "Surveying", age: 1, description: "Measure the land: leads to Engineering and Railways.", cost: {stone: 1000, wood: 600}, baseSeconds: 1080, requires: ["writing", "road_building"] },
-  { id: "iron_working", name: "Iron working", age: 1, description: "Smelt iron. Enters the Iron Age.", cost: {wood: 5000, stone: 3000, copper: 40}, baseSeconds: 14400, requires: ["mining", "copper_smelting"], advancesTo: 2, earliestDay: 4 },
+  { id: "iron_working", name: "Iron working", age: 1, description: "Smelt iron. Enters the Iron Age.", cost: {wood: 5000, stone: 3000, copper: 40}, baseSeconds: 14400, requires: ["mining", "copper_smelting"], advancesTo: 2, earliestDay: 2 },
   // Iron
   { id: "masonry", name: "Masonry", age: 2, description: "Cut and fitted stone. Unlocks Stone walls and leads to Drill.", cost: {stone: 1000, wood: 400}, baseSeconds: 1080 },
   { id: "quarrying", name: "Quarrying", age: 2, description: "Wedges, levers and ramps: more stone from every quarry.", cost: {stone: 2000, wood: 800}, baseSeconds: 1440, requires: ["masonry"], effect: {yield: {stone: 0.15}} },
@@ -298,7 +302,7 @@ export const TECHS: readonly TechDef[] = [
   { id: "coinage", name: "Coinage", age: 2, description: "Struck coin: wealth that keeps, and bigger stores.", cost: {stone: 3000, copper: 20}, baseSeconds: 2160, requires: ["writing", "mining"], effect: {storage: 0.15} },
   { id: "scouting", name: "Scouting", age: 2, description: "Riders on every border: see one region beyond your lands, live.", cost: {food: 3000, wood: 2000}, baseSeconds: 2160, requires: ["harness"], effect: {vision: 1} },
   { id: "cartography", name: "Cartography", age: 2, description: "Maps of the roads and rivers: everything travels faster.", cost: {food: 3000, stone: 2000}, baseSeconds: 2160, requires: ["surveying"], effect: {travel: 0.1} },
-  { id: "drill", name: "Drill", age: 2, description: "Professional soldiers. Enters the Classical Age.", cost: {food: 40000, wood: 25000, iron: 500}, baseSeconds: 21600, requires: ["masonry", "writing", "iron_weapons"], advancesTo: 3, earliestDay: 9 },
+  { id: "drill", name: "Drill", age: 2, description: "Professional soldiers. Enters the Classical Age.", cost: {food: 40000, wood: 25000, iron: 500}, baseSeconds: 21600, requires: ["masonry", "writing", "iron_weapons"], advancesTo: 3, earliestDay: 4 },
   // Classical
   { id: "shipbuilding", name: "Shipbuilding", age: 3, description: "Boats that cross open sea. Unlocks the Harbor and Galley; the Cog comes with the Medieval Age.", cost: {wood: 2000, stone: 500}, baseSeconds: 2880, requires: ["sailing", "carpentry"] },
   { id: "navigation", name: "Navigation", age: 3, description: "Stars and soundings: ships and crossings go faster.", cost: {wood: 6000, food: 4000}, baseSeconds: 3600, requires: ["shipbuilding", "cartography"], effect: {travel: 0.1} },
@@ -315,7 +319,7 @@ export const TECHS: readonly TechDef[] = [
   { id: "provincial_administration", name: "Provincial administration", age: 3, description: "Provinces with their own courts and tax rolls.", cost: {food: 15000, stone: 10000}, baseSeconds: 5400, requires: ["civil_service"], effect: {loyalty: 0.1} },
   { id: "currency", name: "Currency", age: 3, description: "A common coin across the realm: far bigger stores.", cost: {stone: 12000, copper: 60}, baseSeconds: 4320, requires: ["coinage"], effect: {storage: 0.2} },
   { id: "heavy_plough", name: "Heavy plough", age: 3, description: "Turns heavy soils that hoes never could.", cost: {wood: 15000, iron: 80}, baseSeconds: 5400, requires: ["crop_rotation", "carpentry"], effect: {yield: {food: 0.2}} },
-  { id: "chivalry", name: "Chivalry", age: 3, description: "Knights and castles. Enters the Medieval Age.", cost: {food: 90000, wood: 50000, iron: 1000}, baseSeconds: 21600, requires: ["engineering", "steel"], advancesTo: 4, earliestDay: 14 },
+  { id: "chivalry", name: "Chivalry", age: 3, description: "Knights and castles. Enters the Medieval Age.", cost: {food: 90000, wood: 50000, iron: 1000}, baseSeconds: 21600, requires: ["engineering", "steel"], advancesTo: 4, earliestDay: 7 },
   // Medieval
   { id: "three_field_system", name: "Three-field system", age: 4, description: "A third of the land rests while two thirds feed.", cost: {food: 40000, wood: 25000}, baseSeconds: 8640, requires: ["heavy_plough"], effect: {yield: {food: 0.2}} },
   { id: "water_mills", name: "Water mills", age: 4, description: "Rivers drive the saws and hammers.", cost: {wood: 20000, stone: 15000}, baseSeconds: 7200, requires: ["engineering"], effect: {yield: {wood: 0.1, stone: 0.1}} },
@@ -332,7 +336,7 @@ export const TECHS: readonly TechDef[] = [
   { id: "siege_engines", name: "Siege engines", age: 4, description: "Trebuchets.", cost: {wood: 3000, iron: 200}, baseSeconds: 5400, requires: ["siegecraft", "engineering"] },
   { id: "scholasticism", name: "Scholasticism", age: 4, description: "Universities: research goes much faster.", cost: {wood: 2500, stone: 2500}, baseSeconds: 5400, requires: ["literature"], effect: {researchSpeed: 0.3} },
   { id: "printing_press", name: "Printing press", age: 4, description: "Movable type: every discovery spreads at once.", cost: {wood: 30000, iron: 300}, baseSeconds: 8640, requires: ["scholasticism"], effect: {researchSpeed: 0.2} },
-  { id: "industrialisation", name: "Industrialisation", age: 4, description: "Coal, iron and machines. Enters the Industrial Age.", cost: {food: 150000, wood: 100000, iron: 2000}, baseSeconds: 21600, requires: ["railways", "blast_furnace"], advancesTo: 5, earliestDay: 18 },
+  { id: "industrialisation", name: "Industrialisation", age: 4, description: "Coal, iron and machines. Enters the Industrial Age.", cost: {food: 150000, wood: 100000, iron: 2000}, baseSeconds: 21600, requires: ["railways", "blast_furnace"], advancesTo: 5, earliestDay: 10 },
   // Industrial
   { id: "coal_mining", name: "Coal mining", age: 5, description: "Deep pits and pumps: fuel for the furnaces.", cost: {stone: 40000, iron: 600}, baseSeconds: 7200, requires: ["blast_furnace"], effect: {extract: 0.3} },
   { id: "steam_power", name: "Steam power", age: 5, description: "Engines that never tire: more wood and stone, and unlocks the Factory, Cannon and Ironclad.", cost: {stone: 50000, wood: 40000, iron: 800}, baseSeconds: 8640, requires: ["coal_mining"], effect: {yield: {wood: 0.3, stone: 0.3}} },
@@ -348,7 +352,7 @@ export const TECHS: readonly TechDef[] = [
   { id: "vaccination", name: "Vaccination", age: 5, description: "Far fewer die of disease.", cost: {food: 80000, stone: 20000}, baseSeconds: 6480, requires: ["public_schools"], effect: {growth: 0.4, plagueResist: 1} },
   { id: "sanitation", name: "Sanitation", age: 5, description: "Sewers and clean water in every town.", cost: {stone: 60000, iron: 500}, baseSeconds: 7200, requires: ["vaccination"], effect: {growth: 0.2, plagueResist: 1} },
   { id: "internal_combustion", name: "Internal combustion", age: 5, description: "Engines that run on oil: lorries on every road.", cost: {iron: 2000, wood: 50000}, baseSeconds: 10800, requires: ["steel_mills"], effect: {travel: 0.2} },
-  { id: "electronics", name: "Electronics", age: 5, description: "Circuits and radio. Enters the Modern Age.", cost: {food: 300000, wood: 200000, iron: 4000}, baseSeconds: 21600, requires: ["telegraph", "steam_power"], advancesTo: 6, earliestDay: 24 },
+  { id: "electronics", name: "Electronics", age: 5, description: "Circuits and radio. Enters the Modern Age.", cost: {food: 300000, wood: 200000, iron: 4000}, baseSeconds: 21600, requires: ["telegraph", "steam_power"], advancesTo: 6, earliestDay: 13 },
   // Modern
   { id: "electricity", name: "Electricity", age: 6, description: "Power for everything: unlocks the Power plant.", cost: {iron: 3000, stone: 80000}, baseSeconds: 8640, effect: {yield: {food: 0.25, wood: 0.25, stone: 0.25}} },
   { id: "radio", name: "Radio", age: 6, description: "Voices through the air: research goes faster.", cost: {iron: 2000, wood: 40000}, baseSeconds: 6480, effect: {researchSpeed: 0.2} },
