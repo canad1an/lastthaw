@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { availableBuildings, balance, buildingBlockedBy, regionById, type AdvisorKind, type AdvisorSettings, type AdvisorView, type MatchStateView } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
@@ -245,6 +245,20 @@ export function AdvisorsPanel({ matchId, state, onSelect, clockOffsetMs }: { mat
   );
 }
 
+/**
+ * The form's draft follows the saved settings only when they really change (a save, or another device): the match
+ * state polls every few seconds and hands over a fresh settings object each time, which must not wipe an unsaved edit.
+ */
+function useSavedSettings(saved: AdvisorSettings, setDraft: (s: AdvisorSettings) => void): void {
+  const synced = useRef(JSON.stringify(saved));
+  useEffect(() => {
+    const now = JSON.stringify(saved);
+    if (now === synced.current) return;
+    synced.current = now;
+    setDraft(saved);
+  }, [saved, setDraft]);
+}
+
 function StatusBadge({ a }: { a: AdvisorView }) {
   const label = a.unpaid ? "unpaid, not working" : a.kind === "military" ? `Hired · ${a.settings.stance}` : "Hired";
   return <span className={`rounded px-2 py-0.5 text-xs ${a.unpaid ? "bg-rose-500/20 text-rose-200" : "bg-emerald-500/20 text-emerald-200"}`}>{label}</span>;
@@ -260,7 +274,7 @@ function MilitarySettings({ matchId, state, advisor, onSelect }: { matchId: stri
   const qc = useQueryClient();
   const refresh = () => void qc.invalidateQueries({ queryKey: keys.matchState(matchId) });
   const [draft, setDraft] = useState<AdvisorSettings>(advisor.settings);
-  useEffect(() => setDraft(advisor.settings), [advisor.settings]);
+  useSavedSettings(advisor.settings, setDraft);
   const save = useMutation({ mutationFn: (s: AdvisorSettings) => api.setAdvisorSettings(matchId, "military", s), onSuccess: refresh });
   const untarget = useMutation({ mutationFn: (regionId: string) => api.setAdvisorTarget(matchId, regionId, false), onSuccess: refresh });
   const dirty = JSON.stringify(draft) !== JSON.stringify(advisor.settings);
@@ -409,7 +423,7 @@ function ThawSettings({ matchId, state, advisor, onSelect }: { matchId: string; 
   const qc = useQueryClient();
   const refresh = () => void qc.invalidateQueries({ queryKey: keys.matchState(matchId) });
   const [draft, setDraft] = useState<AdvisorSettings>(advisor.settings);
-  useEffect(() => setDraft(advisor.settings), [advisor.settings]);
+  useSavedSettings(advisor.settings, setDraft);
   const save = useMutation({ mutationFn: (s: AdvisorSettings) => api.setAdvisorSettings(matchId, "thaw", s), onSuccess: refresh });
   const dirty = JSON.stringify(draft) !== JSON.stringify(advisor.settings);
   const regions = useMemo(() => [...state.owned].sort((a, b) => Number(b.isCapital) - Number(a.isCapital) || (regionById(a.regionId)?.name ?? "").localeCompare(regionById(b.regionId)?.name ?? "")), [state.owned]);
@@ -509,7 +523,7 @@ function ChancellorSettings({ matchId, state, advisor }: { matchId: string; stat
   const qc = useQueryClient();
   const refresh = () => void qc.invalidateQueries({ queryKey: keys.matchState(matchId) });
   const [draft, setDraft] = useState<AdvisorSettings>(advisor.settings);
-  useEffect(() => setDraft(advisor.settings), [advisor.settings]);
+  useSavedSettings(advisor.settings, setDraft);
   const save = useMutation({ mutationFn: (s: AdvisorSettings) => api.setAdvisorSettings(matchId, "chancellor", s), onSuccess: refresh });
   const dirty = JSON.stringify(draft) !== JSON.stringify(advisor.settings);
   const regions = useMemo(() => [...state.owned].sort((a, b) => Number(b.isCapital) - Number(a.isCapital) || (regionById(a.regionId)?.name ?? "").localeCompare(regionById(b.regionId)?.name ?? "")), [state.owned]);
@@ -586,7 +600,7 @@ function SettingsForm({ matchId, state, advisor }: { matchId: string; state: Mat
   const qc = useQueryClient();
   const [draft, setDraft] = useState<AdvisorSettings>(advisor.settings);
   const [allLevel, setAllLevel] = useState(3);
-  useEffect(() => setDraft(advisor.settings), [advisor.settings]);
+  useSavedSettings(advisor.settings, setDraft);
   const save = useMutation({ mutationFn: (s: AdvisorSettings) => api.setAdvisorSettings(matchId, "economic", s), onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matchState(matchId) }) });
   const buildings = useMemo(() => availableBuildings(state.me.age, new Set(state.me.techs)).filter((b) => !b.wonder), [state.me.age, state.me.techs]);
   const dirty = JSON.stringify(draft) !== JSON.stringify(advisor.settings);
@@ -627,12 +641,13 @@ function SettingsForm({ matchId, state, advisor }: { matchId: string; state: Mat
           const atMax = eligible.filter((o) => (o.buildings[b.id] ?? 0) >= b.maxLevel).length;
           const min = draft.minLevels[b.id] ?? 0;
           const atMin = min > 0 ? eligible.filter((o) => (o.buildings[b.id] ?? 0) >= min).length : null;
+          const building = new Set(state.jobs.filter((j) => j.kind === "build" && j.refId === b.id && j.regionId).map((j) => j.regionId)).size;
           return (
           <label key={b.id} className="flex items-center justify-between gap-2 rounded border border-slate-800 px-2 py-1 text-xs">
             <span className="text-slate-200">
               {b.name} <span className="text-slate-500">max {b.maxLevel}</span>
               <span className="block text-[11px] text-slate-500" data-building-progress={b.id}>
-                {atMax} / {eligible.length} fully upgraded{atMin !== null ? ` · ${atMin} at level ${min} or more` : ""}
+                {atMax} / {eligible.length} at max level{atMin !== null ? ` · ${atMin} at level ${min} or more` : ""}{building ? ` · ${building} building now` : ""}
               </span>
             </span>
             <input type="number" min={0} max={b.maxLevel} value={draft.minLevels[b.id] ?? 0} onChange={(e) => setLevel(b.id, Math.max(0, Math.min(b.maxLevel, Number(e.target.value) || 0)))} className="w-16 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-right text-slate-100" data-advisor-level={b.id} />
