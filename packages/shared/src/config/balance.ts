@@ -460,6 +460,8 @@ export const balance = {
       /** Selling takes a store from the sellAbove share down to this share of its cap. */
       sellDownTo: 0.6,
       minListing: 100,
+      /** A listing never asks more than this much ore or horses at once: a big pile goes up as several small lots that a tribe can actually pay. */
+      maxAskOre: 50,
     },
   },
   /**
