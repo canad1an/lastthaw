@@ -12,6 +12,8 @@ export interface ArmyMarker {
   /** 0..1 progress along `route`. */
   progress: number;
   mission: string;
+  /** A sea convoy: any ship among the units, drawn as a boat whatever the mission. */
+  naval: boolean;
   /** Region names along the current leg, origin → destination. */
   routeNames: string[];
   /** Destination region id for highlighting. */
@@ -78,6 +80,7 @@ export function armyMarkers(armies: ArmyView[], incoming: IncomingView[], nowMs:
       y: pos.y,
       hostile: false,
       mission: a.mission,
+      naval: Object.entries(a.units).some(([id, n]) => n > 0 && unitById.get(id)?.naval),
       title: a.mission === "patrol" && !returning ? `Patrol on the ${laneName(a.lane ?? "")} lane` : `${missionLabel(a.mission, a.units)} ${returning ? "returning to" : "→"} ${dest}`,
       lines: [
         returning && a.note ? a.note : "",
@@ -101,6 +104,7 @@ export function armyMarkers(armies: ArmyView[], incoming: IncomingView[], nowMs:
       y: r.y - 6,
       hostile: true,
       mission: i.mission,
+      naval: !!i.units && Object.entries(i.units).some(([id, n]) => n > 0 && unitById.get(id)?.naval),
       title: `${i.fromPlayerName} ${i.mission === "raid" ? "raiding" : "attacking"} ${r.name}`,
       lines: [
         i.units

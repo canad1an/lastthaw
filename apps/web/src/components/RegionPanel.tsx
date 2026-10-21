@@ -656,7 +656,7 @@ function TrainTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
   const here = (us: UnitDef[]) => us.reduce((a, u) => a + (owned.units[u.id] ?? 0), 0);
   const groups = [
     { title: "Army", icon: "⚔", tone: "border-rose-500/60 bg-rose-950/20", text: "text-rose-300", hint: "Fight on land: raid, conquer, defend.", units: list.filter((u) => !u.civilian && !u.naval && !u.hauler) },
-    { title: "Ships", icon: "⚓", tone: "border-sky-500/60 bg-sky-950/20", text: "text-sky-300", hint: "Sail one sea lane at a time; need a Harbor. Patrol lanes and fight other ships.", units: list.filter((u) => u.naval) },
+    { title: "Ships", icon: "⛵", tone: "border-sky-500/60 bg-sky-950/20", text: "text-sky-300", hint: "Sail one sea lane at a time; need a Harbor. Patrol lanes and fight other ships.", units: list.filter((u) => u.naval) },
     { title: "Haulers", icon: "🛒", tone: "border-amber-500/60 bg-amber-950/20", text: "text-amber-300", hint: "Carry goods on routes, transports and builds. No fighting.", units: list.filter((u) => u.hauler && !u.naval) },
     { title: "Settlers", icon: "🏕", tone: "border-emerald-500/60 bg-emerald-950/20", text: "text-emerald-300", hint: "Found colonies and occupy conquests. No fighting.", units: list.filter((u) => u.civilian && !u.hauler && !u.naval) },
   ].filter((g) => g.units.length);

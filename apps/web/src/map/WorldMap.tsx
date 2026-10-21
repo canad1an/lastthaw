@@ -379,7 +379,15 @@ export function WorldMap({ paint, selected, onSelect, focus, flyTo, className = 
                   <circle r={7} fill={a.hostile ? "#f43f5e" : MILITARY.has(a.mission) ? "#f97316" : "#38bdf8"} stroke="#0b1a2b" strokeWidth={1.5} />
                 )}
                 {a.mission !== "relocate" &&
-                  (a.hostile || MILITARY.has(a.mission) ? (
+                  (a.naval ? (
+                    // A boat: hull, mast and sail, whatever the ships are doing.
+                    <g fill="#0b1a2b" stroke="#0b1a2b" strokeWidth={1} strokeLinejoin="round" strokeLinecap="round">
+                      <path d="M-5 1.2h10l-2.2 3h-5.6z" />
+                      <path d="M0 1.2v-5.4" fill="none" strokeWidth={1.2} />
+                      <path d="M0.6 -4.4l3.6 4.6h-3.6z" />
+                      <path d="M-0.6 -3l-3.2 3.8h3.2z" />
+                    </g>
+                  ) : a.hostile || MILITARY.has(a.mission) ? (
                     <g stroke="#0b1a2b" strokeWidth={1.4} strokeLinecap="round" fill="none">
                       <path d="M-3.2 3.2L3.4 -3.4" />
                       <path d="M3.4 -3.4l1.2 -1.2" strokeWidth={1.8} />
