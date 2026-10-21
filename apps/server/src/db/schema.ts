@@ -746,6 +746,27 @@ export const tribeChatPosts = pgTable(
 );
 
 /** Who has registered for a tournament ahead of its lobby opening, and which reminders they have had. */
+/** What an advisor did, line by line: a build queued, workers reassigned, people moved. Read back as that advisor's history. */
+export const advisorEvents = pgTable(
+  "advisor_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    matchId: uuid("match_id")
+      .notNull()
+      .references(() => matches.id, { onDelete: "cascade" }),
+    playerId: uuid("player_id")
+      .notNull()
+      .references(() => players.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+    /** build, workers, move, ... */
+    action: text("action").notNull(),
+    regionId: text("region_id"),
+    text: text("text").notNull(),
+  },
+  (t) => [index("advisor_events_player_idx").on(t.matchId, t.playerId, t.kind, t.at)],
+);
+
 export const tournamentRegistrations = pgTable(
   "tournament_registrations",
   {

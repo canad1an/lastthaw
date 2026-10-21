@@ -344,6 +344,13 @@
       "when": 1792613392654,
       "tag": "0048_welcome_matches",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1792617112653,
+      "tag": "0049_advisor_events",
+      "breakpoints": true
     }
   ]
 }

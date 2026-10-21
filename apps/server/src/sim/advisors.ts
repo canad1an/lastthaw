@@ -8,7 +8,7 @@ import { and, asc, eq, isNull, lte, sql } from "drizzle-orm";
 import type pino from "pino";
 import { balance, availableBuildings, buildingBlockedBy, buildingById, buildingCost, canAfford, computeRates, normalizeAssignment, regionById, unitById, HAULER_IDS, type AdvisorKind, type AdvisorSettings, type AdvisorReport, type AdvisorSuggestion, type Cost, type RegionEconomy, advisorSettings as advisorSettingsSchema, RESOURCE_WORTH } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
-import { advisors, jobs, matchRegions, matches, playerTechs, players, tradeRoutes } from "../db/schema.js";
+import { advisorEvents, advisors, jobs, matchRegions, matches, playerTechs, players, tradeRoutes } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
 import { matchDayAt, matchNow } from "./clock.js";
 import { applyCost, ownerTechEffects, projectRegion, settleAndLockRegion, stockOf, resourceMultOf, traitsOf, type MatchRegionRow, type Tx } from "./regions.js";
@@ -231,9 +231,24 @@ export async function runPass(db: Db, m: MatchRow, p: PlayerRow, a: AdvisorRow, 
 }
 
 /** One pass of the Economic advisor: buildings up to the minimums, then people, then the report. */
+/** A line of an advisor's history, gathered through a pass and written in one go at its end. */
+export interface AdvisorEvent {
+  action: string;
+  regionId: string | null;
+  text: string;
+}
+
+export async function writeAdvisorEvents(db: Db, m: MatchRow, p: PlayerRow, kind: AdvisorKind, at: Date, events: AdvisorEvent[]): Promise<void> {
+  if (!events.length) return;
+  await db.insert(advisorEvents).values(events.map((e) => ({ matchId: m.id, playerId: p.id, kind, at, action: e.action, regionId: e.regionId, text: e.text })));
+}
+
 export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: AdvisorRow, now: Date, publisher: Publisher): Promise<AdvisorReport> {
   const c = balance.advisors.economic;
   const settings = parseSettings(a.settings);
+  const events: AdvisorEvent[] = [];
+  const nameOf = (id: string) => regionById(id)?.name ?? id;
+  const costText = (cost: Record<string, number | undefined>) => Object.entries(cost).filter(([, v]) => (v ?? 0) > 0).map(([k, v]) => `${Math.round(v!).toLocaleString("en-US")} ${k}`).join(", ");
   const techRows = await db.select({ id: playerTechs.techId }).from(playerTechs).where(eq(playerTechs.playerId, p.id));
   const techs = new Set(techRows.map((t) => t.id));
   const ctx: CommandContext = { db, m, p, techs };
@@ -298,6 +313,7 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
         if (!canAfford(local, costNow)) break;
         try {
           await queueBuild(ctx, row.regionId, id, { allowWait: false });
+          events.push({ action: "build", regionId: row.regionId, text: `Queued ${def.name} level ${have + 1} at ${nameOf(row.regionId)}, paid from its own stores (${costText(costNow)}).` });
         } catch (err) {
           const msg = (err as Error).message ?? "";
           bump(/queue is full/.test(msg) ? "queueFull" : /not enough/.test(msg) ? "unaffordable" : "blocked");
@@ -357,6 +373,8 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
       }
       try {
         await queueBuild(ctx, row.regionId, id, { allowWait: true, maxOwed: c.maxOwed });
+        const short = Object.fromEntries(Object.entries(costNow).map(([k, v]) => [k, Math.max(0, (v ?? 0) - (local[k] ?? 0))]));
+        events.push({ action: "build", regionId: row.regionId, text: `Queued ${def.name} level ${have + 1} at ${nameOf(row.regionId)}; ${costText(short) || "the balance"} to come by caravan.` });
         queued += 1;
         queuedWaiting += 1;
         slots -= 1;
@@ -372,11 +390,12 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
 
   // Workers: each region's shares from what it and the empire need.
   let rebalanced = 0;
-  if (settings.workers) rebalanced = await rebalanceWorkers(db, m, projected, pending, skip, now);
+  if (settings.workers) rebalanced = await rebalanceWorkers(db, m, projected, pending, skip, now, (regionId, text) => events.push({ action: "workers", regionId, text }));
 
   // People.
   let moved = 0;
-  if (settings.population === "balanced") moved = await balancePeople(ctx, projected.map((x) => ({ row: x.row, economy: x.economy })), skip);
+  if (settings.population === "balanced") moved = await balancePeople(ctx, projected.map((x) => ({ row: x.row, economy: x.economy })), skip, (regionId, text) => events.push({ action: "move", regionId, text }));
+  await writeAdvisorEvents(db, m, p, "economic", now, events);
 
   const suggestions = await suggestionsFor(db, m, p, projected.map((x) => ({ row: x.row, economy: x.economy })), pending, settings, now);
   for (const k of ["food", "wood", "stone"] as const) {
@@ -396,7 +415,7 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
  * region (net food below zero with under half a day in store) is out. The best split replaces the current one when it
  * differs by a tenth or more in any share, so settings do not twitch every pass.
  */
-export async function rebalanceWorkers(db: Db, m: MatchRow, regions: Array<{ row: MatchRegionRow; economy: RegionEconomy }>, pending: Array<{ regionId: string | null; kind: string; waitingFor: unknown }>, skip: Set<string>, now: Date): Promise<number> {
+export async function rebalanceWorkers(db: Db, m: MatchRow, regions: Array<{ row: MatchRegionRow; economy: RegionEconomy }>, pending: Array<{ regionId: string | null; kind: string; waitingFor: unknown }>, skip: Set<string>, now: Date, log?: (regionId: string, text: string) => void): Promise<number> {
   const live = regions.filter((x) => !skip.has(x.row.regionId) && x.economy.popWorkers >= 1);
   if (!live.length) return 0;
   // The empire's gathering per hour as it stands, and what its waiting builds still owe.
@@ -449,6 +468,8 @@ export async function rebalanceWorkers(db: Db, m: MatchRow, regions: Array<{ row
       if (row.ownerPlayerId !== x.row.ownerPlayerId) return;
       await tx.update(matchRegions).set({ assignment: best }).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, x.row.regionId)));
       changed += 1;
+      const pct = (v: number) => `${Math.round(v * 100)}%`;
+      log?.(x.row.regionId, `Set ${regionById(x.row.regionId)?.name ?? x.row.regionId}'s workers to ${pct(best.food)} food, ${pct(best.wood)} wood, ${pct(best.stone)} stone (was ${pct(current.food)}, ${pct(current.wood)}, ${pct(current.stone)}).`);
     });
   }
   return changed;
@@ -458,7 +479,7 @@ export async function rebalanceWorkers(db: Db, m: MatchRow, regions: Array<{ row
  * Balanced population: every region toward the same share of its capacity. Regions above the mean by more than the
  * band send a slice of their workers to the emptiest reachable region below the mean, as a column of people on the road.
  */
-export async function balancePeople(ctx: CommandContext, regions: Array<{ row: MatchRegionRow; economy: { popWorkers: number; popSoldiers: number; popOccupiers: number; capacity: number } }>, skip: Set<string>): Promise<number> {
+export async function balancePeople(ctx: CommandContext, regions: Array<{ row: MatchRegionRow; economy: { popWorkers: number; popSoldiers: number; popOccupiers: number; capacity: number } }>, skip: Set<string>, log?: (regionId: string, text: string) => void): Promise<number> {
   const c = balance.advisors.economic;
   const live = regions.filter((x) => !skip.has(x.row.regionId));
   if (live.length < 2) return 0;
@@ -485,6 +506,7 @@ export async function balancePeople(ctx: CommandContext, regions: Array<{ row: M
     try {
       await sendArmy(ctx, g.row.regionId, { mission: "move", targetRegionId: pick.t.row.regionId, units: {}, people: n, cargo: {} });
       moved += n;
+      log?.(g.row.regionId, `Sent ${n} people from ${regionById(g.row.regionId)?.name ?? g.row.regionId} to ${regionById(pick.t.row.regionId)?.name ?? pick.t.row.regionId} to even out the empire.`);
       promised.set(pick.t.row.regionId, (promised.get(pick.t.row.regionId) ?? 0) + n);
     } catch {
       // No land route, or the region changed under us: try the next giver.

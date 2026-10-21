@@ -3,7 +3,7 @@ import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { advisorKind, advisorSettings, type AdvisorKind } from "@lastthaw/shared";
 import { idParams } from "./params.js";
 import type { Db } from "../db/client.js";
-import { advisors, jobs, marketOrders, matches, players } from "../db/schema.js";
+import { advisorEvents, advisors, jobs, marketOrders, matches, players } from "../db/schema.js";
 import { requireUser } from "../auth/session.js";
 import type { Publisher } from "../realtime/publish.js";
 import { matchNow } from "../sim/clock.js";
@@ -160,6 +160,21 @@ export async function advisorRoutes(app: FastifyInstance, opts: { db: Db; publis
     }
     await publisher.toPlayer(matchId, p.id, "region.updated", {});
     return { ok: true, listings, research: queued.length, passed };
+  });
+
+  /** Everything an advisor has done, newest first: builds queued, workers reassigned, people moved. */
+  app.get("/api/matches/:id/advisors/:kind/history", async (req) => {
+    const user = requireUser(req);
+    const { id: matchId, kind } = kindParams.parse(req.params);
+    const [p] = await db.select().from(players).where(and(eq(players.matchId, matchId), eq(players.userId, user.id))).limit(1);
+    if (!p) throw httpError(403, "not a player in this match");
+    const rows = await db
+      .select({ id: advisorEvents.id, at: advisorEvents.at, action: advisorEvents.action, regionId: advisorEvents.regionId, text: advisorEvents.text })
+      .from(advisorEvents)
+      .where(and(eq(advisorEvents.matchId, matchId), eq(advisorEvents.playerId, p.id), eq(advisorEvents.kind, kind)))
+      .orderBy(desc(advisorEvents.at), desc(advisorEvents.id))
+      .limit(300);
+    return { events: rows.map((r) => ({ ...r, at: r.at.toISOString() })) };
   });
 
   /**

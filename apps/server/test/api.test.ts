@@ -940,6 +940,11 @@ describe("api routes", () => {
         const hutJobs = await db.select().from(jobs).where(and(eq(jobs.matchId, gameId), eq(jobs.playerId, benPid), eq(jobs.regionId, cap), eq(jobs.kind, "build"), eq(jobs.refId, "huts"), sql`${jobs.completedAt} is null`, sql`${jobs.cancelledAt} is null`));
         expect(hutJobs.length).toBe(3);
         expect(hutJobs.every((j) => !j.waitingFor)).toBe(true);
+        // Her history has a line for each of them.
+        const hist = await Ben.call("GET", `${base}/advisors/economic/history`);
+        expect(hist.statusCode, hist.body).toBe(200);
+        const lines = (hist.json() as { events: { action: string; regionId: string | null; text: string }[] }).events;
+        expect(lines.filter((e) => e.action === "build" && e.regionId === cap && /Huts level/.test(e.text)).length).toBe(3);
         expect((await Ben.call("PUT", `${base}/advisors/economic/settings`, { minLevels: { quarry: 1 }, useOtherRegions: true, skipRegions: [], population: "balanced" })).statusCode).toBe(200);
       }
 

@@ -621,6 +621,38 @@ function ChancellorSettings({ matchId, state, advisor }: { matchId: string; stat
   );
 }
 
+/** An advisor's history: every build queued, every reassignment, every column of people, newest first. */
+function AdvisorHistory({ matchId, kind, who, lastPassAt, onSelect }: { matchId: string; kind: AdvisorKind; who: string; lastPassAt: string | null; onSelect?: (regionId: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const q = useQuery({ queryKey: [...keys.matchState(matchId), "advisor-history", kind, lastPassAt], queryFn: () => api.advisorHistory(matchId, kind), enabled: open, staleTime: 30_000 });
+  const tone: Record<string, string> = { build: "text-slate-200", workers: "text-amber-200", move: "text-emerald-200" };
+  return (
+    <details className="rounded border border-slate-800 bg-slate-950/40 p-2 text-xs" open={open} onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)} data-advisor-history={kind}>
+      <summary className="cursor-pointer text-slate-300">History: everything {who} has done</summary>
+      {q.isPending && open && <p className="mt-2 text-slate-500">Reading the log…</p>}
+      <ErrorText>{q.error?.message}</ErrorText>
+      {q.data && q.data.events.length === 0 && <p className="mt-2 text-slate-500">Nothing yet. Each pass adds its lines here.</p>}
+      {q.data && q.data.events.length > 0 && (
+        <ul className="mt-2 max-h-72 space-y-1 overflow-y-auto">
+          {q.data.events.map((e) => (
+            <li key={e.id} className="flex gap-2">
+              <span className="w-28 shrink-0 tabular-nums text-slate-500">{new Date(e.at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+              <span className={tone[e.action] ?? "text-slate-300"}>
+                {e.text}
+                {e.regionId && onSelect && (
+                  <button type="button" className="ml-1 text-sky-300 hover:underline" onClick={() => onSelect(e.regionId!)}>
+                    show
+                  </button>
+                )}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </details>
+  );
+}
+
 /** The Chancellor's book: everything he has listed, sold, withdrawn or bought, newest first. */
 function ChancellorHistory({ matchId, lastPassAt }: { matchId: string; lastPassAt: string | null }) {
   const [open, setOpen] = useState(false);
@@ -801,6 +833,7 @@ function SettingsForm({ matchId, state, advisor }: { matchId: string; state: Mat
         </div>
       )}
       {clean.isSuccess && !slate && <p className="text-xs text-emerald-300">Cleared {clean.data.builds} build{clean.data.builds === 1 ? "" : "s"} and {clean.data.routes} route{clean.data.routes === 1 ? "" : "s"}{clean.data.passed ? "; the advisor has made a fresh pass" : ""}.</p>}
+      {advisor.kind === "economic" && <AdvisorHistory matchId={matchId} kind="economic" who="Mara" lastPassAt={advisor.lastPassAt} />}
     </Card>
   );
 }
