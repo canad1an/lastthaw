@@ -11,7 +11,7 @@ export function AudioControls() {
   const s = useAudioSettings();
   return (
     <div className="space-y-3 p-3 text-sm" data-audio-controls>
-      <p className="text-xs text-slate-400">Sounds and music are made in your browser as the game plays, so nothing loads and nothing is sent. Settings are remembered on this device. Browsers only allow sound after you have tapped the page, so a fresh tab stays quiet until you touch something.</p>
+      <p className="text-xs text-slate-400">The chimes are made in your browser as the game plays; the music is a short loop for each age, fetched once when you switch it on. Nothing is sent. Settings are remembered on this device. Browsers only allow sound after you have tapped the page, so a fresh tab stays quiet until you touch something.</p>
       <label className="flex items-start gap-2">
         <input type="checkbox" checked={s.effects} onChange={(e) => { setAudioSettings({ effects: e.target.checked }); if (e.target.checked) play("build"); }} className="mt-0.5 accent-sky-400" />
         <span>
@@ -23,7 +23,7 @@ export function AudioControls() {
         <input type="checkbox" checked={s.music} onChange={(e) => setAudioSettings({ music: e.target.checked })} className="mt-0.5 accent-sky-400" />
         <span>
           <span className="text-slate-100">Music</span>
-          <span className="block text-xs text-slate-400">A quiet loop for the age you are in, changing as you advance. It pauses while the tab is hidden.</span>
+          <span className="block text-xs text-slate-400">A quiet one-minute loop for the age you are in, changing as you advance. It pauses while the tab is hidden.</span>
         </span>
       </label>
       <label className="flex items-center gap-3">
