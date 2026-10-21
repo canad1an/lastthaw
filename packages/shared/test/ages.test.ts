@@ -49,7 +49,7 @@ describe("age data", () => {
       if (u.needsBuilding) expect(buildingById.has(u.needsBuilding), `${u.id} needsBuilding ${u.needsBuilding}`).toBe(true);
       if (u.hauler) expect(u.carry, `${u.id} is a hauler`).toBeGreaterThan(0);
       if (u.mercenary) expect(u.hidden, `${u.id} is a mercenary, so never trainable`).toBe(true);
-      if (u.naval) expect(u.needsBuilding, `${u.id} is a ship`).toBeTruthy();
+      if (u.naval && !u.shortLanes) expect(u.needsBuilding, `${u.id} is a ship`).toBeTruthy();
     }
     expect(unitById.get("warrior")?.age).toBe(0);
     expect(unitById.get("settler")?.civilian).toBe(true);

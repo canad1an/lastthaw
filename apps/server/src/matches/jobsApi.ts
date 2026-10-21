@@ -11,6 +11,8 @@ import { recordSpend } from "../sim/ledger.js";
 import { applyCost, settleAndLockRegion, resourceMultOf, type Tx } from "../sim/regions.js";
 import { httpError, pendingRegionJobs, queueBuild, queueResearch, queueTrain, returnHeld, type CommandContext, type PlayerRow } from "../sim/commands.js";
 import type { MatchRow } from "../worker/jobs.js";
+import { advisors } from "../db/schema.js";
+import { runPass, startedWork } from "../sim/advisors.js";
 
 const cleanSlateBody = z.object({ routes: z.boolean().default(false) });
 import { idParams, regionParams, jobParams } from "./params.js";
@@ -185,7 +187,14 @@ export async function jobRoutes(app: FastifyInstance, opts: { db: Db; publisher:
     const { routes } = cleanSlateBody.parse(req.body ?? {});
     const { m, p } = await loadContext(matchId, user.id);
     const cleared = await db.transaction((tx) => cleanSlate(tx, m, p, routes));
+    // The point of a clean slate is to redo the work now: a hired, paid Economic advisor makes a fresh pass at once.
+    let passed = false;
+    const [mara] = await db.select().from(advisors).where(and(eq(advisors.matchId, matchId), eq(advisors.playerId, p.id), eq(advisors.kind, "economic"), isNull(advisors.firedAt))).limit(1);
+    if (mara && !mara.unpaidSince && startedWork(mara)) {
+      await runPass(db, m, p, mara, matchNow(m), publisher);
+      passed = true;
+    }
     await publisher.toPlayer(matchId, p.id, "region.updated", {});
-    return { ok: true, ...cleared };
+    return { ok: true, ...cleared, passed };
   });
 }

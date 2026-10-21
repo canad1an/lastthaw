@@ -110,6 +110,8 @@ export interface UnitDef {
   hauler?: boolean;
   /** A ship: sails one sea lane at a time between coasts, fights other ships on the lane, built only where there is a Harbor. */
   naval?: boolean;
+  /** A small boat: keeps to sea lanes no longer than balance.travel.canoeMaxLaneKm. */
+  shortLanes?: boolean;
   /** Region must have this building to train here (ships need a Harbor). */
   needsBuilding?: string;
   /** Hired, not trained: the company leaves after its contract. */
@@ -190,7 +192,7 @@ export const BUILDINGS: readonly BuildingDef[] = [
   { id: "aqueduct", category: "growth", name: "Aqueduct", age: 3, description: "Clean water lets the city grow.", maxLevel: 10, cost: { stone: 600, wood: 200 }, baseSeconds: 900, effect: { capacity: 40 } },
   { id: "fort", category: "defense", name: "Fort", age: 3, description: "A garrison that defends and holds the province. Built once.", maxLevel: 1, cost: { stone: 6000, wood: 2500, iron: 150 }, baseSeconds: 1800, effect: { defense: 1.0, loyalty: 0.15 } },
   { id: "library", category: "training", name: "Library", age: 3, description: "Scholars speed up research.", maxLevel: 10, cost: { wood: 500, stone: 400 }, baseSeconds: 900, effect: { researchSpeed: 0.08 }, requires: "writing" },
-  { id: "harbor", category: "transport", name: "Harbor", age: 3, description: "Quays and boats. Built once on a coast: sea legs to another harbour of yours are far faster, and faster still than open water at one end.", maxLevel: 1, cost: { wood: 2500, stone: 1500 }, baseSeconds: 1800, effect: { harbor: true }, requires: "shipbuilding", needsCoast: true },
+  { id: "harbor", category: "transport", name: "Harbor", age: 2, description: "Quays and boats. Built once on a coast: sea legs to another harbour of yours are far faster, and faster still than open water at one end.", maxLevel: 1, cost: { wood: 2500, stone: 1500 }, baseSeconds: 1800, effect: { harbor: true }, requires: "shipbuilding", needsCoast: true },
   { id: "market", category: "storage", name: "Market", age: 3, description: "More goods kept safely in town.", maxLevel: 10, cost: { wood: 400, stone: 400 }, baseSeconds: 800, effect: { storage: 0.6, protect: 200 } },
   // Medieval
   { id: "castle", category: "defense", name: "Castle", age: 4, description: "Keep, towers and curtain wall. Built once, on top of Stone walls.", maxLevel: 1, cost: { stone: 18000, wood: 6000, iron: 600 }, baseSeconds: 3600, effect: { defense: 2.0, loyalty: 0.1 }, requiresBuilding: "walls" },
@@ -235,14 +237,15 @@ export const UNITS: readonly UnitDef[] = [
   { id: "legionary", name: "Legionary", age: 3, description: "Disciplined heavy infantry.", attack: 15, defense: 15, speed: 6, carry: 30, cost: { food: 90, iron: 8 }, baseSeconds: 240, requires: "drill" },
   { id: "cataphract", name: "Cataphract", age: 3, description: "Armoured horse and rider.", attack: 20, defense: 12, speed: 12, carry: 50, cost: { food: 150, iron: 10, horses: 1 }, baseSeconds: 360, requires: "drill", needsResource: "horses" },
   { id: "ballista", name: "Ballista", age: 3, description: "Precise siege engine.", attack: 28, defense: 4, speed: 3, carry: 0, cost: { wood: 350, iron: 15 }, baseSeconds: 480, requires: "engineering", breach: 1.5 },
-  { id: "galley", name: "Galley", age: 3, description: "Oared warship. Escorts crossings and sinks what it meets on its lane.", attack: 20, defense: 15, speed: 12, carry: 400, cost: { wood: 400, food: 100 }, baseSeconds: 420, requires: "shipbuilding", naval: true, needsBuilding: "harbor" },
+  { id: "canoe", name: "Canoe", age: 1, description: "Dugouts and rafts along the coast: carries a scout, a few settlers or a small load across a short lane. No harbour needed, but no open sea either.", attack: 0, defense: 1, speed: 10, carry: 100, cost: { wood: 80, food: 20 }, baseSeconds: 240, requires: "sailing", naval: true, hauler: true, shortLanes: true },
+  { id: "galley", name: "Galley", age: 2, description: "Oared warship. Escorts crossings and sinks what it meets on its lane.", attack: 20, defense: 15, speed: 12, carry: 400, cost: { wood: 400, food: 100 }, baseSeconds: 420, requires: "shipbuilding", naval: true, needsBuilding: "harbor" },
   // Medieval
   { id: "train", name: "Train", age: 5, description: "Iron rails and steam: carries eight caravans' worth and moves three times as fast. Needs Railways, and Railway on top of Roads to run at full speed.", attack: 0, defense: 1, speed: 24, carry: 4000, cost: { wood: 400, iron: 30 }, baseSeconds: 900, requires: "railways", civilian: true, hauler: true },
   { id: "lorry", name: "Lorry", age: 6, description: "An engine on every road and diesel on every rail: carries 5,000 and outruns a train. Needs Internal combustion.", attack: 0, defense: 1, speed: 30, carry: 5000, cost: { wood: 500, iron: 60 }, baseSeconds: 900, requires: "internal_combustion", civilian: true, hauler: true },
   { id: "knight", name: "Knight", age: 4, description: "The finest heavy cavalry.", attack: 32, defense: 22, speed: 12, carry: 70, cost: { food: 250, iron: 20, horses: 1 }, baseSeconds: 600, requires: "chivalry", needsResource: "horses" },
   { id: "longbowman", name: "Longbowman", age: 4, description: "Deadly at range.", attack: 24, defense: 10, speed: 6, carry: 30, cost: { food: 120, wood: 80 }, baseSeconds: 420, requires: "chivalry" },
   { id: "trebuchet", name: "Trebuchet", age: 4, description: "Nothing stands against it for long.", attack: 45, defense: 5, speed: 2, carry: 0, cost: { wood: 700, iron: 30 }, baseSeconds: 900, requires: "siege_engines", breach: 3 },
-  { id: "cog", name: "Cog", age: 4, description: "Broad-beamed merchantman: hauls like three wagons across a sea lane, and can carry settlers to a new shore.", attack: 5, defense: 10, speed: 14, carry: 3000, cost: { wood: 900, iron: 20 }, baseSeconds: 600, requires: "shipbuilding", naval: true, hauler: true, needsBuilding: "harbor" },
+  { id: "cog", name: "Cog", age: 3, description: "Broad-beamed merchantman: hauls like three wagons across a sea lane, and can carry settlers to a new shore.", attack: 5, defense: 10, speed: 14, carry: 3000, cost: { wood: 900, iron: 20 }, baseSeconds: 600, requires: "shipbuilding", naval: true, hauler: true, needsBuilding: "harbor" },
   // Industrial
   { id: "rifleman", name: "Rifleman", age: 5, description: "Drilled infantry with rifled muskets.", attack: 40, defense: 35, speed: 6, carry: 40, cost: { food: 150, iron: 25 }, baseSeconds: 300, requires: "rifling" },
   { id: "cannon", name: "Cannon", age: 5, description: "Field guns that break walls and lines alike.", attack: 70, defense: 8, speed: 4, carry: 0, cost: { wood: 800, iron: 60 }, baseSeconds: 600, requires: "steam_power", breach: 5 },
@@ -289,7 +292,7 @@ export const TECHS: readonly TechDef[] = [
   { id: "bronze_weapons", name: "Bronze weapons", age: 1, description: "Cast blades and spearheads for every soldier.", cost: {wood: 800, stone: 400, copper: 10}, baseSeconds: 1080, requires: ["copper_smelting"], effect: {attack: 0.1, defense: 0.05} },
   { id: "shield_wall", name: "Shield wall", age: 1, description: "Fight shoulder to shoulder.", cost: {wood: 1000, copper: 10}, baseSeconds: 1080, requires: ["bronze_weapons"], effect: {defense: 0.1} },
   { id: "herbal_medicine", name: "Herbal medicine", age: 1, description: "Fewer die young: people grow faster.", cost: {food: 1500, wood: 500}, baseSeconds: 900, effect: {growth: 0.2, plagueResist: 0.5} },
-  { id: "sailing", name: "Sailing", age: 1, description: "Rafts and sails along the coast. Leads to Shipbuilding.", cost: {wood: 1200, food: 400}, baseSeconds: 900, requires: ["fishing_nets"] },
+  { id: "sailing", name: "Sailing", age: 1, description: "Rafts, dugouts and sails along the coast: launches the Canoe, which crosses short lanes with a scout, a few settlers or a small load. Leads to Shipbuilding.", cost: {wood: 1200, food: 400}, baseSeconds: 900, requires: ["fishing_nets"] },
   { id: "surveying", name: "Surveying", age: 1, description: "Measure the land: leads to Engineering.", cost: {stone: 1000, wood: 600}, baseSeconds: 1080, requires: ["writing", "road_building"] },
   { id: "iron_working", name: "Iron working", age: 1, description: "Smelt iron. Enters the Iron Age.", cost: {wood: 5000, stone: 3000, copper: 40}, baseSeconds: 14400, requires: ["mining", "copper_smelting"], advancesTo: 2, earliestDay: 2 },
   // Iron
@@ -307,7 +310,7 @@ export const TECHS: readonly TechDef[] = [
   { id: "cartography", name: "Cartography", age: 2, description: "Maps of the roads and rivers: everything travels faster.", cost: {food: 3000, stone: 2000}, baseSeconds: 2160, requires: ["surveying"], effect: {travel: 0.1} },
   { id: "drill", name: "Drill", age: 2, description: "Professional soldiers. Enters the Classical Age.", cost: {food: 40000, wood: 25000, iron: 500}, baseSeconds: 21600, requires: ["masonry", "writing", "iron_weapons"], advancesTo: 3, earliestDay: 4 },
   // Classical
-  { id: "shipbuilding", name: "Shipbuilding", age: 3, description: "Boats that cross open sea. Unlocks the Harbor and Galley; the Cog comes with the Medieval Age.", cost: {wood: 2000, stone: 500}, baseSeconds: 2880, requires: ["sailing", "carpentry"] },
+  { id: "shipbuilding", name: "Shipbuilding", age: 2, description: "Boats that cross open sea. Unlocks the Harbor and Galley; the Cog comes with the Classical Age.", cost: {wood: 2000, stone: 500}, baseSeconds: 2880, requires: ["sailing", "carpentry"] },
   { id: "navigation", name: "Navigation", age: 3, description: "Stars and soundings: ships and crossings go faster.", cost: {wood: 6000, food: 4000}, baseSeconds: 3600, requires: ["shipbuilding", "cartography"], effect: {travel: 0.1} },
   { id: "engineering", name: "Engineering", age: 3, description: "Aqueducts and ballistae.", cost: {stone: 1800, wood: 800, iron: 60}, baseSeconds: 2880, requires: ["surveying", "mathematics"] },
   { id: "architecture", name: "Architecture", age: 3, description: "Vaults and arcades: cities hold more people.", cost: {stone: 8000, wood: 3000}, baseSeconds: 4320, requires: ["engineering"], effect: {capacity: 20} },

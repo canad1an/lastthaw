@@ -226,3 +226,20 @@ describe("waystations", () => {
     expect(isHaulerConvoy({})).toBe(false);
   });
 });
+
+import { laneLimitKm } from "../src/rules/travel.js";
+import { availableUnits } from "../src/rules/buildings.js";
+
+describe("canoes", () => {
+  it("keep a crossing to the short lanes, while ships and land units are free", () => {
+    expect(laneLimitKm({ canoe: 1, settler: 5 })).toBe(balance.travel.canoeMaxLaneKm);
+    expect(laneLimitKm({ galley: 1 })).toBeNull();
+    expect(laneLimitKm({ warrior: 3 })).toBeNull();
+  });
+  it("stay trainable beside bigger land haulers: boats are their own ladder", () => {
+    const ids = availableUnits(2, new Set(["sailing", "wagon_building", "shipbuilding"])).map((u) => u.id);
+    expect(ids).toContain("canoe");
+    expect(ids).toContain("wagon");
+    expect(ids).not.toContain("caravan");
+  });
+});

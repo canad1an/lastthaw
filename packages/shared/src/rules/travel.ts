@@ -83,6 +83,12 @@ export function findRoute(origin: string, target: string, allowSea: boolean, roa
   return { path, cost: dist.get(target)!, usesSea };
 }
 
+/** The longest sea lane a group may cross, in km, when it holds a short-lane boat; null when nothing limits it. */
+export function laneLimitKm(units: Record<string, number>): number | null {
+  for (const [id, n] of Object.entries(units)) if (n > 0 && unitById.get(id)?.shortLanes) return balance.travel.canoeMaxLaneKm;
+  return null;
+}
+
 /** True when every unit in the group is a land hauler: a convoy, which waystations serve; a single soldier along makes it an army. */
 export function isHaulerConvoy(units: Record<string, number>): boolean {
   const ids = Object.entries(units).filter(([, n]) => n > 0).map(([id]) => id);
