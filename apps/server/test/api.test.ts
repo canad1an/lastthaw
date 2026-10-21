@@ -46,11 +46,12 @@ class Client {
 
 /** Every HTTP route, with its guards: who may call it, what it refuses, what it returns. */
 describe("api routes", () => {
-  // Every test calls from the same address; the per-address request limit is reset between tests so a long suite never trips it.
+  // Every test calls from the same address and the same few players; the per-address request limit and the per-minute
+  // command cap are reset between tests so a long suite never trips either by timing alone.
   beforeEach(async () => {
     const r = createRedis();
     try {
-      const keys = await r.keys("lt-rl:*");
+      const keys = [...(await r.keys("lt-rl:*")), ...(await r.keys("lt-cmd:*"))];
       if (keys.length) await r.del(...keys);
     } finally {
       await r.quit().catch(() => {});
