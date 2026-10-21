@@ -3,7 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 
 const SITE = "Last Thaw";
 const ORIGIN = "https://lastthaw.com";
-const DEFAULT_DESCRIPTION = "A free 30-day browser strategy game on a freezing Earth. Grow five families into an empire on a real map before the ice reaches you.";
+const DEFAULT_DESCRIPTION = "A free 30-day browser strategy game on a freezing Earth. Grow five settlers into an empire on a real map before the ice reaches you.";
 
 function setMeta(selector: string, attrs: Record<string, string>) {
   let el = document.head.querySelector<HTMLElement>(selector);

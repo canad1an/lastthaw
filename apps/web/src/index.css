@@ -250,3 +250,26 @@ input[type="radio"] {
 .region-battle {
   animation: region-battle 1.1s ease-in-out infinite;
 }
+
+/* The home page hero: each stage's caption drops in over a soft dark glow, and the ticker slides in. */
+.hero-cap {
+  background: radial-gradient(ellipse at center, rgba(5, 11, 22, 0.62) 0%, rgba(5, 11, 22, 0.35) 55%, rgba(5, 11, 22, 0) 75%);
+}
+.hero-cap-big {
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.8), 0 0 2px rgba(0, 0, 0, 0.9);
+  animation: hero-drop 0.7s cubic-bezier(0.2, 0.9, 0.3, 1.3) both;
+}
+@keyframes hero-drop {
+  from { opacity: 0; transform: translateY(-18px) scale(0.94); letter-spacing: 0.3em; }
+  to { opacity: 1; transform: none; }
+}
+.hero-tick {
+  animation: hero-tick 0.4s ease both;
+}
+@keyframes hero-tick {
+  from { opacity: 0; transform: translateX(-10px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-cap-big, .hero-tick { animation: none; }
+}

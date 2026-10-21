@@ -94,7 +94,7 @@ export function LobbyPage() {
           <span className="frost-text">Tournaments</span>
         </h1>
         <p className="shadow-copy max-w-prose text-slate-200">
-          Thirty days. One freezing Earth. Grow five families into an empire before the ice reaches you. Tournaments start every week and are
+          Thirty days. One freezing Earth. Grow five settlers into an empire before the ice reaches you. Tournaments start every week and are
           the only games that count toward the Hall of Fame. Join before the start; nobody joins mid-match.
         </p>
       </section>

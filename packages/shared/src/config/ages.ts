@@ -166,7 +166,7 @@ export interface TechDef {
 
 export const BUILDINGS: readonly BuildingDef[] = [
   // Stone
-  { id: "huts", category: "growth", name: "Huts", age: 0, description: "Shelter for more families.", maxLevel: 20, cost: { wood: 40, stone: 10 }, baseSeconds: 45, effect: { capacity: 10 } },
+  { id: "huts", category: "growth", name: "Huts", age: 0, description: "Shelter for more people.", maxLevel: 20, cost: { wood: 40, stone: 10 }, baseSeconds: 45, effect: { capacity: 10 } },
   { id: "storehouse", category: "storage", name: "Storehouse", age: 0, description: "Bigger stores, and some stock hidden from raiders.", maxLevel: 20, cost: { wood: 60, stone: 20 }, baseSeconds: 60, effect: { storage: 0.5, protect: 60 } },
   { id: "hunting_grounds", category: "growth", name: "Hunting grounds", age: 0, description: "Better food from the land. Farms take over once you have them.", maxLevel: 10, cost: { wood: 30, food: 20 }, baseSeconds: 40, effect: { yield: { food: 0.15 } } },
   { id: "lumber_camp", category: "production", name: "Lumber camp", age: 0, description: "Faster wood gathering.", maxLevel: 15, cost: { wood: 30, stone: 10 }, baseSeconds: 40, effect: { yield: { wood: 0.25 } } },
@@ -219,7 +219,7 @@ export const UNITS: readonly UnitDef[] = [
   { id: "warrior", name: "Warrior", age: 0, description: "Club and courage.", attack: 3, defense: 3, speed: 5, carry: 15, cost: { food: 20, wood: 10 }, baseSeconds: 30 },
   { id: "slinger", name: "Slinger", age: 0, description: "Cheap ranged harassment.", attack: 4, defense: 1, speed: 5, carry: 10, cost: { food: 15, stone: 10 }, baseSeconds: 30 },
   { id: "tracker", name: "Scout", age: 0, description: "Fast and light. The only unit that can scout an unknown region; it looks around and comes home with a report. In a held region a scout may be caught: more soldiers, a wall or a Watchtower there make it likelier, and a caught scout files no report, so send two or three where it matters.", attack: 1, defense: 2, speed: 9, carry: 10, cost: { food: 25 }, baseSeconds: 25 },
-  { id: "settler", name: "Settler", age: 0, description: "Families with tools and seed grain. A group of five can settle unclaimed land and become its first workers.", attack: 0, defense: 1, speed: 4, carry: 0, cost: { food: 60, wood: 60, stone: 25 }, baseSeconds: 600, minBatch: 5, civilian: true },
+  { id: "settler", name: "Settler", age: 0, description: "Pioneers with tools and seed grain. A group of five can settle unclaimed land and become its first workers.", attack: 0, defense: 1, speed: 4, carry: 0, cost: { food: 60, wood: 60, stone: 25 }, baseSeconds: 600, minBatch: 5, civilian: true },
   { id: "caravan", name: "Caravan", age: 0, description: "Pack animals and drivers. Carries goods to your regions or an ally's, then walks back. Roads make it faster; Wagons, Freight wagons, Trains and Lorries carry more and move faster.", attack: 0, defense: 1, speed: 8, carry: 500, cost: { food: 40, wood: 60 }, baseSeconds: 300, civilian: true, hauler: true },
   // Bronze
   { id: "wagon", name: "Wagon", age: 1, description: "A proper cart and team: carries more than twice a caravan and moves faster.", attack: 0, defense: 1, speed: 12, carry: 1200, cost: { food: 60, wood: 150 }, baseSeconds: 420, requires: "wagon_building", civilian: true, hauler: true },
@@ -265,14 +265,14 @@ export const TECHS: readonly TechDef[] = [
   { id: "oral_tradition", name: "Oral tradition", age: 0, description: "Stories carry what was learned: research goes a little faster.", cost: {food: 80, wood: 40}, baseSeconds: 120, requires: ["fire_making"], effect: {researchSpeed: 0.05} },
   { id: "agriculture", name: "Agriculture", age: 0, description: "Planting instead of only gathering. Unlocks the Farm once you reach the Bronze Age.", cost: {food: 150, wood: 80}, baseSeconds: 150, requires: ["fire_making"] },
   { id: "animal_husbandry", name: "Animal husbandry", age: 0, description: "Tame the herds. Unlocks Stables once you reach the Bronze Age.", cost: {food: 150, wood: 60}, baseSeconds: 150, requires: ["fire_making"] },
-  { id: "weaving", name: "Weaving", age: 0, description: "Cloth and shelter for more families.", cost: {food: 120, wood: 80}, baseSeconds: 180, effect: {capacity: 10} },
+  { id: "weaving", name: "Weaving", age: 0, description: "Cloth and shelter for more people.", cost: {food: 120, wood: 80}, baseSeconds: 180, effect: {capacity: 10} },
   { id: "fishing_nets", name: "Fishing nets", age: 0, description: "Nets and traps: more food from rivers and shores.", cost: {wood: 150, food: 60}, baseSeconds: 180, requires: ["fire_making"], effect: {yield: {food: 0.15}} },
   { id: "stone_axes", name: "Stone axes", age: 0, description: "Better tools for felling and quarrying.", cost: {wood: 120, stone: 80}, baseSeconds: 210, requires: ["flint_tools"], effect: {yield: {wood: 0.15, stone: 0.1}} },
   { id: "trapping", name: "Trapping", age: 0, description: "Snares and pits take game the hunters miss.", cost: {wood: 120, food: 100}, baseSeconds: 180, requires: ["flint_tools"], effect: {yield: {food: 0.1}} },
   { id: "basketry", name: "Basketry", age: 0, description: "Woven baskets and bins keep more in store.", cost: {wood: 150, food: 80}, baseSeconds: 210, requires: ["weaving"], effect: {storage: 0.1} },
   { id: "salt_curing", name: "Salt curing", age: 0, description: "Salted meat and fish keep through the winter.", cost: {food: 200, stone: 60}, baseSeconds: 240, requires: ["fire_making"], effect: {storage: 0.1} },
   { id: "shelter_building", name: "Shelter building", age: 0, description: "Pit houses and lean-tos: room for more.", cost: {wood: 200, stone: 60}, baseSeconds: 240, requires: ["weaving"], effect: {capacity: 10} },
-  { id: "tribal_councils", name: "Tribal councils", age: 0, description: "Elders who speak for every family keep far camps loyal.", cost: {food: 250, wood: 100}, baseSeconds: 300, requires: ["oral_tradition"], effect: {loyalty: 0.05} },
+  { id: "tribal_councils", name: "Tribal councils", age: 0, description: "Elders who speak for every settlement keep far camps loyal.", cost: {food: 250, wood: 100}, baseSeconds: 300, requires: ["oral_tradition"], effect: {loyalty: 0.05} },
   { id: "bronze_working", name: "Bronze working", age: 0, description: "Copper and tin make bronze. Enters the Bronze Age.", cost: {food: 300, wood: 250, stone: 200}, baseSeconds: 7200, requires: ["flint_tools", "agriculture"], advancesTo: 1 },
   // Bronze
   { id: "mining", name: "Mining", age: 1, description: "Dig for metals. Unlocks the Mine.", cost: {wood: 300, stone: 300}, baseSeconds: 360 },

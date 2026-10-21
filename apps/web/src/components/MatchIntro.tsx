@@ -53,7 +53,7 @@ export function MatchIntro({ open, onClose, matchName, speed, resourceMult = 1 }
             <p className="text-xs uppercase tracking-[0.3em] text-sky-300">{matchName}</p>
             <h1 className="mt-2 text-3xl font-bold text-white sm:text-4xl">The ice is coming.</h1>
             <p className="mt-3 text-sm text-slate-300">
-              {days} days from now the world north and south of 28° is frozen solid. Five families, one region, and a map that shrinks every day. Build before the ice does.
+              {days} days from now the world north and south of 28° is frozen solid. Five settlers, one region, and a map that shrinks every day. Build before the ice does.
             </p>
             {speed !== 1 && <p className="mt-1 text-xs text-slate-500">This match runs at {speed}x: a game day passes every {Math.round(1440 / speed)} real minutes.</p>}
             {resourceMult !== 1 && <p className="mt-1 text-xs text-slate-500">Resources come in at {resourceMult}x: everything gathered or mined, food included, is {resourceMult} times the usual.</p>}

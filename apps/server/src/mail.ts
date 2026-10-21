@@ -144,7 +144,7 @@ export function verificationMail(displayName: string, token: string, code: strin
     preheader: `Your code is ${code}. Enter it on the site, or click the button, and the ice is yours to beat.`,
     greeting: `Hi ${displayName}`,
     paragraphs: [
-      "Your account is ready. Confirm your email and you can join matches: pick a capital on the real map, set your five families to work, and build before the frost reaches your latitude.",
+      "Your account is ready. Confirm your email and you can join matches: pick a capital on the real map, set your five settlers to work, and build before the frost reaches your latitude.",
       `Enter this code where the site asks for it: ${code}. Or press the button below; either one confirms you.`,
     ],
     facts: [{ label: "Your code", value: code }],
@@ -160,7 +160,7 @@ export function welcomeMail(displayName: string) {
     preheader: "Your email is confirmed. Pick a capital, and come and find the other tribes on Discord.",
     greeting: `Welcome, ${displayName}`,
     paragraphs: [
-      `You are in. The lobby at ${config().PUBLIC_URL} lists the matches you can join: pick a capital on the real map, set your five families to work, and build before the frost reaches your latitude. A new weekly match opens every Monday, and nobody can attack you for your first ${balance.match.protectionDays} game days.`,
+      `You are in. The lobby at ${config().PUBLIC_URL} lists the matches you can join: pick a capital on the real map, set your five settlers to work, and build before the frost reaches your latitude. A new weekly match opens every Monday, and nobody can attack you for your first ${balance.match.protectionDays} game days.`,
       "The other tribes are on our Discord. That is where every update and fix is announced, where bugs are reported, and where players trade notes, form alliances and find each other between matches. Come and say hello.",
     ],
     facts: [
@@ -177,7 +177,7 @@ export function startedMail(displayName: string, matchName: string, slug: string
   const pace = speed > 1 ? `At ${speed}x a game day passes every ${Math.round(1440 / speed)} minutes, so check in often.` : "At real-time pace a game day is a real day: a few minutes each day keeps an empire growing.";
   return renderMail({
     subject: `${matchName} has started`,
-    preheader: `The ice is moving. ${players} tribes are on the map; your five families are waiting.`,
+    preheader: `The ice is moving. ${players} tribes are on the map; your five settlers are waiting.`,
     greeting: `Hi ${displayName}`,
     paragraphs: [
       `"${matchName}" has begun. ${players} tribes share the map and the ice is already moving toward the equator.`,
@@ -255,7 +255,7 @@ export function reminderMail(displayName: string, matchName: string, startsAt: D
       subject: `The lobby is open: ${matchName}`,
       preheader: `${matchName} starts in about an hour. Join now and pick your capital.`,
       greeting: `Hi ${displayName}`,
-      paragraphs: [`"${matchName}" starts in about an hour. The lobby is open now: join, choose where your five families begin, and see who else is in.`, "You are in either way: if you do not come, you are enrolled at the start and a starting region is picked for you."],
+      paragraphs: [`"${matchName}" starts in about an hour. The lobby is open now: join, choose where your five settlers begin, and see who else is in.`, "You are in either way: if you do not come, you are enrolled at the start and a starting region is picked for you."],
       facts: [
         { label: "Tournament", value: matchName },
         { label: "Starts", value: whenUtc(startsAt) },

@@ -16,7 +16,7 @@ export function AboutPage() {
 
       <section className="space-y-3 text-slate-300">
         <p>
-          Every match is the same story told differently. Up to a hundred players start as five families of hunter-gatherers scattered across a real map of
+          Every match is the same story told differently. Up to a hundred players start as five settlers, hunter-gatherers scattered across a real map of
           Earth. Over thirty days they gather, build, research and fight their way from the Stone Age toward the Medieval, while an ice age advances from both
           poles on a schedule everyone can see. Land that was safe on day one is gone by week three. By the end, whoever is left is crowded around the equator,
           and only one of them wins.

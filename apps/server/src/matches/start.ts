@@ -181,7 +181,7 @@ export async function enrolRegistered(db: Db, matchId: string, onlyUserId?: stri
       taken.push(capital);
       await tx.update(players).set({ capitalRegionId: capital }).where(eq(players.id, p!.id));
       await foundCapital(tx, matchId, p!.id, capital, now);
-      await notify(tx, matchId, p!.id, "system", `You are in "${m.name}". A starting region was chosen for you; your five families are at work there now, and nobody can attack you for the first ${balance.match.protectionDays} days.`, { regionId: capital });
+      await notify(tx, matchId, p!.id, "system", `You are in "${m.name}". A starting region was chosen for you; your five settlers are at work there now, and nobody can attack you for the first ${balance.match.protectionDays} days.`, { regionId: capital });
       await tx.insert(events).values({ matchId, at: now, kind: "player.joined", payload: { playerId: p!.id, name: r.name, late: true } });
       n += 1;
     }

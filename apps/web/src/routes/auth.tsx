@@ -88,7 +88,7 @@ export function RegisterPage() {
   return (
     <Shell
       kicker="Free to play"
-      title="Five families. One month. The whole Earth."
+      title="Five settlers. One month. The whole Earth."
       pitch={
         <>
           <p>Pick a capital on the real map, set your workers, and start building before the frost reaches your latitude. A new match opens every week.</p>

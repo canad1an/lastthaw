@@ -33,7 +33,7 @@ export function usePublicMatches() {
 }
 
 const ICE_WEEKS = [
-  { day: 1, title: "The thaw", body: "Five families, a fire, and all the world still green. Pick a capital, set your workers, build Huts before night.", lat: 72 },
+  { day: 1, title: "The thaw", body: "Five settlers, a fire, and all the world still green. Pick a capital, set your workers, build Huts before night.", lat: 72 },
   { day: 7, title: "First frost", body: "Scandinavia, Canada and Siberia go white. Bronze working opens; the first raids land on anyone who left stock in the open.", lat: 62 },
   { day: 14, title: "The squeeze", body: "The line crosses Britain and the northern US. Empires start marching south through land someone else already owns.", lat: 52 },
   { day: 21, title: "The crush", body: "Half the map is ice. Capitals move. Alliances break. Caravans and trains race the frost with everything an empire owns.", lat: 42 },
@@ -66,7 +66,7 @@ export function HomePage() {
               <span className="ember-text">Build an empire first.</span>
             </h1>
             <p className="shadow-copy rise rise-3 mt-6 max-w-xl text-lg leading-relaxed text-slate-200">
-              Start with five families somewhere on the real Earth. Gather, build, research and raid your way through the ages while a
+              Start with five settlers somewhere on the real Earth. Gather, build, research and raid your way through the ages while a
               glacier swallows the map from both poles. A hundred rivals. One winner. Hard end date.
             </p>
             <div className="rise rise-4 mt-8 flex flex-wrap items-center gap-3">
@@ -122,14 +122,14 @@ export function HomePage() {
         <div className="glass overflow-hidden rounded-2xl">
           <div className="flex flex-wrap items-end justify-between gap-3 border-b border-slate-700/50 px-5 py-4">
             <div>
-              <h2 className="display text-xl font-semibold text-white">Watch the ice take the world</h2>
-              <p className="text-sm text-slate-400">The real map, the real ice schedule. Everything above the line stops producing and loses people.</p>
+              <h2 className="display text-xl font-semibold text-white">A world to win before the ice takes it</h2>
+              <p className="text-sm text-slate-400">Thirty days on the real map. Claim land, conquer rivals, cross the seas, and keep your people south of the ice.</p>
             </div>
             <Link to="/how-to-play" className="text-sm text-sky-300 hover:text-white">
-              How the ice works
+              How it plays
             </Link>
           </div>
-          <HeroMap className="aspect-[2000/760] w-full bg-[#0a1f33]" />
+          <HeroMap className="aspect-[2000/820] w-full bg-[#0a1f33]" />
         </div>
       </section>
 
@@ -216,7 +216,7 @@ export function HomePage() {
           <div className="glass glass-strong relative overflow-hidden rounded-2xl px-6 py-12 text-center sm:px-12">
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(60%_80%_at_50%_120%,rgba(245,158,11,0.18),transparent_70%)]" />
             <h2 className="display relative text-3xl font-bold sm:text-5xl">
-              <span className="frost-text">Somewhere on Earth, five families are waiting for you.</span>
+              <span className="frost-text">Somewhere on Earth, five settlers are waiting for you.</span>
             </h2>
             <p className="relative mx-auto mt-4 max-w-xl text-slate-300">Sign up, pick a capital, and start building before the line reaches your latitude.</p>
             <a href="#signup" className="btn-ember display relative mt-8 inline-block rounded-md px-8 py-3.5 text-lg font-semibold">

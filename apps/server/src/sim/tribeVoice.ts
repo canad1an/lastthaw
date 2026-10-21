@@ -58,7 +58,7 @@ export function composePost(f: TribeFacts, rng: () => number): string {
   const holdings = [
     `We hold ${f.regions} region${f.regions === 1 ? "" : "s"} and the ${age} Age is ours.`,
     `${f.regions} region${f.regions === 1 ? "" : "s"} under our banner, ${age} Age tools in every hand.`,
-    `${age} Age, ${f.regions} region${f.regions === 1 ? "" : "s"}. Not bad for five families.`,
+    `${age} Age, ${f.regions} region${f.regions === 1 ? "" : "s"}. Not bad for five settlers.`,
   ];
   lines.push(pick(rng, holdings));
   if (f.rank === 1 && f.of > 1) lines.push(pick(rng, ["Top of the board for now; the others know where to find us.", "First place. The ice is the only thing we are watching.", "Leading the standings. Come and take it."]));

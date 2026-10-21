@@ -267,7 +267,7 @@ function LobbyView({ matchId, state, onBack }: { matchId: string; state: MatchSt
           </Button>
         )}
         <h1 className="display text-2xl font-semibold text-white">{state.match.name}</h1>
-        <p className="text-sm text-slate-400">{startsIn > 0 ? `Starts in ${formatCountdown(startsIn)}` : "Starting..."} · choose where your five families begin.</p>
+        <p className="text-sm text-slate-400">{startsIn > 0 ? `Starts in ${formatCountdown(startsIn)}` : "Starting..."} · choose where your five settlers begin.</p>
         <Card>
           <p className="text-sm text-slate-300">
             Highlighted regions are your starting options. Click one, then confirm. If you do not choose, one is picked for you when the match starts.
