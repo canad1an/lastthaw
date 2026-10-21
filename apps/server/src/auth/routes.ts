@@ -11,7 +11,7 @@ import type { Publisher } from "../realtime/publish.js";
 import { emailTokens, sessions, users, players, matches } from "../db/schema.js";
 import { hashPassword, hashToken, newToken, verifyPassword } from "./password.js";
 import { createSession, destroySession, requireUser } from "./session.js";
-import { resetMail, sendMail, verificationMail } from "../mail.js";
+import { resetMail, sendMail, verificationMail, welcomeMail } from "../mail.js";
 
 const VERIFY_HOURS = 24;
 const RESET_HOURS = 1;
@@ -143,10 +143,17 @@ export async function authRoutes(app: FastifyInstance, opts: { db: Db; redis: Re
       app.log.warn({ auth: "verify", reason: code ? "bad code" : "bad link", userId: req.user?.id ?? null }, "verification refused");
       return reply.code(400).send({ error: code ? "that code is wrong or has expired; ask for a new one" : "that link is invalid or expired" });
     }
-    await db.transaction(async (tx) => {
+    const firstTime = await db.transaction(async (tx) => {
       await tx.update(emailTokens).set({ usedAt: now }).where(eq(emailTokens.id, row.id));
+      const [u] = await tx.select({ email: users.email, displayName: users.displayName, verified: users.emailVerifiedAt }).from(users).where(eq(users.id, row.userId)).limit(1);
       await tx.update(users).set({ emailVerifiedAt: now }).where(eq(users.id, row.userId));
+      return u && !u.verified ? u : null;
     });
+    // The welcome, once: the first confirmation sends it, a repeat of the link or code does not.
+    if (firstTime && (await mailAllowed("welcome", firstTime.email))) {
+      const mail = welcomeMail(firstTime.displayName);
+      void sendMail(firstTime.email, mail.subject, mail.text, mail.html);
+    }
     return { ok: true };
   });
 
