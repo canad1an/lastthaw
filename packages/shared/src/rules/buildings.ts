@@ -96,9 +96,10 @@ export function availableBuildings(age: number, techs: ReadonlySet<string>): Bui
 
 export function availableUnits(age: number, techs: ReadonlySet<string>): UnitDef[] {
   const list = UNITS.filter((u) => !u.hidden && u.age <= age && (!u.requires || techs.has(u.requires)));
-  // Once a bigger hauler is known, the smaller kinds are no longer trained: the research rebuilt them all anyway.
-  const bestCarry = Math.max(0, ...list.filter((u) => u.hauler).map((u) => u.carry));
-  return list.filter((u) => !u.hauler || u.carry >= bestCarry);
+  // Once a bigger land hauler is known, the smaller kinds are no longer trained: the research rebuilt them all anyway.
+  // Boats are their own ladder: a canoe stays trainable beside a wagon.
+  const bestCarry = Math.max(0, ...list.filter((u) => u.hauler && !u.naval).map((u) => u.carry));
+  return list.filter((u) => !u.hauler || u.naval || u.carry >= bestCarry);
 }
 
 /** Techs a player may research next: right age, prerequisites done, not already done. */

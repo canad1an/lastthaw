@@ -144,7 +144,7 @@ const ADVANCED: Array<{ title: string; body: React.ReactNode }> = [
           Allied roads and rails count as yours. A Waystation (Iron Age, built on Roads) cuts every hauler leg that ends in its region by {Math.round((buildingById.get("waystation")?.effect.haul ?? 0) * 100)}% per level, up to {Math.round(balance.travel.waystationMaxCut * 100)}%; the cuts multiply along a route, and armies gain nothing from them.
         </p>
         <p className="mt-2">
-          Sea lanes open with Shipbuilding and run at {mult(balance.travel.seaFactor)}, or {mult(balance.travel.harborBothFactor)} with a Harbor at both ends. Every travelling person carries {balance.travel.carryPerPerson} goods. The
+          Canoes (Sailing, Bronze Age) cross lanes up to {balance.travel.canoeMaxLaneKm} km; sea lanes open fully with Shipbuilding and run at {mult(balance.travel.seaFactor)}, or {mult(balance.travel.harborBothFactor)} with a Harbor at both ends. Every travelling person carries {balance.travel.carryPerPerson} goods. The
           defender sees your army the moment it leaves, with a countdown.
         </p>
       </>
@@ -530,7 +530,7 @@ export function HowToPlayPage() {
           <li>New players cannot be attacked for the first {balance.match.protectionDays} days (scaled by match speed). Attacking someone ends your own protection.</li>
           <li>Storehouses and Granaries hide part of your stock from raiders; the rest can be moved out with a Send resources mission before a raid lands.</li>
           <li>Metals come from a Mine on a region that has copper, tin or iron, and horses from Stables on a region with horses. Otherwise trade or raid for them.</li>
-          <li>The seven ages are {AGES.join(", ")}. Each unlocks about five buildings and three units. Boats arrive with Shipbuilding in the Classical Age: build a Harbor on a coast for Galleys, then Cogs, Ironclads and Destroyers by age. Ships sail one sea lane at a time, patrol it, and fight any enemy ship that tries to cross; a crossing with no escort is turned back by a patrol.</li>
+          <li>The seven ages are {AGES.join(", ")}. Each unlocks about five buildings and three units. Boats begin in the Bronze Age: Sailing launches the Canoe, which crosses lanes up to {balance.travel.canoeMaxLaneKm} km with a scout, a few settlers or a small load and needs no harbour. Shipbuilding in the Iron Age opens the sea proper: build a Harbor on a coast for Galleys, then Cogs (Classical), Ironclads and Destroyers by age. Ships sail one sea lane at a time, patrol it, and fight any enemy ship that tries to cross; a crossing with no escort is turned back by a patrol.</li>
           <li>AI tribes fill empty slots. Easy ones hoard and sleep; hard ones react to your attacks, flee the ice and hunt weak neighbours.</li>
           <li>
             <b>House rules.</b> One account per person, and play by hand. Scripts, bots and browser agents that play for you are not allowed: the game logs every command and flags accounts whose play has a machine's rhythm, and those accounts are suspended.

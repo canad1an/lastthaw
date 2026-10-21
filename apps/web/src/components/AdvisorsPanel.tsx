@@ -717,7 +717,7 @@ function SettingsForm({ matchId, state, advisor }: { matchId: string; state: Mat
       {slate && (
         <div className="space-y-2 rounded border border-rose-500/40 bg-rose-950/20 p-3 text-xs text-slate-300" data-clean-slate-confirm>
           <p>
-            Cancel all {queuedBuilds} queued build{queuedBuilds === 1 ? "" : "s"} with a full refund and drop the {materialsRoutes} materials route{materialsRoutes === 1 ? "" : "s"}, putting their set-aside goods back on the shelf. Training and research carry on. The advisor starts fresh from the minimums above on the next pass.
+            Cancel all {queuedBuilds} queued build{queuedBuilds === 1 ? "" : "s"} with a full refund and drop the {materialsRoutes} materials route{materialsRoutes === 1 ? "" : "s"}, putting their set-aside goods back on the shelf. Training and research carry on. The advisor then makes a fresh pass at once from the minimums above.
           </p>
           <label className="flex items-start gap-2">
             <input type="checkbox" checked={slate.routes} onChange={(e) => setSlate({ routes: e.target.checked })} className="mt-0.5 accent-rose-400" />
@@ -734,7 +734,7 @@ function SettingsForm({ matchId, state, advisor }: { matchId: string; state: Mat
           </div>
         </div>
       )}
-      {clean.isSuccess && !slate && <p className="text-xs text-emerald-300">Cleared {clean.data.builds} build{clean.data.builds === 1 ? "" : "s"} and {clean.data.routes} route{clean.data.routes === 1 ? "" : "s"}.</p>}
+      {clean.isSuccess && !slate && <p className="text-xs text-emerald-300">Cleared {clean.data.builds} build{clean.data.builds === 1 ? "" : "s"} and {clean.data.routes} route{clean.data.routes === 1 ? "" : "s"}{clean.data.passed ? "; the advisor has made a fresh pass" : ""}.</p>}
     </Card>
   );
 }

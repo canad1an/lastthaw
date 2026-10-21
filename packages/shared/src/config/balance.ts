@@ -152,6 +152,8 @@ export const balance = {
     harborOneFactor: 0.75,
     /** Sea legs are fast once boats exist. */
     seaFactor: 0.7,
+    /** A canoe (any unit with shortLanes) keeps to sea lanes no longer than this, in km: the straits and island hops, about a third of the lanes. */
+    canoeMaxLaneKm: 800,
     /** Tech that allows armies to use sea routes. */
     seaTech: "shipbuilding",
     /** Goods each travelling person can carry on moves, reinforcements and evacuations. */

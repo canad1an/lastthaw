@@ -144,7 +144,7 @@ export const api = {
     request<{ ok: true; disbanded: number }>("POST", `/api/matches/${id}/regions/${regionId}/disband`, { units }),
   recallArmy: (id: string, armyId: string) => request<{ ok: true; returnsAt: string }>("POST", `/api/matches/${id}/armies/${armyId}/recall`, {}),
   cancelJob: (id: string, jobId: string) => request<{ ok: true }>("POST", `/api/matches/${id}/jobs/${jobId}/cancel`, {}),
-  cleanSlate: (id: string, routes: boolean) => request<{ ok: true; builds: number; routes: number }>("POST", `/api/matches/${id}/builds/clean-slate`, { routes }),
+  cleanSlate: (id: string, routes: boolean) => request<{ ok: true; builds: number; routes: number; passed: boolean }>("POST", `/api/matches/${id}/builds/clean-slate`, { routes }),
   messages: (id: string) => request<MessagesResponse>("GET", `/api/matches/${id}/messages`),
   markMessagesRead: (id: string) => request<{ ok: true }>("POST", `/api/matches/${id}/messages/read`, {}),
   devStart: (id: string) => request<{ ok: true; started: boolean }>("POST", `/api/matches/${id}/dev/start`, {}),

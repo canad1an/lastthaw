@@ -5,7 +5,7 @@
  * pays costs up front and returns what it created. Errors carry statusCode.
  */
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
-import { availableUnits, armySpeed, balance, buildingBlockedBy, carryCapacity, buildingById, buildingCost, buildingSeconds, canAfford, effectsOf, findRoute, missingFor, realSeconds, regionById, techById, techCost, techSeconds, trainSeconds, travelSeconds, unitById, unitCost, type Cost, type MissionKind, caravanCarry, techEffectsOf, distanceKm, haulerCarry, HAULER_IDS, splitNaval, seaLegsOf, laneKey, laneName, resolveCombat } from "@lastthaw/shared";
+import { availableUnits, armySpeed, balance, buildingBlockedBy, carryCapacity, buildingById, buildingCost, buildingSeconds, canAfford, effectsOf, findRoute, missingFor, realSeconds, regionById, techById, techCost, techSeconds, trainSeconds, travelSeconds, unitById, unitCost, type Cost, type MissionKind, caravanCarry, techEffectsOf, distanceKm, haulerCarry, HAULER_IDS, splitNaval, seaLegsOf, laneKey, laneName, resolveCombat, laneLimitKm } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { armies, battles, jobs, matchRegions, matches, messages, players, tradeRoutes, regionSightings, playerTechs } from "../db/schema.js";
 import { matchDayAt, matchNow } from "./clock.js";
@@ -396,7 +396,8 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
   if (body.mission === "settle") {
     const settlers = units.settler ?? 0;
     if (settlers < balance.settle.settlersRequired) throw httpError(400, `settling needs at least ${balance.settle.settlersRequired} settlers`);
-    if (Object.keys(units).some((id) => id !== "settler")) throw httpError(400, "only settlers can settle; send escorts separately");
+    // Boats may carry the settlers across; no soldiers come along.
+    if (Object.keys(landUnits).some((id) => id !== "settler")) throw httpError(400, "only settlers can settle; send escorts separately");
   }
   if (!["settle", "conquer", "move", "reinforce"].includes(body.mission) && (units.settler ?? 0) > 0) throw httpError(400, "settlers only go on settle, conquer, move and reinforce missions");
   const goods = Object.entries(body.cargo).reduce((a, [, v]) => a + v, 0);
@@ -409,6 +410,9 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
   // Ships sail one lane: coast to coast, directly. Patrols sit on that lane.
   const directLane = !!origin0 && origin0.seaRoutes.includes(body.targetRegionId);
   if ((hasShips || body.mission === "patrol") && !directLane) throw httpError(400, "ships sail directly from one coast to another across a sea lane; pick a region joined to this one by sea");
+  // Canoes keep to the short lanes.
+  const laneLimit = laneLimitKm(units);
+  if (hasShips && laneLimit !== null && distanceKm(regionId, body.targetRegionId) > laneLimit) throw httpError(400, `canoes keep to short lanes: that crossing is ${Math.round(distanceKm(regionId, body.targetRegionId))} km, over the ${laneLimit} km a canoe can manage. A Galley or Cog from a Harbor crosses open sea.`);
   const route = hasShips || body.mission === "patrol"
     ? { path: [regionId, body.targetRegionId], cost: distanceKm(regionId, body.targetRegionId) * balance.travel.seaFactor * (harbors.has(regionId) && harbors.has(body.targetRegionId) ? balance.travel.harborBothFactor : harbors.has(regionId) || harbors.has(body.targetRegionId) ? balance.travel.harborOneFactor : 1), usesSea: true }
     : findRoute(regionId, body.targetRegionId, techs.has(balance.travel.seaTech), roads, rails, harbors);
