@@ -415,6 +415,7 @@ function MilitarySettings({ matchId, state, advisor, onSelect }: { matchId: stri
           </ul>
         </Card>
       )}
+      <AdvisorHistory matchId={matchId} kind="military" who="Max" lastPassAt={advisor.lastPassAt} onSelect={onSelect} />
     </>
   );
 }
@@ -625,7 +626,7 @@ function ChancellorSettings({ matchId, state, advisor }: { matchId: string; stat
 function AdvisorHistory({ matchId, kind, who, lastPassAt, onSelect }: { matchId: string; kind: AdvisorKind; who: string; lastPassAt: string | null; onSelect?: (regionId: string) => void }) {
   const [open, setOpen] = useState(false);
   const q = useQuery({ queryKey: [...keys.matchState(matchId), "advisor-history", kind, lastPassAt], queryFn: () => api.advisorHistory(matchId, kind), enabled: open, staleTime: 30_000 });
-  const tone: Record<string, string> = { build: "text-slate-200", workers: "text-amber-200", move: "text-emerald-200" };
+  const tone: Record<string, string> = { build: "text-slate-200", workers: "text-amber-200", move: "text-emerald-200", train: "text-slate-200", fortify: "text-sky-200", reinforce: "text-emerald-200", disband: "text-slate-400", scout: "text-violet-200", attack: "text-rose-200", settle: "text-emerald-200", raid: "text-rose-200" };
   return (
     <details className="rounded border border-slate-800 bg-slate-950/40 p-2 text-xs" open={open} onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)} data-advisor-history={kind}>
       <summary className="cursor-pointer text-slate-300">History: everything {who} has done</summary>

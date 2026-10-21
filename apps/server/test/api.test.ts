@@ -1225,6 +1225,12 @@ describe("api routes", () => {
       expect(p1.report.exposed.some((e) => e.regionId === adj)).toBe(true);
       expect(p1.report.trained).toBeGreaterThan(0);
       expect(p1.report.fortified).toBeGreaterThan(0);
+      // His log has a line for the garrison he ordered and the wall he queued.
+      const maxLog = await Ben.call("GET", `${base}/advisors/military/history`);
+      expect(maxLog.statusCode, maxLog.body).toBe(200);
+      const maxLines = (maxLog.json() as { events: { action: string }[] }).events;
+      expect(maxLines.some((e) => e.action === "train")).toBe(true);
+      expect(maxLines.some((e) => e.action === "fortify")).toBe(true);
       const c1 = p1.campaigns.find((c) => c.targetRegionId === N)!;
       expect(c1.stage, c1.note).toBe("intel");
       const [scouts] = await db.select().from(armies).where(and(eq(armies.matchId, gameId), eq(armies.playerId, benPid), eq(armies.mission, "scout"), eq(armies.targetRegionId, N), eq(armies.status, "outbound")));

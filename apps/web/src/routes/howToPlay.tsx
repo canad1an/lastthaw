@@ -369,6 +369,9 @@ function AdvisorsSection() {
             <b>Stances.</b> <i>Passive</i>: defence only, even marked targets wait. <i>Measured</i>: defence plus campaigns against the regions you mark, in order. <i>Aggressive</i>: measured, and when your list has room he picks weak neighbours himself; with Raids on he also raids the weakest rich neighbour from a border region with soldiers to spare, one raid a pass.
           </p>
           <p>
+            <b>His log.</b> History, under his settings, lists every order Max gives: garrisons trained, walls queued, reinforcements and scouts sent, columns marched, raids launched and idle soldiers sent back to work, newest first, with a Show link to the region.
+          </p>
+          <p>
             <b>Targets and campaigns.</b> Open any region that is not yours and press ⚔ Target for the Military advisor; it joins his ordered list and gets a red crossed swords on the map. He runs up to three campaigns at once (your choice, one to three). Each one goes: <i>intel</i>, where he sends two Scouts unless you turn Scout first off or a watchtower already sees the region (a sighting older than {mil.sightingMaxHours} game hours is not good enough); <i>muster</i>, at your nearest region with a land route, where he orders a force {mil.forceMargin} times the defenders' strength in your best soldier, siege engines if there is a wall, and the settlers a conquest needs; and <i>marching</i>, the attack itself. Empty land is settled rather than fought for. A beaten force musters again {Math.round((mil.retryMargin - 1) * 100)}% larger; after {mil.maxAttempts} defeats he gives up on that target and tells you. He never attacks allies, pact partners or tribes under beginner protection, and waits when a target is protected or under a pact.
           </p>
           <p>

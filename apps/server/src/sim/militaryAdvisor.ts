@@ -12,7 +12,7 @@ import { alliesOf } from "./alliances.js";
 import { peaceBetween } from "./diplomacy.js";
 import { queueBuild, queueTrain, sendArmy, type CommandContext } from "./commands.js";
 import { projectRegion, resourceMultOf, type MatchRegionRow } from "./regions.js";
-import { parseSettings, type AdvisorRow } from "./advisors.js";
+import { parseSettings, writeAdvisorEvents, type AdvisorEvent, type AdvisorRow } from "./advisors.js";
 import { disbandUnits } from "./evacuate.js";
 import { notify, type MatchRow } from "../worker/jobs.js";
 
@@ -133,6 +133,9 @@ async function frontOf(db: Db, m: MatchRow, p: PlayerRow, owned: MatchRegionRow[
 
 /** One pass of the Military advisor. */
 export async function militaryPass(db: Db, m: MatchRow, p: PlayerRow, a: AdvisorRow, now: Date, publisher: Publisher): Promise<AdvisorReport> {
+  const events: AdvisorEvent[] = [];
+  const logLine = (action: string, regionId: string | null, text: string) => events.push({ action, regionId, text });
+  const unitsText = (u: Record<string, number>) => Object.entries(u).filter(([, n]) => n > 0).map(([id, n]) => `${n} ${(unitById.get(id)?.name ?? id).toLowerCase()}${n === 1 ? "" : "s"}`).join(", ");
   const c = balance.advisors.military;
   let settings = parseSettings(a.settings);
   const techRows = await db.select({ id: playerTechs.techId }).from(playerTechs).where(eq(playerTechs.playerId, p.id));
@@ -198,6 +201,7 @@ export async function militaryPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
         if (!err) {
           trained += want;
           orders += 1;
+          logLine("train", f.row.regionId, `Ordered ${want} ${best.name.toLowerCase()}${want === 1 ? "" : "s"} at ${regionById(f.row.regionId)?.name ?? f.row.regionId} for its garrison (${soldiers} of ${f.garrisonTarget} there).`);
         } else bump(/not enough|shipped/.test(err) ? "unaffordable" : /queue is full/.test(err) ? "queueFull" : "blocked");
       }
     }
@@ -213,6 +217,7 @@ export async function militaryPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
         if (!err) {
           fortified += 1;
           queued += 1;
+          logLine("fortify", f.row.regionId, `Queued ${def.name} at ${region.name}, an exposed border region.`);
         } else bump(/not enough|shipped/.test(err) ? "unaffordable" : "blocked");
         break;
       }
@@ -242,6 +247,7 @@ export async function militaryPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
     if (!err) {
       moved += n;
       used.add(donor.regionId);
+      logLine("reinforce", f.row.regionId, `Sent ${unitsText(send)} from ${regionById(donor.regionId)?.name ?? donor.regionId} to reinforce ${regionById(f.row.regionId)?.name ?? f.row.regionId}.`);
     }
   }
 
@@ -278,6 +284,7 @@ export async function militaryPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
       if (!err) {
         disbanded += spare - left;
         regionsDone += 1;
+        logLine("disband", r.regionId, `Sent ${unitsText(send)} at ${regionById(r.regionId)?.name ?? r.regionId} back to work: idle beyond the garrison.`);
       } else bump("blocked");
     }
   }
@@ -358,11 +365,13 @@ export async function militaryPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
           const n = Math.min(2, from.units[scout] ?? 0);
           const err = await attempt(() => sendArmy(ctx, from.regionId, { mission: "scout", targetRegionId: t, units: { [scout]: n }, people: 0, cargo: {} }));
           cp.note = err ? `Could not send scouts to ${name(t)}: ${err}.` : `${n} scout${n === 1 ? "" : "s"} sent to ${name(t)} from ${name(from.regionId)}.`;
+          if (!err) logLine("scout", t, `Sent ${n} scout${n === 1 ? "" : "s"} from ${name(from.regionId)} to look at ${name(t)}.`);
         } else {
           const near = owned.filter((r) => !skip.has(r.regionId) && findRoute(r.regionId, t, false)).sort((x, y) => distanceKm(x.regionId, t) - distanceKm(y.regionId, t))[0];
           if (near && trainingAt(near.regionId, scout) === 0) {
             const err = await attempt(() => queueTrain(ctx, near.regionId, scout, 2, { allowWait: true, maxOwed: c.maxOwed }));
             cp.note = err ? `No scouts, and none could be trained at ${name(near.regionId)}: ${err}.` : `Training 2 scouts at ${name(near.regionId)} for ${name(t)}.`;
+            if (!err) logLine("train", near.regionId, `Ordered 2 scouts at ${name(near.regionId)} to look at ${name(t)}.`);
           } else cp.note = near ? `Scouts are training at ${name(near.regionId)}.` : `No region of yours can reach ${name(t)} by land.`;
         }
         continue;
@@ -419,6 +428,7 @@ export async function militaryPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
         } else {
           cp.stage = "marching";
           cp.note = `${empty ? "Settlers" : `${qty} ${best.name}${qty === 1 ? "" : "s"} and ${settlers} settlers`} marching from ${name(staging.regionId)} on ${name(t)}.`;
+          logLine(empty ? "settle" : "attack", t, `${empty ? "Sent settlers" : `Marched ${unitsText(send)}`} from ${name(staging.regionId)} on ${name(t)}.`);
         }
         continue;
       }
@@ -443,6 +453,7 @@ export async function militaryPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
           trained += n;
           orders += 1;
           parts.push(`${n} ${unitName}`);
+          logLine("train", staging.regionId, `Ordered ${n} ${unitName} at ${name(staging.regionId)}, mustering for ${name(t)}.`);
         } else bump(/not enough|shipped/.test(err) ? "unaffordable" : /queue is full/.test(err) ? "queueFull" : "blocked");
       };
       await order(best.id, qty - have - trainingAt(staging.regionId, best.id), best.name.toLowerCase());
@@ -462,6 +473,7 @@ export async function militaryPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
             if (!err) {
               moved += n;
               parts.push(`${n} people coming from ${name(crowded.regionId)}`);
+              logLine("move", staging.regionId, `Sent ${n} people from ${name(crowded.regionId)} to ${name(staging.regionId)} to man the muster.`);
             }
           }
         } else suggestions.push({ regionId: staging.regionId, text: `${name(staging.regionId)} has too few free workers to raise the force for ${name(t)}: move people there, or hire the Economic advisor to bring them.` });
@@ -533,6 +545,7 @@ export async function militaryPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
       const err = await attempt(() => sendArmy(ctx, f.row.regionId, { mission: "raid", targetRegionId: prey.regionId, units: force, people: 0, cargo: {} }));
       if (!err) {
         suggestions.push({ regionId: prey.regionId, text: `Raiding ${name(prey.regionId)} from ${name(f.row.regionId)} with ${spare} soldiers to spare.` });
+        logLine("raid", prey.regionId, `Raided ${name(prey.regionId)} from ${name(f.row.regionId)} with ${unitsText(force)}.`);
         break;
       }
     }
@@ -541,6 +554,7 @@ export async function militaryPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
   for (const cp of campaigns.filter((x) => x.stage !== "done" && x.stage !== "failed")) suggestions.unshift({ regionId: cp.targetRegionId, text: cp.note || `${name(cp.targetRegionId)}: ${cp.stage}.` });
   for (const e of exposed.filter((x) => x.exposure >= 1)) suggestions.push({ regionId: e.regionId, text: e.text });
   const report: AdvisorReport = { at: now.toISOString(), queued, moved, disbanded, rebalanced: 0, trained, fortified, skipped, suggestions: suggestions.slice(0, 14), exposed, evacuated: 0, settled: 0, clock: [], researched: 0, listed: 0, bought: 0 };
+  await writeAdvisorEvents(db, m, p, "military", now, events);
   await db.update(advisors).set({ lastPassAt: now, lastReport: report, campaigns }).where(eq(advisors.id, a.id));
   await publisher.toPlayer(m.id, p.id, "advisor.report", { kind: a.kind, trained, fortified, campaigns: campaigns.length });
   return report;
