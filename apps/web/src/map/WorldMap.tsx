@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
 import { allRegions, balance, freezeDayForLatitude, iceExposure, iceLatitudeOnDay, world, type MapRegion, regionById } from "@lastthaw/shared";
 import type { ArmyMarker } from "./armyMarkers.js";
-import { UnitStrokes } from "../components/UnitIcon.js";
+import { UnitStrokes, unitPicture } from "../components/UnitIcon.js";
 
 export type RegionPaint = {
   fill?: string;
@@ -380,7 +380,10 @@ export function WorldMap({ paint, selected, onSelect, focus, flyTo, className = 
                   <circle r={a.lead ? 9 : 7} fill={a.hostile ? "#f43f5e" : MILITARY.has(a.mission) ? "#f97316" : "#38bdf8"} stroke="#0b1a2b" strokeWidth={1.5} />
                 )}
                 {a.mission !== "relocate" &&
-                  (a.lead ? (
+                  (a.lead && unitPicture(a.lead) ? (
+                    // The kind the convoy is made of, as its picture on the disc.
+                    <image href={unitPicture(a.lead)!} x={-7.5} y={-7.5} width={15} height={15} preserveAspectRatio="xMidYMid meet" style={{ pointerEvents: "none" }} />
+                  ) : a.lead ? (
                     // The kind the convoy is made of, drawn dark on the disc: a canoe is a canoe, an archer a bow.
                     <g transform="scale(0.58) translate(-12 -12)">
                       <UnitStrokes id={a.lead} color="#0b1a2b" />

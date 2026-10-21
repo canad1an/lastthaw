@@ -1,4 +1,5 @@
 import { unitById } from "@lastthaw/shared";
+import { UNIT_PICTURES } from "./unitPictures.js";
 
 /**
  * One pictogram per unit, drawn as strokes and a few filled shapes in a 24 x 24 box, in the current text colour.
@@ -100,8 +101,15 @@ export function UnitStrokes({ id, color = "currentColor" }: { id: string; color?
   );
 }
 
-/** An inline icon beside a unit's name, in the text colour. */
+/** The illustrated picture of a unit, when one exists under /units. */
+export function unitPicture(id: string): string | null {
+  return UNIT_PICTURES.has(id) ? `/units/${id}.png` : null;
+}
+
+/** An inline icon beside a unit's name: the illustrated picture where one exists, else the line drawing in the text colour. */
 export function UnitIcon({ id, className = "h-5 w-5", title }: { id: string; className?: string; title?: string }) {
+  const pic = unitPicture(id);
+  if (pic) return <img src={pic} alt={title ?? ""} title={title} className={`inline-block shrink-0 object-contain ${className}`} loading="lazy" draggable={false} />;
   return (
     <svg viewBox="0 0 24 24" className={`inline-block shrink-0 ${className}`} aria-hidden={title ? undefined : true} role={title ? "img" : undefined}>
       {title && <title>{title}</title>}

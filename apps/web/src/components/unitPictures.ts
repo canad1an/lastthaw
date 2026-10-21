@@ -1,0 +1,2 @@
+/** Units with an illustrated picture under /units/<id>.png (generated list: every png in apps/web/public/units). */
+export const UNIT_PICTURES: ReadonlySet<string> = new Set(["archer","ballista","canoe","caravan","cataphract","catapult","cavalry","chariot","cog","freight_wagon","galley","knight","legionary","longbowman","militia","sellsword","settler","slinger","spearman","swordsman","tracker","train","trebuchet","wagon","warrior"]);
