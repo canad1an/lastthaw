@@ -267,14 +267,19 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
       empireStock[k] = (empireStock[k] ?? 0) + (x.economy[k] ?? 0);
     }
   }
+  // Builds come in two sweeps. First, and always: every upgrade a region can pay for from its own stores, level after
+  // level up to the minimums set, as far as the queue's slots allow. That is never rationed. Only then come the builds
+  // that need materials from elsewhere, at most maxQueuedPerPass of them a pass and one waiting build per region.
+  const pendingBuilds = (regionId: string) => pending.filter((j) => j.regionId === regionId && (j.kind === "build" || j.kind === "train"));
+  const queuedLevels = (regionId: string, id: string) => pending.filter((j) => j.regionId === regionId && j.kind === "build" && j.refId === id).length;
+  const localExtra = new Map<string, Record<string, number>>();
   for (const { row, economy } of projected) {
     if (skip.has(row.regionId)) continue;
-    if (queued >= c.maxQueuedPerPass) break;
     const region = regionById(row.regionId);
     if (!region) continue;
-    const here = pending.filter((j) => j.regionId === row.regionId && (j.kind === "build" || j.kind === "train"));
-    let slots = balance.queue.slotsPerRegion - here.length;
-    const waitingHere = here.some((j) => j.kind === "build" && j.waitingFor);
+    let slots = balance.queue.slotsPerRegion - pendingBuilds(row.regionId).length;
+    const local = stockOf(row);
+    const extra: Record<string, number> = {};
     for (const id of buildOrderFor(row, economy, false)) {
       const target = Math.min(settings.minLevels[id] ?? 0, buildingById.get(id)?.maxLevel ?? 0);
       if (target <= 0) continue;
@@ -283,41 +288,81 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
         bump("notYetAvailable");
         continue;
       }
-      const have = (row.buildings[id] ?? 0) + here.filter((j) => j.kind === "build" && j.refId === id).length;
-      if (have >= target) continue;
       if (buildingBlockedBy(def, region, row.buildings, row.isCapital)) {
         bump("blocked");
         continue;
+      }
+      let have = (row.buildings[id] ?? 0) + queuedLevels(row.regionId, id) + (extra[id] ?? 0);
+      while (have < target && slots > 0) {
+        const costNow = buildingCost(def, have + 1, matchDay, region.neighbors.length);
+        if (!canAfford(local, costNow)) break;
+        try {
+          await queueBuild(ctx, row.regionId, id, { allowWait: false });
+        } catch (err) {
+          const msg = (err as Error).message ?? "";
+          bump(/queue is full/.test(msg) ? "queueFull" : /not enough/.test(msg) ? "unaffordable" : "blocked");
+          break;
+        }
+        for (const [k, v] of Object.entries(costNow)) local[k] = (local[k] ?? 0) - v;
+        extra[id] = (extra[id] ?? 0) + 1;
+        have += 1;
+        queued += 1;
+        slots -= 1;
       }
       if (slots <= 0) {
         bump("queueFull");
         break;
       }
-      if (queued >= c.maxQueuedPerPass) break;
-      const nextLevel = (row.buildings[id] ?? 0) + here.filter((j) => j.kind === "build" && j.refId === id).length + 1;
-      const costNow = buildingCost(def, nextLevel, matchDay, region.neighbors.length);
-      const payable = canAfford(stockOf(row), costNow);
+    }
+    localExtra.set(row.regionId, extra);
+  }
+
+  let queuedWaiting = 0;
+  for (const { row, economy } of projected) {
+    if (skip.has(row.regionId)) continue;
+    if (queuedWaiting >= c.maxQueuedPerPass) break;
+    const region = regionById(row.regionId);
+    if (!region) continue;
+    const extra = localExtra.get(row.regionId) ?? {};
+    const here = pendingBuilds(row.regionId);
+    let slots = balance.queue.slotsPerRegion - here.length - Object.values(extra).reduce((a, n) => a + n, 0);
+    const waitingHere = here.some((j) => j.kind === "build" && j.waitingFor);
+    for (const id of buildOrderFor(row, economy, false)) {
+      const target = Math.min(settings.minLevels[id] ?? 0, buildingById.get(id)?.maxLevel ?? 0);
+      if (target <= 0) continue;
+      const def = avail.get(id);
+      if (!def) continue;
+      const have = (row.buildings[id] ?? 0) + queuedLevels(row.regionId, id) + (extra[id] ?? 0);
+      if (have >= target) continue;
+      if (buildingBlockedBy(def, region, row.buildings, row.isCapital)) continue;
+      if (slots <= 0) {
+        bump("queueFull");
+        break;
+      }
+      if (queuedWaiting >= c.maxQueuedPerPass) break;
+      const costNow = buildingCost(def, have + 1, matchDay, region.neighbors.length);
       const mayWait = settings.useOtherRegions && !waitingHere && waitingBuilds < c.maxWaitingBuilds;
-      if (!payable && !mayWait) {
+      if (!mayWait) {
         bump(waitingBuilds >= c.maxWaitingBuilds ? "haulingBusy" : "unaffordable");
         continue;
       }
-      if (!payable) {
-        const local = stockOf(row);
-        const starved = (["food", "wood", "stone"] as const).find((k) => {
-          const short = (costNow[k] ?? 0) - (local[k] ?? 0);
-          return short > 0 && (empireGross[k] ?? 0) < 1 && (empireStock[k] ?? 0) < 2 * short;
-        });
-        if (starved) {
-          bump(`no_${starved}`);
-          continue;
-        }
+      const local = stockOf(row);
+      const starved = (["food", "wood", "stone"] as const).find((k) => {
+        const short = (costNow[k] ?? 0) - (local[k] ?? 0);
+        return short > 0 && (empireGross[k] ?? 0) < 1 && (empireStock[k] ?? 0) < 2 * short;
+      });
+      if (starved) {
+        bump(`no_${starved}`);
+        continue;
       }
       try {
-        await queueBuild(ctx, row.regionId, id, { allowWait: !payable && mayWait, maxOwed: c.maxOwed });
+        await queueBuild(ctx, row.regionId, id, { allowWait: true, maxOwed: c.maxOwed });
         queued += 1;
+        queuedWaiting += 1;
         slots -= 1;
-        if (!payable) waitingBuilds += 1;
+        waitingBuilds += 1;
+        // One waiting build per region: the rest of this region's wants come next pass.
+        break;
       } catch (err) {
         const msg = (err as Error).message ?? "";
         bump(/not enough|too much would have to be shipped/.test(msg) ? "unaffordable" : /queue is full/.test(msg) ? "queueFull" : "blocked");

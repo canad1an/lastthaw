@@ -928,6 +928,20 @@ describe("api routes", () => {
       const quarryJobs = await db.select().from(jobs).where(and(eq(jobs.matchId, gameId), eq(jobs.playerId, benPid), eq(jobs.kind, "build"), eq(jobs.refId, "quarry"), sql`${jobs.completedAt} is null`, sql`${jobs.cancelledAt} is null`));
       expect(quarryJobs.length).toBe(report.queued);
       expect((await forcePassAs(ben, "economic", gameId)).statusCode).toBe(429);
+      // Local first, never rationed: a region that can pay for three levels of Huts from its own stores gets all three queued in one pass.
+      {
+        const [capHuts] = await db.select({ buildings: matchRegions.buildings }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
+        const have = (capHuts!.buildings as { huts?: number }).huts ?? 0;
+        expect((await Ben.call("PUT", `${base}/advisors/economic/settings`, { minLevels: { quarry: 1, huts: have + 3 }, useOtherRegions: true, skipRegions: [], population: "balanced" })).statusCode).toBe(200);
+        await fill(12000, 12000, 9000, 100, 100);
+        await db.update(advisors).set({ lastPassAt: null }).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
+        const runH = await forcePassAs(ben, "economic", gameId);
+        expect(runH.statusCode, runH.body).toBe(200);
+        const hutJobs = await db.select().from(jobs).where(and(eq(jobs.matchId, gameId), eq(jobs.playerId, benPid), eq(jobs.regionId, cap), eq(jobs.kind, "build"), eq(jobs.refId, "huts"), sql`${jobs.completedAt} is null`, sql`${jobs.cancelledAt} is null`));
+        expect(hutJobs.length).toBe(3);
+        expect(hutJobs.every((j) => !j.waitingFor)).toBe(true);
+        expect((await Ben.call("PUT", `${base}/advisors/economic/settings`, { minLevels: { quarry: 1 }, useOtherRegions: true, skipRegions: [], population: "balanced" })).statusCode).toBe(200);
+      }
 
       // Workers: a capital gathering no food while its store is nearly empty is put back on food by the next pass; a store near its cap gets no more.
       const [capRow] = await db.select({ buildings: matchRegions.buildings, isCapital: matchRegions.isCapital }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
