@@ -13,3 +13,15 @@ describe("adminReportMessage", () => {
     expect(m.text).toBe("all quiet");
   });
 });
+
+// The first deploy of sendAdminReport (1e7034d) left it out of the esbuild entry points, so the api image had no
+// dist/scripts/sendAdminReport.js and the nightly report could not be sent from the box.
+describe("operations scripts in the api image", () => {
+  it("esbuild builds sendAdminReport", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+    const cfg = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../esbuild.config.mjs"), "utf8");
+    expect(cfg).toContain('"src/scripts/sendAdminReport.ts"');
+  });
+});
