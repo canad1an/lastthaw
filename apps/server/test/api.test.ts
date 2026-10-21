@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
-import { allRegions, balance, effectsOf, fairAmount, matchStateView, regionById, scoutCatchChance, seededRng, storageCaps } from "@lastthaw/shared";
+import { allRegions, balance, effectsOf, fairAmount, matchStateView, regionById, RESOURCE_WORTH, scoutCatchChance, seededRng, storageCaps } from "@lastthaw/shared";
 import { Publisher } from "../src/realtime/publish.js";
 import { runDueJobs } from "../src/worker/jobs.js";
 import { buildApp } from "../src/api/app.js";
@@ -785,8 +785,11 @@ describe("api routes", () => {
     const fill = (food: number, wood: number, stone: number, copper: number, iron: number) => fillEmpire(gameId, benPid, { food, wood, stone, copper, iron });
     const totalStock = async () => {
       const rows = await db.select({ food: matchRegions.food, wood: matchRegions.wood, stone: matchRegions.stone, special: matchRegions.special }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid)));
-      return rows.reduce((a, r) => ({ food: a.food + r.food, wood: a.wood + r.wood, copper: a.copper + ((r.special as { copper?: number }).copper ?? 0) }), { food: 0, wood: 0, copper: 0 });
+      return rows.reduce((a, r) => ({ food: a.food + r.food, wood: a.wood + r.wood, stone: a.stone + r.stone, copper: a.copper + ((r.special as { copper?: number }).copper ?? 0) }), { food: 0, wood: 0, stone: 0, copper: 0 });
     };
+    // A wage is paid by value in any mix of food, wood and stone, so the books are checked by worth, not by one resource.
+    const worthOf = (w: Record<string, number | undefined>) => Object.entries(w).reduce((a, [k, v]) => a + (v ?? 0) * (RESOURCE_WORTH[k] ?? 1), 0);
+    const valueDrop = (b: { food: number; wood: number; stone: number }, a: { food: number; wood: number; stone: number }) => worthOf({ food: b.food - a.food, wood: b.wood - a.wood, stone: b.stone - a.stone });
     const redis = createRedis();
     const pub = new Publisher(redis);
     try {
@@ -869,18 +872,28 @@ describe("api routes", () => {
       await db.update(advisors).set({ paidUntil: new Date(Date.parse(await nowIso()) - 2 * (3600_000 / benState.match.speed)) }).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
       // The wage is live: what the empire gathers now, not what it gathered at the hire.
       const liveWage = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json()).advisorWage;
-      const b2 = await stockAt(cap);
+      const b2 = await totalStock();
       await tickOnce();
       const [row] = await db.select().from(advisors).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
       expect(row!.paidUntil.getTime()).toBeGreaterThan(Date.parse(await nowIso()) - 1000);
       expect(row!.unpaidSince).toBeNull();
-      const a2 = await stockAt(cap);
-      // Three hours came due (two past plus the one just reached): the food fell by at least two wages, and not by more than four.
-      expect(b2.food - a2.food).toBeGreaterThanOrEqual(2 * liveWage.food! - 1);
-      expect(b2.food - a2.food).toBeLessThan(4 * liveWage.food! + 50);
+      const a2 = await totalStock();
+      // Three hours came due (two past plus the one just reached): the stores fell by at least two wages' worth, and not by more than four.
+      expect(valueDrop(b2, a2)).toBeGreaterThanOrEqual(2 * worthOf(liveWage) - 1);
+      expect(valueDrop(b2, a2)).toBeLessThan(4 * worthOf(liveWage) + 50);
 
-      // Unpaid: an empire with no food in store cannot pay the food share; the advisor stops, says so once, and refuses to run.
+      // Any mix: with no food at all but wood and stone to spare, the hour is paid from those and the advisor carries on.
       await db.update(matchRegions).set({ food: 0, settledAt: new Date(await nowIso()) }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid)));
+      await db.update(advisors).set({ paidUntil: new Date(Date.parse(await nowIso()) - 3600_000 / benState.match.speed) }).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
+      const bMix = await totalStock();
+      await tickOnce();
+      const aMix = await totalStock();
+      expect((await db.select({ unpaidSince: advisors.unpaidSince }).from(advisors).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid))))[0]!.unpaidSince).toBeNull();
+      expect(valueDrop(bMix, aMix)).toBeGreaterThanOrEqual(worthOf(liveWage) * 0.5);
+      expect(bMix.wood - aMix.wood).toBeGreaterThan(0);
+
+      // Unpaid: an empire with nothing in store cannot pay; the advisor stops, says so once, and refuses to run.
+      await db.update(matchRegions).set({ food: 0, wood: 0, stone: 0, settledAt: new Date(await nowIso()) }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid)));
       await db.update(advisors).set({ paidUntil: new Date(Date.parse(await nowIso()) - 3600_000 / benState.match.speed) }).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
       await tickOnce();
       const [row2] = await db.select().from(advisors).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
@@ -917,10 +930,11 @@ describe("api routes", () => {
       const bFire = await totalStock();
       const fired = await Ben.call("POST", `${base}/advisors/economic/fire`, {});
       expect(fired.statusCode, fired.body).toBe(200);
-      expect((fired.json() as { charged: Record<string, number> }).charged.food).toBe(rehireWage.food);
+      const charged = (fired.json() as { charged: Record<string, number> }).charged;
+      expect(Math.abs(worthOf(charged) - worthOf(rehireWage))).toBeLessThan(1);
       const aFire = await totalStock();
-      expect(bFire.food - aFire.food).toBeGreaterThanOrEqual(rehireWage.food! - 1);
-      expect(bFire.food - aFire.food).toBeLessThan(rehireWage.food! + 50);
+      expect(valueDrop(bFire, aFire)).toBeGreaterThanOrEqual(worthOf(rehireWage) - 1);
+      expect(valueDrop(bFire, aFire)).toBeLessThan(worthOf(rehireWage) + 50);
       await db.update(advisors).set({ firedAt: new Date(Date.parse(await nowIso()) - (balance.advisors.rehireCooldownHours + 1) * (3600_000 / benState.match.speed)) }).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid), eq(advisors.kind, "economic")));
 
       // No advisor: a crowded capital stays crowded through a tick; with one set to overflow, the surplus spills to a neighbour.

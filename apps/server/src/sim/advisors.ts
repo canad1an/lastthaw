@@ -6,7 +6,7 @@
  */
 import { and, asc, eq, isNull, lte, sql } from "drizzle-orm";
 import type pino from "pino";
-import { balance, availableBuildings, buildingBlockedBy, buildingById, buildingCost, canAfford, computeRates, normalizeAssignment, regionById, unitById, HAULER_IDS, type AdvisorKind, type AdvisorSettings, type AdvisorReport, type AdvisorSuggestion, type Cost, type RegionEconomy, advisorSettings as advisorSettingsSchema } from "@lastthaw/shared";
+import { balance, availableBuildings, buildingBlockedBy, buildingById, buildingCost, canAfford, computeRates, normalizeAssignment, regionById, unitById, HAULER_IDS, type AdvisorKind, type AdvisorSettings, type AdvisorReport, type AdvisorSuggestion, type Cost, type RegionEconomy, advisorSettings as advisorSettingsSchema, RESOURCE_WORTH } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { advisors, jobs, matchRegions, matches, playerTechs, players, tradeRoutes } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
@@ -28,7 +28,8 @@ export const ADVISOR_TITLES: Record<AdvisorKind, string> = { economic: "Economic
 
 /**
  * The hourly wage of any advisor for a player right now: balance.advisors.outputShare of the empire's gross output
- * of food, wood and stone across its unfrozen regions (gathering, before consumption), each rounded up. Ore and
+ * of food, wood and stone across its unfrozen regions (gathering, before consumption), each rounded up. The three
+ * numbers set what the wage is worth; it is paid by value in any mix of the three (drawValue), never per resource. Ore and
  * horses are never part of the wage: they trickle in by the unit, the advisors spend them on the player's behalf
  * (bronze units, research), and one short ore would otherwise stop an advisor while the stores hold hundreds of
  * thousands of everything else. The same for every kind: four advisors take all the gathering.
@@ -58,11 +59,20 @@ export function parseSettings(raw: unknown): AdvisorSettings {
   return r.success ? r.data : advisorSettingsSchema.parse({});
 }
 
+/** What a wage (or any bill in food, wood and stone) is worth at the market's own rates. */
+export function wageValue(wage: Record<string, number>): number {
+  return Object.entries(wage).reduce((a, [k, v]) => a + v * (RESOURCE_WORTH[k] ?? 1), 0);
+}
+
 /**
- * Take a wage from the empire: the capital first, then the other regions. Every region of the player is locked in
- * ascending order (the lock order used everywhere). Returns false, taking nothing, when any one resource is short.
+ * Take `value` worth of food, wood and stone from the empire, in any mix: the charge is spread over the three in
+ * proportion to what is held (the same fraction of each), capital first and then the other regions. The player's
+ * stores decide the mix, never the wage's own shape, so one empty store never stops an advisor while the others are
+ * full. Every region of the player is locked in ascending order (the lock order used everywhere). Returns what was
+ * taken; when the three together are worth less than `value`, nothing is taken and null is returned, unless
+ * `partial`, in which case everything held is taken.
  */
-export async function drawWage(tx: Tx, m: MatchRow, p: PlayerRow, wage: Record<string, number>): Promise<boolean> {
+async function drawValue(tx: Tx, m: MatchRow, p: PlayerRow, value: number, partial: boolean): Promise<Record<string, number> | null> {
   const mine = await tx
     .select({ regionId: matchRegions.regionId })
     .from(matchRegions)
@@ -74,46 +84,15 @@ export async function drawWage(tx: Tx, m: MatchRow, p: PlayerRow, wage: Record<s
   const capital = rows.find((r) => r.regionId === p.capitalRegionId);
   const ordered = capital ? [capital, ...rows.filter((r) => r !== capital)] : rows;
   const pooled: Record<string, number> = {};
-  for (const r of ordered) for (const [k, v] of Object.entries(stockOf(r))) pooled[k] = (pooled[k] ?? 0) + v;
-  for (const [k, v] of Object.entries(wage)) if ((pooled[k] ?? 0) < v) return false;
-  const remaining: Record<string, number> = { ...wage };
-  for (const r of ordered) {
-    const have = stockOf(r);
-    const take: Record<string, number> = {};
-    for (const [k, v] of Object.entries(remaining)) {
-      const t = Math.min(v, have[k] ?? 0);
-      if (t > 0) take[k] = t;
-    }
-    if (Object.keys(take).length) {
-      await applyCost(tx, r, take as Cost);
-      await recordSpend(tx, m, p.id, "advisors", take);
-      for (const [k, t] of Object.entries(take)) {
-        remaining[k] = (remaining[k] ?? 0) - t;
-        if (remaining[k]! <= 1e-9) delete remaining[k];
-      }
-    }
-    if (Object.keys(remaining).length === 0) break;
-  }
-  return true;
-}
-
-/**
- * Take as much of `wage` as the empire holds, capital first, and return what was taken. The parting bill when an advisor
- * is fired: nothing is refused, what the stores cannot cover is let go.
- */
-export async function drawWageUpTo(tx: Tx, m: MatchRow, p: PlayerRow, wage: Record<string, number>): Promise<Record<string, number>> {
-  const mine = await tx
-    .select({ regionId: matchRegions.regionId })
-    .from(matchRegions)
-    .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.ownerPlayerId, p.id), isNull(matchRegions.frozenAt)))
-    .orderBy(asc(matchRegions.regionId));
-  const now = matchNow(m);
-  const rows: MatchRegionRow[] = [];
-  for (const r of mine) rows.push(await settleAndLockRegion(tx, m.id, r.regionId, now, m.speed, resourceMultOf(m)));
-  const capital = rows.find((r) => r.regionId === p.capitalRegionId);
-  const ordered = capital ? [capital, ...rows.filter((r) => r !== capital)] : rows;
-  const remaining: Record<string, number> = { ...wage };
+  for (const r of ordered) for (const k of WAGE_RESOURCES) pooled[k] = (pooled[k] ?? 0) + (stockOf(r)[k] ?? 0);
+  const held = wageValue(pooled);
+  if (held + 1e-9 < value && !partial) return null;
   const taken: Record<string, number> = {};
+  if (held <= 0 || value <= 0) return taken;
+  // The same fraction of each store, so the mix follows what the player holds.
+  const fraction = Math.min(1, value / held);
+  const remaining: Record<string, number> = {};
+  for (const k of WAGE_RESOURCES) if ((pooled[k] ?? 0) > 0) remaining[k] = (pooled[k] ?? 0) * fraction;
   for (const r of ordered) {
     const have = stockOf(r);
     const take: Record<string, number> = {};
@@ -133,6 +112,16 @@ export async function drawWageUpTo(tx: Tx, m: MatchRow, p: PlayerRow, wage: Reco
     if (Object.keys(remaining).length === 0) break;
   }
   return taken;
+}
+
+/** Take a wage's worth from the empire in any mix of food, wood and stone. Returns false, taking nothing, when the three together cannot cover it. */
+export async function drawWage(tx: Tx, m: MatchRow, p: PlayerRow, wage: Record<string, number>): Promise<boolean> {
+  return (await drawValue(tx, m, p, wageValue(wage), false)) !== null;
+}
+
+/** The parting bill: a wage's worth in any mix, as far as the stores go. Returns what was taken. */
+export async function drawWageUpTo(tx: Tx, m: MatchRow, p: PlayerRow, wage: Record<string, number>): Promise<Record<string, number>> {
+  return (await drawValue(tx, m, p, wageValue(wage), true)) ?? {};
 }
 
 /**
@@ -181,7 +170,7 @@ export async function chargeAdvisors(tx: Tx, m: MatchRow, now: Date): Promise<vo
         const line = Object.entries(wage)
           .map(([k, v]) => `${v} ${k}`)
           .join(", ");
-        await notify(tx, m.id, p.id, "system", `Your ${ADVISOR_TITLES[a.kind]} is unpaid and has stopped working: the wage is ${line} an hour, drawn from your capital first`, { advisor: a.kind, unpaid: true });
+        await notify(tx, m.id, p.id, "system", `Your ${ADVISOR_TITLES[a.kind]} is unpaid and has stopped working: the wage is ${line} an hour, payable in any mix of food, wood and stone worth ${Math.round(wageValue(wage)).toLocaleString("en-US")}, and your stores together hold less than that`, { advisor: a.kind, unpaid: true });
       }
     } else if (a.unpaidSince) {
       await tx.update(advisors).set({ unpaidSince: null }).where(eq(advisors.id, a.id));
