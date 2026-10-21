@@ -240,7 +240,7 @@ export function TopMenu({
       <span className="text-sky-200">{chatToast.playerName}:</span> {chatToast.body}
     </button>
   ) : (
-    <span className="min-w-0 flex-1 truncate text-sm text-slate-500">{newest ? `Latest: ${newest.subject}` : ""}</span>
+    <Ticker matchId={matchId} nudge={state.match.now} onSelectRegion={onSelectRegion} inline />
   );
 
   return (
@@ -264,7 +264,6 @@ export function TopMenu({
         <div className="mx-2 h-5 w-px bg-slate-800" />
         {latest}
       </div>
-      <Ticker matchId={matchId} nudge={state.match.now} onSelectRegion={onSelectRegion} />
       {open && (
         <Dropdown onClose={() => setOpen(null)} title={open !== "menu" && groupOf(open) ? `${groupOf(open)!.label} · ${TITLES[open]}` : TITLES[open]} tabs={familyTabs}>
           {open === "menu" && (

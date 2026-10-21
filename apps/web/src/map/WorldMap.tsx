@@ -349,14 +349,16 @@ export function WorldMap({ paint, selected, onSelect, focus, flyTo, className = 
           })}
         </g>
         <g>
-          {armies.map((a, i) => {
+          {[...armies].sort((x, y) => Number(x.id === hoverArmy) - Number(y.id === hoverArmy)).map((a, i, drawn) => {
             const s = unitsPerPx / view.k;
+            // Under the pointer a marker opens up to three times the size of an opened group, whatever it carries.
+            const big = hoverArmy === a.id;
             // Markers closer than a marker's width on screen are fanned out in a small ring, in screen pixels, so none
             // drifts off its route however far the map is zoomed.
             const pxPer = (view.k / unitsPerPx) || 1;
             let k = 0;
             for (let j = 0; j < i; j++) {
-              const b = armies[j]!;
+              const b = drawn[j]!;
               if (Math.hypot(b.x - a.x, b.y - a.y) * pxPer < 18) k += 1;
             }
             const ring = k === 0 ? 0 : 16 * (1 + Math.floor((k - 1) / 6));
@@ -373,6 +375,7 @@ export function WorldMap({ paint, selected, onSelect, focus, flyTo, className = 
                 onPointerLeave={() => setHoverArmy((h) => (h === a.id && routeArmy !== a.id ? null : h))}
               >
                 {a.hostile && <circle r={11} fill="none" stroke="#f43f5e" strokeWidth={1.5} className="animate-ping" />}
+                <g transform={big ? "scale(3)" : undefined}>
                 {a.mission === "relocate" ? (
                   <g>
                     <circle r={12} fill="#f59e0b" stroke="#0b1a2b" strokeWidth={1.8} />
@@ -383,10 +386,10 @@ export function WorldMap({ paint, selected, onSelect, focus, flyTo, className = 
                   </g>
                 ) : (
                   // Enemy attacks pulse rose; my own military (raid, conquer, reinforce) is orange with a sword; civil traffic is blue.
-                  <circle r={isMixed(a) && hoverArmy === a.id ? 24 : a.lead ? 9 : 7} fill={a.hostile ? "#f43f5e" : MILITARY.has(a.mission) ? "#f97316" : "#38bdf8"} stroke="#0b1a2b" strokeWidth={1.5} />
+                  <circle r={big ? 24 : a.lead ? 9 : 7} fill={a.hostile ? "#f43f5e" : MILITARY.has(a.mission) ? "#f97316" : "#38bdf8"} stroke="#0b1a2b" strokeWidth={1.5} />
                 )}
                 {a.mission !== "relocate" &&
-                  (isMixed(a) && hoverArmy === a.id ? (
+                  (isMixed(a) && big ? (
                     // A mixed force under the pointer opens up: every kind in it, in a ring, most numerous first from the top.
                     <g>
                       {a.kinds.slice(0, 6).map((id, i, all) => {
@@ -416,10 +419,10 @@ export function WorldMap({ paint, selected, onSelect, focus, flyTo, className = 
                     </g>
                   ) : a.lead && unitPicture(a.lead) ? (
                     // The kind the convoy is made of, as its picture on the disc.
-                    <image href={unitPicture(a.lead)!} x={-7.5} y={-7.5} width={15} height={15} preserveAspectRatio="xMidYMid meet" style={{ pointerEvents: "none" }} />
+                    <image href={unitPicture(a.lead)!} x={big ? -20 : -7.5} y={big ? -20 : -7.5} width={big ? 40 : 15} height={big ? 40 : 15} preserveAspectRatio="xMidYMid meet" style={{ pointerEvents: "none" }} />
                   ) : a.lead ? (
                     // The kind the convoy is made of, drawn dark on the disc: a canoe is a canoe, an archer a bow.
-                    <g transform="scale(0.58) translate(-12 -12)">
+                    <g transform={`scale(${big ? 1.6 : 0.58}) translate(-12 -12)`}>
                       <UnitStrokes id={a.lead} color="#0b1a2b" />
                     </g>
                   ) : a.hostile || MILITARY.has(a.mission) ? (
@@ -439,6 +442,7 @@ export function WorldMap({ paint, selected, onSelect, focus, flyTo, className = 
                   ) : (
                     <path d={a.mission === "transport" ? "M-3.5 -1h7v4h-7z M-2 -3h4v2h-4z" : a.mission === "settle" ? "M-4 2h8v1h-8z M-3 2v-4l3-2 3 2v4" : "M-3 3L3 -3 M3 -3h-2.5 M3 -3v2.5"} fill={a.mission === "transport" || a.mission === "settle" ? "#0b1a2b" : "none"} stroke="#0b1a2b" strokeWidth={1.4} strokeLinecap="round" />
                   ))}
+                </g>
               </g>
             );
           })}
@@ -452,7 +456,7 @@ export function WorldMap({ paint, selected, onSelect, focus, flyTo, className = 
         const sy = ((a.y * view.k + view.y) / world.height) * 100;
         return (
           <foreignObject x={0} y={0} width={world.width} height={world.height} pointerEvents="none" className="hidden lg:block">
-            <div style={{ position: "absolute", left: `${sx}%`, top: `${sy}%`, transform: "translate(21px, -50%)" }} className="pointer-events-none w-max max-w-[16rem] rounded-md border border-slate-700 bg-slate-950/95 px-2 py-1.5 text-xs text-slate-200 shadow-xl">
+            <div style={{ position: "absolute", left: `${sx}%`, top: `${sy}%`, transform: "translate(110px, -50%)" }} className="pointer-events-none w-max max-w-[16rem] rounded-md border border-slate-700 bg-slate-950/95 px-2 py-1.5 text-xs text-slate-200 shadow-xl">
               <p className="font-medium">{a.title}</p>
               {a.lines.map((l) => (
                 <p key={l} className="text-slate-400">
