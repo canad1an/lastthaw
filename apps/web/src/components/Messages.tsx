@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, keys, type MessageView } from "../api/client.js";
+import { play } from "../audio/sound.js";
 
 const KIND_ICON: Record<string, string> = { battle: "⚔", scout: "🔭", build: "🔨", research: "📜", trade: "⚖", system: "ℹ", alliance: "🤝" };
 const TOAST_MS = 5000;
@@ -100,7 +101,10 @@ export function useMessageToast(matchId: string, suppressed: boolean) {
     }
     if (newest.id !== lastSeen.current) {
       lastSeen.current = newest.id;
-      if (!suppressed && isImportant(newest)) setToast(newest);
+      if (!suppressed && isImportant(newest)) {
+        setToast(newest);
+        if (newest.kind !== "battle") play("message");
+      }
     }
   }, [newest, suppressed]);
   useEffect(() => {

@@ -2,7 +2,7 @@ import type React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePageMeta, useSlugAddress } from "../seo.js";
 import { Link, Navigate, useNavigate, useParams } from "@tanstack/react-router";
-import { useCallback, useMemo, useState, useRef } from "react";
+import { useCallback, useMemo, useState, useRef, useEffect } from "react";
 import { balance, formatCountdown, iceLatitudeOnDay, regionById, type MapRegion, type MatchStateView, loyaltyBand, wallOf, unitById } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { useMatchRealtime } from "../api/realtime.js";
@@ -26,6 +26,7 @@ import { DayBrief, useDayBriefOpen } from "../components/DayBrief.js";
 import { RefugeePanel } from "../components/RefugeePanel.js";
 import { noteBadges, overlayBadges, useOverlays, advisorBadges, battleBadges } from "../map/overlays.js";
 import { BattleWindow } from "../components/BattleWindow.js";
+import { setMusicAge } from "../audio/sound.js";
 import { IncomingWarnings } from "../components/ArmyPanel.js";
 import { ActivityPanel } from "../components/ActivityPanel.js";
 import { ChatChannel } from "../components/Chat.js";
@@ -417,6 +418,12 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
   const ownedById = useMemo(() => new Map(state.owned.map((o) => [o.regionId, o])), [state.owned]);
   const badges = useMemo(() => [...noteBadges(state), ...advisorBadges(state), ...battleBadges(state), ...overlayBadges(state, overlays, matchDay)], [state, overlays, matchDay]);
   const [battleId, setBattleId] = useState<string | null>(null);
+  // The music follows the age, and stops when the match screen goes.
+  const age = state.me.age;
+  useEffect(() => {
+    setMusicAge(age);
+    return () => setMusicAge(null);
+  }, [age]);
   // A battle that ends while its window is open stays on screen with the verdict; one that is gone from the list when the window opens is still readable by id.
   const sightedBy = useMemo(() => new Map(state.sighted.map((s) => [s.regionId, s])), [state.sighted]);
 

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { armySpeed, balance, regionById, unitById, formatCountdown, type MatchStateView, type MissionKind, type OwnedRegionView, missionLabel } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
+import { play } from "../audio/sound.js";
 import { Button, Card, ErrorText, fmt } from "./ui.js";
 import { Countdown } from "./Countdown.js";
 
@@ -58,6 +59,7 @@ export function SendArmy({
   const send = useMutation({
     mutationFn: () => api.sendArmy(matchId, owned.regionId, { mission, targetRegionId: target!, units: chosen, people: mission === "conquer" ? 0 : people, cargo }),
     onSuccess: () => {
+      play("send");
       setUnits({});
       setPeople(0);
       setCargo({});

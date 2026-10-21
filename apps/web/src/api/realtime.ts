@@ -1,4 +1,5 @@
 import { chime } from "../components/chatAlert.js";
+import { play } from "../audio/sound.js";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { wsServerMessage, type WsClientMessage } from "@lastthaw/shared";
@@ -57,6 +58,11 @@ export function useMatchRealtime(matchId: string | null) {
           if (["job.completed", "age.advanced", "message.new", "army.arrived", "region.conquered"].includes(msg.kind)) {
             void qc.invalidateQueries({ queryKey: keys.messages(msg.matchId) });
           }
+          // The sounds of the game, from the events themselves, never from a refetch.
+          if (msg.kind === "job.completed") play((msg.payload as { kind?: string } | null)?.kind === "research" ? "research" : "build");
+          if (msg.kind === "army.arrived") play("arrive");
+          if (msg.kind === "battle.started") play("battle");
+          if (msg.kind === "battle.ended") play("battle_end");
           if (msg.kind === "match.started" || msg.kind === "match.finished" || msg.kind === "player.joined" || msg.kind === "match.paused" || msg.kind === "match.resumed") {
             void qc.invalidateQueries({ queryKey: keys.matches });
           }

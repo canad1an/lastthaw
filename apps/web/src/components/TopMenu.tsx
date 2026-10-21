@@ -8,6 +8,7 @@ import { TECHS, balance, regionById, type MatchStateView } from "@lastthaw/share
 import { api, keys, type MessageView } from "../api/client.js";
 import { MessagesList, isImportant, messageIcon, useMessageToast } from "./Messages.js";
 import { BattleHistory } from "./BattleHistory.js";
+import { AudioControls, useAudioSettings } from "../audio/AudioControls.js";
 import { AlliancePanel } from "./AlliancePanel.js";
 import { Chat } from "./Chat.js";
 import { MarketPanel } from "./MarketPanel.js";
@@ -21,7 +22,7 @@ import { Ticker } from "./Ticker.js";
 import { DiplomacyPanel } from "./DiplomacyPanel.js";
 import { AdvisorsPanel } from "./AdvisorsPanel.js";
 
-export type MenuId = "messages" | "battles" | "alliance" | "chat" | "market" | "players" | "leaderboard" | "view" | "empire" | "logistics" | "advisors" | "tech";
+export type MenuId = "messages" | "battles" | "sound" | "alliance" | "chat" | "market" | "players" | "leaderboard" | "view" | "empire" | "logistics" | "advisors" | "tech";
 type Menu = MenuId | "menu";
 
 export interface MenuEntry {
@@ -56,6 +57,7 @@ export interface MenuData {
 export function useMenuData(matchId: string, state: MatchStateView, overlays: Set<string>, inboxOpen: boolean, chatOpen: boolean): MenuData {
   const qc = useQueryClient();
   const { q, toast, clearToast } = useMessageToast(matchId, inboxOpen);
+  const audio = useAudioSettings();
   const chat = useChatWatch(matchId, state, chatOpen);
   const markRead = useMutation({ mutationFn: () => api.markMessagesRead(matchId), onSuccess: () => void qc.invalidateQueries({ queryKey: keys.messages(matchId) }) });
   // Only important unread messages count toward the alert badge; the rest sit quietly in the inbox.
@@ -91,6 +93,7 @@ export function useMenuData(matchId: string, state: MatchStateView, overlays: Se
     { id: "advisors", label: "Advisors", badge: advisorBadge, tone: state.advisors.some((a) => a.unpaid) || exposedHigh || iceSoon ? "alert" : undefined },
     { id: "tech", label: "Tech", badge: `${state.me.techs.length}/${TECHS.length}` },
     { id: "view", label: "View", badge: overlays.size || undefined },
+    { id: "sound", label: "Sound", badge: audio.music ? "music" : audio.effects ? "on" : "off" },
   ];
   const alerts = (unread ? 1 : 0) + (chat.unread ? 1 : 0) + (logisticsBadge ? 1 : 0) + (invites ? 1 : 0) + (proposals ? 1 : 0);
   return { entries, alerts, messages: q.data?.messages ?? [], newest, toast: toast ? { kind: toast.kind, subject: toast.subject, regionId: regionOf(toast), battleId: typeof (toast.payload as { battleId?: unknown }).battleId === "string" ? (toast.payload as { battleId: string }).battleId : undefined } : null, clearToast, chatToast: chat.toast, clearChatToast: chat.clearToast };
@@ -209,7 +212,7 @@ export function TopMenu({
       </div>
       <Ticker matchId={matchId} nudge={state.match.now} onSelectRegion={onSelectRegion} />
       {open && (
-        <Dropdown onClose={() => setOpen(null)} title={{ messages: "Messages", battles: "Battles", alliance: "Alliance", chat: "Chat", market: "Market", players: "Players", leaderboard: "Leaderboard", view: "View", empire: "Resources", logistics: "Logistics", advisors: "Advisors", tech: "Tech tree", menu: "Menu" }[open]}>
+        <Dropdown onClose={() => setOpen(null)} title={{ messages: "Messages", battles: "Battles", sound: "Sound", alliance: "Alliance", chat: "Chat", market: "Market", players: "Players", leaderboard: "Leaderboard", view: "View", empire: "Resources", logistics: "Logistics", advisors: "Advisors", tech: "Tech tree", menu: "Menu" }[open]}>
           {open === "menu" && (
             <div className="grid grid-cols-2 gap-2 p-3">
               {entries.map((e) => (
@@ -310,6 +313,7 @@ export function MenuPanelBody({
         {menu === "empire" && (
           <EmpirePanel matchId={matchId} state={state} onSelect={onSelectRegion} />
         )}
+        {menu === "sound" && <AudioControls />}
         {menu === "view" && (
           <div className="space-y-1 p-3 text-sm">
             <p className="mb-2 text-xs text-slate-400">Map overlays. Each marks your regions with a badge; several can be on at once.</p>

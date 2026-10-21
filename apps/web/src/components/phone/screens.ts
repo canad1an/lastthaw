@@ -19,6 +19,7 @@ export const PANEL_TITLES: Record<PanelId, string> = {
   players: "Players",
   leaderboard: "Leaderboard",
   view: "Map overlays",
+  sound: "Sound",
   empire: "Resources",
   logistics: "Logistics",
   advisors: "Advisors",
