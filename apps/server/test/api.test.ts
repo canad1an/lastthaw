@@ -5,6 +5,7 @@ import { Publisher } from "../src/realtime/publish.js";
 import { runDueJobs } from "../src/worker/jobs.js";
 import { buildApp } from "../src/api/app.js";
 import { forcePass } from "../src/matches/advisorsApi.js";
+import { dissolveAlliances } from "../src/sim/alliances.js";
 import { createDb, type Db } from "../src/db/client.js";
 import { emailTokens, fairplayFlags, matches, playerActions, players, users, matchRegions, regionNotes, tradeRoutes, jobs, armies, pacts, advisors, messages, marketOrders, battles, playerTechs } from "../src/db/schema.js";
 import { runMatchTicks } from "../src/sim/tick.js";
@@ -479,6 +480,18 @@ describe("api routes", () => {
     expect(al.statusCode).toBe(201);
     expect((await Ann.call("POST", `${base}/alliances/invite`, { playerId: "00000000-0000-0000-0000-000000000000" })).statusCode).toBeGreaterThanOrEqual(400);
     expect((await Ben.call("POST", `${base}/alliances/leave`, {})).statusCode).toBeGreaterThanOrEqual(400);
+    {
+      // The end of alliances: the morning it comes, every alliance dissolves, each member is told, and nothing can be founded again.
+      const [mrow] = await db.select().from(matches).where(eq(matches.id, gameId));
+      const ended = await db.transaction((tx) => dissolveAlliances(tx, mrow!, new Date(), null, () => {}));
+      expect(ended).toBeGreaterThanOrEqual(1);
+      const after = (await Ann.call("GET", `${base}/alliances`)).json() as { alliances: unknown[]; mine: unknown };
+      expect(after.alliances).toHaveLength(0);
+      expect(after.mine ?? null).toBeNull();
+      const told = await db.select().from(messages).where(and(eq(messages.matchId, gameId), sql`${messages.payload}->>'allianceEnd' = 'true'`));
+      expect(told.length).toBeGreaterThanOrEqual(1);
+      expect(told[0]!.subject).toContain("has dissolved");
+    }
 
     const presence = await Ann.call("GET", `${base}/presence`);
     expect(presence.statusCode).toBe(200);

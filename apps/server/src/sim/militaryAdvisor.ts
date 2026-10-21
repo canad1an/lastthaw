@@ -13,6 +13,7 @@ import { peaceBetween } from "./diplomacy.js";
 import { queueBuild, queueTrain, sendArmy, type CommandContext } from "./commands.js";
 import { projectRegion, resourceMultOf, type MatchRegionRow } from "./regions.js";
 import { parseSettings, type AdvisorRow } from "./advisors.js";
+import { disbandUnits } from "./evacuate.js";
 import { notify, type MatchRow } from "../worker/jobs.js";
 
 type PlayerRow = typeof players.$inferSelect;
@@ -241,6 +242,43 @@ export async function militaryPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
     if (!err) {
       moved += n;
       used.add(donor.regionId);
+    }
+  }
+
+  // Idle soldiers: an interior region holding more than the garrison, with no exposed front it was called to and no
+  // muster there, sends the surplus back to work. Campaigns raise fresh troops near their target rather than marching
+  // old ones across the map.
+  let disbanded = 0;
+  if (settings.disbandIdle) {
+    const stagingIds = new Set(
+      campaignView
+        .array()
+        .parse(a.campaigns ?? [])
+        .filter((x) => x.stage !== "done" && x.stage !== "failed")
+        .map((x) => x.stagingRegionId)
+        .filter((x): x is string => !!x),
+    );
+    let regionsDone = 0;
+    for (const r of owned) {
+      if (regionsDone >= c.disbandRegionsPerPass) break;
+      if (frontIds.has(r.regionId) || skip.has(r.regionId) || r.isCapital || stagingIds.has(r.regionId) || used.has(r.regionId)) continue;
+      const spare = soldierCount(r.units) - settings.garrison;
+      if (spare < 1) continue;
+      const send: Units = {};
+      let left = spare;
+      // The weakest go first: the garrison keeps its best men.
+      for (const [id, q] of Object.entries(land(r.units)).sort((x, y) => (unitById.get(x[0])?.attack ?? 0) - (unitById.get(y[0])?.attack ?? 0))) {
+        const take = Math.min(q, left);
+        if (take > 0) send[id] = take;
+        left -= take;
+        if (left <= 0) break;
+      }
+      if (Object.keys(send).length === 0) continue;
+      const err = await attempt(() => disbandUnits(ctx, r.regionId, send));
+      if (!err) {
+        disbanded += spare - left;
+        regionsDone += 1;
+      } else bump("blocked");
     }
   }
 
@@ -502,7 +540,7 @@ export async function militaryPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
 
   for (const cp of campaigns.filter((x) => x.stage !== "done" && x.stage !== "failed")) suggestions.unshift({ regionId: cp.targetRegionId, text: cp.note || `${name(cp.targetRegionId)}: ${cp.stage}.` });
   for (const e of exposed.filter((x) => x.exposure >= 1)) suggestions.push({ regionId: e.regionId, text: e.text });
-  const report: AdvisorReport = { at: now.toISOString(), queued, moved, rebalanced: 0, trained, fortified, skipped, suggestions: suggestions.slice(0, 14), exposed, evacuated: 0, settled: 0, clock: [], researched: 0, listed: 0, bought: 0 };
+  const report: AdvisorReport = { at: now.toISOString(), queued, moved, disbanded, rebalanced: 0, trained, fortified, skipped, suggestions: suggestions.slice(0, 14), exposed, evacuated: 0, settled: 0, clock: [], researched: 0, listed: 0, bought: 0 };
   await db.update(advisors).set({ lastPassAt: now, lastReport: report, campaigns }).where(eq(advisors.id, a.id));
   await publisher.toPlayer(m.id, p.id, "advisor.report", { kind: a.kind, trained, fortified, campaigns: campaigns.length });
   return report;

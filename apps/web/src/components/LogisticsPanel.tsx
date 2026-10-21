@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { HAULER_IDS, haulerCarry, regionById, unitById, type MatchStateView } from "@lastthaw/shared";
+import { balance, HAULER_IDS, haulerCarry, regionById, supplyConvoyCap, unitById, type MatchStateView } from "@lastthaw/shared";
 import { fmt } from "./ui.js";
 
 /**
@@ -29,6 +29,10 @@ export function LogisticsPanel({ state, onSelect }: { state: MatchStateView; onS
   const fullNoHaulers = state.owned.filter((o) => !o.frozen && !o.isCapital && (["food", "wood", "stone"] as const).some((k) => o[k] >= o.storage[k] * 0.95) && HAULER_IDS.every((id) => (o.units[id] ?? 0) === 0));
   const idleRegions = state.owned.filter((o) => HAULER_IDS.some((id) => (o.units[id] ?? 0) > 0) && !state.routes.some((r) => r.enabled && r.fromRegionId === o.regionId));
 
+  // Materials convoys are capped by the fleet's size; routes past the cap wait their turn, and that is not "keeping up".
+  const convoyCap = supplyConvoyCap(totalHome + totalRoad);
+  const outConvoys = state.armies.filter((a) => a.mission === "transport" && a.status === "outbound" && a.stops.length > 0).length;
+  const waitingTurn = state.routes.filter((r) => r.enabled && (r.lastResult ?? "").startsWith("waiting:")).length;
   const verdict =
     stalled.length > 0 || fullNoHaulers.length > 0
       ? {
@@ -37,6 +41,11 @@ export function LogisticsPanel({ state, onSelect }: { state: MatchStateView; onS
             !state.me.techs.includes("wagon_building") ? ", or research Wagon building: it turns every caravan into a wagon that carries 1,200" : !state.me.techs.includes("railways") ? ", or research Railways in the Medieval Age: it turns every wagon into a train" : ""
           }.`,
         }
+      : waitingTurn > 0
+        ? {
+            tone: "text-amber-300",
+            text: `${outConvoys} of ${convoyCap} materials convoys are out and ${waitingTurn} route${waitingTurn === 1 ? "" : "s"} wait their turn. Every ${balance.trade.supplyConvoysPerHaulers} haulers you own raise the cap by one.`,
+          }
       : totalHome > 0 && totalRoad === 0 && state.routes.length === 0
         ? { tone: "text-slate-300", text: "Your haulers are all at home with nothing to do. Set up trade routes or let overflow use them." }
         : { tone: "text-emerald-400", text: "Hauling is keeping up: nothing is waiting on a caravan." };

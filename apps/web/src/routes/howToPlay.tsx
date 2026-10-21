@@ -268,7 +268,7 @@ const ADVANCED: Array<{ title: string; body: React.ReactNode }> = [
           <b>Tribute</b>: demand a resource and an amount from another tribe; they have {ev.diplomacy.tributeHours} hours to pay it from their capital, and you may demand from the same tribe once every {ev.diplomacy.tributeCooldownHours} hours. A refusal gives you {ev.diplomacy.causeForWarHours} hours of cause for war, during which your raids on them carry {ev.diplomacy.lootMult}x loot, and puts a bounty on the refuser. AI tribes pay when the demand is under a tenth of their capital stock.
         </li>
         <li>
-          <b>Alliances</b> are separate and stronger: shared vision, reinforcing and shipping goods to each other, private chat, and the chance to win together. Hordes respect nobody's pacts.
+          <b>Alliances</b> are separate and stronger: shared vision, reinforcing and shipping goods to each other, private chat, and together their regions count toward the {Math.round(balance.win.regionShareForEarlyWin * 100)}% early win (the alliance leader is recorded as the winner). They are temporary: as day {balance.match.alliancesEndDay + 1} begins every alliance dissolves and none can be founded or joined after, so the last days are every tribe for itself, and the Last Thaw on day {balance.match.lengthDays} names a single winner. Hordes respect nobody's pacts.
         </li>
       </ul>
     ),
@@ -375,6 +375,9 @@ function AdvisorsSection() {
             <b>Working with Mara.</b> Training he orders is supplied by convoys like any build, and her worker shares already favour what waiting orders owe. When a muster region is short of free workers and Mara is hired with people moves on, she brings a column; otherwise his report asks you to move people or hire her.
           </p>
           <p>
+            <b>Idle soldiers.</b> With Disband idle on (the default), an interior region holding more than the garrison, with no exposed front to send them to and no muster there, sends the surplus back to work, a few regions a pass. A campaign raises fresh troops at the muster region near its target instead of marching old ones across the map.
+          </p>
+          <p>
             <b>Wage:</b> the same {Math.round(balance.advisors.outputShare * 100)}% of your hourly output as every advisor.
           </p>
         </div>
@@ -450,7 +453,7 @@ function AdvisorsSection() {
             A build or a training order a region cannot pay for on the spot waits for materials. What is short is set aside at the capital first and then at the regions holding the most of it (small offers last), as a warehouse sets aside a delivery: nothing else can spend it. One convoy loads where it starts and calls at the nearest other regions holding goods for the same place while it has room, then delivers; a new order for that region rides along on a convoy still collecting if there is room. Every hauler you own is one pool: a route with none at home calls the nearest spare ones over, idle ones first, so train haulers anywhere. Cancel the order and the goods go back on the shelf.
           </p>
           <p>
-            Two limits keep the roads sane: at most {balance.trade.maxSupplyConvoys} materials convoys and {balance.trade.maxReliefMoves} relief moves of haulers per player on the road at once; the rest wait their turn. The Logistics menu shows the convoys, what is aboard, where they call, and which routes are waiting.
+            Two limits keep the roads sane: at most {balance.trade.maxSupplyConvoys} materials convoys (one more for every {balance.trade.supplyConvoysPerHaulers} haulers you own) and {balance.trade.maxReliefMoves} relief moves of haulers per player on the road at once; the rest wait their turn. A convoy that finds the region it served at its cap carries the overflow on to the capital before walking home. The Logistics menu shows the convoys, what is aboard, where they call, which routes are waiting, and how many convoys the cap allows.
           </p>
         </div>
       </Card>
@@ -533,6 +536,7 @@ export function HowToPlayPage() {
             <b>House rules.</b> One account per person, and play by hand. Scripts, bots and browser agents that play for you are not allowed: the game logs every command and flags accounts whose play has a machine's rhythm, and those accounts are suspended.
           </li>
           <li>Tournaments are the scheduled weekly matches at 1x and the only ranked ones: they count toward the Hall of Fame and its titles (Survivor, Conqueror, Builder, Explorer). Register any time; you are enrolled when it starts whether or not you come to the lobby, which opens an hour before so you can pick your capital. Skip it and a starting region is picked for you; and if you were registered but are somehow not in, Join still works during the first three days. Anyone with a verified email can create a public or private game at up to {balance.match.maxGameSpeed}x, which is the whole match in about four hours, one game at a time; private games need an invite code to join. The creator also picks the game's resource rate (1x to 5x): everything gathered or mined, food included, comes in at that rate, separately from the speed, so a 1x game at 2x resources is still a real month with twice the goods. Tournaments are always 1x. The creator may end a game early at any time: it finishes with no winner, and its report stays at its address saying so.</li>
+          <li>As day {balance.match.alliancesEndDay + 1} begins every alliance dissolves and no new one can be formed: the last days are every tribe for itself.</li>
           <li>When day 30 ends the map falls into the winter night for two hours: the ice has stopped, the winner is named, and the final report is one click away.</li>
         </ul>
       </section>

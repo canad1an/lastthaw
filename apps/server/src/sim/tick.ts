@@ -18,6 +18,7 @@ import { notify, type MatchRow } from "../worker/jobs.js";
 import { runAiPlayer } from "./ai.js";
 import { runDailyEvents } from "./worldEvents.js";
 import { expirePacts } from "./diplomacy.js";
+import { dissolveAlliances } from "./alliances.js";
 
 /**
  * Periodic per-match tick: loyalty drift and rebellions on occupied regions,
@@ -68,6 +69,8 @@ async function tickMatch(db: Db, publisher: Publisher, matchId: string, log: pin
     // A fast match (or a long gap between ticks) can cross several day lines at once: every day gets its events.
     for (let d = Math.max(1, dayBefore + 1); d <= dayNow; d++) {
       await runDailyEvents(tx, m, now, d, seededRng(`${m.seed}:day:${d}`), publisher, (fn) => after.push(fn));
+      // Alliances are temporary: they all end on the same morning, and the last days are every tribe for itself.
+      if (d === balance.match.alliancesEndDay) await dissolveAlliances(tx, m, now, publisher, (fn) => after.push(fn));
       await tribesSpeak(tx, m, d, (fn) => after.push(fn));
       await tribesChat(tx, m, d, now, publisher, (fn) => after.push(fn));
     }

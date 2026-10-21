@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNull, lte, sql } from "drizzle-orm";
 import type pino from "pino";
-import { balance, bestHauler, carryCapacity, distanceKm, findRoute, haulerCarry, haulerCount, HAULER_IDS, regionById, unitById } from "@lastthaw/shared";
+import { balance, bestHauler, carryCapacity, distanceKm, findRoute, haulerCarry, haulerCount, HAULER_IDS, regionById, supplyConvoyCap, unitById } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { armies, matchRegions, matches, playerTechs, players, tradeRoutes } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
@@ -182,7 +182,8 @@ async function dispatchSupply(db: Db, m: MatchRow, p: PlayerRow, route: TradeRou
     .select({ n: sql<number>`count(*)::int` })
     .from(armies)
     .where(and(eq(armies.matchId, m.id), eq(armies.playerId, p.id), eq(armies.mission, "transport"), eq(armies.status, "outbound"), sql`jsonb_array_length(${armies.stops}) > 0`));
-  if ((busy[0]?.n ?? 0) >= balance.trade.maxSupplyConvoys) return `waiting: ${busy[0]!.n} materials convoys are already on the road`;
+  const cap = supplyConvoyCap(await haulerFleet(db, m, p));
+  if ((busy[0]?.n ?? 0) >= cap) return `waiting: ${busy[0]!.n} of ${cap} materials convoys are already on the road`;
   const ctx = await contextFor(db, m, p);
   const siblings = (
     await db
@@ -271,6 +272,14 @@ async function dispatchSupply(db: Db, m: MatchRow, p: PlayerRow, route: TradeRou
     .join(", ");
   const calls = stops.filter((s) => !s.done && s.routeId).map((s) => regionNameOf(s.regionId));
   return `sent ${n} ${kindName}${n === 1 ? "" : "s"} with ${desc}${calls.length ? `; collecting at ${calls.join(", ")} on the way` : ""}`;
+}
+
+/** Every land hauler the player owns, at home or on the road: the convoy cap grows with it. */
+async function haulerFleet(db: Db, m: MatchRow, p: PlayerRow): Promise<number> {
+  const land = HAULER_IDS.filter((id) => !unitById.get(id)?.naval);
+  const home = await db.select({ units: matchRegions.units }).from(matchRegions).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.ownerPlayerId, p.id)));
+  const road = await db.select({ units: armies.units }).from(armies).where(and(eq(armies.matchId, m.id), eq(armies.playerId, p.id), inArray(armies.status, ["outbound", "returning"])));
+  return [...home, ...road].reduce((a, r) => a + land.reduce((x, id) => x + (r.units[id] ?? 0), 0), 0);
 }
 
 async function contextFor(db: Db, m: MatchRow, p: PlayerRow): Promise<CommandContext> {

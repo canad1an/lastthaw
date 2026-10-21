@@ -25,6 +25,11 @@ export const balance = {
     startOptions: 6,
     /** Minimum great-circle distance between two players' capitals, in km. */
     minCapitalSpacingKm: 900,
+    /**
+     * Alliances are temporary: when this many whole days have gone (as day alliancesEndDay + 1 begins) every alliance
+     * dissolves, and none can be founded or joined from then on, so the last days are every tribe for itself.
+     */
+    alliancesEndDay: 24,
     /** Capitals are offered no further from the equator than this; the ice ends at 28°, so a start beyond 40° is a lost cause. */
     maxStartLatitude: 40,
   },
@@ -185,6 +190,8 @@ export const balance = {
     maxConvoyCalls: 5,
     /** A player has at most this many materials convoys on the road, and this many relief moves of haulers in flight, at once. */
     maxSupplyConvoys: 8,
+    /** ...and one materials convoy for every this many haulers the player owns, whichever is more, so a big fleet is not throttled to eight. */
+    supplyConvoysPerHaulers: 10,
     maxReliefMoves: 6,
     /** A region whose stock hits its cap sends this share of the cap to the capital by caravan, automatically. */
     overflowToCapital: true,
@@ -415,6 +422,8 @@ export const balance = {
       maxTargets: 20,
       /** Training supplied by convoy may owe up to this much per order. */
       maxOwed: 20000,
+      /** With Disband idle on, at most this many interior regions send their surplus soldiers back to work in one pass. */
+      disbandRegionsPerPass: 3,
     },
     /**
      * The Warden of the Thaw: reads the ice schedule, evacuates regions before they freeze, moves the capital out of the

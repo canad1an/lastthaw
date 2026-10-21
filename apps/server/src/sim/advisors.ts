@@ -258,6 +258,15 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
   const projected = owned.map((row) => ({ row, ...projectRegion(row, now, m.speed, undefined, resourceMultOf(m)) }));
   const pop = (x: (typeof projected)[number]) => x.economy.popWorkers + x.economy.popSoldiers + x.economy.popOccupiers;
   projected.sort((x, y) => Number(y.row.isCapital) - Number(x.row.isCapital) || pop(y) - pop(x));
+  // What the empire gathers and holds: a build short of a resource nothing produces and nobody holds would wait forever.
+  const empireGross: Record<string, number> = {};
+  const empireStock: Record<string, number> = {};
+  for (const x of projected) {
+    for (const k of ["food", "wood", "stone"] as const) {
+      empireGross[k] = (empireGross[k] ?? 0) + Math.max(0, x.rates.gross[k] ?? 0);
+      empireStock[k] = (empireStock[k] ?? 0) + (x.economy[k] ?? 0);
+    }
+  }
   for (const { row, economy } of projected) {
     if (skip.has(row.regionId)) continue;
     if (queued >= c.maxQueuedPerPass) break;
@@ -286,11 +295,23 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
       }
       if (queued >= c.maxQueuedPerPass) break;
       const nextLevel = (row.buildings[id] ?? 0) + here.filter((j) => j.kind === "build" && j.refId === id).length + 1;
-      const payable = canAfford(stockOf(row), buildingCost(def, nextLevel, matchDay, region.neighbors.length));
+      const costNow = buildingCost(def, nextLevel, matchDay, region.neighbors.length);
+      const payable = canAfford(stockOf(row), costNow);
       const mayWait = settings.useOtherRegions && !waitingHere && waitingBuilds < c.maxWaitingBuilds;
       if (!payable && !mayWait) {
         bump(waitingBuilds >= c.maxWaitingBuilds ? "haulingBusy" : "unaffordable");
         continue;
+      }
+      if (!payable) {
+        const local = stockOf(row);
+        const starved = (["food", "wood", "stone"] as const).find((k) => {
+          const short = (costNow[k] ?? 0) - (local[k] ?? 0);
+          return short > 0 && (empireGross[k] ?? 0) < 1 && (empireStock[k] ?? 0) < 2 * short;
+        });
+        if (starved) {
+          bump(`no_${starved}`);
+          continue;
+        }
       }
       try {
         await queueBuild(ctx, row.regionId, id, { allowWait: !payable && mayWait, maxOwed: c.maxOwed });
@@ -313,6 +334,10 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
   if (settings.population === "balanced") moved = await balancePeople(ctx, projected.map((x) => ({ row: x.row, economy: x.economy })), skip);
 
   const suggestions = await suggestionsFor(db, m, p, projected.map((x) => ({ row: x.row, economy: x.economy })), pending, settings, now);
+  for (const k of ["food", "wood", "stone"] as const) {
+    const n = skipped[`no_${k}`];
+    if (n) suggestions.unshift({ regionId: p.capitalRegionId ?? projected[0]?.row.regionId ?? "", text: `${n} build${n === 1 ? "" : "s"} held back for want of ${k}: nothing in the empire gathers it and the stores are bare. Put workers on ${k}${settings.workers ? "" : ", or let the advisor set shares"}.` });
+  }
   const report: AdvisorReport = { at: now.toISOString(), queued, moved, rebalanced, trained: 0, fortified: 0, exposed: [], evacuated: 0, settled: 0, clock: [], researched: 0, listed: 0, bought: 0, skipped, suggestions };
   await db.update(advisors).set({ lastPassAt: now, lastReport: report }).where(eq(advisors.id, a.id));
   await publisher.toPlayer(m.id, p.id, "advisor.report", { kind: a.kind, queued, moved });

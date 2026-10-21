@@ -206,3 +206,8 @@ export function armySpeed(units: UnitCounts): number {
   }
   return s === Infinity ? 0 : s;
 }
+
+/** Materials convoys a player may have on the road at once: the base cap, or one for every supplyConvoysPerHaulers haulers owned, whichever is more. */
+export function supplyConvoyCap(haulers: number): number {
+  return Math.max(balance.trade.maxSupplyConvoys, Math.floor(Math.max(0, haulers) / balance.trade.supplyConvoysPerHaulers));
+}
