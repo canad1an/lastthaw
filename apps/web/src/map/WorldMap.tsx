@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
 import { allRegions, balance, freezeDayForLatitude, iceExposure, iceLatitudeOnDay, world, type MapRegion, regionById } from "@lastthaw/shared";
 import type { ArmyMarker } from "./armyMarkers.js";
-import { UnitStrokes, unitPicture } from "../components/UnitIcon.js";
+import { UnitIcon, UnitStrokes, unitPicture } from "../components/UnitIcon.js";
 import coastPoints from "./coastPoints.json";
 
 /** Where a region meets the sea: a point on its outline mid-shore, computed from the map (tools: coast-points). */
@@ -53,6 +53,28 @@ export interface WorldMapProps {
 
 /** Missions drawn as military (orange, sword) rather than civil traffic. */
 const MILITARY = new Set(["raid", "conquer", "reinforce", "patrol"]);
+
+/** Each kind in a convoy with its picture and count, for the cards. */
+function UnitChips({ units, size = "h-12 w-12" }: { units: Record<string, number>; size?: string }) {
+  const kinds = Object.entries(units).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
+  if (kinds.length === 0) return null;
+  return (
+    <div className="my-1.5 flex flex-wrap gap-2">
+      {kinds.map(([id, n]) => {
+        const u = unitById.get(id);
+        return (
+          <div key={id} className="flex items-center gap-1.5 rounded border border-slate-800 bg-slate-900/80 px-1.5 py-1">
+            <UnitIcon id={id} className={`${size} text-slate-200`} />
+            <span className="text-sm">
+              <span className="font-semibold text-white">{n.toLocaleString("en-US")}</span> {u?.name ?? id}
+              {n === 1 ? "" : "s"}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 /** More than one kind on foot or wheels together. A ship or an aircraft carrying the rest is not mixed: it shows as itself. */
 function isMixed(a: ArmyMarker): boolean {
@@ -374,16 +396,14 @@ export function WorldMap({ paint, selected, onSelect, focus, flyTo, className = 
           })}
         </g>
         <g>
-          {[...armies].sort((x, y) => Number(x.id === hoverArmy) - Number(y.id === hoverArmy)).map((a, i, drawn) => {
+          {armies.map((a, i) => {
             const s = unitsPerPx / view.k;
-            // Under the pointer a marker opens up to three times the size of an opened group, whatever it carries.
-            const big = hoverArmy === a.id;
             // Markers closer than a marker's width on screen are fanned out in a small ring, in screen pixels, so none
             // drifts off its route however far the map is zoomed.
             const pxPer = (view.k / unitsPerPx) || 1;
             let k = 0;
             for (let j = 0; j < i; j++) {
-              const b = drawn[j]!;
+              const b = armies[j]!;
               if (Math.hypot(b.x - a.x, b.y - a.y) * pxPer < 18) k += 1;
             }
             const ring = k === 0 ? 0 : 16 * (1 + Math.floor((k - 1) / 6));
@@ -400,7 +420,8 @@ export function WorldMap({ paint, selected, onSelect, focus, flyTo, className = 
                 onPointerLeave={() => setHoverArmy((h) => (h === a.id && routeArmy !== a.id ? null : h))}
               >
                 {a.hostile && <circle r={11} fill="none" stroke="#f43f5e" strokeWidth={1.5} className="animate-ping" />}
-                <g transform={big ? "scale(3)" : undefined}>
+                {/* Under the pointer the marker doubles; the card beside it carries the detail. */}
+                <g transform={hoverArmy === a.id ? "scale(2)" : undefined}>
                 {a.mission === "relocate" ? (
                   <g>
                     <circle r={12} fill="#f59e0b" stroke="#0b1a2b" strokeWidth={1.8} />
@@ -411,28 +432,10 @@ export function WorldMap({ paint, selected, onSelect, focus, flyTo, className = 
                   </g>
                 ) : (
                   // Enemy attacks pulse rose; my own military (raid, conquer, reinforce) is orange with a sword; civil traffic is blue.
-                  <circle r={big ? 24 : a.lead ? 9 : 7} fill={a.hostile ? "#f43f5e" : MILITARY.has(a.mission) ? "#f97316" : "#38bdf8"} stroke="#0b1a2b" strokeWidth={1.5} />
+                  <circle r={a.lead ? 9 : 7} fill={a.hostile ? "#f43f5e" : MILITARY.has(a.mission) ? "#f97316" : "#38bdf8"} stroke="#0b1a2b" strokeWidth={1.5} />
                 )}
                 {a.mission !== "relocate" &&
-                  (isMixed(a) && big ? (
-                    // A mixed force under the pointer opens up: every kind in it, in a ring, most numerous first from the top.
-                    <g>
-                      {a.kinds.slice(0, 6).map((id, i, all) => {
-                        const ang = -Math.PI / 2 + (i * 2 * Math.PI) / all.length;
-                        const r = all.length === 1 ? 0 : 13;
-                        const x = Math.cos(ang) * r;
-                        const y = Math.sin(ang) * r;
-                        const pic = unitPicture(id);
-                        return pic ? (
-                          <image key={id} href={pic} x={x - 8} y={y - 8} width={16} height={16} preserveAspectRatio="xMidYMid meet" style={{ pointerEvents: "none" }} />
-                        ) : (
-                          <g key={id} transform={`translate(${x} ${y}) scale(0.62) translate(-12 -12)`}>
-                            <UnitStrokes id={id} color="#0b1a2b" />
-                          </g>
-                        );
-                      })}
-                    </g>
-                  ) : isMixed(a) ? (
+                  (isMixed(a) ? (
                     // A mixed force at rest: a group, three heads and shoulders, until it is looked at.
                     <g fill="#0b1a2b">
                       <circle cx={-3.6} cy={-1.6} r={1.9} />
@@ -444,10 +447,10 @@ export function WorldMap({ paint, selected, onSelect, focus, flyTo, className = 
                     </g>
                   ) : a.lead && unitPicture(a.lead) ? (
                     // The kind the convoy is made of, as its picture on the disc.
-                    <image href={unitPicture(a.lead)!} x={big ? -20 : -7.5} y={big ? -20 : -7.5} width={big ? 40 : 15} height={big ? 40 : 15} preserveAspectRatio="xMidYMid meet" style={{ pointerEvents: "none" }} />
+                    <image href={unitPicture(a.lead)!} x={-7.5} y={-7.5} width={15} height={15} preserveAspectRatio="xMidYMid meet" style={{ pointerEvents: "none" }} />
                   ) : a.lead ? (
                     // The kind the convoy is made of, drawn dark on the disc: a canoe is a canoe, an archer a bow.
-                    <g transform={`scale(${big ? 1.6 : 0.58}) translate(-12 -12)`}>
+                    <g transform="scale(0.58) translate(-12 -12)">
                       <UnitStrokes id={a.lead} color="#0b1a2b" />
                     </g>
                   ) : a.hostile || MILITARY.has(a.mission) ? (
@@ -481,8 +484,9 @@ export function WorldMap({ paint, selected, onSelect, focus, flyTo, className = 
         const sy = ((a.y * view.k + view.y) / world.height) * 100;
         return (
           <foreignObject x={0} y={0} width={world.width} height={world.height} pointerEvents="none" className="hidden lg:block">
-            <div style={{ position: "absolute", left: `${sx}%`, top: `${sy}%`, transform: "translate(110px, -50%)" }} className="pointer-events-none w-max max-w-[16rem] rounded-md border border-slate-700 bg-slate-950/95 px-2 py-1.5 text-xs text-slate-200 shadow-xl">
-              <p className="font-medium">{a.title}</p>
+            <div style={{ position: "absolute", left: `${sx}%`, top: `${sy}%`, transform: "translate(34px, -50%)" }} className="pointer-events-none w-max max-w-[24rem] rounded-md border border-slate-700 bg-slate-950/95 px-3 py-2 text-xs text-slate-200 shadow-xl">
+              <p className="text-sm font-medium">{a.title}</p>
+              <UnitChips units={a.units} />
               {a.lines.map((l) => (
                 <p key={l} className="text-slate-400">
                   {l}
@@ -514,6 +518,7 @@ export function WorldMap({ paint, selected, onSelect, focus, flyTo, className = 
               ✕
             </button>
           </div>
+          <UnitChips units={a.units} size="h-10 w-10" />
           {a.lines.filter(Boolean).map((l) => (
             <p key={l} className="mt-0.5 text-sm text-slate-300">
               {l}

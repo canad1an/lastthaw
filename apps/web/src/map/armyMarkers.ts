@@ -18,6 +18,8 @@ export interface ArmyMarker {
   lead: string | null;
   /** Every kind in the convoy, most numerous first, so a mixed force can show each of them when looked at. */
   kinds: string[];
+  /** The units themselves, for the card: each kind with its count. Empty when unknown. */
+  units: Record<string, number>;
   /** Region names along the current leg, origin → destination. */
   routeNames: string[];
   /** Destination region id for highlighting. */
@@ -109,6 +111,7 @@ export function armyMarkers(armies: ArmyView[], incoming: IncomingView[], nowMs:
       naval: Object.entries(a.units).some(([id, n]) => n > 0 && unitById.get(id)?.naval),
       lead: leadUnit(a.units),
       kinds: kindsOf(a.units),
+      units: a.units,
       title: a.mission === "patrol" && !returning ? `Patrol on the ${laneName(a.lane ?? "")} lane` : `${missionLabel(a.mission, a.units)} ${returning ? "returning to" : "→"} ${dest}`,
       lines: [
         returning && a.note ? a.note : "",
@@ -135,6 +138,7 @@ export function armyMarkers(armies: ArmyView[], incoming: IncomingView[], nowMs:
       naval: !!i.units && Object.entries(i.units).some(([id, n]) => n > 0 && unitById.get(id)?.naval),
       lead: i.units ? leadUnit(i.units) : null,
       kinds: i.units ? kindsOf(i.units) : [],
+      units: i.units ?? {},
       title: `${i.fromPlayerName} ${i.mission === "raid" ? "raiding" : "attacking"} ${r.name}`,
       lines: [
         i.units
