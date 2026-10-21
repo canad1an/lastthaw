@@ -6,7 +6,7 @@ const KIND_ICON: Record<string, string> = { battle: "⚔", scout: "🔭", build:
 const TOAST_MS = 5000;
 
 /** Recent messages list used inside the top menu dropdown. */
-export function MessagesList({ messages, matchId, pinned, onSelectRegion }: { messages: MessageView[]; matchId?: string | undefined; pinned?: ReactNode; onSelectRegion?: ((regionId: string) => void) | undefined }) {
+export function MessagesList({ messages, matchId, pinned, onSelectRegion, onOpenBattle }: { messages: MessageView[]; matchId?: string | undefined; pinned?: ReactNode; onSelectRegion?: ((regionId: string) => void) | undefined; onOpenBattle?: ((battleId: string) => void) | undefined }) {
   // Whatever opened the inbox, being on screen is reading it: unread messages are marked read here as well as by the menu.
   const qc = useQueryClient();
   const anyUnread = messages.some((m) => !m.readAt);
@@ -36,6 +36,17 @@ export function MessagesList({ messages, matchId, pinned, onSelectRegion }: { me
               {m.subject}
               <span className="ml-2 text-xs text-slate-500">{new Date(m.createdAt).toLocaleTimeString()}</span>
             </button>
+            {/* A battle report opens the battle itself: the replay stays for the whole match. */}
+            {onOpenBattle && typeof (m.payload as { battleId?: unknown }).battleId === "string" && (
+              <button
+                className="shrink-0 rounded border border-rose-500/40 bg-rose-500/10 px-2 py-0.5 text-xs text-rose-100 hover:bg-rose-500/20"
+                onClick={() => onOpenBattle((m.payload as { battleId: string }).battleId)}
+                title="Replay this battle from the first march"
+                data-watch-battle
+              >
+                Watch battle ▶
+              </button>
+            )}
             {/* A message about a region opens that region, notes and all, with one tap. */}
             {onSelectRegion && typeof (m.payload as { regionId?: unknown }).regionId === "string" && (
               <button

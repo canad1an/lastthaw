@@ -19,6 +19,7 @@ export interface PhoneShellProps {
   pop: () => void;
   /** Open a region's screen from anywhere (a warning, the empire list): the stack becomes map → region. */
   openRegion: (id: string) => void;
+  openBattle: (battleId: string) => void;
   setRegionTab: (tab: RegionTab) => void;
   clockOffsetMs: number;
   colorOf: (id: string) => string;
@@ -142,6 +143,7 @@ export function PhoneShell(p: PhoneShellProps) {
         overlays={p.overlays}
         onToggleOverlay={p.onToggleOverlay}
         onSelectRegion={p.openRegion}
+        onOpenBattle={p.openBattle}
         clockOffsetMs={p.clockOffsetMs}
         messages={p.menu.messages}
       />

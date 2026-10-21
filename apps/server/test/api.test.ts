@@ -1272,6 +1272,16 @@ describe("api routes", () => {
       const told = await db.select().from(messages).where(and(eq(messages.matchId, gameId), eq(messages.playerId, benPid), eq(messages.kind, "battle"), sql`${messages.payload}->>'regionId' = ${T}`));
       expect(told.length).toBeGreaterThan(0);
       expect(matchStateView.parse((await Ben.call("GET", `${base}/state`)).json()).battles.some((x) => x.id === live.id)).toBe(false);
+      // The battle is kept for the whole match: the report links to it, the full list carries it with its verdict, and a report
+      // from before reports carried the id is matched to its battle by region and time when the inbox is read.
+      const mine = told.find((x) => (x.payload as { battleId?: string }).battleId === live.id);
+      expect(mine, "the report carries the battle id").toBeDefined();
+      const history = (await Ben.call("GET", `${base}/battles?all=1`)).json() as Array<{ id: string; status: string; attackerWon: boolean | null; conquered: boolean }>;
+      expect(history.find((x) => x.id === live.id)).toMatchObject({ status: "done", attackerWon: report.attackerWon });
+      expect((await Ben.call("GET", `${base}/battles`)).json()).toEqual([]);
+      await db.update(messages).set({ payload: { ...(mine!.payload as Record<string, unknown>), battleId: undefined } }).where(eq(messages.id, mine!.id));
+      const inbox = (await Ben.call("GET", `${base}/messages`)).json() as { messages: Array<{ id: string; payload: { battleId?: string } }> };
+      expect(inbox.messages.find((x) => x.id === mine!.id)?.payload.battleId).toBe(live.id);
     } finally {
       process.env.BATTLE_ROUND_MS = wasRoundMs ?? "0";
       await redis.quit().catch(() => {});

@@ -31,14 +31,23 @@ export function BattleWindow({ matchId, battleId, myPlayerId, onClose, onSelectR
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
-  const b = q.data;
+  // A battle already over is replayed: the scene is given a start of "now" so the whole fight plays again from the first
+  // march, on the schedule it had. Replay starts it over.
+  const [replay, setReplay] = useState<{ n: number; startedAt: string } | null>(null);
+  const data = q.data;
+  useEffect(() => {
+    if (data && data.status === "done" && !replay) setReplay({ n: 1, startedAt: new Date().toISOString() });
+  }, [data, replay]);
+  // A finished battle is not shown until its replay clock is set: fed the real start first, the scene would place every man where he ended.
+  const b = data && data.status === "done" ? (replay ? { ...data, startedAt: replay.startedAt } : undefined) : data;
+  const onReplay = () => setReplay((r) => ({ n: (r?.n ?? 0) + 1, startedAt: new Date().toISOString() }));
   return createPortal(
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/85 p-3 backdrop-blur-sm" onClick={onClose} role="dialog" aria-modal="true" aria-label="Battle">
       <div className="flex max-h-[94vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-rose-500/40 bg-slate-950 shadow-2xl" onClick={(e) => e.stopPropagation()}>
         {!b ? (
           <p className="p-6 text-sm text-slate-400">{q.error ? q.error.message : "Loading the battle…"}</p>
         ) : (
-          <Battle b={b} now={now} myPlayerId={myPlayerId} onClose={onClose} onSelectRegion={onSelectRegion} />
+          <Battle b={b} now={now} myPlayerId={myPlayerId} onClose={onClose} onSelectRegion={onSelectRegion} replayKey={replay?.n ?? 0} onReplay={onReplay} />
         )}
       </div>
     </div>,
@@ -46,8 +55,12 @@ export function BattleWindow({ matchId, battleId, myPlayerId, onClose, onSelectR
   );
 }
 
-function Battle({ b, now, myPlayerId, onClose, onSelectRegion }: { b: BattleDetailView; now: number; myPlayerId: string | null; onClose: () => void; onSelectRegion: (regionId: string) => void }) {
+function Battle({ b, now, myPlayerId, onClose, onSelectRegion, replayKey, onReplay }: { b: BattleDetailView; now: number; myPlayerId: string | null; onClose: () => void; onSelectRegion: (regionId: string) => void; replayKey: number; onReplay: () => void }) {
   const fighting = b.status === "fighting";
+  // While a replay runs, the round shown follows the replay clock.
+  const replayElapsed = fighting ? 0 : (now - Date.parse(b.startedAt)) / 1000;
+  const replayRound = Math.min(b.totalRounds, Math.max(0, Math.floor(replayElapsed / Math.max(1, balance.battle.roundSeconds))));
+  const replaying = !fighting && replayElapsed < b.totalRounds * balance.battle.roundSeconds + 3;
   const next = b.nextRoundAt ? (Date.parse(b.nextRoundAt) - now) / 1000 : 0;
   const region = regionById(b.regionId)?.name ?? b.regionId;
   const aStart = total(b.attacker.start);
@@ -71,14 +84,19 @@ function Battle({ b, now, myPlayerId, onClose, onSelectRegion }: { b: BattleDeta
           {you(b.defenderPlayerId)}
         </span>
         <span className="ml-auto rounded bg-slate-800 px-2 py-0.5 text-xs tabular-nums text-slate-200">
-          {fighting ? `Round ${b.round} of ${b.totalRounds}${next > 0 ? ` · next in ${Math.ceil(next)}s` : " · …"}` : `Over after ${b.totalRounds} round${b.totalRounds === 1 ? "" : "s"}`}
+          {fighting ? `Round ${b.round} of ${b.totalRounds}${next > 0 ? ` · next in ${Math.ceil(next)}s` : " · …"}` : replaying ? `Replay · round ${replayRound} of ${b.totalRounds}` : `Over after ${b.totalRounds} round${b.totalRounds === 1 ? "" : "s"}`}
         </span>
+        {!fighting && (
+          <button className="rounded border border-rose-500/40 bg-rose-500/10 px-2 py-0.5 text-xs text-rose-100 hover:bg-rose-500/20" onClick={onReplay} title="Play the battle again from the first march" data-replay>
+            Replay ▶
+          </button>
+        )}
         <button className="rounded border border-slate-700 px-2 py-0.5 text-xs text-slate-300 hover:bg-slate-800" onClick={onClose}>
           Close
         </button>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <Field b={b} />
+        <Field key={replayKey} b={b} />
         <div className="p-4">
         {verdict && <p className={`mb-3 rounded px-3 py-2 text-sm ${b.result?.attackerWon ? "bg-rose-500/15 text-rose-100" : "bg-emerald-500/15 text-emerald-100"}`}>{verdict}</p>}
         <div className="grid gap-3 md:grid-cols-2">
@@ -97,7 +115,7 @@ function Battle({ b, now, myPlayerId, onClose, onSelectRegion }: { b: BattleDeta
             ))}
           </ol>
         </div>
-        <p className="mt-2 text-[11px] text-slate-500">The result was decided when the army arrived, by the usual rules; the fight plays out a unit or two every {balance.battle.roundSeconds} seconds so you can watch it. Nothing changes hands until the last round.</p>
+        <p className="mt-2 text-[11px] text-slate-500">The result was decided when the army arrived, by the usual rules; the fight plays out a unit or two every {balance.battle.roundSeconds} seconds so you can watch it. Nothing changes hands until the last round. Every battle is kept for the whole match: find it again under Battles, or from its report in your inbox.</p>
         </div>
       </div>
     </>

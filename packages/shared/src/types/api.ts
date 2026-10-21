@@ -288,6 +288,9 @@ export const liveBattleView = z.object({
   nextRoundAt: z.string().nullable(),
   startedAt: z.string(),
   status: z.enum(["fighting", "done"]),
+  /** Once over: who won and whether the region changed hands. Null while fighting. */
+  attackerWon: z.boolean().nullable().optional(),
+  conquered: z.boolean().optional(),
 });
 export type LiveBattleView = z.infer<typeof liveBattleView>;
 const unitCounts = z.record(z.string(), z.number());

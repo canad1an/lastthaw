@@ -112,7 +112,7 @@ export const api = {
   setAdvisorSettings: (id: string, kind: AdvisorKind, settings: AdvisorSettings) => request<{ ok: true }>("PUT", `/api/matches/${id}/advisors/${kind}/settings`, settings),
   runAdvisor: (id: string, kind: AdvisorKind) => request<{ ok: true }>("POST", `/api/matches/${id}/advisors/${kind}/run`, {}),
   finance: (id: string) => request<FinanceView>("GET", `/api/matches/${id}/finance`),
-  battles: (id: string) => request<LiveBattleView[]>("GET", `/api/matches/${id}/battles`),
+  battles: (id: string, all = false) => request<LiveBattleView[]>("GET", `/api/matches/${id}/battles${all ? "?all=1" : ""}`),
   battle: (id: string, battleId: string) => request<BattleDetailView>("GET", `/api/matches/${id}/battles/${battleId}`),
   setAdvisorTarget: (id: string, regionId: string, add: boolean) => request<{ ok: true; targets: string[] }>("POST", `/api/matches/${id}/advisors/military/targets`, { regionId, add }),
   setNote: (id: string, regionId: string, b: { text: string; colour: string | null }) => request<{ ok: true }>("PUT", `/api/matches/${id}/notes/${regionId}`, b),
@@ -176,4 +176,5 @@ export const keys = {
   finance: (id: string) => ["match", id, "finance"] as const,
   battles: (id: string) => ["match", id, "battle"] as const,
   battle: (id: string, battleId: string) => ["match", id, "battle", battleId] as const,
+  battleHistory: (id: string) => ["match", id, "battle", "history"] as const,
 };

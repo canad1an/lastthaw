@@ -879,8 +879,8 @@ async function finishBattle(tx: Tx, m: MatchRow, b: typeof battles.$inferSelect,
   const lossesAll = Object.values(result.attackerLosses).reduce((a, b) => a + b, 0) + Object.values(result.defenderLosses).reduce((a, b) => a + b, 0);
   await tribeBattleTalk(tx, m, { attackerId: army.playerId, defenderId, attackerName, defenderName, region: region.name, attackerWon: result.attackerWon, conquered, losses: lossesAll, seed }, at, publisher, after);
   const verb = army.mission === "raid" ? "Raid on" : "Attack on";
-  await notify(tx, m.id, army.playerId, "battle", `${verb} ${region.name}: ${result.attackerWon ? "victory" : "defeat"}${conquered ? ", region conquered" : ""}`, { regionId: region.id, report });
-  if (defenderId) await notify(tx, m.id, defenderId, "battle", `${attackerName} ${army.mission === "raid" ? "raided" : "attacked"} ${region.name}: ${result.attackerWon ? "they won" : "we held"}${conquered ? ", region lost" : ""}`, { regionId: region.id, report });
+  await notify(tx, m.id, army.playerId, "battle", `${verb} ${region.name}: ${result.attackerWon ? "victory" : "defeat"}${conquered ? ", region conquered" : ""}`, { regionId: region.id, battleId: b.id, report });
+  if (defenderId) await notify(tx, m.id, defenderId, "battle", `${attackerName} ${army.mission === "raid" ? "raided" : "attacked"} ${region.name}: ${result.attackerWon ? "they won" : "we held"}${conquered ? ", region lost" : ""}`, { regionId: region.id, battleId: b.id, report });
   // Both sides keep the battle in their notes on the region: what each brought, what it cost, how it ended.
   {
     const unitsText = (u: UnitCounts) =>

@@ -480,7 +480,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
 
   return (
     <div className="age-screen flex h-[calc(100dvh-3rem)] flex-col bg-slate-950" style={ageVars(state.me.age) as React.CSSProperties} data-age={state.me.age}>
-      {!phone && <TopMenu matchId={matchId} state={state} selectedRegionId={selected} colorOf={colorOf} overlays={overlays} onToggleOverlay={toggleOverlay} onSelectRegion={goToRegion} clockOffsetMs={clockOffsetMs} />}
+      {!phone && <TopMenu matchId={matchId} state={state} selectedRegionId={selected} colorOf={colorOf} overlays={overlays} onToggleOverlay={toggleOverlay} onSelectRegion={goToRegion} onOpenBattle={setBattleId} clockOffsetMs={clockOffsetMs} />}
       {!state.observer && <RealmTakenPopup messages={menu.messages} onSelectRegion={goToRegion} />}
       {battleId && (
         <BattleWindow
@@ -504,6 +504,17 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
                 <button className="min-w-0 flex-1 truncate text-left text-sm text-slate-100" onClick={() => setStack([{ kind: "map" }, { kind: "panel", id: "messages" }])}>
                   {messageIcon(menu.toast.kind)} {menu.toast.subject}
                 </button>
+                {menu.toast.battleId && (
+                  <button
+                    className="shrink-0 rounded border border-rose-500/40 bg-rose-500/10 px-2 py-0.5 text-xs text-rose-100"
+                    onClick={() => {
+                      setBattleId(menu.toast!.battleId!);
+                      menu.clearToast();
+                    }}
+                  >
+                    Watch ▶
+                  </button>
+                )}
                 {menu.toast.regionId && (
                   <button
                     className="shrink-0 rounded border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-xs text-sky-200"
@@ -596,6 +607,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
             push={push}
             pop={pop}
             openRegion={goToRegion}
+            openBattle={setBattleId}
             setRegionTab={setRegionTab}
             clockOffsetMs={clockOffsetMs}
             colorOf={colorOf}

@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
 import { regionById, type BattleDetailView, type LiveBattleView } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { battles, matches, players } from "../db/schema.js";
@@ -15,6 +15,8 @@ type BattleRow = typeof battles.$inferSelect;
 /** The list entry for a battle, as the match state carries it for everyone in the match. */
 export function liveBattleOf(b: BattleRow, names: Map<string, string>): LiveBattleView {
   const live = (b.live ?? null) as BattleLive | null;
+  const outcome = (b.outcome ?? null) as BattleOutcome | null;
+  const report = (b.report ?? {}) as { attackerWon?: boolean; conquered?: boolean };
   return {
     id: b.id,
     regionId: b.regionId,
@@ -28,10 +30,16 @@ export function liveBattleOf(b: BattleRow, names: Map<string, string>): LiveBatt
     nextRoundAt: b.nextRoundAt?.toISOString() ?? null,
     startedAt: (b.startedAt ?? b.resolvedAt).toISOString(),
     status: b.status === "fighting" ? "fighting" : "done",
+    attackerWon: b.status === "fighting" ? null : (report.attackerWon ?? outcome?.result.attackerWon ?? null),
+    conquered: b.status === "fighting" ? false : (report.conquered ?? false),
   };
 }
 
-/** Battles in progress and just finished: anyone in the match (or an admin) may watch; the icon is on the shared map anyway. */
+/**
+ * Battles: anyone in the match (or an admin) may watch; the icon is on the shared map anyway. The list is the fights in
+ * progress, or with ?all=1 every battle of the match, newest first: a battle is kept for the whole match and its
+ * window replays it at any time.
+ */
 export async function battleRoutes(app: FastifyInstance, opts: { db: Db }) {
   const { db } = opts;
 
@@ -47,7 +55,10 @@ export async function battleRoutes(app: FastifyInstance, opts: { db: Db }) {
     const user = requireUser(req);
     const matchId = idParams.parse(req.params).id;
     await allowed(matchId, user.id, user.isAdmin);
-    const rows = await db.select().from(battles).where(and(eq(battles.matchId, matchId), eq(battles.status, "fighting"))).orderBy(desc(battles.startedAt));
+    const all = (req.query as { all?: string } | undefined)?.all === "1";
+    const rows = all
+      ? await db.select().from(battles).where(and(eq(battles.matchId, matchId), isNotNull(battles.live))).orderBy(desc(sql`coalesce(${battles.startedAt}, ${battles.resolvedAt})`)).limit(300)
+      : await db.select().from(battles).where(and(eq(battles.matchId, matchId), eq(battles.status, "fighting"))).orderBy(desc(battles.startedAt));
     const names = new Map((await db.select({ id: players.id, name: players.name }).from(players).where(eq(players.matchId, matchId))).map((p) => [p.id, p.name]));
     return rows.map((b) => liveBattleOf(b, names));
   });

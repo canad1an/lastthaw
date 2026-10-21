@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Db } from "../db/client.js";
-import { messages, players, regionNotes } from "../db/schema.js";
+import { battles, matches, messages, players, regionNotes } from "../db/schema.js";
 import { regionById, regionNoteBody } from "@lastthaw/shared";
 import { z } from "zod";
 import { requireUser } from "../auth/session.js";
@@ -32,6 +32,7 @@ export async function messageRoutes(app: FastifyInstance, opts: { db: Db }) {
     if (!mine && user.isAdmin) return { unread: 0, messages: [] };
     const p = mine ?? (await myPlayer(matchId, user.id));
     const rows = await db.select().from(messages).where(eq(messages.playerId, p.id)).orderBy(desc(messages.createdAt)).limit(100);
+    await linkBattles(matchId, rows);
     const [unread] = await db
       .select({ n: sql<number>`count(*)::int` })
       .from(messages)
@@ -68,6 +69,38 @@ export async function messageRoutes(app: FastifyInstance, opts: { db: Db }) {
       .returning();
     return { ok: true, note: { regionId, text: row!.text, colour: row!.colour, updatedAt: row!.updatedAt.toISOString() } };
   });
+
+  /**
+   * A battle report written before reports carried the battle's id is matched to its battle by region and time, so
+   * every conquest and defeat in the inbox opens its replay, however old.
+   */
+  async function linkBattles(matchId: string, rows: Array<{ kind: string; payload: unknown; createdAt: Date }>): Promise<void> {
+    const bare = rows.filter((r) => r.kind === "battle" && (r.payload as { report?: unknown }).report && !(r.payload as { battleId?: unknown }).battleId && typeof (r.payload as { regionId?: unknown }).regionId === "string");
+    if (!bare.length) return;
+    const regionIds = [...new Set(bare.map((r) => (r.payload as { regionId: string }).regionId))];
+    const fights = await db
+      .select({ id: battles.id, regionId: battles.regionId, resolvedAt: battles.resolvedAt, startedAt: battles.startedAt })
+      .from(battles)
+      .where(and(eq(battles.matchId, matchId), inArray(battles.regionId, regionIds)));
+    // Messages are stamped in real time; battles on the match clock, which a time skip moves ahead of it.
+    const [m] = await db.select({ offset: matches.clockOffsetSeconds }).from(matches).where(eq(matches.id, matchId)).limit(1);
+    const offsetMs = (m?.offset ?? 0) * 1000;
+    const window = 30 * 60_000;
+    for (const r of bare) {
+      const p = r.payload as { regionId: string; battleId?: string };
+      const at = r.createdAt.getTime() + offsetMs;
+      // The report is written as the last round ends, a little after the battle began: the nearest start before it wins.
+      let best: { id: string; gap: number } | null = null;
+      for (const f of fights) {
+        if (f.regionId !== p.regionId) continue;
+        const began = (f.startedAt ?? f.resolvedAt).getTime();
+        const gap = at - began;
+        if (gap < -60_000 || gap > window) continue;
+        if (!best || Math.abs(gap) < best.gap) best = { id: f.id, gap: Math.abs(gap) };
+      }
+      if (best) r.payload = { ...p, battleId: best.id };
+    }
+  }
 
   app.post("/api/matches/:id/messages/read", async (req) => {
     const user = requireUser(req);

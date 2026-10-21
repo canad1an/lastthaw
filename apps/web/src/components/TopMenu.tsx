@@ -7,6 +7,7 @@ import { useChatWatch, type ChatToast } from "./chatWatch.js";
 import { TECHS, balance, regionById, type MatchStateView } from "@lastthaw/shared";
 import { api, keys, type MessageView } from "../api/client.js";
 import { MessagesList, isImportant, messageIcon, useMessageToast } from "./Messages.js";
+import { BattleHistory } from "./BattleHistory.js";
 import { AlliancePanel } from "./AlliancePanel.js";
 import { Chat } from "./Chat.js";
 import { MarketPanel } from "./MarketPanel.js";
@@ -20,7 +21,7 @@ import { Ticker } from "./Ticker.js";
 import { DiplomacyPanel } from "./DiplomacyPanel.js";
 import { AdvisorsPanel } from "./AdvisorsPanel.js";
 
-export type MenuId = "messages" | "alliance" | "chat" | "market" | "players" | "leaderboard" | "view" | "empire" | "logistics" | "advisors" | "tech";
+export type MenuId = "messages" | "battles" | "alliance" | "chat" | "market" | "players" | "leaderboard" | "view" | "empire" | "logistics" | "advisors" | "tech";
 type Menu = MenuId | "menu";
 
 export interface MenuEntry {
@@ -41,7 +42,7 @@ export interface MenuData {
   alerts: number;
   messages: MessageView[];
   newest: MessageView | null;
-  toast: { kind: string; subject: string; regionId?: string | undefined } | null;
+  toast: { kind: string; subject: string; regionId?: string | undefined; battleId?: string | undefined } | null;
   clearToast: () => void;
   /** A chat line just in, for the bar; null once it has been shown a few seconds or chat is muted. */
   chatToast: ChatToast | null;
@@ -79,6 +80,7 @@ export function useMenuData(matchId: string, state: MatchStateView, overlays: Se
   const advisorBadge = state.advisors.some((a) => a.unpaid) ? "unpaid" : iceSoon ? "ice" : exposedHigh ? "exposed" : hiredAdvisors ? `${hiredAdvisors} hired` : undefined;
   const entries: MenuEntry[] = [
     { id: "messages", label: "Messages", badge: unread ? `${unread} new` : undefined, tone: "alert" },
+    { id: "battles", label: "Battles", badge: state.battles.length || undefined, tone: state.battles.length ? "alert" : undefined },
     { id: "alliance", label: "Alliance", badge: proposals ? `${proposals} to answer` : state.me.allianceTag ? `[${state.me.allianceTag}]` : invites ? `${invites} invite` : undefined, tone: proposals ? "alert" : undefined },
     { id: "chat", label: "Chat", badge: chat.unread ? `${chat.unread} new` : chat.mutedAll ? "muted" : undefined, tone: chat.unread ? "alert" : undefined },
     { id: "market", label: "Market", badge: marketOpen || undefined },
@@ -91,7 +93,7 @@ export function useMenuData(matchId: string, state: MatchStateView, overlays: Se
     { id: "view", label: "View", badge: overlays.size || undefined },
   ];
   const alerts = (unread ? 1 : 0) + (chat.unread ? 1 : 0) + (logisticsBadge ? 1 : 0) + (invites ? 1 : 0) + (proposals ? 1 : 0);
-  return { entries, alerts, messages: q.data?.messages ?? [], newest, toast: toast ? { kind: toast.kind, subject: toast.subject, regionId: regionOf(toast) } : null, clearToast, chatToast: chat.toast, clearChatToast: chat.clearToast };
+  return { entries, alerts, messages: q.data?.messages ?? [], newest, toast: toast ? { kind: toast.kind, subject: toast.subject, regionId: regionOf(toast), battleId: typeof (toast.payload as { battleId?: unknown }).battleId === "string" ? (toast.payload as { battleId: string }).battleId : undefined } : null, clearToast, chatToast: chat.toast, clearChatToast: chat.clearToast };
 }
 
 /**
@@ -106,6 +108,7 @@ export function TopMenu({
   overlays,
   onToggleOverlay,
   onSelectRegion,
+  onOpenBattle,
   clockOffsetMs,
 }: {
   matchId: string;
@@ -115,6 +118,7 @@ export function TopMenu({
   overlays: Set<string>;
   onToggleOverlay: (id: string) => void;
   onSelectRegion: (regionId: string) => void;
+  onOpenBattle: (battleId: string) => void;
   clockOffsetMs: number;
 }) {
   const [open, setOpen] = useState<Menu | null>(null);
@@ -148,6 +152,18 @@ export function TopMenu({
         <span className="mr-2">{messageIcon(toast.kind)}</span>
         {toast.subject}
       </button>
+      {toast.battleId && (
+        <button
+          className="shrink-0 rounded border border-rose-500/40 bg-rose-500/10 px-2 py-0.5 text-xs text-rose-100 hover:bg-rose-500/20"
+          onClick={() => {
+            onOpenBattle(toast.battleId!);
+            clearToast();
+          }}
+          title="Open the battle"
+        >
+          Watch battle ▶
+        </button>
+      )}
       {toast.regionId && (
         <button
           className="shrink-0 rounded border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-xs text-sky-200 hover:bg-sky-500/20"
@@ -193,7 +209,7 @@ export function TopMenu({
       </div>
       <Ticker matchId={matchId} nudge={state.match.now} onSelectRegion={onSelectRegion} />
       {open && (
-        <Dropdown onClose={() => setOpen(null)} title={{ messages: "Messages", alliance: "Alliance", chat: "Chat", market: "Market", players: "Players", leaderboard: "Leaderboard", view: "View", empire: "Resources", logistics: "Logistics", advisors: "Advisors", tech: "Tech tree", menu: "Menu" }[open]}>
+        <Dropdown onClose={() => setOpen(null)} title={{ messages: "Messages", battles: "Battles", alliance: "Alliance", chat: "Chat", market: "Market", players: "Players", leaderboard: "Leaderboard", view: "View", empire: "Resources", logistics: "Logistics", advisors: "Advisors", tech: "Tech tree", menu: "Menu" }[open]}>
           {open === "menu" && (
             <div className="grid grid-cols-2 gap-2 p-3">
               {entries.map((e) => (
@@ -208,6 +224,7 @@ export function TopMenu({
           )}
           {open !== "menu" && (
             <MenuPanelBody
+              onOpenBattle={onOpenBattle}
               menu={open}
               matchId={matchId}
               state={state}
@@ -239,6 +256,7 @@ export function MenuPanelBody({
   overlays,
   onToggleOverlay,
   onSelectRegion,
+  onOpenBattle,
   clockOffsetMs,
   messages,
 }: {
@@ -250,12 +268,14 @@ export function MenuPanelBody({
   overlays: Set<string>;
   onToggleOverlay: (id: string) => void;
   onSelectRegion: (regionId: string) => void;
+  onOpenBattle: (battleId: string) => void;
   clockOffsetMs: number;
   messages: MessageView[];
 }) {
   return (
     <>
-        {menu === "messages" && <MessagesList messages={messages} matchId={matchId} pinned={<ObjectiveCard state={state} />} onSelectRegion={onSelectRegion} />}
+        {menu === "messages" && <MessagesList messages={messages} matchId={matchId} pinned={<ObjectiveCard state={state} />} onSelectRegion={onSelectRegion} onOpenBattle={onOpenBattle} />}
+        {menu === "battles" && <BattleHistory matchId={matchId} state={state} onOpenBattle={onOpenBattle} onSelectRegion={onSelectRegion} />}
         {menu === "alliance" && (
           <div className="p-3">
             <AlliancePanel matchId={matchId} state={state} />

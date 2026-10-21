@@ -12,6 +12,7 @@ export type Screen = { kind: "map" } | { kind: "region"; id: string; tab: Region
 
 export const PANEL_TITLES: Record<PanelId, string> = {
   messages: "Messages",
+  battles: "Battles",
   alliance: "Alliance",
   chat: "Chat",
   market: "Market",
