@@ -191,7 +191,10 @@ export async function queueTrain(ctx: CommandContext, regionId: string, unitId: 
   if (def.age > p.age) throw httpError(400, `${def.name} needs a later age`);
   if (def.requires && !techs.has(def.requires)) throw httpError(400, `${def.name} needs ${techById.get(def.requires)?.name ?? def.requires}`);
   const region = regionById(regionId);
-  if (def.needsResource && !region?.resources.includes(def.needsResource)) throw httpError(400, `${def.name} can only be trained where there are ${def.needsResource}`);
+  // A mount is paid for from the stores (every mounted unit costs a horse), so horses bred elsewhere or hauled in serve as
+  // well as wild herds: the cost check below is the rule. Only a unit that needs the resource without paying for it must
+  // stand where the resource is found.
+  if (def.needsResource && !(def.cost[def.needsResource] ?? 0) && !region?.resources.includes(def.needsResource)) throw httpError(400, `${def.name} can only be trained where there are ${def.needsResource}`);
   if (def.naval && !region?.coastal) throw httpError(400, `${def.name}s are built on a coast`);
   if (def.minBatch && qty < def.minBatch) throw httpError(400, `${def.name}s are trained in groups of at least ${def.minBatch}`);
   if (def.hauler) {

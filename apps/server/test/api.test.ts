@@ -6,7 +6,7 @@ import { runDueJobs } from "../src/worker/jobs.js";
 import { buildApp } from "../src/api/app.js";
 import { forcePass } from "../src/matches/advisorsApi.js";
 import { createDb, type Db } from "../src/db/client.js";
-import { emailTokens, fairplayFlags, matches, playerActions, players, users, matchRegions, regionNotes, tradeRoutes, jobs, armies, pacts, advisors, messages, marketOrders, battles } from "../src/db/schema.js";
+import { emailTokens, fairplayFlags, matches, playerActions, players, users, matchRegions, regionNotes, tradeRoutes, jobs, armies, pacts, advisors, messages, marketOrders, battles, playerTechs } from "../src/db/schema.js";
 import { runMatchTicks } from "../src/sim/tick.js";
 import { runTradeRoutes } from "../src/sim/trade.js";
 import { detectAutomation } from "../src/fairplay/detect.js";
@@ -377,6 +377,25 @@ describe("api routes", () => {
     expect((await Ann.call("POST", `${base}/regions/${cap}/build`, { buildingId: "great_hearth" })).statusCode).toBeGreaterThanOrEqual(400);
     expect((await Ann.call("POST", `${base}/regions/${cap}/train`, { unitId: "dragon", qty: 1 })).statusCode).toBe(400);
     expect((await Ann.call("POST", `${base}/regions/${cap}/train`, { unitId: "sellsword", qty: 1 })).statusCode).toBe(400);
+    {
+      // Mounted units are paid for from the stores: horses hauled in serve as well as wild herds, and none in store means no chariot.
+      const [annRow] = await db.select({ age: players.age, id: players.id }).from(players).where(and(eq(players.matchId, gameId), eq(players.userId, await idOf(ann.email))));
+      const [capRow] = await db.select({ special: matchRegions.special, food: matchRegions.food, wood: matchRegions.wood, popWorkers: matchRegions.popWorkers }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
+      await db.update(players).set({ age: Math.max(1, annRow!.age) }).where(eq(players.id, annRow!.id));
+      await db.insert(playerTechs).values({ matchId: gameId, playerId: annRow!.id, techId: "the_wheel", completedAt: new Date() }).onConflictDoNothing();
+      await db.update(matchRegions).set({ special: { ...(capRow!.special as Record<string, number>), copper: 20, horses: 0 }, food: Math.max(capRow!.food, 500), wood: Math.max(capRow!.wood, 500), popWorkers: 30 }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
+      const noHorses = await Ann.call("POST", `${base}/regions/${cap}/train`, { unitId: "chariot", qty: 1 });
+      expect(noHorses.statusCode, noHorses.body).toBe(409);
+      expect(noHorses.body).toContain("horses");
+      await db.update(matchRegions).set({ special: { ...(capRow!.special as Record<string, number>), copper: 20, horses: 2 } }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
+      const withHorses = await Ann.call("POST", `${base}/regions/${cap}/train`, { unitId: "chariot", qty: 1 });
+      expect(withHorses.statusCode, withHorses.body).toBe(200);
+      // Put Ann back as she was for the tests that follow.
+      await db.update(jobs).set({ cancelledAt: new Date() }).where(and(eq(jobs.matchId, gameId), eq(jobs.playerId, annRow!.id), eq(jobs.kind, "train"), sql`${jobs.completedAt} is null`));
+      await db.delete(playerTechs).where(and(eq(playerTechs.playerId, annRow!.id), eq(playerTechs.techId, "the_wheel")));
+      await db.update(players).set({ age: annRow!.age }).where(eq(players.id, annRow!.id));
+      await db.update(matchRegions).set({ special: capRow!.special, food: capRow!.food, wood: capRow!.wood, popWorkers: capRow!.popWorkers }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
+    }
     expect((await Ann.call("POST", `${base}/research`, { techId: "warp_drive" })).statusCode).toBe(400);
     expect((await Ann.call("POST", `${base}/research`, { techId: "bronze_working" })).statusCode).toBeGreaterThanOrEqual(400);
     expect((await Ann.call("POST", `${base}/jobs/00000000-0000-0000-0000-000000000000/cancel`, {})).statusCode).toBe(404);

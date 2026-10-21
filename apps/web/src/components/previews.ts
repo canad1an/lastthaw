@@ -99,7 +99,7 @@ export function unitPreview(def: UnitDef): { summary: string; rows: Delta[] } {
     { label: "Speed", before: "", after: `${kmh} km per game hour` },
     { label: "Carries", before: "", after: `${def.carry} loot` },
   ];
-  const needs = [def.requires ? `needs ${techById.get(def.requires)?.name ?? def.requires}` : null, def.needsResource ? `trained only where there are ${def.needsResource}` : null].filter(Boolean).join("; ");
+  const needs = [def.requires ? `needs ${techById.get(def.requires)?.name ?? def.requires}` : null, def.needsResource ? (def.cost[def.needsResource] ? `each takes ${def.needsResource} from the stores: bred at Stables where herds roam, or hauled in` : `trained only where there are ${def.needsResource}`) : null].filter(Boolean).join("; ");
   return { summary: `${def.description} Each unit takes one worker out of the fields.${needs ? ` ${needs[0]!.toUpperCase()}${needs.slice(1)}.` : ""}`, rows };
 }
 

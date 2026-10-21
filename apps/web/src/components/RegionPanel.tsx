@@ -665,7 +665,8 @@ function TrainTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
         {units.map((u) => {
           const n = Math.max(qty, 1, u.minBatch ?? 1);
           const cost = unitCost(u, n, matchDayOf(state, clockOffsetMs));
-          const needs = (u.needsResource && !region.resources.includes(u.needsResource)) || (u.naval && !region.coastal) || (u.needsBuilding && (owned.buildings[u.needsBuilding] ?? 0) < 1);
+          // A mount comes out of the stores (the cost line shows horses in red when short); only a unit that needs a resource it does not pay for must stand where it is found.
+          const needs = (u.needsResource && !(u.cost[u.needsResource] ?? 0) && !region.resources.includes(u.needsResource)) || (u.naval && !region.coastal) || (u.needsBuilding && (owned.buildings[u.needsBuilding] ?? 0) < 1);
           const ok = !queueFull && !needs && canAfford(stock, cost) && live.e.popWorkers >= n;
           const secs = realSeconds(trainSeconds(u, n), owned.effects.trainSpeed, state.match.speed);
           return (

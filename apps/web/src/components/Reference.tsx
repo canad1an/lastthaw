@@ -186,7 +186,7 @@ export function UnitList() {
             description={`${u.description}${u.minBatch ? ` Trained ${u.minBatch} at a time.` : ""}`}
             badge={kind(u)}
             rows={[
-              ["needs", [u.requires && name(u.requires), u.needsBuilding && name(u.needsBuilding), u.needsResource && `${u.needsResource} in the region`].filter(Boolean).join(", ") || "nothing"],
+              ["needs", [u.requires && name(u.requires), u.needsBuilding && name(u.needsBuilding), u.needsResource && (u.cost[u.needsResource] ? `${u.needsResource} in store (bred where herds roam, or hauled in)` : `${u.needsResource} in the region`)].filter(Boolean).join(", ") || "nothing"],
               ["fight", `attack ${u.attack}, defence ${u.defense}${u.breach ? `, siege ${u.breach}` : ""}`],
               ["move", u.speed > 0 ? `${u.speed} km/h, carries ${u.carry}` : "stays home"],
               ["cost", `${costText(u.cost)} each`],
