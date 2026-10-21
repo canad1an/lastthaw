@@ -124,7 +124,7 @@ export function AdvisorsPanel({ matchId, state, onSelect, clockOffsetMs }: { mat
             {confirm.what === "hire" ? (
               <div className="mt-2 space-y-2 text-sm text-slate-300">
                 <p>
-                  The wage, every game hour, at your empire's output today ({regions} region{regions === 1 ? "" : "s"}). Hiring takes the first {balance.advisors.contractHours} hours at once:
+                  The wage, every game hour, at your empire's output today ({regions} region{regions === 1 ? "" : "s"}). Nothing is paid on hiring; the first hour is charged at the next tick:
                 </p>
                 <ul className="grid grid-cols-2 gap-1 rounded border border-slate-800 p-2 text-slate-100 sm:grid-cols-3">
                   {Object.entries(wage).map(([k, v]) => (
@@ -134,10 +134,10 @@ export function AdvisorsPanel({ matchId, state, onSelect, clockOffsetMs }: { mat
                     </li>
                   ))}
                 </ul>
-                <p className="text-xs text-slate-400">A {balance.advisors.contractHours}-hour contract is paid now, from your capital first; after that the wage is charged every game hour. The wage is {Math.round(balance.advisors.outputShare * 100)}% of the food, wood and stone your empire gathers each hour, measured as you go, so it grows as you do. If a wage cannot be met {she.toLowerCase()} stops until it is paid. You can fire {pronoun} at any time, but the contract is not refunded and {she.toLowerCase()} will not come back for {balance.advisors.rehireCooldownHours} game hours.</p>
+                <p className="text-xs text-slate-400">Nothing is paid up front: the wage is charged every game hour from your capital first, starting at the next tick. The wage is {Math.round(balance.advisors.outputShare * 100)}% of the food, wood and stone your empire gathers each hour, measured as you go, so it grows as you do. If a wage cannot be met {she.toLowerCase()} stops until it is paid. You can fire {pronoun} at any time, but {she.toLowerCase()} will not come back for {balance.advisors.rehireCooldownHours} game hours.</p>
               </div>
             ) : (
-              <p className="mt-2 text-sm text-slate-300">{she} leaves at once. Builds and training already queued, and armies and convoys already on the road, carry on. The rest of the paid contract is not refunded, and {she.toLowerCase()} will not take you back for {balance.advisors.rehireCooldownHours} game hours.</p>
+              <p className="mt-2 text-sm text-slate-300">{she} leaves at once. Builds and training already queued, and armies and convoys already on the road, carry on. {she} will not take you back for {balance.advisors.rehireCooldownHours} game hours.</p>
             )}
             <div className="mt-5 flex justify-end gap-2">
               <button className="rounded-md border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:bg-slate-800" onClick={() => setConfirm(null)} autoFocus>
@@ -201,7 +201,7 @@ export function AdvisorsPanel({ matchId, state, onSelect, clockOffsetMs }: { mat
 
   return (
     <div className="space-y-3 p-3 text-sm">
-      <p className="text-xs text-slate-400">Advisors take routine management off your hands for a steep hourly wage: each takes {Math.round(balance.advisors.outputShare * 100)}% of the food, wood and stone your empire gathers, measured as you grow. Hiring buys the first {balance.advisors.contractHours} hours at once; fire at any time, but nothing is refunded and a fired advisor stays away for {balance.advisors.rehireCooldownHours} game hours.</p>
+      <p className="text-xs text-slate-400">Advisors take routine management off your hands for a steep hourly wage: each takes {Math.round(balance.advisors.outputShare * 100)}% of the food, wood and stone your empire gathers, measured as you grow. Nothing is paid on hiring; fire at any time, but a fired advisor stays away for {balance.advisors.rehireCooldownHours} game hours.</p>
       {ADVISORS.map((meta) => {
         const a = hired(meta.kind);
         const wage = wageOf(meta.kind);

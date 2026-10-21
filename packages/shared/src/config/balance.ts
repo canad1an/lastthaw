@@ -377,8 +377,7 @@ export const balance = {
     maxRounds: 150,
   },
   advisors: {
-    /** Hiring buys this many game hours of wages at once, with no refund; the same advisor cannot be rehired for rehireCooldownHours after a firing; Run a pass now works once per runEveryMinutes. */
-    contractHours: 24,
+    /** Nothing is paid on hiring (the wage starts at the next tick); the same advisor cannot be rehired for rehireCooldownHours after a firing, so hire-and-fire buys nothing; Run a pass now works once per runEveryMinutes. */
     rehireCooldownHours: 24,
     runEveryMinutes: 60,
     /**

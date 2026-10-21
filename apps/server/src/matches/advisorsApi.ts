@@ -7,7 +7,7 @@ import { advisors, matches, players } from "../db/schema.js";
 import { requireUser } from "../auth/session.js";
 import type { Publisher } from "../realtime/publish.js";
 import { matchNow } from "../sim/clock.js";
-import { drawWage, runPass, wageFor } from "../sim/advisors.js";
+import { runPass, wageFor } from "../sim/advisors.js";
 import { advisorTargetBody, balance, regionById } from "@lastthaw/shared";
 import { matchRegions } from "../db/schema.js";
 import { areAllied } from "../sim/alliances.js";
@@ -47,22 +47,13 @@ export async function advisorRoutes(app: FastifyInstance, opts: { db: Db; publis
       if (back > now) throw httpError(409, `you fired this advisor; they will take you back in ${Math.max(1, Math.ceil(((back.getTime() - now.getTime()) / 3600_000) * m.speed))} game hour${Math.ceil(((back.getTime() - now.getTime()) / 3600_000) * m.speed) === 1 ? "" : "s"}`);
     }
     const wage = await wageFor(db, m, p.id);
-    // A contract: the first day of wages is paid on hiring, and nothing is refunded on firing.
-    const contract: Record<string, number> = {};
-    for (const [k, v] of Object.entries(wage)) contract[k] = v * balance.advisors.contractHours;
-    await db.transaction(async (tx) => {
-      if (!(await drawWage(tx, m, p, contract))) {
-        const line = Object.entries(contract)
-          .map(([k, v]) => `${v} ${k}`)
-          .join(", ");
-        throw httpError(409, `hiring takes the first ${balance.advisors.contractHours} hours of wages at once (${line}), and your regions cannot pay it`);
-      }
-      const paidUntil = new Date(now.getTime() + balance.advisors.contractHours * hourMs);
-      if (existing) await tx.update(advisors).set({ hiredAt: now, paidUntil, firedAt: null, unpaidSince: null, lastPassAt: null, campaigns: [] }).where(eq(advisors.id, existing.id));
-      else await tx.insert(advisors).values({ matchId, playerId: p.id, kind, hiredAt: now, paidUntil, settings: advisorSettings.parse({}) });
-    });
+    // Nothing is paid on hiring: the first hour's wage is charged by the next tick like every hour after it. Hiring and
+    // firing to dodge a wage buys nothing, since a fired advisor stays away for rehireCooldownHours.
+    const paidUntil = now;
+    if (existing) await db.update(advisors).set({ hiredAt: now, paidUntil, firedAt: null, unpaidSince: null, lastPassAt: null, campaigns: [] }).where(eq(advisors.id, existing.id));
+    else await db.insert(advisors).values({ matchId, playerId: p.id, kind, hiredAt: now, paidUntil, settings: advisorSettings.parse({}) });
     await publisher.toPlayer(matchId, p.id, "advisor.hired", { kind });
-    return { ok: true, wage, contract };
+    return { ok: true, wage };
   });
 
   app.post("/api/matches/:id/advisors/:kind/fire", async (req) => {

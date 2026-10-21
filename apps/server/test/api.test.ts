@@ -772,7 +772,7 @@ describe("api routes", () => {
     const redis = createRedis();
     const pub = new Publisher(redis);
     try {
-      // Hire: the first hour's wage leaves the capital; a second hire is refused.
+      // Hire: nothing leaves the stores; a second hire is refused.
       await fill(12000, 12000, 9000, 100, 100);
       const regions = (await db.select({ n: sql<number>`count(*)::int` }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid), sql`${matchRegions.frozenAt} is null`)))[0]!.n;
       const before = await totalStock();
@@ -784,10 +784,10 @@ describe("api routes", () => {
       expect(wage.wood).toBeGreaterThan(0);
       expect(wage.copper ?? 0).toBeGreaterThanOrEqual(0);
       const after = await totalStock();
-      // A day's contract leaves the empire at once, the capital first.
-      expect(Math.round(before.food - after.food)).toBe(wage.food! * balance.advisors.contractHours);
-      expect(Math.round(before.wood - after.wood)).toBe(wage.wood! * balance.advisors.contractHours);
-      expect(Math.round(before.copper - after.copper)).toBe((wage.copper ?? 0) * balance.advisors.contractHours);
+      // Nothing is paid up front: the first hour is charged by the tick like every other.
+      expect(Math.round(before.food - after.food)).toBe(0);
+      expect(Math.round(before.wood - after.wood)).toBe(0);
+      expect(Math.round(before.copper - after.copper)).toBe(0);
       expect((await Ben.call("POST", `${base}/advisors/economic/hire`, {})).statusCode).toBe(409);
       let st = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
       expect(st.advisors).toHaveLength(1);
