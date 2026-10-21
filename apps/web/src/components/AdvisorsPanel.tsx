@@ -79,7 +79,7 @@ const ADVISORS: Array<{ kind: AdvisorKind; name: string; title: string; blurb: s
     duties: [
       "Fills the research queue toward your goal (the next age, hauling, walls or the sea) in prerequisite order, a few techs a pass, and always leaves two slots free for you.",
       "Lists any store above four fifths of its cap on the market at the fair price, asking for what your waiting orders owe or the ore you hold least, and withdraws a listing nobody takes in twelve hours.",
-      "Buys what waiting builds, training and the next research owe from the cheapest open offer that is not too far above fair, into your capital, keeping a reserve there.",
+      "Buys what waiting builds, training and the next research owe, and what his own listings ask for, from the cheapest open offer that is not too far above fair, paid from whichever region of yours can best spare the price.",
       "Reports every tech queued, every listing and every purchase, and what the market could not supply.",
       "Never touches buildings, armies, people or diplomacy.",
     ],
@@ -550,7 +550,7 @@ function ChancellorSettings({ matchId, state, advisor }: { matchId: string; stat
         </label>
         <label className="flex items-start gap-2">
           <input type="checkbox" checked={draft.buy} onChange={(e) => setDraft((d) => ({ ...d, buy: e.target.checked }))} className="mt-0.5 accent-sky-400" />
-          <span>Buy: what waiting builds, training and the next research owe, from the cheapest open offer not above fair by more than the margin below, into the capital, keeping the reserve below of its cap.</span>
+          <span>Buy: what waiting builds, training and the next research owe, and what his own listings ask for, from the cheapest open offer not above fair by more than the margin below, paid from whichever region of yours holds the most of the price beyond the reserve below (a share of that region's cap).</span>
         </label>
       </div>
       <div className="grid gap-2 text-xs text-slate-300 sm:grid-cols-2">

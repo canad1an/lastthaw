@@ -1239,6 +1239,8 @@ describe("api routes", () => {
       expect(wood).toBeDefined();
       expect(wood!.askAmount).toBe(fairAmount("wood", wood!.offerAmount, wood!.askResource));
       expect(mine.length).toBeLessThanOrEqual(3);
+      // Ore is asked for in small lots that a tribe can pay.
+      for (const o of mine) if (["copper", "tin", "iron", "horses"].includes(o.askResource)) expect(o.askAmount, `${o.offerAmount} ${o.offerResource} for ${o.askAmount} ${o.askResource}`).toBeLessThanOrEqual(balance.advisors.chancellor.maxAskOre);
       expect((await Ben.call("POST", `${base}/advisors/chancellor/fire`, {})).statusCode).toBe(200);
     } finally {
       await db.delete(jobs).where(eq(jobs.id, job!.id));
