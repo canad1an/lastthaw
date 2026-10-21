@@ -6,7 +6,7 @@
  */
 import { and, asc, eq, isNull, lte, sql } from "drizzle-orm";
 import type pino from "pino";
-import { balance, availableBuildings, buildingBlockedBy, buildingById, buildingCost, canAfford, computeRates, normalizeAssignment, regionById, unitById, HAULER_IDS, type AdvisorKind, type AdvisorSettings, type AdvisorReport, type AdvisorSuggestion, type Cost, type RegionEconomy, advisorSettings as advisorSettingsSchema, RESOURCE_WORTH } from "@lastthaw/shared";
+import { balance, availableBuildings, buildingBlockedBy, buildingById, buildingCost, canAfford, computeRates, normalizeAssignment, regionById, unitById, HAULER_IDS, type AdvisorKind, type AdvisorSettings, type AdvisorReport, type AdvisorSuggestion, type Cost, type RegionEconomy, advisorSettings as advisorSettingsSchema, RESOURCE_WORTH, findRoute } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { advisorEvents, advisors, jobs, matchRegions, matches, playerTechs, players, tradeRoutes } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
@@ -498,7 +498,8 @@ export async function balancePeople(ctx: CommandContext, regions: Array<{ row: M
     // The emptiest taker with room, nearest among equals.
     const ranked = takers
       .map((t) => ({ t, room: Math.floor(mean * t.economy.capacity - pop(t) - (promised.get(t.row.regionId) ?? 0)) }))
-      .filter((x) => x.room >= 1)
+      // People walk: a taker across the sea (an island) is left to ships and settlers.
+      .filter((x) => x.room >= 1 && !!findRoute(g.row.regionId, x.t.row.regionId, false))
       .sort((p1, p2) => fill(p1.t) - fill(p2.t) || distance(g.row.regionId, p1.t.row.regionId) - distance(g.row.regionId, p2.t.row.regionId));
     const pick = ranked[0];
     if (!pick) break;

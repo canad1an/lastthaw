@@ -831,6 +831,61 @@ describe("api routes", () => {
     }
   });
 
+  it("an island is supplied by ship: materials set aside at the port across the lane, a cog sails them over, and spare ships are called to a port with none", async () => {
+    const base = `/api/matches/${gameId}`;
+    const benState = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
+    const benPid = benState.me.playerId;
+    const atMatchNow = new Date(benState.match.now);
+    const taken = new Set((await db.select({ regionId: matchRegions.regionId }).from(matchRegions).where(eq(matchRegions.matchId, gameId))).map((r) => r.regionId));
+    // An island with no land neighbours, and two free regions on lanes to it (or to each other) for the port and the ship yard.
+    const islands = allRegions().filter((r) => r.neighbors.length === 0 && r.seaRoutes.length > 0 && !taken.has(r.id));
+    const pick = islands.map((isle) => ({ isle, ports: isle.seaRoutes.filter((id) => !taken.has(id)) })).find((x) => x.ports.length >= 1);
+    expect(pick, "a free island with a free port across its lane").toBeTruthy();
+    const isle = pick!.isle.id;
+    const port = pick!.ports[0]!;
+    const yard = regionById(port)!.seaRoutes.find((id) => id !== isle && !taken.has(id) && distanceKm(id, port) <= 2500) ?? null;
+    const claim = async (regionId: string, set: Partial<typeof matchRegions.$inferInsert>) => {
+      await db
+        .insert(matchRegions)
+        .values({ matchId: gameId, regionId, assignment: { ...balance.start.assignment }, settledAt: atMatchNow, ownerPlayerId: benPid, popWorkers: 5, ...set })
+        .onConflictDoUpdate({ target: [matchRegions.matchId, matchRegions.regionId], set: { ownerPlayerId: benPid, popWorkers: 5, settledAt: atMatchNow, ...set } });
+    };
+    await claim(port, { food: 500, wood: 2000, stone: 1500, units: { cog: 2 } });
+    await claim(isle, { food: 50, wood: 0, stone: 0, units: {} });
+    const redis = createRedis();
+    const pub = new Publisher(redis);
+    try {
+      const built = await Ben.call("POST", `${base}/regions/${isle}/build`, { buildingId: "lumber_camp" });
+      expect(built.statusCode, built.body).toBe(200);
+      const { jobId } = built.json() as { jobId: string };
+      const [job] = await db.select().from(jobs).where(eq(jobs.id, jobId));
+      expect(job!.waitingFor).toBeTruthy();
+      // The materials route comes from the port across the lane, nowhere else.
+      const routes = await db.select().from(tradeRoutes).where(and(eq(tradeRoutes.matchId, gameId), eq(tradeRoutes.toRegionId, isle), eq(tradeRoutes.forJobId, jobId)));
+      expect(routes.map((r) => r.fromRegionId)).toEqual([port]);
+      await runTradeRoutes(db, pub, logger);
+      const sailing = await db.select().from(armies).where(and(eq(armies.matchId, gameId), eq(armies.playerId, benPid), eq(armies.mission, "transport"), eq(armies.targetRegionId, isle), eq(armies.status, "outbound")));
+      expect(sailing.length, JSON.stringify((await db.select({ r: tradeRoutes.lastResult }).from(tradeRoutes).where(eq(tradeRoutes.forJobId, jobId))))).toBe(1);
+      expect(sailing[0]!.units.cog).toBeGreaterThanOrEqual(1);
+      expect(sailing[0]!.path).toEqual([port, isle]);
+      // A port with no ships calls spare ones over from a region on a lane to it.
+      if (yard) {
+        await claim(yard, { food: 0, wood: 0, stone: 0, units: { cog: 3 } });
+        await db.update(matchRegions).set({ units: {} }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, port)));
+        const second = await Ben.call("POST", `${base}/regions/${isle}/build`, { buildingId: "storehouse" });
+        expect(second.statusCode, second.body).toBe(200);
+        await db.update(tradeRoutes).set({ nextAt: new Date(0) }).where(and(eq(tradeRoutes.matchId, gameId), eq(tradeRoutes.toRegionId, isle)));
+        await runTradeRoutes(db, pub, logger);
+        const relief = await db.select().from(armies).where(and(eq(armies.matchId, gameId), eq(armies.playerId, benPid), eq(armies.mission, "move"), eq(armies.targetRegionId, port), eq(armies.status, "outbound")));
+        expect(relief.length, JSON.stringify((await db.select({ r: tradeRoutes.lastResult }).from(tradeRoutes).where(eq(tradeRoutes.toRegionId, isle))))).toBe(1);
+        expect(relief[0]!.units.cog).toBeGreaterThanOrEqual(1);
+        expect(relief[0]!.originRegionId).toBe(yard);
+      }
+    } finally {
+      await redis.quit().catch(() => {});
+    }
+  });
+
   it("a force marching on land that becomes yours before it arrives stays there: soldiers garrison it and settlers join the occupiers", async () => {
     const base = `/api/matches/${gameId}`;
     // Ben attacks a region of Ann's; the pact from the diplomacy test would forbid it, so it is cleared.

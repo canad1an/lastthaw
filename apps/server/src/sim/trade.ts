@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNull, lte, sql } from "drizzle-orm";
 import type pino from "pino";
-import { balance, bestHauler, carryCapacity, distanceKm, findRoute, haulerCarry, haulerCount, HAULER_IDS, regionById, supplyConvoyCap, unitById } from "@lastthaw/shared";
+import { balance, bestHauler, carryCapacity, distanceKm, findRoute, haulerCarry, haulerCount, HAULER_IDS, laneLimitKm, regionById, supplyConvoyCap, unitById } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { armies, matchRegions, matches, playerTechs, players, tradeRoutes } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
@@ -99,8 +99,9 @@ export async function dispatchRoute(db: Db, m: MatchRow, p: PlayerRow, route: Tr
     }
   }
   if (route.forJobId) return dispatchSupply(db, m, p, route, origin, owed ?? {}, now);
-  const kind = bestHauler(origin.units, regionById(route.fromRegionId)?.seaRoutes.includes(route.toRegionId) ?? false);
-  if (!kind) return fetchCaravans(db, m, p, route.fromRegionId, route.caravans, now);
+  const sea = seaOnly(route.fromRegionId, route.toRegionId);
+  const kind = sea ? shipFor(origin.units, route.fromRegionId, route.toRegionId) : bestHauler(origin.units, regionById(route.fromRegionId)?.seaRoutes.includes(route.toRegionId) ?? false);
+  if (!kind) return sea ? fetchShips(db, m, p, route.fromRegionId, route.toRegionId, route.caravans, now) : fetchCaravans(db, m, p, route.fromRegionId, route.caravans, now);
   const home = origin.units[kind] ?? 0;
   const ctx = await contextFor(db, m, p);
   const perCaravan = haulerCarry(kind, ctx.techs);
@@ -192,7 +193,12 @@ async function dispatchSupply(db: Db, m: MatchRow, p: PlayerRow, route: TradeRou
       .where(and(eq(tradeRoutes.matchId, m.id), eq(tradeRoutes.playerId, p.id), eq(tradeRoutes.toRegionId, route.toRegionId), sql`${tradeRoutes.forJobId} is not null`, sql`${tradeRoutes.id} <> ${route.id}`))
   ).filter((r) => Object.values(r.held).some((v) => v >= 1));
   const groupTotal = [route, ...siblings].reduce((a, r) => a + Object.values(r.held).reduce((x, y) => x + y, 0), 0);
-  const kind = bestHauler(origin.units, false);
+  const sea = seaOnly(route.fromRegionId, route.toRegionId);
+  const kind = sea ? shipFor(origin.units, route.fromRegionId, route.toRegionId) : bestHauler(origin.units, false);
+  if (!kind && sea) {
+    const per = haulerCarry("cog", ctx.techs);
+    return fetchShips(db, m, p, route.fromRegionId, route.toRegionId, Math.max(1, Math.min(balance.trade.maxSupplyCaravans, Math.ceil(groupTotal / per))), now);
+  }
   if (!kind) {
     // A sibling route with haulers at home, or with haulers on the way, sends the convoy that calls here: no need to pull more.
     if (siblings.length) {
@@ -235,6 +241,8 @@ async function dispatchSupply(db: Db, m: MatchRow, p: PlayerRow, route: TradeRou
   const pool = [...siblings];
   const heldTotal = (r: TradeRouteRow) => Object.values(r.held).reduce((x, y) => x + y, 0);
   const minimum = perCaravan * balance.trade.minSupplyPickupShare;
+  // A sailing goes straight across its lane: no calls on the way.
+  if (sea) pool.length = 0;
   while (room >= 1 && pool.length && stops.length <= balance.trade.maxConvoyCalls) {
     // Nearest next, but a tiny hold is skipped while a worthwhile one remains anywhere in the pool.
     pool.sort((a, b) => distanceKm(at, a.fromRegionId) - distanceKm(at, b.fromRegionId));
@@ -272,6 +280,97 @@ async function dispatchSupply(db: Db, m: MatchRow, p: PlayerRow, route: TradeRou
     .join(", ");
   const calls = stops.filter((s) => !s.done && s.routeId).map((s) => regionNameOf(s.regionId));
   return `sent ${n} ${kindName}${n === 1 ? "" : "s"} with ${desc}${calls.length ? `; collecting at ${calls.join(", ")} on the way` : ""}`;
+}
+
+/** True when the only way from one region to the other is the sea lane that joins them directly. */
+export function seaOnly(fromRegionId: string, toRegionId: string): boolean {
+  if (!regionById(fromRegionId)?.seaRoutes.includes(toRegionId)) return false;
+  return !findRoute(fromRegionId, toRegionId, false);
+}
+
+/** The best ship at home that can make this lane: cogs before canoes, and a canoe only on a short lane. */
+export function shipFor(units: Record<string, number>, fromRegionId: string, toRegionId: string): string | null {
+  const km = distanceKm(fromRegionId, toRegionId);
+  for (const id of HAULER_IDS) {
+    if ((units[id] ?? 0) <= 0 || !unitById.get(id)?.naval) continue;
+    const limit = laneLimitKm({ [id]: 1 });
+    if (limit !== null && km > limit) continue;
+    return id;
+  }
+  return null;
+}
+
+/**
+ * No ships at the port: every ship of the player's is one pool too. Spare ships (beyond what their own region's sea
+ * routes claim) in any region joined to the port by a lane they can sail come over empty, nearest first, so a cog
+ * built anywhere on the coast serves every crossing. Ships two lanes away stay where they are.
+ */
+async function fetchShips(db: Db, m: MatchRow, p: PlayerRow, portRegionId: string, toRegionId: string, wanted: number, now: Date): Promise<string> {
+  const naval = HAULER_IDS.filter((id) => unitById.get(id)?.naval);
+  const shipsIn = (units: Record<string, number>) => naval.reduce((a, id) => a + (units[id] ?? 0), 0);
+  const coming = await db
+    .select({ id: armies.id, units: armies.units, origin: armies.originRegionId })
+    .from(armies)
+    .where(and(eq(armies.matchId, m.id), eq(armies.playerId, p.id), eq(armies.mission, "move"), eq(armies.status, "outbound"), eq(armies.targetRegionId, portRegionId)));
+  const inFlight = coming.reduce((a, x) => a + shipsIn(x.units), 0);
+  const firstComing = coming.find((a) => shipsIn(a.units) > 0);
+  if (inFlight >= wanted && firstComing) return `no ships at the port; ${inFlight} sailing in from ${regionNameOf(firstComing.origin)}`;
+  let need = wanted - inFlight;
+  const port = regionById(portRegionId);
+  if (!port) return "no ships at the port";
+  const mine = await db
+    .select({ regionId: matchRegions.regionId, units: matchRegions.units, frozenAt: matchRegions.frozenAt })
+    .from(matchRegions)
+    .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.ownerPlayerId, p.id), inArray(matchRegions.regionId, port.seaRoutes.length ? port.seaRoutes : ["-"])));
+  // Ships a region's own sea routes claim stay; the rest are spare.
+  const claims = await db
+    .select({ fromRegionId: tradeRoutes.fromRegionId, toRegionId: tradeRoutes.toRegionId, caravans: tradeRoutes.caravans })
+    .from(tradeRoutes)
+    .where(and(eq(tradeRoutes.matchId, m.id), eq(tradeRoutes.playerId, p.id), eq(tradeRoutes.enabled, true)));
+  const claimed = new Map<string, number>();
+  for (const c of claims) if (seaOnly(c.fromRegionId, c.toRegionId)) claimed.set(c.fromRegionId, (claimed.get(c.fromRegionId) ?? 0) + c.caravans);
+  const spareOf = (r: { regionId: string; units: Record<string, number> }) => Math.max(0, shipsIn(r.units) - (claimed.get(r.regionId) ?? 0));
+  const candidates = mine
+    .filter((r) => !r.frozenAt && spareOf(r) > 0)
+    .sort((a, b) => (claimed.has(a.regionId) ? 1 : 0) - (claimed.has(b.regionId) ? 1 : 0) || distanceKm(a.regionId, portRegionId) - distanceKm(b.regionId, portRegionId));
+  const km = distanceKm(portRegionId, toRegionId);
+  if (candidates.length === 0) {
+    return inFlight > 0 && firstComing
+      ? `no ships at the port; ${inFlight} sailing in from ${regionNameOf(firstComing.origin)}`
+      : `no ships at ${regionNameOf(portRegionId)} and none spare on a lane to it: build a Cog${km <= (laneLimitKm({ canoe: 1 }) ?? 0) ? " or a Canoe" : ""} on this coast`;
+  }
+  const ctx = await contextFor(db, m, p);
+  const sent: string[] = [];
+  let soonest = Infinity;
+  for (const source of candidates) {
+    if (need <= 0) break;
+    const going: Record<string, number> = {};
+    let left = Math.min(need, spareOf(source));
+    const hop = distanceKm(source.regionId, portRegionId);
+    for (const id of naval) {
+      const limit = laneLimitKm({ [id]: 1 });
+      // A ship must manage both the hop here and the crossing it is wanted for.
+      if (limit !== null && (hop > limit || km > limit)) continue;
+      const take = Math.min(left, source.units[id] ?? 0);
+      if (take > 0) going[id] = take;
+      left -= take;
+      if (left <= 0) break;
+    }
+    const n = Object.values(going).reduce((a, b) => a + b, 0);
+    if (n <= 0) continue;
+    try {
+      const r = await sendArmy(ctx, source.regionId, { mission: "move", targetRegionId: portRegionId, units: going, people: 0, cargo: {} });
+      const hours = ((r.army.arrivesAt.getTime() - now.getTime()) / 3_600_000) * m.speed;
+      soonest = Math.min(soonest, hours);
+      sent.push(`${n} from ${regionNameOf(source.regionId)}`);
+      need -= n;
+    } catch {
+      // The lane is closed to them, or the region changed under us: try the next.
+    }
+  }
+  if (sent.length === 0) return `no ships at ${regionNameOf(portRegionId)} that can make this crossing: build a Cog on this coast`;
+  const when = soonest < 1 ? `${Math.max(1, Math.round(soonest * 60))} min` : `${soonest.toFixed(1)} h`;
+  return `no ships at the port; ${sent.join(", ")} sailing in, first in about ${when}`;
 }
 
 /** Every land hauler the player owns, at home or on the road: the convoy cap grows with it. */

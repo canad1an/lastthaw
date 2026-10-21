@@ -140,7 +140,15 @@ export async function queueBuild(ctx: CommandContext, regionId: string, building
  * already collecting for the destination takes what it has room for. Builds and training both use it.
  */
 export async function supplyWaitingJob(tx: Tx, m: MatchRow, p: PlayerRow, techs: ReadonlySet<string>, regionId: string, jobId: string, owed: Record<string, number>, sources: MatchRegionRow[], allMine: MatchRegionRow[], now: Date): Promise<void> {
-  const plan = planSources(owed, sources, stockOf, p.capitalRegionId, haulerCarry("caravan", techs));
+  // Sources that can reach the destination: by land first; where there is no land way, a region joined to it by a
+  // direct sea lane, served by ships. A region that is neither is no use to this order.
+  const byLand = sources.filter((s) => !!findRoute(s.regionId, regionId, false));
+  const bySea = sources.filter((s) => !byLand.includes(s) && (regionById(s.regionId)?.seaRoutes.includes(regionId) ?? false));
+  const plan = planSources(owed, byLand, stockOf, p.capitalRegionId, haulerCarry("caravan", techs));
+  const still: Record<string, number> = { ...owed };
+  for (const { part } of plan) for (const [k, v] of Object.entries(part)) still[k] = Math.max(0, (still[k] ?? 0) - v);
+  for (const k of Object.keys(still)) if (still[k]! < 1) delete still[k];
+  if (Object.keys(still).length && bySea.length) plan.push(...planSources(still, bySea, stockOf, null, haulerCarry("cog", techs)));
   const [forJob] = await tx.select({ kind: jobs.kind }).from(jobs).where(eq(jobs.id, jobId)).limit(1);
   const category = forJob?.kind === "train" ? "military" : "build";
   for (const { src, part } of plan) {
