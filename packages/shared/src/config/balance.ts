@@ -383,7 +383,7 @@ export const balance = {
     /**
      * Every advisor's wage is this share of the player's gross output of food, wood and stone, per game hour, measured
      * live across the regions held (gathering, before anything is eaten): the wage grows as the empire does, and four
-     * advisors take all of it. Ore and horses are never charged: they are what the advisors spend for the player.
+     * advisors take all of it. It is paid by value (RESOURCE_WORTH) in any mix of the three, spread over what the player holds, so one empty store never stops an advisor. Ore and horses are never charged: they are what the advisors spend for the player.
      */
     outputShare: 0.25,
     economic: {
