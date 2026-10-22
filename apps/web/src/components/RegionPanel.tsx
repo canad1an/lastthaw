@@ -80,7 +80,8 @@ export function RegionBody({ matchId, state, regionId, clockOffsetMs, tab, onTab
     {!state.observer && owned && <ExposureLine state={state} regionId={regionId} />}
     {owned ? (
       <>
-        <nav className="flex gap-1 overflow-x-auto border-b border-slate-800 text-sm">
+        {/* The tab strip stays put while the panel scrolls, so a long Build or Train list is still one tap from the others. */}
+        <nav className="sticky top-0 z-10 -mx-1 flex gap-1 overflow-x-auto border-b border-slate-800 bg-slate-950 px-1 text-sm">
           {(["overview", "build", "train", "units"] as Tab[]).map((t) => (
             <button
               key={t}
@@ -763,7 +764,8 @@ function TrainTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
   );
   return (
     <div className="space-y-2">
-      <label className="flex items-center gap-2 text-sm">
+      {/* Pinned under the tab strip, so the batch size can be changed from anywhere in the list. */}
+      <label className="sticky top-[2.6rem] z-10 -mx-1 flex items-center gap-2 bg-slate-950 px-1 py-1 text-sm sm:top-[2.1rem]">
         <span className="text-slate-400">Batch size</span>
         <input
           type="number"
