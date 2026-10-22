@@ -6,7 +6,7 @@ import coastPoints from "./coastPoints.json";
 
 /** Where a region meets the sea: a point on its outline mid-shore, computed from the map (tools: coast-points). */
 const COAST: Record<string, { x: number; y: number; a: number } | undefined> = coastPoints as Record<string, { x: number; y: number; a: number }>;
-import { unitById } from "@lastthaw/shared";
+import { unitById, buildingById, wallOf } from "@lastthaw/shared";
 
 export type RegionPaint = {
   fill?: string;
@@ -34,8 +34,8 @@ export interface WorldMapProps {
   ice?: { latitude: number; forecast: boolean; day: number };
   /** Region ids to mark with a flag (the player's capital). */
   flags?: string[];
-  /** Region ids with a harbour: drawn on the region's shore, on the water side. */
-  harbors?: string[];
+  /** Regions with a harbour, drawn on the shore on the water side, with what the card under the pointer shows. */
+  harbors?: Array<{ regionId: string; buildings: Record<string, number>; units: Record<string, number> }>;
   /** Region ids drawn with an "unclaimed" dashed outline. */
   dashed?: string[];
   /** Armies to draw as moving markers. */
@@ -118,6 +118,7 @@ const MAX_K = 28;
  */
 export function WorldMap({ paint, selected, onSelect, focus, flyTo, className = "", ice, flags = [], harbors = [], dashed = [], armies = [], roads = [], badges = [], storms = [], thaws = [], onBadgeClick }: WorldMapProps) {
   const [hoverArmy, setHoverArmy] = useState<string | null>(null);
+  const [hoverHarbor, setHoverHarbor] = useState<string | null>(null);
   const [routeArmy, setRouteArmy] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [view, setView] = useState<View>({ x: 0, y: 0, k: 1 });
@@ -362,7 +363,7 @@ export function WorldMap({ paint, selected, onSelect, focus, flyTo, className = 
               </g>
             );
           })}
-          {harbors.map((id) => {
+          {harbors.map(({ regionId: id }) => {
             const p = COAST[id];
             if (!p) return null;
             const s = unitsPerPx / view.k;
@@ -370,7 +371,17 @@ export function WorldMap({ paint, selected, onSelect, focus, flyTo, className = 
             const dx = Math.cos((p.a * Math.PI) / 180) * 4;
             const dy = Math.sin((p.a * Math.PI) / 180) * 4;
             return (
-              <g key={id} transform={`translate(${p.x + dx * s} ${p.y + dy * s}) scale(${s})`} style={{ pointerEvents: "none" }}>
+              <g
+                key={id}
+                transform={`translate(${p.x + dx * s} ${p.y + dy * s}) scale(${s})`}
+                className="cursor-pointer"
+                onPointerEnter={() => setHoverHarbor(id)}
+                onPointerLeave={() => setHoverHarbor((h) => (h === id ? null : h))}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setHoverHarbor((h) => (h === id ? null : id));
+                }}
+              >
                 <g fill="#0f172a" stroke="#0f172a" strokeWidth={1.2} strokeLinejoin="round">
                   <path d="M-9 3h18v3H-9z" fill="#b45309" />
                   <path d="M-7 6v4M-2 6v4M3 6v4M8 6v4" />
@@ -476,6 +487,35 @@ export function WorldMap({ paint, selected, onSelect, focus, flyTo, className = 
           })}
         </g>
       </g>
+      {/* A harbour under the pointer: its level, the defences of the region, and the ships moored there. */}
+      {hoverHarbor && (() => {
+        const h = harbors.find((x) => x.regionId === hoverHarbor);
+        const p = COAST[hoverHarbor];
+        if (!h || !p) return null;
+        const sx = ((p.x * view.k + view.x) / world.width) * 100;
+        const sy = ((p.y * view.k + view.y) / world.height) * 100;
+        const level = h.buildings.harbor ?? 0;
+        const wall = wallOf(h.buildings);
+        const defences = Object.entries(h.buildings)
+          .filter(([id, lvl]) => lvl >= 1 && buildingById.get(id)?.category === "defense")
+          .map(([id, lvl]) => `${buildingById.get(id)?.name ?? id}${(buildingById.get(id)?.maxLevel ?? 1) > 1 ? ` lvl ${lvl}` : ""}`);
+        const ships = Object.fromEntries(Object.entries(h.units).filter(([id, n]) => n > 0 && unitById.get(id)?.naval));
+        const anyShip = Object.keys(ships).length > 0;
+        return (
+          <foreignObject x={0} y={0} width={world.width} height={world.height} pointerEvents="none">
+            <div style={{ position: "absolute", left: `${sx}%`, top: `${sy}%`, transform: "translate(34px, -50%)" }} className="pointer-events-none w-max max-w-[24rem] rounded-md border border-slate-700 bg-slate-950/95 px-3 py-2 text-xs text-slate-200 shadow-xl">
+              <p className="text-sm font-medium">Harbour at {regionById(hoverHarbor)?.name ?? hoverHarbor}</p>
+              <p className="text-slate-400">
+                Harbor level {level}
+                {wall ? ` · behind ${buildingById.get(wall)?.name ?? wall}` : " · no walls"}
+              </p>
+              {defences.length > 0 && <p className="text-slate-400">Defences: {defences.join(", ")}</p>}
+              {anyShip ? <UnitChips units={ships} size="h-10 w-10" /> : <p className="text-slate-500">No ships moored here.</p>}
+              <p className="text-slate-500">Ships here serve this harbour's sea routes; spare ones are called to other harbours on a lane.</p>
+            </div>
+          </foreignObject>
+        );
+      })()}
       {/* Desktop: a small card beside the marker while the pointer is on it. */}
       {hoverArmy && (() => {
         const a = armies.find((x) => x.id === hoverArmy);
