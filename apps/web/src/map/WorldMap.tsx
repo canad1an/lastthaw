@@ -375,6 +375,7 @@ export function WorldMap({ paint, selected, onSelect, focus, flyTo, className = 
                 key={id}
                 transform={`translate(${p.x + dx * s} ${p.y + dy * s}) scale(${s})`}
                 className="cursor-pointer"
+                pointerEvents="auto"
                 onPointerEnter={() => setHoverHarbor(id)}
                 onPointerLeave={() => setHoverHarbor((h) => (h === id ? null : h))}
                 onClick={(e) => {
