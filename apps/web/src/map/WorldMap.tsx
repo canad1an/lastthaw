@@ -377,7 +377,7 @@ export function WorldMap({ paint, selected, onSelect, focus, flyTo, className = 
                   <path d="M-3 3V-9" />
                   <path d="M-3 -9l7 7h-7z" fill="#f8fafc" />
                 </g>
-                <image href="/buildings/harbor.png" x={-14} y={-16} width={28} height={28} preserveAspectRatio="xMidYMid meet" />
+                <image href="/buildings/harbor.png" x={-28} y={-34} width={56} height={56} preserveAspectRatio="xMidYMid meet" />
               </g>
             );
           })}
