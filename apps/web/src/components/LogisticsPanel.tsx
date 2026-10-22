@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { balance, HAULER_IDS, haulerCarry, regionById, supplyConvoyCap, unitById, type MatchStateView } from "@lastthaw/shared";
+import { balance, HAULER_IDS, haulerCarry, regionById, reliefMoveCap, supplyConvoyCap, unitById, type MatchStateView } from "@lastthaw/shared";
 import { fmt } from "./ui.js";
 
 /**
@@ -106,7 +106,7 @@ export function LogisticsPanel({ state, onSelect }: { state: MatchStateView; onS
           ) : null}
         </p>
         <p className="mt-1 text-xs text-slate-500">
-          Spare haulers are called over by the routes that need them, nearest first, but only {balance.trade.maxReliefMoves} such moves are on the road at once, so a big shortfall clears slowly: move idle ones yourself, or train where they are needed. To make trips shorter, build Waystations (Iron Age, on Roads) in the regions your convoys arrive in most: each level cuts those legs by 2%, up to 30%, and the savings multiply along a route.
+          Spare haulers are called over by the routes that need them, nearest first, but only {reliefMoveCap(totalHome + totalRoad)} such moves are on the road at once ({balance.trade.maxReliefMoves}, plus one for every {balance.trade.reliefMovesPerHaulers} haulers you own), so a big shortfall still takes a while: move idle ones yourself, or train where they are needed. To make trips shorter, build Waystations (Iron Age, on Roads) in the regions your convoys arrive in most: each level cuts those legs by 2%, up to 30%, and the savings multiply along a route.
         </p>
       </div>
       <p className={`text-xs ${verdict.tone}`}>{verdict.text}</p>

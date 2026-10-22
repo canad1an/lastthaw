@@ -198,7 +198,10 @@ export const balance = {
     maxSupplyConvoys: 8,
     /** ...and one materials convoy for every this many haulers the player owns, whichever is more, so a big fleet is not throttled to eight. */
     supplyConvoysPerHaulers: 10,
+    /** Relief moves (spare haulers walking over to a route with none) on the road at once: this many... */
     maxReliefMoves: 6,
+    /** ...plus one more for every this many haulers the player owns, so a big fleet is not throttled to six. */
+    reliefMovesPerHaulers: 20,
     /** A region whose stock hits its cap sends this share of the cap to the capital by caravan, automatically. */
     overflowToCapital: true,
     overflowShare: 0.5,

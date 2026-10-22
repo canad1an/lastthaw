@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNull, lte, sql } from "drizzle-orm";
 import type pino from "pino";
-import { balance, bestHauler, carryCapacity, distanceKm, findRoute, haulerCarry, haulerCount, HAULER_IDS, laneLimitKm, nextHopTo, regionById, seaPath, supplyConvoyCap, unitById } from "@lastthaw/shared";
+import { balance, bestHauler, carryCapacity, distanceKm, findRoute, haulerCarry, haulerCount, HAULER_IDS, laneLimitKm, nextHopTo, regionById, reliefMoveCap, seaPath, supplyConvoyCap, unitById } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { armies, matchRegions, matches, playerTechs, players, tradeRoutes } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
@@ -421,7 +421,8 @@ async function fetchCaravans(db: Db, m: MatchRow, p: PlayerRow, fromRegionId: st
     .select({ n: sql<number>`count(*)::int` })
     .from(armies)
     .where(and(eq(armies.matchId, m.id), eq(armies.playerId, p.id), eq(armies.mission, "move"), eq(armies.status, "outbound"), sql`(${armies.cargo}->>'people')::float = 0`));
-  if ((reliefOut[0]?.n ?? 0) >= balance.trade.maxReliefMoves) return `no haulers at home; ${reliefOut[0]!.n} relief moves are already on the road, waiting for one to land`;
+  const reliefCap = reliefMoveCap(await haulerFleet(db, m, p));
+  if ((reliefOut[0]?.n ?? 0) >= reliefCap) return `no haulers at home; ${reliefOut[0]!.n} of ${reliefCap} relief moves are already on the road, waiting for one to land`;
 
   const mine = await db
     .select({ regionId: matchRegions.regionId, units: matchRegions.units, frozenAt: matchRegions.frozenAt })

@@ -211,3 +211,8 @@ export function armySpeed(units: UnitCounts): number {
 export function supplyConvoyCap(haulers: number): number {
   return Math.max(balance.trade.maxSupplyConvoys, Math.floor(Math.max(0, haulers) / balance.trade.supplyConvoysPerHaulers));
 }
+
+/** How many relief moves (spare haulers walking to a route with none) may be on the road at once: a floor, plus one per so many haulers owned. */
+export function reliefMoveCap(haulers: number): number {
+  return balance.trade.maxReliefMoves + Math.floor(Math.max(0, haulers) / balance.trade.reliefMovesPerHaulers);
+}
