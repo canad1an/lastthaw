@@ -424,6 +424,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string, o
       target: r.target ?? null,
       delivered: r.delivered,
       held: r.held,
+      relayTo: r.relayTo,
     })),
     allies,
     observer: false,

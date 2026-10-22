@@ -4,7 +4,7 @@
  * techs and the weather on the path count on every leg, not only the first.
  */
 import { and, eq, gt, inArray, sql } from "drizzle-orm";
-import { airRoute, armySpeed, balance, findRoute, haulFactor, isAirGroup, isHaulerConvoy, techEffectsOf, travelSeconds, unitById, type Route, type UnitCounts } from "@lastthaw/shared";
+import { airRoute, armySpeed, balance, findRoute, haulFactor, isAirGroup, isHaulerConvoy, techEffectsOf, travelSeconds, unitById, type Route, type UnitCounts, splitNaval } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { matchRegions, playerTechs } from "../db/schema.js";
 import { alliesOf } from "./alliances.js";
@@ -34,7 +34,9 @@ export async function legContextFor(db: Db | Tx, matchId: string, playerId: stri
 export function routeFor(ctx: LegContext, from: string, to: string, allowSea?: boolean, units?: UnitCounts): Route | null {
   // Aircraft fly straight; everyone else follows the map.
   if (units && isAirGroup(units)) return airRoute(from, to);
-  return findRoute(from, to, allowSea ?? ctx.techs.has(balance.travel.seaTech), ctx.roads, ctx.rails, ctx.harbors);
+  // Only a group with ships may take a lane; a land convoy never does, whatever the player has researched.
+  const ships = units ? Object.keys(splitNaval(units).ships).length > 0 : false;
+  return findRoute(from, to, allowSea ?? ships, ctx.roads, ctx.rails, ctx.harbors);
 }
 
 /** A storm anywhere on the path slows the leg by the storm's travel factor. */

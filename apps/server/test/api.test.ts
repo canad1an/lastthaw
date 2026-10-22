@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { and, asc, eq, inArray, sql, desc } from "drizzle-orm";
-import { allRegions, balance, effectsOf, fairAmount, matchStateView, regionById, RESOURCE_WORTH, scoutCatchChance, seededRng, storageCaps, findRoute, travelSeconds, unitById, techEffectsOf, distanceKm } from "@lastthaw/shared";
+import { allRegions, balance, effectsOf, fairAmount, matchStateView, regionById, RESOURCE_WORTH, scoutCatchChance, seededRng, storageCaps, findRoute, travelSeconds, unitById, techEffectsOf, distanceKm, seaLegsOf } from "@lastthaw/shared";
 import { Publisher } from "../src/realtime/publish.js";
 import { runDueJobs } from "../src/worker/jobs.js";
 import { buildApp } from "../src/api/app.js";
@@ -192,6 +192,8 @@ describe("api routes", () => {
     expect((await Ben.call("DELETE", `/api/matches/${welcome!.id}`)).statusCode).toBe(403);
     // While she is active the idle sweep leaves it; once she has been away a day (game and all her activity backdated), it closes.
     const quiet = new Publisher(createRedis());
+    // Welcome games left by earlier runs of this file would be swept too: clear them so the count is this game's alone.
+    await db.delete(matches).where(and(sql`${matches.settings}->>'welcome' = 'true'`, sql`${matches.settings}->>'welcomeFor' <> ${uid}`));
     expect(await closeIdleWelcomeMatches(db, quiet, undefined, { idleHours: 1 })).toBe(0);
     const old = new Date(Date.now() - 2 * 3600_000);
     await db.update(matches).set({ createdAt: old }).where(eq(matches.id, welcome!.id));
@@ -903,6 +905,87 @@ describe("api routes", () => {
     }
   });
 
+  it("nothing walks on water: goods for an island go by land to the harbour, by ship across, and a wagon is refused the crossing", async () => {
+    const base = `/api/matches/${gameId}`;
+    const benState = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
+    const benPid = benState.me.playerId;
+    const atMatchNow = new Date(benState.match.now);
+    const taken = new Set((await db.select({ regionId: matchRegions.regionId }).from(matchRegions).where(eq(matchRegions.matchId, gameId))).map((r) => r.regionId));
+    // An island, a free harbour across its lane, and a free inland neighbour of that harbour with no lane of its own to the island.
+    let found: { isle: string; port: string; inland: string } | null = null;
+    for (const isle of allRegions().filter((r) => r.neighbors.length === 0 && !taken.has(r.id))) {
+      for (const port of isle.seaRoutes.filter((id) => !taken.has(id) && distanceKm(isle.id, id) <= 2500)) {
+        const inland = regionById(port)!.neighbors.find((id) => !taken.has(id) && !regionById(id)!.seaRoutes.includes(isle.id));
+        if (inland) { found = { isle: isle.id, port, inland }; break; }
+      }
+      if (found) break;
+    }
+    expect(found, "island, harbour and inland source").toBeTruthy();
+    const { isle, port, inland } = found!;
+    const claim = async (regionId: string, set: Partial<typeof matchRegions.$inferInsert>) => {
+      await db
+        .insert(matchRegions)
+        .values({ matchId: gameId, regionId, assignment: { ...balance.start.assignment }, settledAt: atMatchNow, ownerPlayerId: benPid, popWorkers: 5, ...set })
+        .onConflictDoUpdate({ target: [matchRegions.matchId, matchRegions.regionId], set: { ownerPlayerId: benPid, popWorkers: 5, settledAt: atMatchNow, ...set } });
+    };
+    await claim(inland, { food: 500, wood: 3000, stone: 2000, units: { wagon: 6 } });
+    await claim(port, { food: 0, wood: 0, stone: 0, units: { cog: 2 } });
+    await claim(isle, { food: 50, wood: 0, stone: 0, units: {} });
+    const redis = createRedis();
+    const pub = new Publisher(redis);
+    const nowIso = async () => matchStateView.parse((await Ben.call("GET", `${base}/state`)).json()).match.now;
+    const landFast = async (armyId: string) => {
+      const [a] = await db.select({ arrivesAt: armies.arrivesAt }).from(armies).where(eq(armies.id, armyId));
+      const secs = Math.ceil((a!.arrivesAt.getTime() - Date.parse(await nowIso())) / 1000) + 5;
+      await db.update(matches).set({ clockOffsetSeconds: sql`${matches.clockOffsetSeconds} + ${secs}` }).where(eq(matches.id, gameId));
+      await runDueJobs(db, pub, logger);
+    };
+    try {
+      // A wagon is refused the lane outright.
+      const refused = await Ben.call("POST", `${base}/regions/${port}/send`, { mission: "transport", targetRegionId: isle, units: { cog: 0, wagon: 1 }, people: 0, cargo: {} });
+      expect(refused.statusCode).toBe(400);
+      expect(refused.body).toMatch(/ship/);
+      // A build on the island: the inland source gets a leg to the harbour, bound for the island.
+      const built = await Ben.call("POST", `${base}/regions/${isle}/build`, { buildingId: "lumber_camp" });
+      expect(built.statusCode, built.body).toBe(200);
+      const { jobId } = built.json() as { jobId: string };
+      const legs = await db.select().from(tradeRoutes).where(and(eq(tradeRoutes.matchId, gameId), eq(tradeRoutes.forJobId, jobId)));
+      const fromInland = legs.find((r) => r.fromRegionId === inland);
+      expect(fromInland, JSON.stringify(legs.map((r) => [r.fromRegionId, r.toRegionId, r.relayTo]))).toBeTruthy();
+      expect(fromInland!.toRegionId).toBe(port);
+      expect(fromInland!.relayTo).toBe(isle);
+      expect(legs.every((r) => r.toRegionId === port || r.toRegionId === isle)).toBe(true);
+      // The wagons carry to the harbour by land only.
+      await runTradeRoutes(db, pub, logger);
+      const toPort = await db.select().from(armies).where(and(eq(armies.matchId, gameId), eq(armies.playerId, benPid), eq(armies.mission, "transport"), eq(armies.originRegionId, inland), eq(armies.status, "outbound")));
+      expect(toPort.length, JSON.stringify(await db.select({ r: tradeRoutes.lastResult }).from(tradeRoutes).where(eq(tradeRoutes.forJobId, jobId)))).toBe(1);
+      expect(toPort[0]!.units.wagon).toBeGreaterThanOrEqual(1);
+      expect(toPort[0]!.stops[toPort[0]!.stops.length - 1]!.regionId).toBe(port);
+      expect(seaLegsOf(toPort[0]!.path)).toEqual([]);
+      // At the harbour the goods are handed over to the sea leg, not put in the stores.
+      await landFast(toPort[0]!.id);
+      const [landed] = await db.select({ status: armies.status, cargo: armies.cargo }).from(armies).where(eq(armies.id, toPort[0]!.id));
+      expect(landed!.status).toBe("returning");
+      expect(Object.values(landed!.cargo).reduce((a, b) => a + b, 0)).toBe(0);
+      const [seaLeg] = await db.select().from(tradeRoutes).where(and(eq(tradeRoutes.matchId, gameId), eq(tradeRoutes.fromRegionId, port), eq(tradeRoutes.toRegionId, isle), eq(tradeRoutes.forJobId, jobId)));
+      expect(seaLeg, "the sea leg").toBeTruthy();
+      // Everything the wagons brought is in the sea leg's hold, none of it in the harbour's stores.
+      const brought = toPort[0]!.stops[0]!.take;
+      for (const [k, v] of Object.entries(brought)) expect(seaLeg!.held[k] ?? 0).toBeGreaterThanOrEqual(v);
+      // The cogs take it across, and the build gets its materials.
+      await db.update(tradeRoutes).set({ nextAt: new Date(0) }).where(eq(tradeRoutes.id, seaLeg!.id));
+      await runTradeRoutes(db, pub, logger);
+      const sailing = await db.select().from(armies).where(and(eq(armies.matchId, gameId), eq(armies.playerId, benPid), eq(armies.mission, "transport"), eq(armies.targetRegionId, isle), eq(armies.status, "outbound")));
+      expect(sailing.length, JSON.stringify(await db.select({ r: tradeRoutes.lastResult }).from(tradeRoutes).where(eq(tradeRoutes.id, seaLeg!.id)))).toBe(1);
+      expect(sailing[0]!.units.cog).toBeGreaterThanOrEqual(1);
+      await landFast(sailing[0]!.id);
+      const [job] = await db.select({ waitingFor: jobs.waitingFor }).from(jobs).where(eq(jobs.id, jobId));
+      expect(job!.waitingFor).toBeNull();
+    } finally {
+      await redis.quit().catch(() => {});
+    }
+  });
+
   it("canoes sail a short lane when no cog is to be had, and never a long one", async () => {
     const base = `/api/matches/${gameId}`;
     const benState = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
@@ -938,7 +1021,8 @@ describe("api routes", () => {
       // Enough hulls for what is aboard: canoes carry little, so the goods set the count.
       const aboard = Object.values(sailing[0]!.cargo).reduce((x, y) => x + y, 0);
       expect(sailing[0]!.units.canoe! * unitById.get("canoe")!.carry).toBeGreaterThanOrEqual(aboard);
-      // Long lane, canoes only: nothing sails, and the route says to build a cog.
+      // Long lane, canoes only: nothing sails, and the route says to build a cog. The port is the only stocked source.
+      await db.update(matchRegions).set({ food: 0, wood: 0, stone: 0 }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid)));
       await claim(longPick!.port!, { food: 500, wood: 2000, stone: 1500, units: { canoe: 6 } });
       await claim(longPick!.isle.id, { food: 50, wood: 0, stone: 0, units: {} });
       const far = await Ben.call("POST", `${base}/regions/${longPick!.isle.id}/build`, { buildingId: "lumber_camp" });

@@ -338,6 +338,8 @@ export const tradeRouteView = z.object({
   id: z.string(),
   fromRegionId: z.string(),
   toRegionId: z.string(),
+  /** Where the goods are finally bound when this route is one leg of a chain over the sea; null for a plain route. */
+  relayTo: z.string().nullable().default(null),
   mode: routeMode,
   load: z.record(z.string(), z.number()),
   share: z.number(),

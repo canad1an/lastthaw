@@ -178,6 +178,30 @@ export function seaLegsOf(path: readonly string[]): string[] {
   return out;
 }
 
+/**
+ * The next place goods bound for `to` go from `from`, with no hauler ever crossing water. By land all the way: the
+ * destination itself. Otherwise the way may hold exactly one sea lane: a land hauler carries the goods to the near
+ * harbour, a ship takes them across, a land hauler carries them on. The hop is the first of those that is not here;
+ * `relay` says the goods are handed over there rather than delivered. Null when no such way exists (two crossings).
+ */
+export function nextHopTo(from: string, to: string): { hop: string; relay: boolean } | null {
+  if (from === to) return null;
+  if (findRoute(from, to, false)) return { hop: to, relay: false };
+  const route = findRoute(from, to, true);
+  if (!route) return null;
+  const path = route.path;
+  const seaAt: number[] = [];
+  for (let i = 1; i < path.length; i++) {
+    const a = regionById(path[i - 1]!);
+    if (a && !a.neighbors.includes(path[i]!) && a.seaRoutes.includes(path[i]!)) seaAt.push(i - 1);
+  }
+  if (seaAt.length !== 1) return null;
+  const i = seaAt[0]!;
+  // At the near harbour already: the crossing is the hop. Else the near harbour is.
+  const hop = i === 0 ? path[1]! : path[i]!;
+  return { hop, relay: hop !== to };
+}
+
 /** Label for a mission as a moving group, continued: patrols. */
 export function laneName(lane: string): string {
   const [a, b] = lane.split("|");

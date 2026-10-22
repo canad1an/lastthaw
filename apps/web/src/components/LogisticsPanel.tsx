@@ -106,7 +106,7 @@ export function LogisticsPanel({ state, onSelect }: { state: MatchStateView; onS
             {supply.map((r) => (
               <li key={r.id}>
                 <button className="hover:text-white" onClick={() => onSelect(r.toRegionId)}>
-                  {regionById(r.fromRegionId)?.name} → {regionById(r.toRegionId)?.name}
+                  {regionById(r.fromRegionId)?.name} → {regionById(r.toRegionId)?.name}{r.relayTo && r.relayTo !== r.toRegionId ? ` (bound for ${regionById(r.relayTo)?.name})` : ""}
                 </button>
                 <span className="text-slate-400"> · {Object.entries(r.left).map(([k, v]) => `${fmt(v)} ${k}`).join(", ") || "delivered"} still to come{Object.values(r.held).some((v) => v > 0) ? ` (${Object.entries(r.held).filter(([, v]) => v > 0).map(([k, v]) => `${fmt(v)} ${k}`).join(", ")} set aside at ${regionById(r.fromRegionId)?.name})` : ""}, {r.caravans} hauler{r.caravans === 1 ? "" : "s"} per trip</span>
                 {r.lastResult && <span className="text-slate-500"> · {r.lastResult}</span>}
@@ -155,7 +155,7 @@ export function LogisticsPanel({ state, onSelect }: { state: MatchStateView; onS
               {stalled.map((r) => (
                 <li key={r.id}>
                   <button className="hover:text-white" onClick={() => onSelect(r.fromRegionId)}>
-                    {regionById(r.fromRegionId)?.name} → {regionById(r.toRegionId)?.name}
+                    {regionById(r.fromRegionId)?.name} → {regionById(r.toRegionId)?.name}{r.relayTo && r.relayTo !== r.toRegionId ? ` (bound for ${regionById(r.relayTo)?.name})` : ""}
                   </button>
                   <span className="text-slate-500"> · {r.lastResult}</span>
                 </li>

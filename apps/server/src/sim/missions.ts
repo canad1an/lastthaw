@@ -1,7 +1,7 @@
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { claimBounties } from "./objectives.js";
 import { tribeBattleTalk } from "./tribeVoice.js";
-import { balance, effectsOf, emptySpecial, storageCaps, regionById, resolveCombat, carryCapacity, travelSeconds, findRoute, armySpeed, type UnitCounts, HAULER_IDS, haulerCount, unitById, laneName, applyTechEffects, wallBonusAgainst, breachOf, buildingById, seededRng, availableTechs, scoutCatchChance, soldierCount, wallOf, battleSchedule, type BattleRound, type CombatResult, isAirGroup } from "@lastthaw/shared";
+import { balance, effectsOf, emptySpecial, storageCaps, regionById, resolveCombat, carryCapacity, travelSeconds, findRoute, armySpeed, type UnitCounts, HAULER_IDS, haulerCount, unitById, laneName, applyTechEffects, wallBonusAgainst, breachOf, buildingById, seededRng, availableTechs, scoutCatchChance, soldierCount, wallOf, battleSchedule, type BattleRound, type CombatResult, isAirGroup, nextHopTo, haulerCarry } from "@lastthaw/shared";
 import { matchDayAt } from "./clock.js";
 import { armies, battles, jobs, matchRegions, players, regionSightings, playerTechs, tradeRoutes, events } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
@@ -428,7 +428,7 @@ async function sendHome(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, units: Uni
   }
   const ctx = await legContextFor(tx, m.id, army.playerId);
   // The way home may use the sea only if the way out did (or the player can sail): a land convoy does not swim back.
-  const route = routeFor(ctx, army.targetRegionId, army.originRegionId, ctx.techs.has(balance.travel.seaTech) || pathUsesSea(army.path), units) ?? { path: [army.targetRegionId, army.originRegionId], cost: 1000, usesSea: false };
+  const route = routeFor(ctx, army.targetRegionId, army.originRegionId, pathUsesSea(army.path), units) ?? { path: [army.targetRegionId, army.originRegionId], cost: 1000, usesSea: false };
   const seconds = await legSeconds(tx, m, ctx, route, units, at, 5);
   const returnsAt = new Date(at.getTime() + seconds * 1000);
   await tx.update(armies).set({ status: "returning", units, cargo, returnsAt, note }).where(eq(armies.id, army.id));
@@ -542,7 +542,7 @@ async function deliverCargo(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publis
       if (next) {
         const { tradeRoutes } = await import("../db/schema.js");
         const ctx = await legContextFor(tx, m.id, army.playerId);
-        const route = routeFor(ctx, cur.regionId, next.regionId, ctx.techs.has(balance.travel.seaTech) || pathUsesSea(army.path), army.units) ?? { path: [cur.regionId, next.regionId], cost: 1000, usesSea: false };
+        const route = routeFor(ctx, cur.regionId, next.regionId, pathUsesSea(army.path), army.units) ?? { path: [cur.regionId, next.regionId], cost: 1000, usesSea: false };
         const seconds = await legSeconds(tx, m, ctx, route, army.units, at);
         const arrivesAt = new Date(at.getTime() + seconds * 1000);
         await tx.update(armies).set({ cargo, stops, targetRegionId: next.regionId, path: route.path, departsAt: at, arrivesAt }).where(eq(armies.id, army.id));
@@ -553,17 +553,23 @@ async function deliverCargo(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publis
         return;
       }
       // The destination: credit each materials route with what the convoy took from it, and retire the ones that are complete.
+      // Goods bound for a further shore are handed over here, into the next leg's route, and never touch the stores.
       const { tradeRoutes } = await import("../db/schema.js");
+      const relayed: Record<string, number> = {};
       for (const s of stops) {
         if (!s.routeId) continue;
         const [r] = await tx.select().from(tradeRoutes).where(eq(tradeRoutes.id, s.routeId)).for("update");
         if (!r) continue;
         const delivered = { ...r.delivered };
         for (const [k, v] of Object.entries(s.take)) delivered[k] = (delivered[k] ?? 0) + v;
-        const done = Object.entries(r.target ?? {}).every(([k, v]) => (delivered[k] ?? 0) >= v - 0.5);
+        if (r.relayTo && r.relayTo !== r.toRegionId && (await handOver(tx, m, army.playerId, r, s.take, at))) {
+          for (const [k, v] of Object.entries(s.take)) relayed[k] = (relayed[k] ?? 0) + v;
+        }
+        const done = !!r.target && Object.entries(r.target).every(([k, v]) => (delivered[k] ?? 0) >= v - 0.5);
         if (done) await tx.delete(tradeRoutes).where(eq(tradeRoutes.id, r.id));
         else await tx.update(tradeRoutes).set({ delivered }).where(eq(tradeRoutes.id, r.id));
       }
+      for (const [k, v] of Object.entries(relayed)) cargo[k] = Math.max(0, (cargo[k] ?? 0) - v);
       army = { ...army, cargo, stops };
       await tx.update(armies).set({ cargo, stops }).where(eq(armies.id, army.id));
     }
@@ -595,6 +601,41 @@ async function deliverCargo(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publis
   if (!(await carryOverflowOn(tx, m, army, at))) await sendHome(tx, m, army, at, army.units, {});
   const pid = army.playerId;
   after(() => publisher.toPlayer(m.id, pid, "army.arrived", { armyId: army.id }));
+}
+
+/**
+ * The hand-over at a harbour: what a convoy brought for a further shore goes into the route for the next leg (a ship
+ * across the lane, or a land hauler on from the far harbour), created here if it does not exist yet, so the next
+ * dispatch carries it on. Returns false when there is no way on, in which case the goods are simply delivered here.
+ */
+async function handOver(tx: Tx, m: MatchRow, playerId: string, r: { id: string; toRegionId: string; relayTo: string | null; forJobId: string | null }, take: Record<string, number>, at: Date): Promise<boolean> {
+  const next = nextHopTo(r.toRegionId, r.relayTo!);
+  if (!next) return false;
+  const { tradeRoutes } = await import("../db/schema.js");
+  const ctx = await legContextFor(tx, m.id, playerId);
+  const total = Object.values(take).reduce((a, b) => a + b, 0);
+  if (total < 1) return false;
+  // Over the lane the leg is by ship; otherwise by land hauler.
+  const byShip = regionById(r.toRegionId)?.seaRoutes.includes(next.hop) && !findRoute(r.toRegionId, next.hop, false);
+  const caravans = Math.max(1, Math.min(balance.trade.maxSupplyCaravans, Math.ceil(total / haulerCarry(byShip ? "cog" : "caravan", ctx.techs))));
+  const [existing] = await tx
+    .select()
+    .from(tradeRoutes)
+    .where(and(eq(tradeRoutes.matchId, m.id), eq(tradeRoutes.playerId, playerId), eq(tradeRoutes.fromRegionId, r.toRegionId), eq(tradeRoutes.toRegionId, next.hop), sql`coalesce(${tradeRoutes.relayTo}, ${tradeRoutes.toRegionId}) = ${r.relayTo}`, sql`${tradeRoutes.forJobId} is not distinct from ${r.forJobId}`))
+    .limit(1)
+    .for("update");
+  if (existing) {
+    const target = { ...(existing.target ?? {}) };
+    const held = { ...existing.held };
+    for (const [k, v] of Object.entries(take)) {
+      target[k] = (target[k] ?? 0) + v;
+      held[k] = (held[k] ?? 0) + v;
+    }
+    await tx.update(tradeRoutes).set({ target, load: target, held, caravans: Math.max(existing.caravans, caravans), nextAt: at }).where(eq(tradeRoutes.id, existing.id));
+  } else {
+    await tx.insert(tradeRoutes).values({ matchId: m.id, playerId, fromRegionId: r.toRegionId, toRegionId: next.hop, relayTo: r.relayTo, mode: "fixed", load: take, share: 0, caravans, everyHours: 1, target: take, delivered: {}, held: take, nextAt: at, forJobId: r.forJobId });
+  }
+  return true;
 }
 
 /**

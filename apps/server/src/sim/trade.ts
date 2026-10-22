@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNull, lte, sql } from "drizzle-orm";
 import type pino from "pino";
-import { balance, bestHauler, carryCapacity, distanceKm, findRoute, haulerCarry, haulerCount, HAULER_IDS, laneLimitKm, regionById, supplyConvoyCap, unitById } from "@lastthaw/shared";
+import { balance, bestHauler, carryCapacity, distanceKm, findRoute, haulerCarry, haulerCount, HAULER_IDS, laneLimitKm, nextHopTo, regionById, supplyConvoyCap, unitById } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { armies, matchRegions, matches, playerTechs, players, tradeRoutes } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
@@ -98,10 +98,14 @@ export async function dispatchRoute(db: Db, m: MatchRow, p: PlayerRow, route: Tr
       return "stock-up complete";
     }
   }
-  if (route.forJobId) return dispatchSupply(db, m, p, route, origin, owed ?? {}, now);
-  const sea = seaOnly(route.fromRegionId, route.toRegionId);
-  const kind = sea ? shipFor(origin.units, route.fromRegionId, route.toRegionId) : bestHauler(origin.units, regionById(route.fromRegionId)?.seaRoutes.includes(route.toRegionId) ?? false);
-  if (!kind) return sea ? fetchShips(db, m, p, route.fromRegionId, route.toRegionId, { ships: route.caravans }, now) : fetchCaravans(db, m, p, route.fromRegionId, route.caravans, now);
+  if (route.forJobId || route.relayTo) return dispatchSupply(db, m, p, route, origin, owed ?? {}, now);
+  // Where this leg goes: the destination by land, or the harbour where ships take over.
+  const next = nextHopTo(route.fromRegionId, route.toRegionId);
+  if (!next) return "no way there: more than one sea crossing; route to a harbour nearer the far shore instead";
+  const hop = next.hop;
+  const sea = seaOnly(route.fromRegionId, hop);
+  const kind = sea ? shipFor(origin.units, route.fromRegionId, hop) : bestHauler(origin.units, false);
+  if (!kind) return sea ? `goods waiting at ${regionNameOf(route.fromRegionId)}: ${await fetchShips(db, m, p, route.fromRegionId, hop, { ships: route.caravans }, now)}` : fetchCaravans(db, m, p, route.fromRegionId, route.caravans, now);
   const home = origin.units[kind] ?? 0;
   const ctx = await contextFor(db, m, p);
   const perCaravan = haulerCarry(kind, ctx.techs);
@@ -141,7 +145,9 @@ export async function dispatchRoute(db: Db, m: MatchRow, p: PlayerRow, route: Tr
   if (carryCapacity({ [kind]: caravans }, ctx.techs) < total) return "haulers cannot carry that much";
   const kindName = (unitById.get(kind)?.name ?? kind).toLowerCase();
 
-  await sendArmy(ctx, route.fromRegionId, { mission: "transport", targetRegionId: route.toRegionId, units: { [kind]: caravans }, people: 0, cargo, prepaid: !!route.forJobId });
+  // A leg that ends at a harbour hands the goods over there for the next leg; a leg to the destination delivers.
+  const relayStops = next.relay ? [{ regionId: route.fromRegionId, routeId: route.id, take: cargo, done: true }, { regionId: hop, routeId: null, take: {} }] : undefined;
+  await sendArmy(ctx, route.fromRegionId, { mission: "transport", targetRegionId: hop, units: { [kind]: caravans }, people: 0, cargo, prepaid: !!route.forJobId, ...(relayStops ? { stops: relayStops } : {}) });
   if (route.forJobId) {
     const held = { ...route.held };
     for (const [k, v] of Object.entries(cargo)) held[k] = Math.max(0, (held[k] ?? 0) - v);
@@ -190,12 +196,12 @@ async function dispatchSupply(db: Db, m: MatchRow, p: PlayerRow, route: TradeRou
     await db
       .select()
       .from(tradeRoutes)
-      .where(and(eq(tradeRoutes.matchId, m.id), eq(tradeRoutes.playerId, p.id), eq(tradeRoutes.toRegionId, route.toRegionId), sql`${tradeRoutes.forJobId} is not null`, sql`${tradeRoutes.id} <> ${route.id}`))
+      .where(and(eq(tradeRoutes.matchId, m.id), eq(tradeRoutes.playerId, p.id), eq(tradeRoutes.toRegionId, route.toRegionId), sql`(${tradeRoutes.forJobId} is not null or ${tradeRoutes.relayTo} is not null)`, sql`${tradeRoutes.id} <> ${route.id}`))
   ).filter((r) => Object.values(r.held).some((v) => v >= 1));
   const groupTotal = [route, ...siblings].reduce((a, r) => a + Object.values(r.held).reduce((x, y) => x + y, 0), 0);
   const sea = seaOnly(route.fromRegionId, route.toRegionId);
   const kind = sea ? shipFor(origin.units, route.fromRegionId, route.toRegionId) : bestHauler(origin.units, false);
-  if (!kind && sea) return fetchShips(db, m, p, route.fromRegionId, route.toRegionId, { goods: groupTotal }, now);
+  if (!kind && sea) return `goods waiting at ${regionNameOf(route.fromRegionId)}: ${await fetchShips(db, m, p, route.fromRegionId, route.toRegionId, { goods: groupTotal }, now)}`;
   if (!kind) {
     // A sibling route with haulers at home, or with haulers on the way, sends the convoy that calls here: no need to pull more.
     if (siblings.length) {

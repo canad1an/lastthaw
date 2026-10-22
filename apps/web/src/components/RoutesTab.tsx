@@ -196,7 +196,7 @@ function RouteRow({ r, showFrom, editing, clockOffsetMs, onToggle, onDelete, onR
     <li className={`space-y-0.5 py-2 ${editing ? "rounded bg-slate-800/50 px-2" : ""}`}>
       <div className="flex items-center justify-between gap-2">
         <span className={r.enabled ? "" : "text-slate-500 line-through"}>
-          {showFrom ? `${regionById(r.fromRegionId)?.name} ` : ""}→ {regionById(r.toRegionId)?.name}: {what}
+          {showFrom ? `${regionById(r.fromRegionId)?.name} ` : ""}→ {regionById(r.toRegionId)?.name}{r.relayTo && r.relayTo !== r.toRegionId ? ` (bound for ${regionById(r.relayTo)?.name})` : ""}: {what}
         </span>
         <span className="text-xs text-slate-500">
           {r.caravans} caravans · every {r.everyHours}h

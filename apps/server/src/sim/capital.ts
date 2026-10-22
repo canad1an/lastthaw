@@ -23,8 +23,8 @@ export async function relocateCapital(ctx: CommandContext, regionId: string): Pr
     .limit(1);
   if (inFlight[0]) throw httpError(409, `the capital wagon is already on its way to ${regionById(inFlight[0].target)?.name ?? "another region"}`);
   const { roads, rails, harbors } = await waySetsFor(db, matchId, p.id, await alliesOf(db, matchId, p.id));
-  const route = findRoute(p.capitalRegionId, regionId, techs.has(balance.travel.seaTech), roads, rails, harbors);
-  if (!route) throw httpError(400, "no route for the wagon");
+  const route = findRoute(p.capitalRegionId, regionId, false, roads, rails, harbors);
+  if (!route) throw httpError(400, "no land route for the wagon: the court does not cross the sea");
   const now = matchNow(m);
   const seconds = travelSeconds(route, balance.capital.wagonSpeed, m.speed);
   const result = await db.transaction(async (tx) => {
