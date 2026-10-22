@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { eq } from "drizzle-orm";
 import { DEFAULT_MAP, MAP_IDS, loadMap, setMapResolver, type MapId } from "@lastthaw/shared";
-import type { Db } from "../db/client.js";
+import { carryIntoTransactions, type Db } from "../db/client.js";
 import { matches } from "../db/schema.js";
 
 /** A database or a transaction: anything that can select. */
@@ -17,6 +17,7 @@ export interface MapScope {
 }
 
 export const mapScope = new AsyncLocalStorage<MapScope>();
+carryIntoTransactions(mapScope as AsyncLocalStorage<object>);
 
 /** Puts every map in memory. Each entry point (API, worker, AI) awaits this before its first request or pass; a module-level await here would deadlock the bundle's lazy module init. */
 export async function loadAllMaps(): Promise<void> {
@@ -30,7 +31,11 @@ export function mapOf(m: { settings: unknown }): MapId {
   return (MAP_IDS as readonly string[]).includes(map ?? "") ? (map as MapId) : DEFAULT_MAP;
 }
 
-/** Enters a match's map for the rest of the current async flow (the remainder of this function and what it awaits). */
+/**
+ * Enters a match's map for the rest of the caller's async flow: the remainder of the calling function and everything it
+ * awaits. Call it directly from the function that does the work (a context entered inside a callee after an await
+ * does not reach the caller), with the map looked up first: `enterMap(await mapOfMatch(db, id))`.
+ */
 export function enterMap(map: MapId): void {
   const store = mapScope.getStore();
   if (store) store.map = map;
@@ -52,12 +57,5 @@ export async function mapOfMatch(db: DbLike, matchId: string): Promise<MapId> {
   const [m] = await db.select({ settings: matches.settings }).from(matches).where(eq(matches.id, matchId)).limit(1);
   const map = m ? mapOf(m) : DEFAULT_MAP;
   if (m) byMatch.set(matchId, map);
-  return map;
-}
-
-/** Enters a match's map for the rest of the current async flow, looking it up by match id. */
-export async function enterMatchMap(db: DbLike, matchId: string): Promise<MapId> {
-  const map = await mapOfMatch(db, matchId);
-  enterMap(map);
   return map;
 }

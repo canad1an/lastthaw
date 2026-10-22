@@ -1,5 +1,5 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { enterMatchMap } from "../map/scope.js";
+import { enterMap, mapOfMatch } from "../map/scope.js";
 import type pino from "pino";
 import { AGES, buildingById, techById, unitById, balance, HAULER_IDS } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
@@ -36,7 +36,7 @@ export async function runDueJobs(db: Db, publisher: Publisher, log: pino.Logger)
 
   let done = 0;
   for (const { id, matchId } of due) {
-    await enterMatchMap(db, matchId);
+    enterMap(await mapOfMatch(db, matchId));
     const after: Array<() => Promise<void>> = [];
     try {
       await db.transaction(async (tx) => {
