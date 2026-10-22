@@ -173,7 +173,7 @@ export function LogisticsPanel({ state, onSelect }: { state: MatchStateView; onS
             <td className="py-1">Total</td>
             <td className="py-1 text-right tabular-nums">{totalHome}</td>
             <td className="py-1 text-right tabular-nums">{totalRoad}</td>
-            <td className="py-1 text-right tabular-nums">{fmt(capacityHome)} idle capacity</td>
+            <td className="py-1 text-right tabular-nums">{fmt(spareCapacity)} spare capacity</td>
           </tr>
         </tbody>
       </table>
