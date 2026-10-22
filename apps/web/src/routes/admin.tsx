@@ -44,7 +44,7 @@ interface Metrics {
   matches: {
     finished: number;
     finished24h: number;
-    open: Array<{ id: string; name: string; status: string; speed: number; kind: string; day: number; humans: number; ai: number; online: number; lastTickAgeSeconds: number | null; paused: boolean; jobs: { open: number; due: number; parked: number; doneHour: number } }>;
+    open: Array<{ id: string; name: string; status: string; startsAt: string; speed: number; kind: string; day: number; humans: number; ai: number; online: number; lastTickAgeSeconds: number | null; paused: boolean; jobs: { open: number; due: number; parked: number; doneHour: number } }>;
   };
   activity: { battles24h: number; chat24h: number; events24h: number; sessions7d: number };
   processes: { workerBeatSeconds: number | null; aiBeatSeconds: number | null; lobbiesOverdue: number };
@@ -142,6 +142,7 @@ function LiveMetrics() {
           <thead className="text-left text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-3 py-2">Match</th>
+              <th className="px-3 py-2">Started</th>
               <th className="px-3 py-2">Status</th>
               <th className="px-3 py-2 text-right">Day</th>
               <th className="px-3 py-2 text-right">Humans</th>
@@ -158,6 +159,7 @@ function LiveMetrics() {
                 <td className="px-3 py-1.5">
                   {m.name} <span className="text-xs text-slate-500">· {m.kind} · {m.speed}x</span>
                 </td>
+                <td className="px-3 py-1.5 tabular-nums text-slate-300">{new Date(m.startsAt).toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</td>
                 <td className="px-3 py-1.5">{m.paused ? <span className="text-amber-200">paused</span> : m.status}</td>
                 <td className="px-3 py-1.5 text-right tabular-nums">{m.status === "running" ? m.day.toFixed(1) : "–"}</td>
                 <td className="px-3 py-1.5 text-right tabular-nums">{m.humans}</td>
@@ -172,8 +174,8 @@ function LiveMetrics() {
             ))}
             {d.matches.open.length === 0 && (
               <tr>
-                <td className="px-3 py-2 text-slate-500" colSpan={9}>
-                  No open matches.
+                <td className="px-3 py-2 text-slate-500" colSpan={10}>
+                  No matches yet.
                 </td>
               </tr>
             )}

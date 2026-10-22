@@ -76,7 +76,8 @@ export async function adminRoutes(app: FastifyInstance, opts: { db: Db; publishe
       .limit(100);
     const onlineRows = onlineIds.length ? await db.select({ id: users.id, name: users.displayName }).from(users).where(inArray(users.id, onlineIds)) : [];
 
-    const matchRows = await db.select().from(matches).where(inArray(matches.status, ["lobby", "running"])).orderBy(desc(matches.startsAt));
+    // The ten most recent matches by start time, newest first, whatever their state.
+    const matchRows = await db.select().from(matches).orderBy(desc(matches.startsAt)).limit(10);
     const matchIds = matchRows.map((m) => m.id);
     const nameOfMatch = new Map(matchRows.map((m) => [m.id, m.name]));
     const playerCounts = matchIds.length
@@ -136,6 +137,7 @@ export async function adminRoutes(app: FastifyInstance, opts: { db: Db; publishe
             id: m.id,
             name: m.name,
             status: m.status,
+            startsAt: m.startsAt.toISOString(),
             speed: m.speed,
             kind: ((m.settings as { kind?: string }).kind ?? "public") as string,
             day,
