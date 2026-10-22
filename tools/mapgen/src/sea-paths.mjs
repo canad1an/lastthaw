@@ -16,6 +16,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { rasterise } from "./grid.mjs";
 
 const DRY = process.argv.includes("--dry");
 const SCALE = 2; // grid cells per map unit: 4000 x 2000 cells over the 2000 x 1000 map, about 10 km a cell at the equator
@@ -45,55 +46,8 @@ const byId = new Map(world.regions.map((r) => [r.id, r]));
 const W = Math.round(world.width * SCALE);
 const H = Math.round(world.height * SCALE);
 
-// ---- Rasterise: owner[cell] = region index + 1, or 0 for sea.
-function rings(d) {
-  const out = [];
-  let ring = [];
-  let x = 0, y = 0, cmd = "";
-  const nums = [];
-  const re = /([MLHVZmlhvz])|(-?\d*\.?\d+)/g;
-  let m;
-  const flush = () => {
-    while (nums.length) {
-      if (cmd === "M") { if (ring.length) out.push(ring); ring = []; x = nums.shift(); y = nums.shift(); ring.push([x, y]); cmd = "L"; }
-      else if (cmd === "L") { x = nums.shift(); y = nums.shift(); ring.push([x, y]); }
-      else if (cmd === "H") { x = nums.shift(); ring.push([x, y]); }
-      else if (cmd === "V") { y = nums.shift(); ring.push([x, y]); }
-      else nums.length = 0;
-    }
-  };
-  while ((m = re.exec(d))) {
-    if (m[1]) { flush(); cmd = m[1].toUpperCase(); if (cmd === "Z") { if (ring.length) out.push(ring); ring = []; } }
-    else nums.push(Number(m[2]));
-  }
-  flush();
-  if (ring.length) out.push(ring);
-  return out.filter((r) => r.length >= 3);
-}
-const owner = new Uint16Array(W * H);
-world.regions.forEach((r, idx) => {
-  for (const ring of rings(r.path)) {
-    // Scanline fill, even-odd, one ring at a time (holes in these outlines are rare and small).
-    const ys = ring.map((p) => p[1] * SCALE);
-    const y0 = Math.max(0, Math.floor(Math.min(...ys)));
-    const y1 = Math.min(H - 1, Math.ceil(Math.max(...ys)));
-    for (let y = y0; y <= y1; y++) {
-      const cy = y + 0.5;
-      const xs = [];
-      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-        const [xi, yi] = [ring[i][0] * SCALE, ring[i][1] * SCALE];
-        const [xj, yj] = [ring[j][0] * SCALE, ring[j][1] * SCALE];
-        if (yi > cy !== yj > cy) xs.push(xi + ((cy - yi) * (xj - xi)) / (yj - yi));
-      }
-      xs.sort((a, b) => a - b);
-      for (let k = 0; k + 1 < xs.length; k += 2) {
-        const xa = Math.max(0, Math.round(xs[k]));
-        const xb = Math.min(W - 1, Math.round(xs[k + 1]) - 1);
-        for (let x = xa; x <= xb; x++) owner[y * W + x] = idx + 1;
-      }
-    }
-  }
-});
+// ---- Rasterise: owner[cell] = region index + 1, or 0 for sea (grid.mjs).
+const { owner } = rasterise(world, SCALE);
 // The straits: a line of water through each, three cells wide.
 const cellOf = (lon, lat) => [Math.round(((lon + 180) / 360) * W), Math.round(((90 - lat) / 180) * H)];
 for (const [, a, b] of STRAITS) {

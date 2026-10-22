@@ -464,6 +464,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
     return out;
   }, [state.owned, state.sighted, state.me.playerId, colorOf]);
   const frontierSet = useMemo(() => new Set(state.frontier), [state.frontier]);
+  const towns = useMemo(() => state.owned.filter((o) => !o.frozen).map((o) => ({ regionId: o.regionId, buildings: o.buildings })), [state.owned]);
   const allySet = useMemo(() => new Set(state.allies), [state.allies]);
   const borderSet = useMemo(() => new Set(state.owned.flatMap((o) => regionById(o.regionId)?.neighbors ?? [])), [state.owned]);
   const paint = useCallback(
@@ -589,6 +590,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
           ice={ice}
           flags={state.me.capitalRegionId ? [state.me.capitalRegionId] : []}
           harbors={state.owned.filter((o) => o.effects.harbor).map((o) => ({ regionId: o.regionId, buildings: o.buildings, units: o.units }))}
+          towns={towns}
           dashed={state.frontier}
           armies={markers}
           roads={roadLinks}
