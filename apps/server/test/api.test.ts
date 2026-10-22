@@ -1034,6 +1034,7 @@ describe("api routes", () => {
       expect(noSail.length).toBe(0);
       const [far1] = await db.select({ r: tradeRoutes.lastResult }).from(tradeRoutes).where(and(eq(tradeRoutes.toRegionId, longPick!.isle.id), eq(tradeRoutes.fromRegionId, longPick!.port!)));
       expect(far1?.r ?? "").toMatch(/Cog/);
+      expect(far1?.r ?? "").toMatch(/canoes here cannot make it/);
     } finally {
       await redis.quit().catch(() => {});
     }

@@ -105,7 +105,7 @@ export async function dispatchRoute(db: Db, m: MatchRow, p: PlayerRow, route: Tr
   const hop = next.hop;
   const sea = seaOnly(route.fromRegionId, hop);
   const kind = sea ? shipFor(origin.units, route.fromRegionId, hop) : bestHauler(origin.units, false);
-  if (!kind) return sea ? `goods waiting at ${regionNameOf(route.fromRegionId)}: ${await fetchShips(db, m, p, route.fromRegionId, hop, { ships: route.caravans }, now)}` : fetchCaravans(db, m, p, route.fromRegionId, route.caravans, now);
+  if (!kind) return sea ? `goods waiting at ${regionNameOf(route.fromRegionId)}: ${await fetchShips(db, m, p, route.fromRegionId, hop, { ships: route.caravans }, now, origin.units)}` : fetchCaravans(db, m, p, route.fromRegionId, route.caravans, now);
   const home = origin.units[kind] ?? 0;
   const ctx = await contextFor(db, m, p);
   const perCaravan = haulerCarry(kind, ctx.techs);
@@ -201,7 +201,7 @@ async function dispatchSupply(db: Db, m: MatchRow, p: PlayerRow, route: TradeRou
   const groupTotal = [route, ...siblings].reduce((a, r) => a + Object.values(r.held).reduce((x, y) => x + y, 0), 0);
   const sea = seaOnly(route.fromRegionId, route.toRegionId);
   const kind = sea ? shipFor(origin.units, route.fromRegionId, route.toRegionId) : bestHauler(origin.units, false);
-  if (!kind && sea) return `goods waiting at ${regionNameOf(route.fromRegionId)}: ${await fetchShips(db, m, p, route.fromRegionId, route.toRegionId, { goods: groupTotal }, now)}`;
+  if (!kind && sea) return `goods waiting at ${regionNameOf(route.fromRegionId)}: ${await fetchShips(db, m, p, route.fromRegionId, route.toRegionId, { goods: groupTotal }, now, origin.units)}`;
   if (!kind) {
     // A sibling route with haulers at home, or with haulers on the way, sends the convoy that calls here: no need to pull more.
     if (siblings.length) {
@@ -309,7 +309,7 @@ export function shipFor(units: Record<string, number>, fromRegionId: string, toR
  * routes claim) in any region joined to the port by a lane they can sail come over empty, nearest first, so a cog
  * built anywhere on the coast serves every crossing. Ships two lanes away stay where they are.
  */
-async function fetchShips(db: Db, m: MatchRow, p: PlayerRow, portRegionId: string, toRegionId: string, want: { ships?: number; goods?: number }, now: Date): Promise<string> {
+async function fetchShips(db: Db, m: MatchRow, p: PlayerRow, portRegionId: string, toRegionId: string, want: { ships?: number; goods?: number }, now: Date, portUnits: Record<string, number> = {}): Promise<string> {
   const naval = HAULER_IDS.filter((id) => unitById.get(id)?.naval);
   const shipsIn = (units: Record<string, number>) => naval.reduce((a, id) => a + (units[id] ?? 0), 0);
   const ctx = await contextFor(db, m, p);
@@ -342,11 +342,17 @@ async function fetchShips(db: Db, m: MatchRow, p: PlayerRow, portRegionId: strin
   const candidates = mine
     .filter((r) => !r.frozenAt && spareOf(r) > 0)
     .sort((a, b) => (claimed.has(a.regionId) ? 1 : 0) - (claimed.has(b.regionId) ? 1 : 0) || distanceKm(a.regionId, portRegionId) - distanceKm(b.regionId, portRegionId));
-  const canoeCan = seaPath(portRegionId, toRegionId, laneLimitKm({ canoe: 1 }) ?? 0) !== null;
+  const canoeLimit = laneLimitKm({ canoe: 1 }) ?? 0;
+  const canoeCan = seaPath(portRegionId, toRegionId, canoeLimit) !== null;
+  // Canoes at the port that cannot make this crossing: say so, with the water they would have to cross.
+  const canoesHere = portUnits.canoe ?? 0;
+  const cogWay = seaPath(portRegionId, toRegionId, Infinity);
+  const longestLane = cogWay ? Math.max(...cogWay.path.slice(1).map((id, i) => distanceKm(cogWay.path[i]!, id))) : 0;
+  const canoeNote = canoesHere > 0 && !canoeCan ? `the ${canoesHere} canoe${canoesHere === 1 ? "" : "s"} here cannot make it: the way to ${regionNameOf(toRegionId)} has ${Math.round(longestLane)} km of open water and canoes keep to lanes under ${canoeLimit} km; ` : "";
   if (candidates.length === 0) {
     return inFlight > 0 && firstComing
       ? `no ships at the port; ${inFlight} sailing in from ${regionNameOf(firstComing.origin)}`
-      : `no ships at ${regionNameOf(portRegionId)} and none spare on a lane to it: build a Cog${canoeCan ? " or a Canoe" : ""} on this coast`;
+      : `${canoeNote}no cog at ${regionNameOf(portRegionId)} and none spare on a lane to it: build a Cog (Harbor and Shipbuilding) on this coast${canoeCan ? ", or a Canoe" : ""}`;
   }
   const sent: string[] = [];
   let soonest = Infinity;
@@ -377,7 +383,7 @@ async function fetchShips(db: Db, m: MatchRow, p: PlayerRow, portRegionId: strin
       // The lane is closed to them, or the region changed under us: try the next.
     }
   }
-  if (sent.length === 0) return `no ships at ${regionNameOf(portRegionId)} that can make this crossing: build a Cog on this coast`;
+  if (sent.length === 0) return `${canoeNote}no ship at ${regionNameOf(portRegionId)} can make this crossing and none spare can: build a Cog (Harbor and Shipbuilding) on this coast`;
   const when = soonest < 1 ? `${Math.max(1, Math.round(soonest * 60))} min` : `${soonest.toFixed(1)} h`;
   return `no ships at the port; ${sent.join(", ")} sailing in, first in about ${when}`;
 }
