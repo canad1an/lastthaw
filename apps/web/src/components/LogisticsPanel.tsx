@@ -17,7 +17,6 @@ export function LogisticsPanel({ state, onSelect }: { state: MatchStateView; onS
   }, [state.owned, state.armies, state.me.techs]);
   const totalHome = fleet.reduce((a, r) => a + r.home, 0);
   const totalRoad = fleet.reduce((a, r) => a + r.road, 0);
-  const capacityHome = fleet.reduce((a, r) => a + r.home * r.carry, 0);
 
   const stalled = state.routes.filter((r) => r.enabled && (r.lastResult ?? "").startsWith("no haulers at home"));
   const waitingBuilds = state.jobs.filter((j) => j.kind === "build" && j.waitingFor);
@@ -58,6 +57,33 @@ export function LogisticsPanel({ state, onSelect }: { state: MatchStateView; onS
     return { ...r, left };
   });
   const idleCount = idleRegions.reduce((a, o) => a + HAULER_IDS.reduce((x, id) => x + (o.units[id] ?? 0), 0), 0);
+  // Where the haulers at home actually are: ships serve sea legs only; land haulers are either claimed by the routes of the
+  // region they stand in (the count those routes ask for) or spare, which is what the pool can call elsewhere.
+  const landIds = HAULER_IDS.filter((id) => !unitById.get(id)?.naval);
+  const shipsHome = state.owned.reduce((a, o) => a + HAULER_IDS.filter((id) => unitById.get(id)?.naval).reduce((x, id) => x + (o.units[id] ?? 0), 0), 0);
+  let claimedHome = 0;
+  let spareHome = 0;
+  for (const o of state.owned) {
+    const land = landIds.reduce((x, id) => x + (o.units[id] ?? 0), 0);
+    const asked = state.routes.filter((r) => r.enabled && r.fromRegionId === o.regionId).reduce((x, r) => x + r.caravans, 0);
+    const claimed = Math.min(land, asked);
+    claimedHome += claimed;
+    spareHome += land - claimed;
+  }
+  const spareCapacity = state.owned.reduce((a, o) => {
+    const asked = state.routes.filter((r) => r.enabled && r.fromRegionId === o.regionId).reduce((x, r) => x + r.caravans, 0);
+    let left = Math.max(0, landIds.reduce((x, id) => x + (o.units[id] ?? 0), 0) - asked);
+    let cap = 0;
+    for (const id of landIds) {
+      const take = Math.min(left, o.units[id] ?? 0);
+      cap += take * haulerCarry(id, state.me.techs);
+      left -= take;
+      if (left <= 0) break;
+    }
+    return a + cap;
+  }, 0);
+  // What is wanted right now: the haulers the stalled routes ask for at their origins, and one per full region with none.
+  const stalledNeed = stalled.reduce((a, r) => a + r.caravans, 0);
   // Collecting convoys: one trip, several pickups.
   const convoys = state.armies.filter((a) => a.mission === "transport" && a.status === "outbound" && a.stops.length > 0);
 
@@ -69,10 +95,18 @@ export function LogisticsPanel({ state, onSelect }: { state: MatchStateView; onS
           {fleet.filter((r) => r.home + r.road > 0).length > 0 && (
             <span className="text-slate-400"> ({fleet.filter((r) => r.home + r.road > 0).map((r) => `${r.home + r.road} ${r.name.toLowerCase()}${r.home + r.road === 1 ? "" : "s"}`).join(", ")})</span>
           )}
-          : {totalHome} at home, {totalRoad} on the road.
+          : {totalRoad} on the road, {totalHome} at home.
+        </p>
+        <p className="mt-1 text-xs text-slate-300">
+          Of the {totalHome} at home: <span className="text-slate-100">{claimedHome}</span> are claimed by the routes of the region they stand in, <span className="text-slate-100">{spareHome}</span> are spare (carrying up to {fmt(spareCapacity)}){shipsHome > 0 ? <>, and <span className="text-slate-100">{shipsHome}</span> are ships, which serve sea legs only</> : null}.
+          {stalled.length > 0 || fullNoHaulers.length > 0 ? (
+            <>
+              {" "}Wanted now: {stalledNeed} at the origins of the {stalled.length} waiting route{stalled.length === 1 ? "" : "s"}, and at least one in each of the {fullNoHaulers.length} full region{fullNoHaulers.length === 1 ? "" : "s"} with none.
+            </>
+          ) : null}
         </p>
         <p className="mt-1 text-xs text-slate-500">
-          Every hauler is one pool: a route with none at home calls the nearest spare ones over, idle ones first. Train them anywhere; they go where the work is. Idle capacity at home: {fmt(capacityHome)}. To make trips shorter, build Waystations (Iron Age, on Roads) in the regions your convoys arrive in most: each level cuts those legs by 2%, up to 30%, and the savings multiply along a route.
+          Spare haulers are called over by the routes that need them, nearest first, but only {balance.trade.maxReliefMoves} such moves are on the road at once, so a big shortfall clears slowly: move idle ones yourself, or train where they are needed. To make trips shorter, build Waystations (Iron Age, on Roads) in the regions your convoys arrive in most: each level cuts those legs by 2%, up to 30%, and the savings multiply along a route.
         </p>
       </div>
       <p className={`text-xs ${verdict.tone}`}>{verdict.text}</p>
