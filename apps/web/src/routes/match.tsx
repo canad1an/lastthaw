@@ -412,7 +412,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
     () => (hideHaulers ? state.armies.filter((a) => a.mission === "relocate" || !Object.entries(a.units).every(([id, n]) => n <= 0 || unitById.get(id)?.hauler)) : state.armies),
     [state.armies, hideHaulers],
   );
-  const markers = useMemo(() => armyMarkers(shownArmies, state.incoming, now + clockOffsetMs, formatCountdown, state.me.techs), [shownArmies, state.incoming, now, clockOffsetMs]);
+  const markers = useMemo(() => armyMarkers(shownArmies, state.incoming, now + clockOffsetMs, formatCountdown, state.me.techs, state.ships, new Set(state.allies)), [shownArmies, state.incoming, state.ships, state.allies, now, clockOffsetMs]);
   const finished = state.match.status === "finished";
   const eliminated = state.owned.length === 0 && !finished;
   const [summaryOpen, setSummaryOpen] = useSummaryOpen(matchId, finished);
@@ -593,7 +593,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
           towns={towns}
           dashed={state.frontier}
           armies={markers}
-          roads={roadLinks}
+          roads={overlays.has("hideroads") ? [] : roadLinks}
           badges={badges}
           onBadgeClick={(b) => b.battleId && setBattleId(b.battleId)}
           storms={state.storms}

@@ -6,6 +6,7 @@ import { battles, matches, players } from "../db/schema.js";
 import { requireUser } from "../auth/session.js";
 import { httpError } from "../sim/commands.js";
 import { idParams } from "./params.js";
+import { alliesOf } from "../sim/alliances.js";
 import { z } from "zod";
 import type { BattleLive, BattleOutcome } from "../sim/missions.js";
 
@@ -36,39 +37,45 @@ export function liveBattleOf(b: BattleRow, names: Map<string, string>): LiveBatt
 }
 
 /**
- * Battles: anyone in the match (or an admin) may watch; the icon is on the shared map anyway. The list is the fights in
- * progress, or with ?all=1 every battle of the match, newest first: a battle is kept for the whole match and its
- * window replays it at any time.
+ * Battles: a player sees their own fights and their allies', nobody else's; an admin who is not in the match sees them
+ * all. The list is the fights in progress, or with ?all=1 every such battle of the match, newest first: a battle is
+ * kept for the whole match and its window replays it at any time.
  */
 export async function battleRoutes(app: FastifyInstance, opts: { db: Db }) {
   const { db } = opts;
 
-  async function allowed(matchId: string, userId: string, isAdmin: boolean) {
+  /** The player ids whose battles this user may see, or null for everyone's (an admin outside the match). */
+  async function sideOf(matchId: string, userId: string, isAdmin: boolean): Promise<Set<string> | null> {
     const [m] = await db.select({ id: matches.id }).from(matches).where(eq(matches.id, matchId)).limit(1);
     if (!m) throw httpError(404, "match not found");
-    if (isAdmin) return;
     const [p] = await db.select({ id: players.id }).from(players).where(and(eq(players.matchId, matchId), eq(players.userId, userId))).limit(1);
-    if (!p) throw httpError(403, "not a player in this match");
+    if (!p) {
+      if (isAdmin) return null;
+      throw httpError(403, "not a player in this match");
+    }
+    return new Set([p.id, ...(await alliesOf(db, matchId, p.id))]);
   }
+  const onSide = (side: Set<string> | null, b: BattleRow) => !side || (!!b.attackerPlayerId && side.has(b.attackerPlayerId)) || (!!b.defenderPlayerId && side.has(b.defenderPlayerId));
 
   app.get("/api/matches/:id/battles", async (req): Promise<LiveBattleView[]> => {
     const user = requireUser(req);
     const matchId = idParams.parse(req.params).id;
-    await allowed(matchId, user.id, user.isAdmin);
+    const side = await sideOf(matchId, user.id, user.isAdmin);
     const all = (req.query as { all?: string } | undefined)?.all === "1";
     const rows = all
       ? await db.select().from(battles).where(and(eq(battles.matchId, matchId), isNotNull(battles.live))).orderBy(desc(sql`coalesce(${battles.startedAt}, ${battles.resolvedAt})`)).limit(300)
       : await db.select().from(battles).where(and(eq(battles.matchId, matchId), eq(battles.status, "fighting"))).orderBy(desc(battles.startedAt));
     const names = new Map((await db.select({ id: players.id, name: players.name }).from(players).where(eq(players.matchId, matchId))).map((p) => [p.id, p.name]));
-    return rows.map((b) => liveBattleOf(b, names));
+    return rows.filter((b) => onSide(side, b)).map((b) => liveBattleOf(b, names));
   });
 
   app.get("/api/matches/:id/battles/:battleId", async (req): Promise<BattleDetailView> => {
     const user = requireUser(req);
     const { id: matchId, battleId } = battleParams.parse(req.params);
-    await allowed(matchId, user.id, user.isAdmin);
+    const side = await sideOf(matchId, user.id, user.isAdmin);
     const [b] = await db.select().from(battles).where(and(eq(battles.matchId, matchId), eq(battles.id, battleId))).limit(1);
     if (!b || !b.live) throw httpError(404, "battle not found");
+    if (!onSide(side, b)) throw httpError(403, "not your battle: only your own fights and your allies' can be watched");
     const names = new Map((await db.select({ id: players.id, name: players.name }).from(players).where(eq(players.matchId, matchId))).map((p) => [p.id, p.name]));
     const live = b.live as BattleLive;
     const outcome = (b.outcome ?? null) as BattleOutcome | null;

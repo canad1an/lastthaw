@@ -24,7 +24,7 @@ export function BattleHistory({ matchId, state, onOpenBattle, onSelectRegion }: 
   const you = (id: string | null) => (id && id === me ? " (you)" : "");
   return (
     <div className="text-sm">
-      <p className="px-3 py-2 text-xs text-slate-400">Every battle of the match stays here. Watch replays the fight from the first march; a battle still on shows live.</p>
+      <p className="px-3 py-2 text-xs text-slate-400">Every battle of yours and your allies' stays here; other players' fights are not yours to watch. Watch replays the fight from the first march; a battle still on shows live.</p>
       {q.isLoading && <p className="px-3 py-2 text-xs text-slate-500">Loading…</p>}
       {!q.isLoading && rows.length === 0 && <p className="px-3 py-2 text-slate-400">No battles yet.</p>}
       <ul className="divide-y divide-slate-900">

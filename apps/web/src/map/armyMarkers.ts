@@ -1,4 +1,4 @@
-import { balance, carryCapacity, regionById, unitById, type ArmyView, type IncomingView, missionLabel, laneName, laneKey } from "@lastthaw/shared";
+import { balance, carryCapacity, regionById, unitById, type ArmyView, type IncomingView, type ShipSightingView, missionLabel, laneName, laneKey } from "@lastthaw/shared";
 import lanePaths from "./lanePaths.json";
 
 /** Every sea lane's water path (tools/mapgen/src/sea-paths.mjs), from one shore to the other, in map units. */
@@ -114,7 +114,7 @@ const fmtUnits = (u: Record<string, number>) =>
     .join(", ") || "no units";
 
 /** Where every army is right now, for drawing on the map. */
-export function armyMarkers(armies: ArmyView[], incoming: IncomingView[], nowMs: number, formatCountdown: (s: number) => string, techs?: readonly string[]): ArmyMarker[] {
+export function armyMarkers(armies: ArmyView[], incoming: IncomingView[], nowMs: number, formatCountdown: (s: number) => string, techs?: readonly string[], ships: ShipSightingView[] = [], allies: ReadonlySet<string> = new Set()): ArmyMarker[] {
   const out: ArmyMarker[] = [];
   for (const a of armies) {
     const ids = a.path.length >= 2 ? a.path : [a.originRegionId, a.targetRegionId];
@@ -155,6 +155,30 @@ export function armyMarkers(armies: ArmyView[], incoming: IncomingView[], nowMs:
       progress,
       routeNames: routeIds.map((id) => regionById(id)?.name ?? id),
       destinationId: returning ? a.originRegionId : a.targetRegionId,
+    });
+  }
+  // Ships a watchtower has spotted: placed along their lane, with no route to show since their destination is unknown.
+  for (const s of ships) {
+    const pts = routePoints([s.fromRegionId, s.toRegionId]);
+    if (pts.length < 2) continue;
+    const pos = along(pts, s.progress);
+    const ally = allies.has(s.playerId);
+    out.push({
+      id: `ship-${s.id}`,
+      x: pos.x,
+      y: pos.y,
+      hostile: !ally,
+      mission: "move",
+      naval: true,
+      lead: leadUnit(s.units),
+      kinds: kindsOf(s.units),
+      units: s.units,
+      title: `${s.playerName}${ally ? " (ally)" : ""}: ships off ${regionById(s.seenFrom)?.name ?? s.seenFrom}`,
+      lines: [fmtUnits(s.units), `sailing from ${regionById(s.fromRegionId)?.name ?? s.fromRegionId} toward ${regionById(s.toRegionId)?.name ?? s.toRegionId}`, `spotted from the watchtower at ${regionById(s.seenFrom)?.name ?? s.seenFrom}`],
+      route: [],
+      progress: s.progress,
+      routeNames: [],
+      destinationId: s.toRegionId,
     });
   }
   for (const i of incoming) {

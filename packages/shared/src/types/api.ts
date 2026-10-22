@@ -259,6 +259,21 @@ export const armyView = z.object({
 });
 export type ArmyView = z.infer<typeof armyView>;
 
+/** A foreign ship a watchtower of mine has spotted passing along its coast: where it is on its lane right now, not where it is bound. */
+export const shipSightingView = z.object({
+  id: z.string(),
+  playerId: z.string(),
+  playerName: z.string(),
+  units: z.record(z.string(), z.number()),
+  /** The lane it is on, and how far along it. */
+  fromRegionId: z.string(),
+  toRegionId: z.string(),
+  progress: z.number(),
+  /** The region whose watchtower saw it. */
+  seenFrom: z.string(),
+});
+export type ShipSightingView = z.infer<typeof shipSightingView>;
+
 /** What a defender is told about an army heading their way. */
 export const incomingView = z.object({
   id: z.string(),
@@ -617,6 +632,8 @@ export const matchStateView = z.object({
   armies: z.array(armyView),
   /** Hostile armies heading for my regions. */
   incoming: z.array(incomingView),
+  /** Foreign ships my watchtowers see passing along the coast. */
+  ships: z.array(shipSightingView).default([]),
   /** Unclaimed, empty regions bordering mine: settle targets. */
   frontier: z.array(z.string()).default([]),
   /** Every region in a blizzard right now, mine or not, for the map. */

@@ -1,6 +1,6 @@
-import { and, asc, eq, inArray, isNull, or, sql, gt } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, ne, or, sql, gt } from "drizzle-orm";
 import { parseProfile } from "../sim/ai.js";
-import { emptySpecial, regionById, type ArmyView, type IncomingView, type JobView, type MatchStateView, type OwnedRegionView, type SightedRegionView, type LiveBattleView, techEffectsOf, allRegions, wallOf, balance, freezeDayForLatitude, legIndex, advisorReport, campaignView } from "@lastthaw/shared";
+import { emptySpecial, regionById, type ArmyView, type IncomingView, type JobView, type MatchStateView, type OwnedRegionView, type SightedRegionView, type LiveBattleView, techEffectsOf, allRegions, wallOf, balance, freezeDayForLatitude, legIndex, advisorReport, campaignView, unitById, type ShipSightingView } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { allianceMembers, alliances, armies, jobs, matchRegions, matches, playerTechs, players, regionSightings, tradeRoutes, refugeeOffers, pacts, mercenaryOffers, dailyObjectives, bounties, regionNotes, advisors, battles } from "../db/schema.js";
 import { OBJECTIVES } from "../sim/objectives.js";
@@ -10,9 +10,11 @@ import { countOwnedRegions, projectRegion, resourceMultOf } from "../sim/regions
 import { parseSettings, wageFor } from "../sim/advisors.js";
 import { liveBattleOf } from "../matches/battlesApi.js";
 
-/** Battles playing out in the match right now, for the map's crossed swords. */
-async function liveBattles(db: Db, matchId: string): Promise<LiveBattleView[]> {
-  const rows = await db.select().from(battles).where(and(eq(battles.matchId, matchId), eq(battles.status, "fighting")));
+/** Battles playing out right now that this side (a player and their allies; null for everyone's) may watch, for the map's crossed swords. */
+async function liveBattles(db: Db, matchId: string, side: Set<string> | null): Promise<LiveBattleView[]> {
+  const rows = (await db.select().from(battles).where(and(eq(battles.matchId, matchId), eq(battles.status, "fighting")))).filter(
+    (b) => !side || (!!b.attackerPlayerId && side.has(b.attackerPlayerId)) || (!!b.defenderPlayerId && side.has(b.defenderPlayerId)),
+  );
   if (!rows.length) return [];
   const names = new Map((await db.select({ id: players.id, name: players.name }).from(players).where(eq(players.matchId, matchId))).map((p) => [p.id, p.name]));
   return rows.map((b) => liveBattleOf(b, names));
@@ -335,6 +337,37 @@ export async function buildMatchState(db: Db, matchId: string, userId: string, o
     const path = a.path.length >= 2 ? a.path : [targetId, targetId];
     return legIndex(path.length, a.departsAt.getTime(), a.arrivesAt.getTime(), now.getTime()) >= path.length - 2;
   };
+  // Watchtowers also watch the water: a foreign ship on a lane that touches a tower's region or one of its neighbours
+  // shows where it is on that lane, with what aboard, but not where it is bound.
+  const ships: ShipSightingView[] = [];
+  if (towers.size) {
+    const coastWatch = new Map<string, string>(); // region on a watched lane -> the tower that sees it
+    for (const t of towers) {
+      coastWatch.set(t, t);
+      for (const n of regionById(t)?.neighbors ?? []) if (!coastWatch.has(n)) coastWatch.set(n, t);
+    }
+    const afloat = await db
+      .select()
+      .from(armies)
+      .where(and(eq(armies.matchId, matchId), ne(armies.playerId, me.id), inArray(armies.status, ["outbound", "returning"])));
+    for (const a of afloat) {
+      if (!Object.entries(a.units).some(([id, n]) => n > 0 && unitById.get(id)?.naval)) continue;
+      const returning = a.status === "returning";
+      const path = returning ? [...a.path].reverse() : a.path;
+      if (path.length < 2) continue;
+      const start = returning ? a.arrivesAt.getTime() : a.departsAt.getTime();
+      const end = returning ? (a.returnsAt ?? a.arrivesAt).getTime() : a.arrivesAt.getTime();
+      const legs = path.length - 1;
+      const i = legIndex(path.length, start, end, now.getTime());
+      const from = path[i]!;
+      const to = path[i + 1]!;
+      if (!regionById(from)?.seaRoutes.includes(to)) continue;
+      const seenFrom = coastWatch.get(from) ?? coastWatch.get(to);
+      if (!seenFrom) continue;
+      const overall = end > start ? Math.min(1, Math.max(0, (now.getTime() - start) / (end - start))) : 1;
+      ships.push({ id: a.id, playerId: a.playerId, playerName: nameOf.get(a.playerId) ?? "Unknown", units: a.units, fromRegionId: from, toRegionId: to, progress: Math.min(1, Math.max(0, overall * legs - i)), seenFrom });
+    }
+  }
   const incoming: IncomingView[] = hostile
     .filter((a) => a.playerId !== me.id)
     .map((a) => ({
@@ -383,6 +416,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string, o
     jobs: jobViews,
     armies: armyViews,
     incoming,
+    ships,
     frontier,
     storms: stormRows.map((r) => r.regionId),
     thaws: thawRows.map((r) => ({ regionId: r.regionId, until: r.thawUntil!.toISOString() })),
@@ -391,7 +425,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string, o
     mercenaries: mercRows.map((o) => ({ id: o.id, company: o.company, unitId: o.unitId, qty: o.qty, iron: o.iron, expiresAt: o.expiresAt.toISOString() })),
     advisorWage,
     rehireAt,
-    battles: await liveBattles(db, matchId),
+    battles: await liveBattles(db, matchId, new Set([me.id, ...allies])),
     advisors: advisorRows.map((a) => ({
       kind: a.kind,
       hiredAt: a.hiredAt.toISOString(),
@@ -528,6 +562,7 @@ async function buildObserverState(db: Db, m: typeof matches.$inferSelect, matchI
     jobs: [],
     armies: armyViews,
     incoming,
+    ships: [],
     frontier: [],
     storms: stormRows.map((r) => r.regionId),
     thaws: thawRows.map((r) => ({ regionId: r.regionId, until: r.thawUntil!.toISOString() })),
@@ -536,7 +571,7 @@ async function buildObserverState(db: Db, m: typeof matches.$inferSelect, matchI
     mercenaries: [],
     advisors: [],
     advisorWage: {},
-    battles: await liveBattles(db, matchId),
+    battles: await liveBattles(db, matchId, null),
     lastStand: { eligible: false, used: false },
     objective: today ? { day: today.day + 1, label: OBJECTIVES[today.key] ?? today.key, yesterday: yday ? { label: OBJECTIVES[yday.key] ?? yday.key, playerId: yday.winnerPlayerId, value: yday.value ?? 0 } : null } : null,
     bounties: bountyRows.map((b) => ({ id: b.id, kind: b.kind as "region" | "player", regionId: b.regionId, playerId: b.playerId, amount: b.amount, reason: b.reason, expiresAt: b.expiresAt?.toISOString() ?? null })),

@@ -596,6 +596,43 @@ describe("api routes", () => {
     await db.update(matchRegions).set({ buildings: sql`${matchRegions.buildings} - 'watchtower'` }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
   });
 
+  it("a watchtower spots foreign ships passing along its coast: where they are on the lane and what is aboard, not where they are bound", async () => {
+    const base = `/api/matches/${gameId}`;
+    const ann = matchStateView.parse((await Ann.call("GET", `${base}/state`)).json());
+    const ben = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
+    const owned = new Set([...ann.owned, ...ben.owned].map((r) => r.regionId));
+    // A coastal region nobody holds, with a lane out of it, for Ann's lookout; Ben's galley sails that lane.
+    const tower = allRegions().find((r) => r.coastal && r.seaRoutes.length > 0 && !owned.has(r.id) && !r.seaRoutes.some((id) => owned.has(id)))!;
+    const far = tower.seaRoutes[0]!;
+    await db
+      .insert(matchRegions)
+      .values({ matchId: gameId, regionId: tower.id, assignment: { ...balance.start.assignment }, settledAt: new Date(), ownerPlayerId: ann.me.playerId, units: {}, buildings: { watchtower: 1 } })
+      .onConflictDoUpdate({ target: [matchRegions.matchId, matchRegions.regionId], set: { ownerPlayerId: ann.me.playerId, buildings: { watchtower: 1 } } });
+    const now = Date.parse(ann.match.now);
+    const [ship] = await db
+      .insert(armies)
+      .values({ matchId: gameId, playerId: ben.me.playerId, mission: "move", originRegionId: far, targetRegionId: tower.id, units: { galley: 1, warrior: 4 }, cargo: {}, path: [far, tower.id], status: "outbound", departsAt: new Date(now - 30 * 60_000), arrivesAt: new Date(now + 30 * 60_000) })
+      .returning({ id: armies.id });
+    try {
+      const seen = matchStateView.parse((await Ann.call("GET", `${base}/state`)).json()).ships.find((x) => x.id === ship!.id);
+      expect(seen, "Ann's tower sees the galley").toBeDefined();
+      expect(seen!.playerName).toBe(ben.me.name);
+      expect(seen!.units.galley).toBe(1);
+      expect(seen!.fromRegionId).toBe(far);
+      expect(seen!.toRegionId).toBe(tower.id);
+      expect(seen!.seenFrom).toBe(tower.id);
+      expect(seen!.progress).toBeGreaterThan(0.3);
+      expect(seen!.progress).toBeLessThan(0.7);
+      // The sailor sees no sighting of his own ship; without the tower neither does Ann.
+      expect(matchStateView.parse((await Ben.call("GET", `${base}/state`)).json()).ships.some((x) => x.id === ship!.id)).toBe(false);
+      await db.update(matchRegions).set({ buildings: {} }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, tower.id)));
+      expect(matchStateView.parse((await Ann.call("GET", `${base}/state`)).json()).ships.some((x) => x.id === ship!.id)).toBe(false);
+    } finally {
+      await db.delete(armies).where(eq(armies.id, ship!.id));
+      await db.update(matchRegions).set({ ownerPlayerId: null, buildings: {} }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, tower.id)));
+    }
+  });
+
   it("an admin looks into any match from outside and sees every region, army and march; others are refused", async () => {
     const base = `/api/matches/${gameId}`;
     expect((await Out.call("GET", `${base}/state`)).statusCode).toBe(404);
@@ -1641,7 +1678,7 @@ describe("api routes", () => {
     }
   });
 
-  it("a battle plays out: decided on arrival, then a unit or two a round under a crossed-swords icon everyone can watch, and nothing changes hands until the last round", async () => {
+  it("a battle plays out: decided on arrival, then a unit or two a round under a crossed-swords icon its sides and their allies can watch, and nothing changes hands until the last round", async () => {
     const base = `/api/matches/${gameId}`;
     const benState = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
     const cap = benState.me.capitalRegionId!;
@@ -1694,8 +1731,10 @@ describe("api routes", () => {
       expect(d0.defender.start.warrior).toBe(3);
       expect(d0.defender.start.militia).toBe(1);
       expect(d0.result).toBeNull();
-      // Everyone in the match may watch, and a stranger may not.
-      expect((await Ann.call("GET", `${base}/battles/${live.id}`)).statusCode).toBe(200);
+      // Only the two sides and their allies may watch: Ann is in the match but in neither, a stranger is not even that.
+      expect((await Ann.call("GET", `${base}/battles/${live.id}`)).statusCode).toBe(403);
+      expect((await Ann.call("GET", `${base}/battles`)).json()).toEqual([]);
+      expect(matchStateView.parse((await Ann.call("GET", `${base}/state`)).json()).battles.some((b) => b.id === live.id)).toBe(false);
       expect((await Out.call("GET", `${base}/battles/${live.id}`)).statusCode).toBe(403);
       // The rounds: a unit or two fall each time, the region itself untouched until the end.
       const [before] = await db.select({ units: matchRegions.units }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, T)));
