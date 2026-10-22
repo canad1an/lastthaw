@@ -101,7 +101,7 @@ export async function dispatchRoute(db: Db, m: MatchRow, p: PlayerRow, route: Tr
   if (route.forJobId) return dispatchSupply(db, m, p, route, origin, owed ?? {}, now);
   const sea = seaOnly(route.fromRegionId, route.toRegionId);
   const kind = sea ? shipFor(origin.units, route.fromRegionId, route.toRegionId) : bestHauler(origin.units, regionById(route.fromRegionId)?.seaRoutes.includes(route.toRegionId) ?? false);
-  if (!kind) return sea ? fetchShips(db, m, p, route.fromRegionId, route.toRegionId, route.caravans, now) : fetchCaravans(db, m, p, route.fromRegionId, route.caravans, now);
+  if (!kind) return sea ? fetchShips(db, m, p, route.fromRegionId, route.toRegionId, { ships: route.caravans }, now) : fetchCaravans(db, m, p, route.fromRegionId, route.caravans, now);
   const home = origin.units[kind] ?? 0;
   const ctx = await contextFor(db, m, p);
   const perCaravan = haulerCarry(kind, ctx.techs);
@@ -195,10 +195,7 @@ async function dispatchSupply(db: Db, m: MatchRow, p: PlayerRow, route: TradeRou
   const groupTotal = [route, ...siblings].reduce((a, r) => a + Object.values(r.held).reduce((x, y) => x + y, 0), 0);
   const sea = seaOnly(route.fromRegionId, route.toRegionId);
   const kind = sea ? shipFor(origin.units, route.fromRegionId, route.toRegionId) : bestHauler(origin.units, false);
-  if (!kind && sea) {
-    const per = haulerCarry("cog", ctx.techs);
-    return fetchShips(db, m, p, route.fromRegionId, route.toRegionId, Math.max(1, Math.min(balance.trade.maxSupplyCaravans, Math.ceil(groupTotal / per))), now);
-  }
+  if (!kind && sea) return fetchShips(db, m, p, route.fromRegionId, route.toRegionId, { goods: groupTotal }, now);
   if (!kind) {
     // A sibling route with haulers at home, or with haulers on the way, sends the convoy that calls here: no need to pull more.
     if (siblings.length) {
@@ -305,9 +302,14 @@ export function shipFor(units: Record<string, number>, fromRegionId: string, toR
  * routes claim) in any region joined to the port by a lane they can sail come over empty, nearest first, so a cog
  * built anywhere on the coast serves every crossing. Ships two lanes away stay where they are.
  */
-async function fetchShips(db: Db, m: MatchRow, p: PlayerRow, portRegionId: string, toRegionId: string, wanted: number, now: Date): Promise<string> {
+async function fetchShips(db: Db, m: MatchRow, p: PlayerRow, portRegionId: string, toRegionId: string, want: { ships?: number; goods?: number }, now: Date): Promise<string> {
   const naval = HAULER_IDS.filter((id) => unitById.get(id)?.naval);
   const shipsIn = (units: Record<string, number>) => naval.reduce((a, id) => a + (units[id] ?? 0), 0);
+  const ctx = await contextFor(db, m, p);
+  // How many ships to call: a fixed count for a route, or enough of whichever kind can come to carry the goods waiting
+  // (cogs before canoes), never more than a materials convoy may be.
+  const wantedOf = (kind: string) => want.ships ?? Math.max(1, Math.min(balance.trade.maxSupplyCaravans, Math.ceil((want.goods ?? 0) / haulerCarry(kind, ctx.techs))));
+  const wanted = wantedOf("cog");
   const coming = await db
     .select({ id: armies.id, units: armies.units, origin: armies.originRegionId })
     .from(armies)
@@ -339,7 +341,6 @@ async function fetchShips(db: Db, m: MatchRow, p: PlayerRow, portRegionId: strin
       ? `no ships at the port; ${inFlight} sailing in from ${regionNameOf(firstComing.origin)}`
       : `no ships at ${regionNameOf(portRegionId)} and none spare on a lane to it: build a Cog${km <= (laneLimitKm({ canoe: 1 }) ?? 0) ? " or a Canoe" : ""} on this coast`;
   }
-  const ctx = await contextFor(db, m, p);
   const sent: string[] = [];
   let soonest = Infinity;
   for (const source of candidates) {
@@ -351,6 +352,8 @@ async function fetchShips(db: Db, m: MatchRow, p: PlayerRow, portRegionId: strin
       const limit = laneLimitKm({ [id]: 1 });
       // A ship must manage both the hop here and the crossing it is wanted for.
       if (limit !== null && (hop > limit || km > limit)) continue;
+      // Smaller ships are called in greater number: the goods, not the hull count, set the need.
+      if (!want.ships) left = Math.max(left, Math.min(spareOf(source), wantedOf(id) - inFlight - (wanted - need)));
       const take = Math.min(left, source.units[id] ?? 0);
       if (take > 0) going[id] = take;
       left -= take;

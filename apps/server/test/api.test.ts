@@ -886,6 +886,56 @@ describe("api routes", () => {
     }
   });
 
+  it("canoes sail a short lane when no cog is to be had, and never a long one", async () => {
+    const base = `/api/matches/${gameId}`;
+    const benState = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
+    const benPid = benState.me.playerId;
+    const atMatchNow = new Date(benState.match.now);
+    const taken = new Set((await db.select({ regionId: matchRegions.regionId }).from(matchRegions).where(eq(matchRegions.matchId, gameId))).map((r) => r.regionId));
+    const limit = balance.travel.canoeMaxLaneKm;
+    // An island with a free port across a short lane, and another with a free port only across a long one.
+    const islands = allRegions().filter((r) => r.neighbors.length === 0 && !taken.has(r.id));
+    const shortPick = islands.map((isle) => ({ isle, port: isle.seaRoutes.find((id) => !taken.has(id) && distanceKm(isle.id, id) <= limit) })).find((x) => x.port);
+    const longPick = islands.filter((i) => i !== shortPick?.isle).map((isle) => ({ isle, port: isle.seaRoutes.find((id) => !taken.has(id) && distanceKm(isle.id, id) > limit && !isle.seaRoutes.some((o) => !taken.has(o) && distanceKm(isle.id, o) <= limit)) })).find((x) => x.port);
+    expect(shortPick, "an island on a short lane").toBeTruthy();
+    expect(longPick, "an island on long lanes only").toBeTruthy();
+    const claim = async (regionId: string, set: Partial<typeof matchRegions.$inferInsert>) => {
+      await db
+        .insert(matchRegions)
+        .values({ matchId: gameId, regionId, assignment: { ...balance.start.assignment }, settledAt: atMatchNow, ownerPlayerId: benPid, popWorkers: 5, ...set })
+        .onConflictDoUpdate({ target: [matchRegions.matchId, matchRegions.regionId], set: { ownerPlayerId: benPid, popWorkers: 5, settledAt: atMatchNow, ...set } });
+    };
+    const redis = createRedis();
+    const pub = new Publisher(redis);
+    try {
+      // Short lane, canoes only: they sail, as many as the goods need.
+      await claim(shortPick!.port!, { food: 500, wood: 2000, stone: 1500, units: { canoe: 6 } });
+      await claim(shortPick!.isle.id, { food: 50, wood: 0, stone: 0, units: {} });
+      const built = await Ben.call("POST", `${base}/regions/${shortPick!.isle.id}/build`, { buildingId: "lumber_camp" });
+      expect(built.statusCode, built.body).toBe(200);
+      await runTradeRoutes(db, pub, logger);
+      const sailing = await db.select().from(armies).where(and(eq(armies.matchId, gameId), eq(armies.playerId, benPid), eq(armies.mission, "transport"), eq(armies.targetRegionId, shortPick!.isle.id), eq(armies.status, "outbound")));
+      expect(sailing.length, JSON.stringify(await db.select({ r: tradeRoutes.lastResult }).from(tradeRoutes).where(eq(tradeRoutes.toRegionId, shortPick!.isle.id)))).toBe(1);
+      expect(sailing[0]!.units.canoe).toBeGreaterThanOrEqual(1);
+      expect(sailing[0]!.units.cog ?? 0).toBe(0);
+      // Enough hulls for what is aboard: canoes carry little, so the goods set the count.
+      const aboard = Object.values(sailing[0]!.cargo).reduce((x, y) => x + y, 0);
+      expect(sailing[0]!.units.canoe! * unitById.get("canoe")!.carry).toBeGreaterThanOrEqual(aboard);
+      // Long lane, canoes only: nothing sails, and the route says to build a cog.
+      await claim(longPick!.port!, { food: 500, wood: 2000, stone: 1500, units: { canoe: 6 } });
+      await claim(longPick!.isle.id, { food: 50, wood: 0, stone: 0, units: {} });
+      const far = await Ben.call("POST", `${base}/regions/${longPick!.isle.id}/build`, { buildingId: "lumber_camp" });
+      expect(far.statusCode, far.body).toBe(200);
+      await runTradeRoutes(db, pub, logger);
+      const noSail = await db.select().from(armies).where(and(eq(armies.matchId, gameId), eq(armies.playerId, benPid), eq(armies.mission, "transport"), eq(armies.targetRegionId, longPick!.isle.id), eq(armies.status, "outbound")));
+      expect(noSail.length).toBe(0);
+      const [far1] = await db.select({ r: tradeRoutes.lastResult }).from(tradeRoutes).where(and(eq(tradeRoutes.toRegionId, longPick!.isle.id), eq(tradeRoutes.fromRegionId, longPick!.port!)));
+      expect(far1?.r ?? "").toMatch(/Cog/);
+    } finally {
+      await redis.quit().catch(() => {});
+    }
+  });
+
   it("a force marching on land that becomes yours before it arrives stays there: soldiers garrison it and settlers join the occupiers", async () => {
     const base = `/api/matches/${gameId}`;
     // Ben attacks a region of Ann's; the pact from the diplomacy test would forbid it, so it is cleared.
