@@ -17,8 +17,11 @@ export interface MapScope {
 }
 
 export const mapScope = new AsyncLocalStorage<MapScope>();
-// Every map is in memory before the first request or worker pass.
-for (const id of MAP_IDS) await loadMap(id);
+
+/** Puts every map in memory. Each entry point (API, worker, AI) awaits this before its first request or pass; a module-level await here would deadlock the bundle's lazy module init. */
+export async function loadAllMaps(): Promise<void> {
+  for (const id of MAP_IDS) await loadMap(id);
+}
 setMapResolver(() => mapScope.getStore()?.map ?? DEFAULT_MAP);
 
 /** The map a match is played on, from its settings. */

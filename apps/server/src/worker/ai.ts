@@ -5,6 +5,10 @@ import { createRedis } from "../redis.js";
 import { Publisher } from "../realtime/publish.js";
 import { runAiDecisions } from "../sim/tick.js";
 import { runAdvisors } from "../sim/advisors.js";
+import { loadAllMaps } from "../map/scope.js";
+
+// Every map must be in memory before the first pass.
+await loadAllMaps();
 
 /**
  * AI process. Runs AI tribes' decisions on its own cadence so a slow or busy

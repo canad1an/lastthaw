@@ -15,6 +15,10 @@ import { detectAutomation, detectMultiAccounts, pruneActions } from "../fairplay
 import { cleanupSessions, purgeUnverified } from "../auth/session.js";
 import { balance } from "@lastthaw/shared";
 import { cancelOrphanedJobs } from "../sim/endgame.js";
+import { loadAllMaps } from "../map/scope.js";
+
+// Every map must be in memory before the first pass.
+await loadAllMaps();
 
 /**
  * Simulation worker. One process serves every concurrent match.

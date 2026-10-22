@@ -1,6 +1,6 @@
 import Fastify from "fastify";
 import { DEFAULT_MAP } from "@lastthaw/shared";
-import { enterMap, mapOfMatch, mapScope } from "../map/scope.js";
+import { enterMap, loadAllMaps, mapOfMatch, mapScope } from "../map/scope.js";
 import cors from "@fastify/cors";
 import cookie from "@fastify/cookie";
 import websocket from "@fastify/websocket";
@@ -54,6 +54,7 @@ export interface AppDeps {
 }
 
 export async function buildApp(deps: AppDeps = {}) {
+  await loadAllMaps();
   const cfg = config();
   const db = deps.db ?? createDb();
   const redis = createRedis();
