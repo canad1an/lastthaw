@@ -553,6 +553,10 @@ function BuildTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
     mutationFn: (buildingId: string) => api.build(matchId, owned.regionId, buildingId),
     onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matchState(matchId) }),
   });
+  const pull = useMutation({
+    mutationFn: (buildingId: string) => api.demolish(matchId, owned.regionId, buildingId),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matchState(matchId) }),
+  });
   // Buildings draw on the capital's treasury too, so affordability counts both.
   // Buildings draw on every region: this one first, then the capital, then the rest.
   const here = stockOf(live.e);
@@ -610,6 +614,18 @@ function BuildTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
               <Button variant="ghost" disabled={!ok || m.isPending} onClick={() => m.mutate(b.id)}>
                 {maxed ? "Max" : blocked ? "—" : `Lvl ${level}`}
               </Button>
+              {(owned.buildings[b.id] ?? 0) >= 1 && !b.wonder && (
+                <button
+                  type="button"
+                  className="rounded border border-rose-500/40 px-2 py-1 text-xs text-rose-300 hover:bg-rose-500/10 disabled:opacity-40"
+                  title={b.maxLevel === 1 ? `Remove the ${b.name}. Nothing is refunded.` : `Pull ${b.name} down one level. Nothing is refunded.`}
+                  disabled={pull.isPending || queued > 0}
+                  onClick={() => window.confirm(`${b.maxLevel === 1 ? `Remove the ${b.name}` : `Pull ${b.name} down to level ${(owned.buildings[b.id] ?? 1) - 1}`} in ${regionById(owned.regionId)?.name}? Nothing is refunded.`) && pull.mutate(b.id)}
+                  data-demolish={b.id}
+                >
+                  {b.maxLevel === 1 ? "Remove" : "−1"}
+                </button>
+              )}
             </li>
           );
         })}
@@ -618,7 +634,7 @@ function BuildTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
   return (
     <div className="space-y-2">
       {queueFull && <p className="text-xs text-amber-300">Queue full ({balance.queue.slotsPerRegion} slots).</p>}
-      <ErrorText>{m.error?.message}</ErrorText>
+      <ErrorText>{m.error?.message ?? pull.error?.message}</ErrorText>
       {BUILDING_CATEGORIES.map((c) => {
         const bs = list.filter((b) => b.category === c.id);
         if (!bs.length) return null;

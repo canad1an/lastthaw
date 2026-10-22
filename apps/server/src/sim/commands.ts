@@ -192,6 +192,35 @@ export async function supplyWaitingJob(tx: Tx, m: MatchRow, p: PlayerRow, techs:
   }
 }
 
+/**
+ * Pull a building down one level (a building built once is removed outright). Nothing is refunded. Refused while a level
+ * of it is queued here, while another building here needs it to stand, and for wonders.
+ */
+export async function demolishBuilding(ctx: CommandContext, regionId: string, buildingId: string): Promise<{ level: number }> {
+  const { db, m, p } = ctx;
+  const def = buildingById.get(buildingId);
+  if (!def) throw httpError(400, "unknown building");
+  if (def.wonder) throw httpError(400, "a wonder is not pulled down");
+  return db.transaction(async (tx) => {
+    await requireRunning(tx, m.id);
+    const now = matchNow(m);
+    const row = await settleAndLockRegion(tx, m.id, regionId, now, m.speed, resourceMultOf(m));
+    if (row.ownerPlayerId !== p.id) throw httpError(403, "not your region");
+    if (row.frozenAt) throw httpError(409, "this region is frozen");
+    const have = row.buildings[buildingId] ?? 0;
+    if (have < 1) throw httpError(400, `there is no ${def.name} here`);
+    const pending = await pendingRegionJobs(tx, m.id, regionId);
+    if (pending.some((j) => j.kind === "build" && j.refId === buildingId)) throw httpError(409, `a level of ${def.name} is queued here; cancel it first`);
+    const needsIt = Object.entries(row.buildings).find(([id, lvl]) => lvl >= 1 && buildingById.get(id)?.requiresBuilding === buildingId);
+    if (needsIt && have <= 1) throw httpError(409, `${buildingById.get(needsIt[0])?.name ?? needsIt[0]} here needs ${def.name} to stand; pull that down first`);
+    const buildings = { ...row.buildings };
+    if (have <= 1) delete buildings[buildingId];
+    else buildings[buildingId] = have - 1;
+    await tx.update(matchRegions).set({ buildings }).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, regionId)));
+    return { level: buildings[buildingId] ?? 0 };
+  });
+}
+
 export async function queueTrain(ctx: CommandContext, regionId: string, unitId: string, qty: number, opts: { allowWait?: boolean; maxOwed?: number } = {}) {
   const { db, m, p, techs } = ctx;
   const def = unitById.get(unitId);

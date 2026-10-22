@@ -435,6 +435,23 @@ describe("api routes", () => {
         await db.delete(playerTechs).where(and(eq(playerTechs.playerId, row!.id), inArray(playerTechs.techId, ["sailing", "the_wheel", "wagon_building"])));
         await db.update(players).set({ age: row!.age }).where(eq(players.id, row!.id));
       }
+      // Pulling buildings down: one level at a time, never under a building that needs it, never while a level is queued.
+      {
+        const [row0] = await db.select({ buildings: matchRegions.buildings }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
+        await db.update(matchRegions).set({ buildings: { ...row0!.buildings, roads: 1, waystation: 2, watchtower: 1 } }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
+        expect((await Ann.call("POST", `${base}/regions/${cap}/demolish`, { buildingId: "roads" })).statusCode).toBe(409);
+        expect((await Ann.call("POST", `${base}/regions/${cap}/demolish`, { buildingId: "castle_in_the_sky" })).statusCode).toBe(400);
+        const down = await Ann.call("POST", `${base}/regions/${cap}/demolish`, { buildingId: "waystation" });
+        expect(down.statusCode, down.body).toBe(200);
+        expect((down.json() as { level: number }).level).toBe(1);
+        const gone = await Ann.call("POST", `${base}/regions/${cap}/demolish`, { buildingId: "watchtower" });
+        expect(gone.statusCode, gone.body).toBe(200);
+        const [row1] = await db.select({ buildings: matchRegions.buildings }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
+        expect(row1!.buildings.watchtower ?? 0).toBe(0);
+        expect(row1!.buildings.waystation).toBe(1);
+        expect((await Ben.call("POST", `${base}/regions/${cap}/demolish`, { buildingId: "waystation" })).statusCode).toBeGreaterThanOrEqual(403);
+        await db.update(matchRegions).set({ buildings: row0!.buildings }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
+      }
       // Mounted units are paid for from the stores: horses hauled in serve as well as wild herds, and none in store means no chariot.
       const [annRow] = await db.select({ age: players.age, id: players.id }).from(players).where(and(eq(players.matchId, gameId), eq(players.userId, await idOf(ann.email))));
       const [capRow] = await db.select({ special: matchRegions.special, food: matchRegions.food, wood: matchRegions.wood, popWorkers: matchRegions.popWorkers }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));

@@ -9,7 +9,7 @@ import type { Publisher } from "../realtime/publish.js";
 import { matchNow } from "../sim/clock.js";
 import { recordSpend } from "../sim/ledger.js";
 import { applyCost, settleAndLockRegion, resourceMultOf, type Tx } from "../sim/regions.js";
-import { httpError, pendingRegionJobs, queueBuild, queueResearch, queueTrain, returnHeld, type CommandContext, type PlayerRow } from "../sim/commands.js";
+import { httpError, pendingRegionJobs, queueBuild, queueResearch, queueTrain, returnHeld, type CommandContext, type PlayerRow, demolishBuilding } from "../sim/commands.js";
 import type { MatchRow } from "../worker/jobs.js";
 import { advisors } from "../db/schema.js";
 import { runPass, startedWork } from "../sim/advisors.js";
@@ -148,6 +148,16 @@ export async function jobRoutes(app: FastifyInstance, opts: { db: Db; publisher:
     const job = await queueBuild(ctx, regionId, buildingId);
     await publisher.toPlayer(matchId, ctx.p.id, "region.updated", { regionId });
     return { ok: true, jobId: job.id, endsAt: job.endsAt.toISOString() };
+  });
+
+  app.post("/api/matches/:id/regions/:regionId/demolish", async (req) => {
+    const user = requireUser(req);
+    const { id: matchId, regionId } = regionParams.parse(req.params);
+    const { buildingId } = buildBody.parse(req.body);
+    const ctx = await loadContext(matchId, user.id);
+    const r = await demolishBuilding(ctx, regionId, buildingId);
+    await publisher.toPlayer(matchId, ctx.p.id, "region.updated", { regionId });
+    return { ok: true, level: r.level };
   });
 
   app.post("/api/matches/:id/regions/:regionId/train", async (req) => {

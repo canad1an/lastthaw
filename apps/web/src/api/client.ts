@@ -102,6 +102,7 @@ export const api = {
   matchState: (id: string) => request("GET", `/api/matches/${id}/state`, undefined, matchStateView),
   assign: (id: string, regionId: string, shares: { food: number; wood: number; stone: number }) =>
     request<{ ok: true }>("POST", `/api/matches/${id}/regions/${regionId}/assign`, shares),
+  demolish: (id: string, regionId: string, buildingId: string) => request<{ ok: true; level: number }>("POST", `/api/matches/${id}/regions/${regionId}/demolish`, { buildingId }),
   build: (id: string, regionId: string, buildingId: string) => request<{ ok: true; jobId: string; endsAt: string }>("POST", `/api/matches/${id}/regions/${regionId}/build`, { buildingId }),
   train: (id: string, regionId: string, unitId: string, qty: number) =>
     request<{ ok: true; jobId: string; endsAt: string }>("POST", `/api/matches/${id}/regions/${regionId}/train`, { unitId, qty }),
