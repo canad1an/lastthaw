@@ -274,7 +274,7 @@ describe("voyages", () => {
       }
       if (found) break;
     }
-    expect(found).toBeTruthy();
+    expect(found, "two coasts joined by a chain of short lanes but no single one").toBeTruthy();
     const voyage = seaPath(found!.a, found!.b, limit)!;
     expect(voyage.usesSea).toBe(true);
     for (let i = 1; i < voyage.path.length; i++) expect(distanceKm(voyage.path[i - 1]!, voyage.path[i]!)).toBeLessThanOrEqual(limit);
@@ -285,5 +285,23 @@ describe("voyages", () => {
     // A chain of lanes is one voyage for the goods: the hand-over is at the near harbour, the hop its far end.
     const hop = nextHopTo(found!.a, found!.b);
     expect(hop).not.toBeNull();
+    // A region with two coasts the sea does not join along its shore is never sailed through from one to the other: every
+    // voyage keeps to one stretch of coast through each region it passes, so the Red Sea to the Mediterranean goes round
+    // Africa and in by Gibraltar, not over Suez.
+    const check = (p: string[]) => {
+      for (let i = 1; i < p.length - 1; i++) {
+        const r = allRegions().find((x) => x.id === p[i])!;
+        const inCoast = r.laneCoasts?.[p[i - 1]!];
+        const outCoast = r.laneCoasts?.[p[i + 1]!];
+        if (inCoast !== undefined && outCoast !== undefined) expect(inCoast, `${r.name} crossed from one coast to another`).toBe(outCoast);
+      }
+    };
+    const suez = seaPath("sa-al-madinah", "sy-syria", Infinity);
+    expect(suez).not.toBeNull();
+    check(suez!.path);
+    expect(suez!.path.length).toBeGreaterThan(8);
+    const long = seaPath("mz-niassa", "ga-gabon", Infinity);
+    expect(long).not.toBeNull();
+    check(long!.path);
   });
 });

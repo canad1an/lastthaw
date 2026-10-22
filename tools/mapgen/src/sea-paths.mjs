@@ -5,8 +5,12 @@
  * water path between the two regions' shores is found on that grid; a lane whose water path is far longer than the
  * straight line (a "lane" that really marches across a continent) or that has no water path at all is dropped. The seas
  * are then joined: from each separate piece, the nearest shore of another piece by water becomes a new lane, until the
- * sea is one. Every surviving lane's water path, simplified, is written to apps/web/src/map/lanePaths.json so ships are
- * drawn sailing along the water, shore to shore. world.json's seaRoutes are updated to the surviving set.
+ * sea is one. Before that, every coast gets lanes to its NEAR_COUNT nearest other coasts by water within NEAR_WATER_KM,
+ * found by sailing outward from its shore on the grid, so lanes follow straits and coastlines rather than the ruler. Every surviving lane's water path, simplified, is written to apps/web/src/map/lanePaths.json so ships are
+ * drawn sailing along the water, shore to shore. world.json's seaRoutes are updated to the surviving set, and each
+ * region records which stretch of its own coast every lane of its leaves from, so a voyage never passes through a region
+ * from one coast to another that the sea does not join along its shore: Egypt touches the Red Sea and the Mediterranean,
+ * but a ship at its Red Sea shore does not step across to the Mediterranean one.
  * Deterministic. Run: node tools/mapgen/src/sea-paths.mjs [--dry]
  */
 import { readFileSync, writeFileSync } from "node:fs";
@@ -14,9 +18,24 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const DRY = process.argv.includes("--dry");
-const SCALE = 0.5; // grid cells per map unit: 1000 x 500 cells over the 2000 x 1000 map
+const SCALE = 2; // grid cells per map unit: 4000 x 2000 cells over the 2000 x 1000 map, about 10 km a cell at the equator
+/** Narrow straits the outlines pinch shut at this resolution, carved open as water: [lon, lat] to [lon, lat]. */
+const STRAITS = [
+  ["Gibraltar", [-5.9, 35.8], [-5.2, 36.2]],
+  ["Bosporus and Dardanelles", [26.1, 40.0], [29.3, 41.3]],
+  ["Kerch", [36.4, 44.9], [36.7, 45.5]],
+  ["Bab-el-Mandeb", [43.2, 12.5], [43.5, 12.9]],
+  ["Hormuz", [56.0, 26.2], [56.8, 26.9]],
+  ["Malacca", [100.2, 3.0], [103.9, 1.2]],
+  ["Oresund", [12.4, 55.5], [12.9, 56.2]],
+  ["Dover", [1.3, 50.9], [1.9, 51.1]],
+  ["Messina", [15.5, 37.9], [15.7, 38.3]],
+  ["Bering", [-171.5, 65.2], [-167.0, 66.3]],
+];
 const MAX_RATIO = 2.6; // a lane may be at most this many times longer by water than as the crow flies
-const KEEP_EVERY = 3; // simplification: keep every n-th point of a water path
+const KEEP_EVERY = 8; // simplification: keep every n-th point of a water path
+const NEAR_COUNT = 4; // lanes each coast gets to its nearest coasts by water...
+const NEAR_WATER_KM = 1500; // ...within this sailing distance
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const WORLD = path.join(ROOT, "packages", "shared", "src", "map", "world.json");
@@ -75,6 +94,22 @@ world.regions.forEach((r, idx) => {
     }
   }
 });
+// The straits: a line of water through each, three cells wide.
+const cellOf = (lon, lat) => [Math.round(((lon + 180) / 360) * W), Math.round(((90 - lat) / 180) * H)];
+for (const [, a, b] of STRAITS) {
+  const [x0, y0] = cellOf(a[0], a[1]);
+  const [x1, y1] = cellOf(b[0], b[1]);
+  const steps = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0), 1);
+  for (let i = 0; i <= steps; i++) {
+    const x = Math.round(x0 + ((x1 - x0) * i) / steps);
+    const y = Math.round(y0 + ((y1 - y0) * i) / steps);
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const yy = y + dy;
+      if (yy < 0 || yy >= H) continue;
+      owner[yy * W + ((x + dx + W) % W)] = 0;
+    }
+  }
+}
 const regionIndex = new Map(world.regions.map((r, i) => [r.id, i + 1]));
 // Shore cells of a region: its land cells with a sea cell beside them (8 neighbours, x wrapping at the map's edge).
 const shoreOf = new Map();
@@ -96,6 +131,49 @@ for (const r of world.regions) {
   const cells = [];
   for (let c = 0; c < owner.length; c++) if (owner[c] === id && nbr(c).some((n) => owner[n] === 0)) cells.push(c);
   shoreOf.set(r.id, cells);
+}
+// Coast segments: a region's shore cells grouped by the water in front of them. Two shore cells belong to the same
+// stretch when the sea joins them within the region's own bounds (plus a margin), so islets, keys and river mouths
+// do not split a coast, while two coasts with land between them (Egypt's Red Sea and Mediterranean shores, Panama's
+// two oceans) stay apart: the sea does not join them anywhere near.
+const MARGIN = 30; // cells, about 300 km
+const coastSeg = new Map(); // shore cell -> segment id (unique across regions)
+let segments = 0;
+{
+  const near = new Int32Array(W * H).fill(-1);
+  for (const [id, cells] of shoreOf) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const c of cells) { const x = c % W, y = (c - x) / W; x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+    // A region spanning the map's edge gets the whole width; nothing else does.
+    const wide = x1 - x0 > W / 2;
+    const bx0 = wide ? 0 : Math.max(0, x0 - MARGIN), bx1 = wide ? W - 1 : Math.min(W - 1, x1 + MARGIN);
+    const by0 = Math.max(0, y0 - MARGIN), by1 = Math.min(H - 1, y1 + MARGIN);
+    const inBox = (c) => { const x = c % W, y = (c - x) / W; return x >= bx0 && x <= bx1 && y >= by0 && y <= by1; };
+    const touched = [];
+    for (const c of cells) {
+      const start = nbr(c).find((n) => owner[n] === 0);
+      if (start === undefined || near[start] >= 0) continue;
+      const seg = segments++;
+      const q = [start];
+      near[start] = seg; touched.push(start);
+      while (q.length) {
+        const x = q.pop();
+        for (const n of nbr(x)) if (owner[n] === 0 && near[n] < 0 && inBox(n)) { near[n] = seg; touched.push(n); q.push(n); }
+      }
+    }
+    for (const c of cells) {
+      const n = nbr(c).find((m) => owner[m] === 0 && near[m] >= 0);
+      if (n !== undefined) coastSeg.set(c, near[n]);
+    }
+    for (const n of touched) near[n] = -1;
+    void id;
+  }
+}
+/** The coast segment of region `id` that a water path touches at its given end cell. */
+function coastAt(id, seaCell) {
+  const want = regionIndex.get(id);
+  for (const n of nbr(seaCell)) if (owner[n] === want && coastSeg.has(n)) return coastSeg.get(n);
+  return -1;
 }
 const rad = (x) => (x * Math.PI) / 180;
 const km = (a, b) => {
@@ -141,15 +219,58 @@ const toPoints = (cells) => {
 };
 const laneKey = (a, b) => [a, b].sort().join("|");
 
-// ---- Existing lanes: keep those with a sane water path.
+// ---- Nearest coasts by water, one sailing outward from each shore.
+const shoreOwner = new Int32Array(W * H).fill(-1); // sea cell -> index of a region whose shore it touches (first wins)
+for (const [id, cells] of shoreOf) {
+  const idx = regionIndex.get(id);
+  for (const c of cells) for (const n of nbr(c)) if (owner[n] === 0 && shoreOwner[n] < 0) shoreOwner[n] = idx;
+}
+function nearestByWater(fromId) {
+  const me = regionIndex.get(fromId);
+  const mine = byId.get(fromId);
+  dist.fill(-1);
+  const queue = new Int32Array(W * H);
+  let head = 0, tail = 0;
+  for (const c of shoreOf.get(fromId)) for (const n of nbr(c)) if (owner[n] === 0 && dist[n] < 0) { dist[n] = 0; prev[n] = -1; queue[tail++] = n; }
+  const found = [];
+  const seen = new Set();
+  while (head < tail && found.length < NEAR_COUNT) {
+    const c = queue[head++];
+    const o = shoreOwner[c];
+    if (o >= 0 && o !== me) {
+      const other = world.regions[o - 1].id;
+      if (!seen.has(other) && !mine.neighbors.includes(other) && byId.get(other).coastal) {
+        seen.add(other);
+        const cells = [];
+        for (let x = c; x >= 0; x = prev[x]) cells.push(x);
+        cells.reverse();
+        if (pathKm(cells) <= NEAR_WATER_KM) found.push({ other, cells });
+      }
+    }
+    for (const n of nbr(c)) if (owner[n] === 0 && dist[n] < 0) { dist[n] = dist[c] + 1; prev[n] = c; queue[tail++] = n; if (dist[n] * 8 > NEAR_WATER_KM) tail--; }
+  }
+  return found;
+}
+
 const coastal = world.regions.filter((r) => r.coastal && (shoreOf.get(r.id)?.length ?? 0) > 0).sort((a, b) => a.id.localeCompare(b.id));
 const landlocked = world.regions.filter((r) => r.coastal && !(shoreOf.get(r.id)?.length > 0)).map((r) => r.name);
 const adj = new Map(coastal.map((r) => [r.id, new Set(r.seaRoutes.filter((s) => shoreOf.get(s)?.length))]));
 const paths = {};
 const dropped = [];
 let kept = 0;
+let addedByWater = 0;
+for (const r of coastal) {
+  for (const { other, cells } of nearestByWater(r.id)) {
+    if (adj.get(r.id).has(other)) continue;
+    adj.get(r.id).add(other);
+    adj.get(other).add(r.id);
+    paths[laneKey(r.id, other)] = { from: r.id, points: toPoints(cells), coasts: { [r.id]: coastAt(r.id, cells[0]), [other]: coastAt(other, cells[cells.length - 1]) } };
+    addedByWater += 1;
+  }
+}
 for (const r of coastal) for (const s of [...adj.get(r.id)]) {
   if (r.id > s) continue;
+  if (paths[laneKey(r.id, s)]) { kept += 1; continue; }
   const cells = waterPath([r.id], [s]);
   const straight = km(r.id, s);
   if (!cells || pathKm(cells) > MAX_RATIO * straight) {
@@ -157,7 +278,7 @@ for (const r of coastal) for (const s of [...adj.get(r.id)]) {
     dropped.push(`${r.name} - ${byId.get(s).name}${cells ? ` (${Math.round(pathKm(cells))} km by water vs ${Math.round(straight)})` : " (no water path)"}`);
     continue;
   }
-  paths[laneKey(r.id, s)] = { from: r.id, points: toPoints(cells) };
+  paths[laneKey(r.id, s)] = { from: r.id, points: toPoints(cells), coasts: { [r.id]: coastAt(r.id, cells[0]), [s]: coastAt(s, cells[cells.length - 1]) } };
   kept += 1;
 }
 // ---- Join the seas: from each piece, the nearest shore of another piece by water.
@@ -190,17 +311,23 @@ while (n > 1 && guard++ < 50) {
   const endB = nbr(cells[cells.length - 1]).find((c) => owner[c] && others.includes(world.regions[owner[c] - 1].id));
   const a = world.regions[owner[endA] - 1].id, b = world.regions[owner[endB] - 1].id;
   adj.get(a).add(b); adj.get(b).add(a);
-  paths[laneKey(a, b)] = { from: a, points: toPoints(cells) };
+  paths[laneKey(a, b)] = { from: a, points: toPoints(cells), coasts: { [a]: coastAt(a, cells[0]), [b]: coastAt(b, cells[cells.length - 1]) } };
   bridges.push(`${byId.get(a).name} - ${byId.get(b).name} (${Math.round(pathKm(cells))} km by water)`);
   ({ comp, n } = pieces());
 }
 const after = [...adj.values()].reduce((s, v) => s + v.size, 0) / 2;
-console.log(`grid ${W}x${H}; lanes kept ${kept}, dropped ${dropped.length}, bridges ${bridges.length}, now ${after}; pieces left: ${n}`);
+console.log(`grid ${W}x${H}; lanes by water added ${addedByWater}, kept ${kept}, dropped ${dropped.length}, bridges ${bridges.length}, now ${after}; pieces left: ${n}`);
 if (landlocked.length) console.log(`coastal by data but with no shore on the grid (left alone): ${landlocked.join(", ")}`);
 console.log("dropped: " + dropped.join("; "));
 console.log("bridges: " + bridges.join("; "));
+console.log(`coast segments: ${segments} over ${shoreOf.size} coasts`);
 if (!DRY) {
-  for (const r of world.regions) if (adj.has(r.id)) r.seaRoutes = [...adj.get(r.id)].sort();
+  for (const r of world.regions) {
+    if (!adj.has(r.id)) continue;
+    r.seaRoutes = [...adj.get(r.id)].sort();
+    r.laneCoasts = Object.fromEntries(r.seaRoutes.map((s) => [s, paths[laneKey(r.id, s)].coasts[r.id]]));
+    delete r.laneBodies;
+  }
   writeFileSync(WORLD, JSON.stringify(world));
   writeFileSync(OUT, JSON.stringify(paths));
   console.log(`wrote ${Object.keys(paths).length} water paths`);

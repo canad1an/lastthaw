@@ -190,28 +190,41 @@ export function seaPath(from: string, to: string, maxLaneKm: number, harbors?: R
     const n = (harbors?.has(a) ? 1 : 0) + (harbors?.has(b) ? 1 : 0);
     return km * t.seaFactor * (n === 2 ? t.harborBothFactor : n === 1 ? t.harborOneFactor : 1);
   };
-  const dist = new Map<string, number>([[from, 0]]);
+  // A state is a region and the stretch of its coast the ship arrived at: a region with two coasts the sea does not join
+  // along its shore (Egypt, Panama) is entered on one and left from the same, never carried across. The origin may leave
+  // from any of its coasts.
+  const stateKey = (id: string, body: number) => `${id}#${body}`;
+  const dist = new Map<string, number>([[stateKey(from, -1), 0]]);
   const prev = new Map<string, string>();
   const done = new Set<string>();
+  let end: string | null = null;
   while (true) {
     let cur: string | null = null;
     let best = Infinity;
-    for (const [id, d] of dist) if (!done.has(id) && d < best) { best = d; cur = id; }
+    for (const [k, d] of dist) if (!done.has(k) && d < best) { best = d; cur = k; }
     if (cur === null) return null;
-    if (cur === to) break;
+    const hash = cur.lastIndexOf("#");
+    const id = cur.slice(0, hash);
+    const arrived = Number(cur.slice(hash + 1));
+    if (id === to) { end = cur; break; }
     done.add(cur);
-    const r = regionById(cur);
+    const r = regionById(id);
     if (!r) continue;
     for (const n of r.seaRoutes) {
-      const km = distanceKm(cur, n);
+      // Leaving on this lane is allowed only from the stretch of coast the ship arrived at; it arrives at the far
+      // region on whichever stretch that lane touches there.
+      const leaving = r.laneCoasts?.[n] ?? -1;
+      if (arrived !== -1 && leaving !== -1 && leaving !== arrived) continue;
+      const km = distanceKm(id, n);
       if (km > maxLaneKm) continue;
-      const d = best + laneCost(cur, n, km);
-      if (d < (dist.get(n) ?? Infinity)) { dist.set(n, d); prev.set(n, cur); }
+      const next = stateKey(n, regionById(n)?.laneCoasts?.[id] ?? -1);
+      const d = best + laneCost(id, n, km);
+      if (d < (dist.get(next) ?? Infinity)) { dist.set(next, d); prev.set(next, cur); }
     }
   }
-  const path: string[] = [to];
-  while (path[0] !== from) path.unshift(prev.get(path[0]!)!);
-  return { path, cost: dist.get(to)!, usesSea: true };
+  const path: string[] = [];
+  for (let k: string | undefined = end; k; k = prev.get(k)) path.unshift(k.slice(0, k.lastIndexOf("#")));
+  return { path, cost: dist.get(end)!, usesSea: true };
 }
 
 /**

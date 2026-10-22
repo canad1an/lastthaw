@@ -49,6 +49,8 @@ export interface MapRegion {
   neighbors: string[];
   /** Ids of regions reachable by a sea route. */
   seaRoutes: string[];
+  /** For each sea route, which stretch of this region's coast it leaves from; a ship passes through only between lanes on the same stretch. */
+  laneCoasts?: Record<string, number>;
   /** SVG path `d` string in the 2000 x 1000 viewBox. */
   path: string;
 }
