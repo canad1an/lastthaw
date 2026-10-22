@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNull, lte, sql } from "drizzle-orm";
 import type pino from "pino";
-import { balance, bestHauler, carryCapacity, distanceKm, findRoute, haulerCarry, haulerCount, HAULER_IDS, laneLimitKm, nextHopTo, regionById, supplyConvoyCap, unitById } from "@lastthaw/shared";
+import { balance, bestHauler, carryCapacity, distanceKm, findRoute, haulerCarry, haulerCount, HAULER_IDS, laneLimitKm, nextHopTo, regionById, seaPath, supplyConvoyCap, unitById } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { armies, matchRegions, matches, playerTechs, players, tradeRoutes } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
@@ -285,19 +285,20 @@ async function dispatchSupply(db: Db, m: MatchRow, p: PlayerRow, route: TradeRou
   return `sent ${n} ${kindName}${n === 1 ? "" : "s"} with ${desc}${calls.length ? `; collecting at ${calls.join(", ")} on the way` : ""}`;
 }
 
-/** True when the only way from one region to the other is the sea lane that joins them directly. */
+/** True when the only way from one region to the other is by sea: no land route, and a chain of lanes between them. */
 export function seaOnly(fromRegionId: string, toRegionId: string): boolean {
-  if (!regionById(fromRegionId)?.seaRoutes.includes(toRegionId)) return false;
-  return !findRoute(fromRegionId, toRegionId, false);
+  if (findRoute(fromRegionId, toRegionId, false)) return false;
+  return seaPath(fromRegionId, toRegionId, Infinity) !== null;
 }
 
-/** The best ship at home that can make this lane: cogs before canoes, and a canoe only on a short lane. */
+/**
+ * The best ship at home that can make this voyage: cogs before canoes, and a canoe only where a chain of short lanes
+ * along the coast reaches the far shore.
+ */
 export function shipFor(units: Record<string, number>, fromRegionId: string, toRegionId: string): string | null {
-  const km = distanceKm(fromRegionId, toRegionId);
   for (const id of HAULER_IDS) {
     if ((units[id] ?? 0) <= 0 || !unitById.get(id)?.naval) continue;
-    const limit = laneLimitKm({ [id]: 1 });
-    if (limit !== null && km > limit) continue;
+    if (!seaPath(fromRegionId, toRegionId, laneLimitKm({ [id]: 1 }) ?? Infinity)) continue;
     return id;
   }
   return null;
@@ -341,11 +342,11 @@ async function fetchShips(db: Db, m: MatchRow, p: PlayerRow, portRegionId: strin
   const candidates = mine
     .filter((r) => !r.frozenAt && spareOf(r) > 0)
     .sort((a, b) => (claimed.has(a.regionId) ? 1 : 0) - (claimed.has(b.regionId) ? 1 : 0) || distanceKm(a.regionId, portRegionId) - distanceKm(b.regionId, portRegionId));
-  const km = distanceKm(portRegionId, toRegionId);
+  const canoeCan = seaPath(portRegionId, toRegionId, laneLimitKm({ canoe: 1 }) ?? 0) !== null;
   if (candidates.length === 0) {
     return inFlight > 0 && firstComing
       ? `no ships at the port; ${inFlight} sailing in from ${regionNameOf(firstComing.origin)}`
-      : `no ships at ${regionNameOf(portRegionId)} and none spare on a lane to it: build a Cog${km <= (laneLimitKm({ canoe: 1 }) ?? 0) ? " or a Canoe" : ""} on this coast`;
+      : `no ships at ${regionNameOf(portRegionId)} and none spare on a lane to it: build a Cog${canoeCan ? " or a Canoe" : ""} on this coast`;
   }
   const sent: string[] = [];
   let soonest = Infinity;
@@ -353,11 +354,10 @@ async function fetchShips(db: Db, m: MatchRow, p: PlayerRow, portRegionId: strin
     if (need <= 0) break;
     const going: Record<string, number> = {};
     let left = Math.min(need, spareOf(source));
-    const hop = distanceKm(source.regionId, portRegionId);
     for (const id of naval) {
-      const limit = laneLimitKm({ [id]: 1 });
-      // A ship must manage both the hop here and the crossing it is wanted for.
-      if (limit !== null && (hop > limit || km > limit)) continue;
+      const limit = laneLimitKm({ [id]: 1 }) ?? Infinity;
+      // A ship must manage both the way here and the voyage it is wanted for.
+      if (!seaPath(source.regionId, portRegionId, limit) || !seaPath(portRegionId, toRegionId, limit)) continue;
       // Smaller ships are called in greater number: the goods, not the hull count, set the need.
       if (!want.ships) left = Math.max(left, Math.min(spareOf(source), wantedOf(id) - inFlight - (wanted - need)));
       const take = Math.min(left, source.units[id] ?? 0);

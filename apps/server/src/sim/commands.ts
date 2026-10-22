@@ -5,7 +5,7 @@
  * pays costs up front and returns what it created. Errors carry statusCode.
  */
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
-import { availableUnits, armySpeed, balance, buildingBlockedBy, carryCapacity, buildingById, buildingCost, buildingSeconds, canAfford, effectsOf, findRoute, missingFor, realSeconds, regionById, techById, techCost, techSeconds, trainSeconds, travelSeconds, unitById, unitCost, type Cost, type MissionKind, caravanCarry, techEffectsOf, distanceKm, haulerCarry, HAULER_IDS, splitNaval, seaLegsOf, laneKey, laneName, resolveCombat, laneLimitKm, isAirGroup, airRangeKm, airRoute, nextHopTo } from "@lastthaw/shared";
+import { availableUnits, armySpeed, balance, buildingBlockedBy, carryCapacity, buildingById, buildingCost, buildingSeconds, canAfford, effectsOf, findRoute, missingFor, realSeconds, regionById, techById, techCost, techSeconds, trainSeconds, travelSeconds, unitById, unitCost, type Cost, type MissionKind, caravanCarry, techEffectsOf, distanceKm, haulerCarry, HAULER_IDS, splitNaval, seaLegsOf, laneKey, laneName, resolveCombat, laneLimitKm, isAirGroup, airRangeKm, airRoute, nextHopTo, seaPath } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { armies, battles, jobs, matchRegions, matches, messages, players, tradeRoutes, regionSightings, playerTechs } from "../db/schema.js";
 import { matchDayAt, matchNow } from "./clock.js";
@@ -447,19 +447,22 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
   }
   const { roads, rails, harbors, stations } = await waySetsFor(db, m.id, p.id, await alliesOf(db, m.id, p.id));
   const origin0 = regionById(regionId);
-  // Ships sail one lane: coast to coast, directly. Patrols sit on that lane.
-  const directLane = !!origin0 && origin0.seaRoutes.includes(body.targetRegionId);
-  if ((hasShips || body.mission === "patrol") && !directLane) throw httpError(400, "ships sail directly from one coast to another across a sea lane; pick a region joined to this one by sea");
-  // Canoes keep to the short lanes.
+  // Ships sail lane to lane along the coasts. Canoes keep to short lanes, so they hug the coast where a cog would cross
+  // open sea; a chain of short lanes is a fair way for them, a long lane is not. Patrols sit on one lane.
   const laneLimit = laneLimitKm(units);
-  if (hasShips && laneLimit !== null && distanceKm(regionId, body.targetRegionId) > laneLimit) throw httpError(400, `canoes keep to short lanes: that crossing is ${Math.round(distanceKm(regionId, body.targetRegionId))} km, over the ${laneLimit} km a canoe can manage. A Galley or Cog from a Harbor crosses open sea.`);
+  const voyage = origin0 && (hasShips || body.mission === "patrol") ? seaPath(regionId, body.targetRegionId, laneLimit ?? Infinity, harbors) : null;
+  if ((hasShips || body.mission === "patrol") && !voyage) {
+    const direct = !!origin0 && origin0.seaRoutes.includes(body.targetRegionId);
+    throw httpError(400, laneLimit !== null && direct
+      ? `canoes keep to lanes under ${laneLimit} km: that crossing is ${Math.round(distanceKm(regionId, body.targetRegionId))} km and no chain of shorter lanes along the coast reaches that shore. A Galley or Cog from a Harbor crosses open sea.`
+      : "no sea way to that region: ships sail lane to lane between coasts; pick a coastal region joined by sea");
+  }
+  if (body.mission === "patrol" && voyage && voyage.path.length !== 2) throw httpError(400, "a patrol sits on one lane; pick a region joined to this one by sea");
   const flightKm = air ? distanceKm(regionId, body.targetRegionId) : 0;
   if (air && flightKm > airRangeKm(units)) throw httpError(400, `out of range: that is ${Math.round(flightKm)} km and these aircraft fly ${airRangeKm(units)} km`);
   const route = air
     ? airRoute(regionId, body.targetRegionId)
-    : hasShips || body.mission === "patrol"
-    ? { path: [regionId, body.targetRegionId], cost: distanceKm(regionId, body.targetRegionId) * balance.travel.seaFactor * (harbors.has(regionId) && harbors.has(body.targetRegionId) ? balance.travel.harborBothFactor : harbors.has(regionId) || harbors.has(body.targetRegionId) ? balance.travel.harborOneFactor : 1), usesSea: true }
-    : findRoute(regionId, body.targetRegionId, false, roads, rails, harbors);
+    : voyage ?? findRoute(regionId, body.targetRegionId, false, roads, rails, harbors);
   // Nothing walks on water: a convoy without ships stays on land. Goods cross by ship from a harbour; armies sail aboard ships.
   if (!route) throw httpError(400, regionById(regionId)?.seaRoutes.includes(body.targetRegionId) ? "no land route: that crossing takes ships (a canoe or a cog), sent with the units aboard" : "no land route to that region");
   const now = matchNow(m);

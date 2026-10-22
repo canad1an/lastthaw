@@ -244,7 +244,7 @@ describe("canoes", () => {
   });
 });
 
-import { airRangeKm, airRoute, isAirGroup } from "../src/rules/travel.js";
+import { airRangeKm, airRoute, isAirGroup, seaPath, nextHopTo } from "../src/rules/travel.js";
 import { distanceKm } from "../src/map/index.js";
 
 describe("aircraft", () => {
@@ -257,5 +257,33 @@ describe("aircraft", () => {
     expect(r.path).toEqual(["cd-katanga", "mm-sagaing"]);
     expect(r.cost).toBeCloseTo(distanceKm("cd-katanga", "mm-sagaing"));
     expect(r.usesSea).toBe(false);
+  });
+});
+
+describe("voyages", () => {
+  it("chain lanes along the coast, each within the ship's limit, and refuse what no chain reaches", () => {
+    const limit = balance.travel.canoeMaxLaneKm;
+    // Somewhere on the map two coasts have no short lane between them but a chain of short lanes along the coast.
+    let found: { a: string; b: string } | null = null;
+    for (const a of allRegions()) {
+      if (!a.coastal) continue;
+      for (const b of allRegions()) {
+        if (b === a || !b.coastal || a.seaRoutes.includes(b.id)) continue;
+        const p = seaPath(a.id, b.id, limit);
+        if (p && p.path.length >= 3) { found = { a: a.id, b: b.id }; break; }
+      }
+      if (found) break;
+    }
+    expect(found).toBeTruthy();
+    const voyage = seaPath(found!.a, found!.b, limit)!;
+    expect(voyage.usesSea).toBe(true);
+    for (let i = 1; i < voyage.path.length; i++) expect(distanceKm(voyage.path[i - 1]!, voyage.path[i]!)).toBeLessThanOrEqual(limit);
+    expect(seaPath(found!.a, found!.b, 10)).toBeNull();
+    // Japan sits beyond every canoe lane: a cog's voyage exists, a canoe's does not.
+    expect(seaPath("kr-south-korea", "jp-japan", Infinity)).not.toBeNull();
+    expect(seaPath("kr-south-korea", "jp-japan", limit)).toBeNull();
+    // A chain of lanes is one voyage for the goods: the hand-over is at the near harbour, the hop its far end.
+    const hop = nextHopTo(found!.a, found!.b);
+    expect(hop).not.toBeNull();
   });
 });

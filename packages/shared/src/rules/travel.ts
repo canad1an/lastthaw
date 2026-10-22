@@ -179,6 +179,42 @@ export function seaLegsOf(path: readonly string[]): string[] {
 }
 
 /**
+ * A voyage: the shortest way by sea alone from one coast to another, lane to lane along the coasts, using only lanes
+ * no longer than `maxLaneKm` (a canoe's limit; Infinity for a cog). Each lane costs its length at the sea factor,
+ * cheaper with a harbour at one or both of its ends. Null when no such chain of lanes exists.
+ */
+export function seaPath(from: string, to: string, maxLaneKm: number, harbors?: ReadonlySet<string>): Route | null {
+  if (from === to) return null;
+  const t = balance.travel;
+  const laneCost = (a: string, b: string, km: number) => {
+    const n = (harbors?.has(a) ? 1 : 0) + (harbors?.has(b) ? 1 : 0);
+    return km * t.seaFactor * (n === 2 ? t.harborBothFactor : n === 1 ? t.harborOneFactor : 1);
+  };
+  const dist = new Map<string, number>([[from, 0]]);
+  const prev = new Map<string, string>();
+  const done = new Set<string>();
+  while (true) {
+    let cur: string | null = null;
+    let best = Infinity;
+    for (const [id, d] of dist) if (!done.has(id) && d < best) { best = d; cur = id; }
+    if (cur === null) return null;
+    if (cur === to) break;
+    done.add(cur);
+    const r = regionById(cur);
+    if (!r) continue;
+    for (const n of r.seaRoutes) {
+      const km = distanceKm(cur, n);
+      if (km > maxLaneKm) continue;
+      const d = best + laneCost(cur, n, km);
+      if (d < (dist.get(n) ?? Infinity)) { dist.set(n, d); prev.set(n, cur); }
+    }
+  }
+  const path: string[] = [to];
+  while (path[0] !== from) path.unshift(prev.get(path[0]!)!);
+  return { path, cost: dist.get(to)!, usesSea: true };
+}
+
+/**
  * The next place goods bound for `to` go from `from`, with no hauler ever crossing water. By land all the way: the
  * destination itself. Otherwise the way may hold exactly one sea lane: a land hauler carries the goods to the near
  * harbour, a ship takes them across, a land hauler carries them on. The hop is the first of those that is not here;
@@ -190,15 +226,23 @@ export function nextHopTo(from: string, to: string): { hop: string; relay: boole
   const route = findRoute(from, to, true);
   if (!route) return null;
   const path = route.path;
-  const seaAt: number[] = [];
-  for (let i = 1; i < path.length; i++) {
-    const a = regionById(path[i - 1]!);
-    if (a && !a.neighbors.includes(path[i]!) && a.seaRoutes.includes(path[i]!)) seaAt.push(i - 1);
+  // Runs of sea edges: one run is one voyage, lane to lane along the coast if need be. Two runs means a landing and a
+  // second embarkation, which is refused.
+  const seaEdge = (i: number) => {
+    const a = regionById(path[i]!);
+    return !!a && !a.neighbors.includes(path[i + 1]!) && a.seaRoutes.includes(path[i + 1]!);
+  };
+  const runs: Array<{ start: number; end: number }> = [];
+  for (let i = 0; i < path.length - 1; i++) {
+    if (!seaEdge(i)) continue;
+    const last = runs[runs.length - 1];
+    if (last && last.end === i) last.end = i + 1;
+    else runs.push({ start: i, end: i + 1 });
   }
-  if (seaAt.length !== 1) return null;
-  const i = seaAt[0]!;
-  // At the near harbour already: the crossing is the hop. Else the near harbour is.
-  const hop = i === 0 ? path[1]! : path[i]!;
+  if (runs.length !== 1) return null;
+  const { start, end } = runs[0]!;
+  // At the near harbour already: the voyage's far end is the hop. Else the near harbour is.
+  const hop = start === 0 ? path[end]! : path[start]!;
   return { hop, relay: hop !== to };
 }
 

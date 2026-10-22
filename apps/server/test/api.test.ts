@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { and, asc, eq, inArray, sql, desc } from "drizzle-orm";
-import { allRegions, balance, effectsOf, fairAmount, matchStateView, regionById, RESOURCE_WORTH, scoutCatchChance, seededRng, storageCaps, findRoute, travelSeconds, unitById, techEffectsOf, distanceKm, seaLegsOf } from "@lastthaw/shared";
+import { allRegions, balance, effectsOf, fairAmount, matchStateView, regionById, RESOURCE_WORTH, scoutCatchChance, seededRng, storageCaps, findRoute, travelSeconds, unitById, techEffectsOf, distanceKm, seaLegsOf, seaPath } from "@lastthaw/shared";
 import { Publisher } from "../src/realtime/publish.js";
 import { runDueJobs } from "../src/worker/jobs.js";
 import { buildApp } from "../src/api/app.js";
@@ -869,6 +869,8 @@ describe("api routes", () => {
         .values({ matchId: gameId, regionId, assignment: { ...balance.start.assignment }, settledAt: atMatchNow, ownerPlayerId: benPid, popWorkers: 5, ...set })
         .onConflictDoUpdate({ target: [matchRegions.matchId, matchRegions.regionId], set: { ownerPlayerId: benPid, popWorkers: 5, settledAt: atMatchNow, ...set } });
     };
+    // The port is the only stocked source: ships can chain lanes, so any stocked coast of Ben's could otherwise serve.
+    await db.update(matchRegions).set({ food: 0, wood: 0, stone: 0 }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid)));
     await claim(port, { food: 500, wood: 2000, stone: 1500, units: { cog: 2 } });
     await claim(isle, { food: 50, wood: 0, stone: 0, units: {} });
     const redis = createRedis();
@@ -996,7 +998,7 @@ describe("api routes", () => {
     // An island with a free port across a short lane, and another with a free port only across a long one.
     const islands = allRegions().filter((r) => r.neighbors.length === 0 && !taken.has(r.id));
     const shortPick = islands.map((isle) => ({ isle, port: isle.seaRoutes.find((id) => !taken.has(id) && distanceKm(isle.id, id) <= limit) })).find((x) => x.port);
-    const longPick = islands.filter((i) => i !== shortPick?.isle).map((isle) => ({ isle, port: isle.seaRoutes.find((id) => !taken.has(id) && distanceKm(isle.id, id) > limit && !isle.seaRoutes.some((o) => !taken.has(o) && distanceKm(isle.id, o) <= limit)) })).find((x) => x.port);
+    const longPick = islands.filter((i) => i !== shortPick?.isle).map((isle) => ({ isle, port: isle.seaRoutes.find((id) => !taken.has(id) && distanceKm(isle.id, id) > limit && seaPath(id, isle.id, limit) === null) })).find((x) => x.port);
     expect(shortPick, "an island on a short lane").toBeTruthy();
     expect(longPick, "an island on long lanes only").toBeTruthy();
     const claim = async (regionId: string, set: Partial<typeof matchRegions.$inferInsert>) => {
