@@ -175,7 +175,7 @@ function LiveMetrics() {
             {d.matches.open.length === 0 && (
               <tr>
                 <td className="px-3 py-2 text-slate-500" colSpan={10}>
-                  No matches yet.
+                  No matches in play.
                 </td>
               </tr>
             )}

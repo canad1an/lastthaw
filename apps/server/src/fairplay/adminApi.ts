@@ -76,8 +76,8 @@ export async function adminRoutes(app: FastifyInstance, opts: { db: Db; publishe
       .limit(100);
     const onlineRows = onlineIds.length ? await db.select({ id: users.id, name: users.displayName }).from(users).where(inArray(users.id, onlineIds)) : [];
 
-    // The ten most recent matches by start time, newest first, whatever their state.
-    const matchRows = await db.select().from(matches).orderBy(desc(matches.startsAt)).limit(10);
+    // The ten most recently started matches that are in play, newest first: no lobbies waiting to start, no finished games.
+    const matchRows = await db.select().from(matches).where(eq(matches.status, "running")).orderBy(desc(matches.startsAt)).limit(10);
     const matchIds = matchRows.map((m) => m.id);
     const nameOfMatch = new Map(matchRows.map((m) => [m.id, m.name]));
     const playerCounts = matchIds.length
