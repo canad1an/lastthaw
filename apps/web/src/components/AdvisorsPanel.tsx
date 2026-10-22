@@ -227,14 +227,25 @@ export function AdvisorsPanel({ matchId, state, onSelect, clockOffsetMs }: { mat
                     </button>
                   </>
                 ) : (
-                  <Button onClick={() => setConfirm({ what: "hire", kind: meta.kind })} disabled={hire.isPending}>
-                    Hire
-                  </Button>
+                  (() => {
+                    // Fired within the cooldown: the button waits, and says for how long in game hours.
+                    const back = state.rehireAt?.[meta.kind];
+                    const left = back ? Date.parse(back) - (Date.now() + clockOffsetMs) : 0;
+                    const hours = left > 0 ? Math.max(1, Math.ceil((left / 3600_000) * state.match.speed)) : 0;
+                    return (
+                      <>
+                        <Button onClick={() => setConfirm({ what: "hire", kind: meta.kind })} disabled={hire.isPending || hours > 0} title={hours > 0 ? `Takes you back in ${hours} game hour${hours === 1 ? "" : "s"}` : undefined}>
+                          Hire
+                        </Button>
+                        {hours > 0 && <span className="text-xs text-amber-300">You fired {meta.name}; {meta.she ? "she" : "he"} takes you back in {hours} game hour{hours === 1 ? "" : "s"}.</span>}
+                      </>
+                    );
+                  })()
                 )}
                 <span className="text-xs text-slate-500">
                   {wageLine(wage)} an hour, {Math.round(balance.advisors.outputShare * 100)}% of the food, wood and stone you gather, payable in any mix of the three by value
                 </span>
-                <ErrorText>{hire.error?.message ?? fire.error?.message}</ErrorText>
+                <ErrorText>{(hire.variables === meta.kind ? hire.error?.message : undefined) ?? (fire.variables === meta.kind ? fire.error?.message : undefined)}</ErrorText>
               </div>
             </div>
           </Card>

@@ -1317,6 +1317,10 @@ describe("api routes", () => {
       const p4 = await pass();
       expect(p4.campaigns.find((c) => c.targetRegionId === N)?.stage).toBe("done");
       expect((await Ben.call("POST", `${base}/advisors/military/fire`, {})).statusCode).toBe(200);
+      // Fired: the state says when he takes Ben back, and a hire before then is refused.
+      const cooled = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
+      expect(Date.parse(cooled.rehireAt.military ?? "")).toBeGreaterThan(Date.parse(cooled.match.now));
+      expect((await Ben.call("POST", `${base}/advisors/military/hire`, {})).statusCode).toBe(409);
       // The scouting wrote into Ben's notes; the notes test that follows starts from none.
       await db.delete(regionNotes).where(and(eq(regionNotes.matchId, gameId), eq(regionNotes.playerId, benPid)));
     } finally {

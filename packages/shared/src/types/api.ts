@@ -629,6 +629,8 @@ export const matchStateView = z.object({
   mercenaries: z.array(mercenaryOfferView).default([]),
   /** Advisors I have hired. */
   advisors: z.array(advisorView).default([]),
+  /** Advisors fired within the cooldown: kind to the time they will take the player back. */
+  rehireAt: z.record(z.string(), z.string()).default({}),
   /** What any advisor costs this player per game hour right now: a share of the empire's live output. */
   advisorWage: z.record(z.string(), z.number()).default({}),
   /** Battles playing out anywhere in the match right now. */

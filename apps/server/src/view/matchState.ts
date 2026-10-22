@@ -304,6 +304,13 @@ export async function buildMatchState(db: Db, matchId: string, userId: string, o
     .where(and(eq(pacts.matchId, matchId), or(eq(pacts.aPlayerId, me.id), eq(pacts.bPlayerId, me.id)), inArray(pacts.status, ["proposed", "active", "ending", "refused"])))
     .orderBy(asc(pacts.createdAt));
   const advisorRows = await db.select().from(advisors).where(and(eq(advisors.matchId, matchId), eq(advisors.playerId, me.id), isNull(advisors.firedAt)));
+  // Advisors fired within the cooldown, and when each will take the player back.
+  const firedRows = await db.select({ kind: advisors.kind, firedAt: advisors.firedAt }).from(advisors).where(and(eq(advisors.matchId, matchId), eq(advisors.playerId, me.id), sql`${advisors.firedAt} is not null`));
+  const rehireAt: Record<string, string> = {};
+  for (const r of firedRows) {
+    const back = new Date(r.firedAt!.getTime() + (balance.advisors.rehireCooldownHours * 3600_000) / m.speed);
+    if (back > now && (!rehireAt[r.kind] || Date.parse(rehireAt[r.kind]!) < back.getTime())) rehireAt[r.kind] = back.toISOString();
+  }
   const advisorWage = await wageFor(db, m, me.id);
   const mercRows = await db.select().from(mercenaryOffers).where(and(eq(mercenaryOffers.matchId, matchId), isNull(mercenaryOffers.hiredBy), gt(mercenaryOffers.expiresAt, now))).orderBy(asc(mercenaryOffers.expiresAt));
   const capLat = me.capitalRegionId ? Math.abs(regionById(me.capitalRegionId)?.lat ?? 0) : 0;
@@ -383,6 +390,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string, o
     pacts: pactRows.map((p) => ({ id: p.id, kind: p.kind as "nap" | "ceasefire" | "tribute", aPlayerId: p.aPlayerId, bPlayerId: p.bPlayerId, status: p.status, until: p.until?.toISOString() ?? null, terms: (p.terms ?? {}) as Record<string, unknown> })),
     mercenaries: mercRows.map((o) => ({ id: o.id, company: o.company, unitId: o.unitId, qty: o.qty, iron: o.iron, expiresAt: o.expiresAt.toISOString() })),
     advisorWage,
+    rehireAt,
     battles: await liveBattles(db, matchId),
     advisors: advisorRows.map((a) => ({
       kind: a.kind,
@@ -535,5 +543,6 @@ async function buildObserverState(db: Db, m: typeof matches.$inferSelect, matchI
     routes: [],
     allies: [],
     observer: true,
+    rehireAt: {},
   };
 }
