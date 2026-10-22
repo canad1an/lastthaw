@@ -1425,7 +1425,7 @@ describe("api routes", () => {
       const c1 = p1.campaigns.find((c) => c.targetRegionId === N)!;
       expect(c1.stage, c1.note).toBe("intel");
       const [scouts] = await db.select().from(armies).where(and(eq(armies.matchId, gameId), eq(armies.playerId, benPid), eq(armies.mission, "scout"), eq(armies.targetRegionId, N), eq(armies.status, "outbound")));
-      expect(scouts).toBeDefined();
+      expect(scouts, `campaign note: ${c1.note}; capital units: ${JSON.stringify((await db.select({ u: matchRegions.units }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap))))[0]?.u)}`).toBeDefined();
 
       // The sighting lands; pass 2 musters at the capital and orders what is missing.
       await skip(scouts!.arrivesAt.toISOString());
