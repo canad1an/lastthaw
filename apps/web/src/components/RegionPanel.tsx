@@ -1,9 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { AGES, availableBuildings, availableUnits, buildingBlockedBy, balance, buildingById, buildingCost, matchDayOf, buildingSeconds, canAfford, computeRates, normalizeAssignment, realSeconds, regionById, settle, totalPopulation, trainSeconds, unitById, unitCost, formatCountdown, type MatchStateView, type OwnedRegionView, type RegionEconomy, type SightedRegionView, type SpecialResource, distanceKm, NOTE_COLOURS, type NoteColour, loyaltyBand, loyaltyOutlook, HAULER_IDS, haulerCarry, type AgeIndex } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { useNow } from "../hooks/useNow.js";
-import { Button, Card, ConfirmDialog, ErrorText, fmt, signed } from "./ui.js";
+import { Button, Card, CardHeader, ConfirmDialog, ErrorText, fmt, signed } from "./ui.js";
 import { UnitIcon } from "./UnitIcon.js";
 import { Countdown, CostLine, JobTime } from "./Countdown.js";
 import { SendArmy } from "./ArmyPanel.js";
@@ -38,25 +38,27 @@ export function RegionPanel({ matchId, state, regionId, clockOffsetMs, onClose, 
   useEffect(() => setTab("overview"), [regionId]);
   if (!region) return null;
 
+  const title = (
+    <div className="flex items-start justify-between gap-2">
+      <div>
+        <h2 className="flex items-center gap-2 text-lg font-semibold leading-tight">
+          {myNote?.colour && <span className="inline-block h-3 w-3 shrink-0 rounded-full ring-2 ring-white/70" style={{ background: NOTE_HEX[myNote.colour] }} title={`Marked ${myNote.colour}`} />}
+          {region.name}
+        </h2>
+        <p className="text-xs text-slate-400">
+          {region.countryName} · {region.terrain}
+          {region.coastal ? " · coastal" : ""}
+          {region.river ? " · river" : ""}
+        </p>
+      </div>
+      <button className="text-slate-400 hover:text-white" onClick={onClose} aria-label="Close">
+        ✕
+      </button>
+    </div>
+  );
   return (
     <Card className="space-y-3">
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <h2 className="flex items-center gap-2 text-lg font-semibold leading-tight">
-            {myNote?.colour && <span className="inline-block h-3 w-3 shrink-0 rounded-full ring-2 ring-white/70" style={{ background: NOTE_HEX[myNote.colour] }} title={`Marked ${myNote.colour}`} />}
-            {region.name}
-          </h2>
-          <p className="text-xs text-slate-400">
-            {region.countryName} · {region.terrain}
-            {region.coastal ? " · coastal" : ""}
-            {region.river ? " · river" : ""}
-          </p>
-        </div>
-        <button className="text-slate-400 hover:text-white" onClick={onClose} aria-label="Close">
-          ✕
-        </button>
-      </div>
-      <RegionBody matchId={matchId} state={state} regionId={regionId} clockOffsetMs={clockOffsetMs} tab={tab} onTab={setTab} target={target} onPickTarget={onPickTarget} onClearTarget={onClearTarget} />
+      <RegionBody matchId={matchId} state={state} regionId={regionId} clockOffsetMs={clockOffsetMs} tab={tab} onTab={setTab} target={target} onPickTarget={onPickTarget} onClearTarget={onClearTarget} title={title} />
     </Card>
   );
 }
@@ -65,33 +67,57 @@ export function RegionPanel({ matchId, state, regionId, clockOffsetMs, onClose, 
  * What a region shows once you are looking at it: resources, notes, and for your own land the overview, build, train
  * and units tabs with the queue beneath. The desktop wraps it in a card; a phone gives it a whole screen.
  */
-export function RegionBody({ matchId, state, regionId, clockOffsetMs, tab, onTab, target, onPickTarget, onClearTarget }: Omit<Props, "onClose"> & { tab: RegionTab; onTab: (t: RegionTab) => void }) {
+export function RegionBody({ matchId, state, regionId, clockOffsetMs, tab, onTab, target, onPickTarget, onClearTarget, title }: Omit<Props, "onClose"> & { tab: RegionTab; onTab: (t: RegionTab) => void; title?: ReactNode }) {
   const region = regionById(regionId);
   const owned = state.owned.find((o) => o.regionId === regionId) ?? null;
   const sighted = state.sighted.find((s) => s.regionId === regionId) ?? null;
+  // The Train tab's batch size lives up here with the tabs, so it is at hand from anywhere in the unit list.
+  const [qty, setQty] = useState(5);
   if (!region) return null;
   return (
     <>
+    {/* Everything above the tab content is one pinned block: title, resources, notes, target, tabs and the batch size. */}
+    <CardHeader className="space-y-2">
+    {title}
     <p className="text-sm text-slate-300">
       Resources: <span className="text-slate-100">{region.resources.map((r) => r.replace("_", " ")).join(", ")}</span>
     </p>
     {!state.observer && <RegionNotes matchId={matchId} state={state} regionId={regionId} />}
     {!state.observer && (!owned || state.advisors.some((a) => a.kind === "military" && a.settings.targets.includes(regionId))) && <TargetToggle matchId={matchId} state={state} regionId={regionId} />}
     {!state.observer && owned && <ExposureLine state={state} regionId={regionId} />}
+    {owned && (
+      <nav className="-mb-2 flex gap-1 overflow-x-auto border-b border-slate-800 text-sm">
+        {(["overview", "build", "train", "units"] as Tab[]).map((t) => (
+          <button
+            key={t}
+            onClick={() => onTab(t)}
+            className={`shrink-0 px-3 py-2.5 capitalize sm:py-1.5 ${tab === t ? "border-b-2 border-sky-400 text-white" : "text-slate-400 hover:text-slate-200"}`}
+          >
+            {t}
+          </button>
+        ))}
+      </nav>
+    )}
+    {owned && tab === "train" && (
+      <label className="flex items-center gap-2 pt-2 text-sm">
+        <span className="text-slate-400">Batch size</span>
+        <input
+          type="number"
+          inputMode="numeric"
+          min={1}
+          max={1000}
+          value={qty === 0 ? "" : qty}
+          onFocus={(e) => e.target.select()}
+          onChange={(e) => setQty(e.target.value === "" ? 0 : Math.min(1000, Math.max(0, Math.floor(Number(e.target.value)) || 0)))}
+          onBlur={() => setQty((q) => Math.max(1, q))}
+          className="w-20 rounded border border-slate-700 bg-slate-900 px-2 py-1"
+          aria-label="Batch size"
+        />
+      </label>
+    )}
+    </CardHeader>
     {owned ? (
       <>
-        {/* The tab strip stays put while the panel scrolls, so a long Build or Train list is still one tap from the others. */}
-        <nav className="sticky top-0 z-10 -mx-1 flex gap-1 overflow-x-auto border-b border-slate-800 bg-slate-950 px-1 text-sm">
-          {(["overview", "build", "train", "units"] as Tab[]).map((t) => (
-            <button
-              key={t}
-              onClick={() => onTab(t)}
-              className={`shrink-0 px-3 py-2.5 capitalize sm:py-1.5 ${tab === t ? "border-b-2 border-sky-400 text-white" : "text-slate-400 hover:text-slate-200"}`}
-            >
-              {t}
-            </button>
-          ))}
-        </nav>
         {tab === "overview" && (
           <>
             <OwnedDetails matchId={matchId} state={state} owned={owned} clockOffsetMs={clockOffsetMs} speed={state.match.speed} />
@@ -99,7 +125,7 @@ export function RegionBody({ matchId, state, regionId, clockOffsetMs, tab, onTab
           </>
         )}
         {tab === "build" && <BuildTab matchId={matchId} state={state} owned={owned} clockOffsetMs={clockOffsetMs} />}
-        {tab === "train" && <TrainTab matchId={matchId} state={state} owned={owned} clockOffsetMs={clockOffsetMs} />}
+        {tab === "train" && <TrainTab matchId={matchId} state={state} owned={owned} clockOffsetMs={clockOffsetMs} qty={qty} />}
         {tab === "units" && (
           <>
             <ArmyTab matchId={matchId} owned={owned} state={state} />
@@ -678,12 +704,11 @@ function BuildTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
   );
 }
 
-function TrainTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; state: MatchStateView; owned: OwnedRegionView; clockOffsetMs: number }) {
+function TrainTab({ matchId, state, owned, clockOffsetMs, qty }: { matchId: string; state: MatchStateView; owned: OwnedRegionView; clockOffsetMs: number; qty: number }) {
   const qc = useQueryClient();
   const live = useLiveEconomy(owned, clockOffsetMs, state.match.speed);
   const techs = useMemo(() => new Set(state.me.techs), [state.me.techs]);
   const region = regionById(owned.regionId)!;
-  const [qty, setQty] = useState(5);
   const pendingHere = state.jobs.filter((j) => j.regionId === owned.regionId);
   const queueFull = pendingHere.length >= balance.queue.slotsPerRegion;
   const m = useMutation({
@@ -764,23 +789,7 @@ function TrainTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
   );
   return (
     <div className="space-y-2">
-      {/* Pinned under the tab strip, so the batch size can be changed from anywhere in the list. */}
-      <label className="sticky top-[2.6rem] z-10 -mx-1 flex items-center gap-2 bg-slate-950 px-1 py-1 text-sm sm:top-[2.1rem]">
-        <span className="text-slate-400">Batch size</span>
-        <input
-          type="number"
-          inputMode="numeric"
-          min={1}
-          max={1000}
-          value={qty === 0 ? "" : qty}
-          onFocus={(e) => e.target.select()}
-          onChange={(e) => setQty(e.target.value === "" ? 0 : Math.min(1000, Math.max(0, Math.floor(Number(e.target.value)) || 0)))}
-          onBlur={() => setQty((q) => Math.max(1, q))}
-          className="w-20 rounded border border-slate-700 bg-slate-900 px-2 py-1"
-          aria-label="Batch size"
-        />
-        <span className="text-xs text-slate-500">free workers {fmt(live.e.popWorkers)}</span>
-      </label>
+      <p className="text-xs text-slate-500">Free workers {fmt(live.e.popWorkers)} · batches of {Math.max(1, qty)}, set above</p>
       {queueFull && <p className="text-xs text-amber-300">Queue full.</p>}
       <ErrorText>{m.error?.message}</ErrorText>
       {groups.map((g) => (

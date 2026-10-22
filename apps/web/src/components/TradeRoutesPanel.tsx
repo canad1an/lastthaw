@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { regionById, type MatchStateView } from "@lastthaw/shared";
-import { Card } from "./ui.js";
+import { Card, CardHeader } from "./ui.js";
 import { RoutesTab } from "./RoutesTab.js";
 
 /** Side-panel card: every trade route, plus a form to add one from any of your regions. */
@@ -17,12 +17,14 @@ export function TradeRoutesPanel({ matchId, state, selectedRegionId, clockOffset
 
   return (
     <Card className="space-y-2">
+      <CardHeader>
       <button className="flex w-full items-center justify-between text-sm font-medium" onClick={() => setOpen((o) => !o)}>
         <span>Trade Routes</span>
         <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-400">
           {state.routes.length} route{state.routes.length === 1 ? "" : "s"} · {caravansTotal} caravans{inFlight ? ` · ${inFlight} on the road` : ""}
         </span>
       </button>
+      </CardHeader>
       {open && (
         <>
           {state.owned.length > 0 && from ? (

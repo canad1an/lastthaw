@@ -4,7 +4,7 @@ import { AGES, availableTechs, balance, canAfford, formatCountdown, realSeconds,
 import { Tooltip } from "./Tooltip.js";
 import { techPreview } from "./previews.js";
 import { api, keys } from "../api/client.js";
-import { Button, Card, ErrorText } from "./ui.js";
+import { Button, Card, CardHeader, ErrorText } from "./ui.js";
 import { Countdown, CostLine, JobTime } from "./Countdown.js";
 import { useLiveEconomy } from "./RegionPanel.js";
 
@@ -22,10 +22,10 @@ export function ResearchPanel({ matchId, state, clockOffsetMs }: { matchId: stri
 
   return (
     <Card className="space-y-2">
-      <div className="flex items-center justify-between">
+      <CardHeader className="flex items-center justify-between">
         <h2 className="text-sm font-medium">Research</h2>
         <span className="rounded bg-slate-800 px-1.5 py-0.5 text-xs text-slate-300">{AGES[state.me.age as AgeIndex]} Age</span>
-      </div>
+      </CardHeader>
       {queued.length > 0 && (
         <ul className="space-y-1">
           {queued.map((j, i) => (

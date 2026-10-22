@@ -33,6 +33,14 @@ export function Card({ children, className = "" }: { children: ReactNode; classN
   return <div className={`glass rounded-lg p-4 ${className}`}>{children}</div>;
 }
 
+/**
+ * The top of a card, pinned while the card scrolls past: it stays at the top of the column until the whole card has
+ * gone by. Spans the card's padding so rows slide under it edge to edge.
+ */
+export function CardHeader({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return <div className={`sticky top-0 z-10 -mx-4 -mt-4 rounded-t-lg border-b border-slate-800/70 bg-[#07111f] px-4 pb-2 pt-4 ${className}`}>{children}</div>;
+}
+
 export function ErrorText({ children }: { children: ReactNode }) {
   if (!children) return null;
   return <p className="text-sm text-rose-400">{children}</p>;

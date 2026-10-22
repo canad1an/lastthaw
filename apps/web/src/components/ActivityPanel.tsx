@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { buildingById, regionById, techById, unitById, type MatchStateView, missionLabel } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
-import { Card } from "./ui.js";
+import { Card, CardHeader } from "./ui.js";
 import { Countdown, JobTime } from "./Countdown.js";
 
 /**
@@ -78,6 +78,7 @@ export function ActivityPanel({ matchId, state, clockOffsetMs, onSelect }: { mat
 
   return (
     <Card className="space-y-1 border-sky-500/30">
+      <CardHeader>
       <button type="button" onClick={toggle} className="flex w-full items-center justify-between text-left" aria-expanded={open}>
         <h2 className="text-sm font-medium">
           <span className="mr-1 inline-block w-3 text-slate-500">{open ? "▾" : "▸"}</span>In progress
@@ -91,6 +92,7 @@ export function ActivityPanel({ matchId, state, clockOffsetMs, onSelect }: { mat
           <span className="rounded bg-slate-800 px-1.5 py-0.5">{total}</span>
         </span>
       </button>
+      </CardHeader>
       {!open ? null : (
         <>
       {total === 0 && <p className="text-xs text-slate-400">Nothing is building, training or researching. Pick a region to start something.</p>}

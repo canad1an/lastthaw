@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { regionById, formatCountdown, type MatchStateView } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { useNow } from "../hooks/useNow.js";
-import { Button, Card, ErrorText, fmt } from "./ui.js";
+import { Button, Card, CardHeader, ErrorText, fmt } from "./ui.js";
 
 /** Migrant columns waiting at the border: take them in for food, or turn them away. */
 export function RefugeePanel({ matchId, state, clockOffsetMs, onSelect }: { matchId: string; state: MatchStateView; clockOffsetMs: number; onSelect: (regionId: string) => void }) {
@@ -15,7 +15,9 @@ export function RefugeePanel({ matchId, state, clockOffsetMs, onSelect }: { matc
   if (state.refugees.length === 0) return null;
   return (
     <Card className="border-amber-500/50 bg-amber-500/10">
-      <h2 className="mb-1 text-sm font-medium text-amber-200">People at the border</h2>
+      <CardHeader className="bg-[#1a1407]">
+        <h2 className="text-sm font-medium text-amber-200">People at the border</h2>
+      </CardHeader>
       <ul className="space-y-2 text-sm">
         {state.refugees.map((o) => {
           const region = state.owned.find((r) => r.regionId === o.regionId);
