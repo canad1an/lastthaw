@@ -237,7 +237,20 @@ export async function queueTrain(ctx: CommandContext, regionId: string, unitId: 
   return db.transaction(async (tx) => {
     await requireRunning(tx, m.id);
     const now = matchNow(m);
-    const row = await settleAndLockRegion(tx, m.id, regionId, now, m.speed, resourceMultOf(m));
+    // An order that may be supplied from other regions locks every region of mine up front, in ascending order like a build:
+    // locking this region first and the others after deadlocked with homecoming armies and the tick.
+    const canWait = opts.allowWait ?? true;
+    const mine = canWait
+      ? await tx
+          .select({ regionId: matchRegions.regionId })
+          .from(matchRegions)
+          .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.ownerPlayerId, p.id), isNull(matchRegions.frozenAt)))
+          .orderBy(asc(matchRegions.regionId))
+      : [];
+    if (!mine.some((r) => r.regionId === regionId)) mine.length = 0;
+    const locked = new Map<string, MatchRegionRow>();
+    for (const r of mine) locked.set(r.regionId, await settleAndLockRegion(tx, m.id, r.regionId, now, m.speed, resourceMultOf(m)));
+    const row = locked.get(regionId) ?? (await settleAndLockRegion(tx, m.id, regionId, now, m.speed, resourceMultOf(m)));
     if (row.ownerPlayerId !== p.id) throw httpError(403, "not your region");
     if (row.frozenAt) throw httpError(409, "this region is frozen");
     const pending = await pendingRegionJobs(tx, m.id, regionId);
@@ -250,14 +263,8 @@ export async function queueTrain(ctx: CommandContext, regionId: string, unitId: 
     if (!canAfford(stock, cost)) {
       // Supplied by convoy, like a build: pay what is here, owe the rest, set it aside at the capital and the nearest stocked regions.
       // Players always may (as with builds); the advisors say when they would rather not.
-      if (!(opts.allowWait ?? true)) throw httpError(409, `not enough ${missingFor(stock, cost).join(", ")}`);
-      const mine = await tx
-        .select({ regionId: matchRegions.regionId })
-        .from(matchRegions)
-        .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.ownerPlayerId, p.id), isNull(matchRegions.frozenAt), sql`${matchRegions.regionId} <> ${regionId}`))
-        .orderBy(asc(matchRegions.regionId));
-      const others: MatchRegionRow[] = [];
-      for (const r of mine) others.push(await settleAndLockRegion(tx, m.id, r.regionId, now, m.speed, resourceMultOf(m)));
+      if (!canWait) throw httpError(409, `not enough ${missingFor(stock, cost).join(", ")}`);
+      const others = [...locked.values()].filter((r) => r.regionId !== regionId);
       const pooled: Record<string, number> = { ...stock };
       for (const r of others) for (const [k, v] of Object.entries(stockOf(r))) pooled[k] = (pooled[k] ?? 0) + v;
       if (!canAfford(pooled, cost)) throw httpError(409, `not enough ${missingFor(pooled, cost).join(", ")} across your regions`);

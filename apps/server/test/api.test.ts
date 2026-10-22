@@ -845,6 +845,43 @@ describe("api routes", () => {
       expect((tj!.waitingFor as { food?: number; wood?: number }).food).toBeGreaterThan(0);
       expect((await routesTo(D)).filter((r) => r.forJobId === tj!.id).length).toBeGreaterThan(0);
       expect((await Ben.call("POST", `${base}/jobs/${tj!.id}/cancel`, {})).statusCode).toBe(200);
+
+      // Training locks every region in ascending order, never its own region first: while a homecoming army holds a lower
+      // region, the order waits on it without holding the higher one (locking its own first deadlocked on production).
+      {
+        const owned = (await db.select({ regionId: matchRegions.regionId }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid), sql`${matchRegions.frozenAt} is null`)).orderBy(asc(matchRegions.regionId))).map((r) => r.regionId);
+        expect(owned.length).toBeGreaterThanOrEqual(2);
+        const low = owned[0]!;
+        const high = owned[owned.length - 1]!;
+        const [kept] = await db.select().from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, high)));
+        await claim(high, { food: 0, wood: 0, stone: 0, popWorkers: 50, settledAt: new Date(matchStateView.parse((await Ben.call("GET", `${base}/state`)).json()).match.now) });
+        let release!: () => void;
+        const released = new Promise<void>((r) => (release = r));
+        let locked!: () => void;
+        const isLocked = new Promise<void>((r) => (locked = r));
+        const holder = db.transaction(async (tx) => {
+          await tx.select().from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, low))).for("update");
+          locked();
+          await released;
+        });
+        await isLocked;
+        const order = Ben.call("POST", `${base}/regions/${high}/train`, { unitId: "warrior", qty: 2 });
+        try {
+          // Give the order time to reach its first lock, then check the higher region is still free.
+          await new Promise((r) => setTimeout(r, 750));
+          const free = await db.transaction(async (tx) => (await tx.select({ id: matchRegions.regionId }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, high))).for("update", { skipLocked: true })).length);
+          expect(free).toBe(1);
+        } finally {
+          release();
+          await holder;
+        }
+        const res = await order;
+        expect(res.statusCode, res.body).toBe(200);
+        const jid = (res.json() as { jobId: string }).jobId;
+        expect((await Ben.call("POST", `${base}/jobs/${jid}/cancel`, {})).statusCode).toBe(200);
+        // Put the region back as it was for the tests after this one.
+        await db.update(matchRegions).set({ food: kept!.food, wood: kept!.wood, stone: kept!.stone, popWorkers: kept!.popWorkers, settledAt: kept!.settledAt }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, high)));
+      }
     } finally {
       await redis.quit().catch(() => {});
     }
