@@ -1,4 +1,6 @@
 import type { FastifyInstance } from "fastify";
+import { mapOf } from "../map/scope.js";
+import { isMapLoaded, MAP_NAMES } from "@lastthaw/shared";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import { assignBody, balance, createMatchBody, normalizeAssignment, pickStartBody, regionById, timeSkipBody, type MatchSummary, joinMatchBody, joinByCodeBody } from "@lastthaw/shared";
@@ -99,6 +101,7 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
         inviteCode: createdByMe ? (s.inviteCode ?? null) : null,
         createdByMe,
         resourceMult: resourceMultOf(m),
+        map: mapOf(m),
         registrations: regBy.get(m.id)?.n ?? 0,
         registered: (regBy.get(m.id)?.mine ?? 0) > 0,
         joinOpensAt: kind === "tournament" ? joinOpensAt(m.startsAt).toISOString() : null,
@@ -115,6 +118,7 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
     const user = requireVerified(req);
     const body = createMatchBody.parse(req.body);
     const kind = body.kind ?? "public";
+    if (body.map && !isMapLoaded(body.map)) throw httpError(400, `the ${MAP_NAMES[body.map]} map is not available yet`);
     if (kind === "tournament" && !devTools && !user.isAdmin) throw httpError(403, "only admins create tournaments");
     if (!user.isAdmin && !user.approved) throw httpError(403, "verify your email first; the code is in your inbox");
     if (!user.isAdmin && body.speed > balance.match.maxGameSpeed) throw httpError(400, `games run at ${balance.match.maxGameSpeed}x at most (about four hours); tournaments are 1x`);
@@ -143,6 +147,7 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
           ...(body.aiDifficulty ? { aiDifficulty: body.aiDifficulty } : {}),
           // Tournaments are always played at normal resources; a game's creator may raise them.
           ...(body.resourceMult && body.resourceMult !== 1 && kind !== "tournament" ? { resourceMult: body.resourceMult } : {}),
+          ...(body.map && body.map !== "earth" ? { map: body.map } : {}),
           kind,
           ...(kind === "tournament" ? { weekly: true } : {}),
           ...(inviteCode ? { inviteCode } : {}),

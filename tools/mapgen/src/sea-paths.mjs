@@ -18,6 +18,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const DRY = process.argv.includes("--dry");
+const MAP = process.argv.find((a) => a.startsWith("--map="))?.slice(6) ?? "earth";
 const SCALE = 2; // grid cells per map unit: 4000 x 2000 cells over the 2000 x 1000 map, about 10 km a cell at the equator
 /** Narrow straits the outlines pinch shut at this resolution, carved open as water: [lon, lat] to [lon, lat]. */
 const STRAITS = [
@@ -38,8 +39,9 @@ const NEAR_COUNT = 4; // lanes each coast gets to its nearest coasts by water...
 const NEAR_WATER_KM = 1500; // ...within this sailing distance
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
-const WORLD = path.join(ROOT, "packages", "shared", "src", "map", "world.json");
-const OUT = path.join(ROOT, "apps", "web", "src", "map", "lanePaths.json");
+const WORLD = path.join(ROOT, "packages", "shared", "src", "map", MAP === "earth" ? "world.json" : `${MAP}.json`);
+// Earth's drawing data is bundled with the web app; other maps are fetched from /map/<id>/ when a match on them opens.
+const OUT = MAP === "earth" ? path.join(ROOT, "apps", "web", "src", "map", "earth", "lanePaths.json") : path.join(ROOT, "apps", "web", "public", "map", MAP, "lanePaths.json");
 const world = JSON.parse(readFileSync(WORLD, "utf8"));
 const byId = new Map(world.regions.map((r) => [r.id, r]));
 const W = Math.round(world.width * SCALE);
@@ -96,7 +98,7 @@ world.regions.forEach((r, idx) => {
 });
 // The straits: a line of water through each, three cells wide.
 const cellOf = (lon, lat) => [Math.round(((lon + 180) / 360) * W), Math.round(((90 - lat) / 180) * H)];
-for (const [, a, b] of STRAITS) {
+for (const [, a, b] of MAP === "earth" ? STRAITS : []) {
   const [x0, y0] = cellOf(a[0], a[1]);
   const [x1, y1] = cellOf(b[0], b[1]);
   const steps = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0), 1);

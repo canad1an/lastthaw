@@ -53,6 +53,14 @@ export function AboutPage() {
           a terrain type and one or two special resources such as copper, tin, iron, horses or fertile soil. No region has everything, which is the point: you
           will need to trade, ally or take what you lack.
         </p>
+        <p>
+          Games can also be played on Pangaea, the supercontinent of 250 million years ago: one landmass cut into about 400 regions with names of their own,
+          an arid heart far from any coast, and nearly everything reachable by land. The game creator picks the map.
+        </p>
+        <p className="text-sm text-slate-400">
+          Map data: Earth's borders from Natural Earth (public domain), its terrain relief from Natural Earth I; Pangaea's coastline from the PaleoMAP
+          PaleoCoastlines by Kocsis &amp; Scotese (2021), CC BY 4.0.
+        </p>
       </section>
 
       <div className="glass glass-strong flex flex-wrap items-center justify-between gap-3 rounded-xl p-5">

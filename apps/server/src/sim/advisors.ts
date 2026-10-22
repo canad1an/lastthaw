@@ -4,6 +4,7 @@
  * materials routes and convoys supply what a region cannot pay, moves people the way the player chose, and writes
  * a short report with suggestions after every pass. Wages are charged by the match tick; passes run in the AI process.
  */
+import { enterMap, mapOf } from "../map/scope.js";
 import { and, asc, eq, isNull, lte, sql } from "drizzle-orm";
 import type pino from "pino";
 import { balance, availableBuildings, buildingBlockedBy, buildingById, buildingCost, canAfford, computeRates, normalizeAssignment, regionById, unitById, HAULER_IDS, type AdvisorKind, type AdvisorSettings, type AdvisorReport, type AdvisorSuggestion, type Cost, type RegionEconomy, advisorSettings as advisorSettingsSchema, RESOURCE_WORTH, findRoute } from "@lastthaw/shared";
@@ -194,6 +195,7 @@ export async function runAdvisors(db: Db, publisher: Publisher, log: pino.Logger
   const running = await db.select().from(matches).where(and(eq(matches.status, "running"), isNull(matches.pausedAt)));
   let passes = 0;
   for (const m of running) {
+    enterMap(mapOf(m));
     const now = matchNow(m);
     const rows = await db.select().from(advisors).where(and(eq(advisors.matchId, m.id), isNull(advisors.firedAt), isNull(advisors.unpaidSince)));
     for (const a of rows) {

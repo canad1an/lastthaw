@@ -1,4 +1,5 @@
 import { and, eq, inArray, isNull, lte, sql } from "drizzle-orm";
+import { enterMap, mapOf } from "../map/scope.js";
 import type pino from "pino";
 import { balance, bestHauler, carryCapacity, distanceKm, findRoute, haulerCarry, haulerCount, HAULER_IDS, laneLimitKm, nextHopTo, regionById, reliefMoveCap, seaPath, supplyConvoyCap, unitById } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
@@ -27,6 +28,7 @@ export async function runTradeRoutes(db: Db, publisher: Publisher, log: pino.Log
     .limit(200);
   let sent = 0;
   for (const { route, m } of due) {
+    enterMap(mapOf(m));
     const now = matchNow(m);
     try {
       const [p] = await db.select().from(players).where(eq(players.id, route.playerId)).limit(1);
@@ -493,6 +495,7 @@ export async function runOverflow(db: Db, publisher: Publisher, log: pino.Logger
   const running = await db.select().from(matches).where(and(eq(matches.status, "running"), isNull(matches.pausedAt)));
   let sent = 0;
   for (const m of running) {
+    enterMap(mapOf(m));
     const now = matchNow(m);
     const ps = await db.select().from(players).where(and(eq(players.matchId, m.id), sql`${players.capitalRegionId} is not null`, sql`${players.eliminatedAt} is null`));
     const rows = await db

@@ -3,7 +3,7 @@ import { usePageMeta } from "../seo.js";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useChatAlert } from "../components/chatAlert.js";
-import { balance, formatCountdown, type MatchSummary } from "@lastthaw/shared";
+import { balance, formatCountdown, type MatchSummary , MAP_IDS, MAP_NAMES, MAP_BLURBS, type MapId } from "@lastthaw/shared";
 import { useMe } from "../api/auth.js";
 import { api, keys } from "../api/client.js";
 import { Button, Card, ErrorText, Field, Input } from "../components/ui.js";
@@ -281,6 +281,11 @@ function MatchRow({ m, canJoin, admin }: { m: MatchSummary; canJoin: boolean; ad
               {m.resourceMult}x resources
             </span>
           )}
+          {m.map !== "earth" && (
+            <span className="rounded bg-violet-500/20 px-1.5 py-0.5 text-xs text-violet-200" title={MAP_BLURBS[m.map]}>
+              {MAP_NAMES[m.map]}
+            </span>
+          )}
           <span className={`rounded px-1.5 py-0.5 text-xs ${m.status === "running" ? "bg-emerald-500/20 text-emerald-300" : "bg-sky-500/20 text-sky-300"}`}>
             {m.status}
           </span>
@@ -350,8 +355,9 @@ function CreateMatch({ admin }: { admin: boolean }) {
   const [aiFillTo, setAiFillTo] = useState(20);
   const [aiDifficulty, setAiDifficulty] = useState<"mixed" | "easy" | "medium" | "hard">("mixed");
   const [resourceMult, setResourceMult] = useState(1);
+  const [map, setMap] = useState<MapId>("earth");
   const m = useMutation({
-    mutationFn: () => api.createMatch({ name, speed, startsInMinutes: startsIn, ...(startsAt ? { startsAt: new Date(startsAt).toISOString() } : {}), kind, aiFillTo, aiDifficulty, ...(resourceMult !== 1 ? { resourceMult } : {}) }),
+    mutationFn: () => api.createMatch({ name, speed, startsInMinutes: startsIn, ...(startsAt ? { startsAt: new Date(startsAt).toISOString() } : {}), kind, aiFillTo, aiDifficulty, ...(resourceMult !== 1 ? { resourceMult } : {}), ...(map !== "earth" ? { map } : {}) }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matches }),
   });
   const suggest = useMutation({ mutationFn: () => api.nameSuggestion(), onSuccess: (r) => setName(r.name) });
@@ -399,6 +405,16 @@ function CreateMatch({ admin }: { admin: boolean }) {
         </Field>
         <Field label="AI tribes up to">
           <Input type="number" min={0} max={balance.match.maxAiTribes} value={aiFillTo} onChange={(e) => setAiFillTo(Number(e.target.value))} />
+        </Field>
+        <Field label="Map">
+          <select value={map} onChange={(e) => setMap(e.target.value as MapId)} className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100">
+            {MAP_IDS.map((id) => (
+              <option key={id} value={id}>
+                {MAP_NAMES[id]}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-slate-500">{MAP_BLURBS[map]}</p>
         </Field>
         <Field label="Resources">
           <select value={resourceMult} onChange={(e) => setResourceMult(Number(e.target.value))} className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100" disabled={kind === "tournament"}>

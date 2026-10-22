@@ -1,8 +1,7 @@
 import { balance, carryCapacity, regionById, unitById, type ArmyView, type IncomingView, type ShipSightingView, missionLabel, laneName, laneKey } from "@lastthaw/shared";
-import lanePaths from "./lanePaths.json";
+import { mapAssets } from "./activeMap.js";
 
 /** Every sea lane's water path (tools/mapgen/src/sea-paths.mjs), from one shore to the other, in map units. */
-const LANE_PATHS: Record<string, { from: string; points: Array<[number, number]> } | undefined> = lanePaths as unknown as Record<string, { from: string; points: Array<[number, number]> }>;
 
 /**
  * The points a convoy is drawn along: region centres on land, and on a sea lane the lane's water path, shore to shore,
@@ -14,7 +13,7 @@ export function routePoints(ids: readonly string[]): Array<{ x: number; y: numbe
     const r = regionById(ids[i]!);
     if (!r) continue;
     const prev = i > 0 ? regionById(ids[i - 1]!) : null;
-    const lane = prev && !prev.neighbors.includes(r.id) && prev.seaRoutes.includes(r.id) ? LANE_PATHS[laneKey(prev.id, r.id)] : undefined;
+    const lane = prev && !prev.neighbors.includes(r.id) && prev.seaRoutes.includes(r.id) ? mapAssets().lanes[laneKey(prev.id, r.id)] : undefined;
     if (lane) {
       const water = lane.from === prev!.id ? lane.points : [...lane.points].reverse();
       // Leaving the shore: if the convoy began on this lane, the shore is where it starts.
@@ -23,7 +22,7 @@ export function routePoints(ids: readonly string[]): Array<{ x: number; y: numbe
       continue;
     }
     // By land: the next region's centre (and, for a voyage just landed, the shore already ends the sea run).
-    if (prev && pts.length && LANE_PATHS[laneKey(prev.id, r.id)] === undefined && !prev.neighbors.includes(r.id)) {
+    if (prev && pts.length && mapAssets().lanes[laneKey(prev.id, r.id)] === undefined && !prev.neighbors.includes(r.id)) {
       // A hop the map does not know (no lane, no border): straight to the centre.
     }
     pts.push({ x: r.x, y: r.y });

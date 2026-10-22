@@ -1,4 +1,5 @@
 import { eq, and, isNull, sql } from "drizzle-orm";
+import { enterMap, mapOf } from "../map/scope.js";
 import { allRegions, balance, distanceKm, seededRng } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { events, jobs, matchRegions, matches, players, tournamentRegistrations } from "../db/schema.js";
@@ -45,6 +46,7 @@ export async function startMatch(db: Db, publisher: Publisher, matchId: string):
   const started = await db.transaction(async (tx) => {
     const [m] = await tx.select().from(matches).where(eq(matches.id, matchId)).for("update");
     if (!m || m.status !== "lobby") return false;
+    enterMap(mapOf(m));
 
     const now = matchNow(m);
     const endsAt = new Date(now.getTime() + matchLengthSeconds(m.speed) * 1000);

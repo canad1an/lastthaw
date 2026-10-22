@@ -1,4 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
+import { MapScope } from "../map/activeMap.js";
+import type { MapId } from "@lastthaw/shared";
 import { usePageMeta, useSlugAddress } from "../seo.js";
 import { Link, useParams } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -12,7 +14,7 @@ interface Frame {
   changes: Record<string, string | null>;
 }
 interface Replay {
-  match: { id: string; slug?: string; name: string; status: string; speed: number; finishedAt: string | null; winnerPlayerId: string | null };
+  match: { id: string; slug?: string; name: string; status: string; speed: number; finishedAt: string | null; winnerPlayerId: string | null; map?: MapId };
   players: { id: string; name: string; isAi: boolean }[];
   frames: Frame[];
 }
@@ -119,7 +121,9 @@ export function ReplayPage() {
         </div>
       </div>
       <div className="relative min-h-0 flex-1">
-        <WorldMap paint={paint} selected={null} onSelect={() => {}} className="h-full w-full" ice={{ latitude: iceLatitudeOnDay(day), forecast: false, day }} />
+        <MapScope map={data?.match.map ?? "earth"} fallback={<p className="p-6 text-slate-400">Loading the map...</p>}>
+          <WorldMap paint={paint} selected={null} onSelect={() => {}} className="h-full w-full" ice={{ latitude: iceLatitudeOnDay(day), forecast: false, day }} />
+        </MapScope>
         {frames.length < 2 && (
           <div className="pointer-events-none absolute inset-x-0 top-3 text-center text-sm text-amber-200">
             {frames.length === 0 ? "No replay was recorded for this match." : "Only the final positions were recorded for this match; replays are kept for every match from now on."}

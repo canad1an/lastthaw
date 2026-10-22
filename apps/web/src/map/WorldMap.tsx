@@ -1,12 +1,13 @@
 import { memo, useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
-import { allRegions, balance, freezeDayForLatitude, iceExposure, iceLatitudeOnDay, world, type MapRegion, regionById } from "@lastthaw/shared";
+import { allRegions, balance, freezeDayForLatitude, iceExposure, iceLatitudeOnDay, type MapRegion, regionById } from "@lastthaw/shared";
+import { mapAssets } from "./activeMap.js";
 import type { ArmyMarker } from "./armyMarkers.js";
 import { UnitIcon, UnitStrokes, unitPicture } from "../components/UnitIcon.js";
-import coastPoints from "./coastPoints.json";
 import { intersects, visibleRect, type View } from "./viewport.js";
 
-/** Where a region meets the sea: a point on its outline mid-shore, computed from the map (tools: coast-points). */
-const COAST: Record<string, { x: number; y: number; a: number } | undefined> = coastPoints as Record<string, { x: number; y: number; a: number }>;
+/** Every map is drawn in the same 2000 x 1000 box. */
+const MAP_W = 2000;
+const MAP_H = 1000;
 import { unitById, buildingById, wallOf } from "@lastthaw/shared";
 
 export type RegionPaint = {
@@ -116,6 +117,8 @@ const MAX_K = 28;
 export function WorldMap({ paint, selected, onSelect, focus, relief = false, flyTo, className = "", ice, flags = [], harbors = [], dashed = [], armies = [], roads = [], badges = [], storms = [], thaws = [], onBadgeClick }: WorldMapProps) {
   const [hoverArmy, setHoverArmy] = useState<string | null>(null);
   const [hoverHarbor, setHoverHarbor] = useState<string | null>(null);
+  // Where each region meets the sea (harbour points) and the relief tiles, for the map in play.
+  const { coast: COAST, relief: reliefDir } = mapAssets();
   const [routeArmy, setRouteArmy] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [view, setView] = useState<View>({ x: 0, y: 0, k: 1 });
@@ -124,7 +127,7 @@ export function WorldMap({ paint, selected, onSelect, focus, relief = false, fly
   useEffect(() => {
     const svg = svgRef.current;
     if (!svg) return;
-    const measure = () => setUnitsPerPx(world.width / Math.max(1, svg.getBoundingClientRect().width));
+    const measure = () => setUnitsPerPx(MAP_W / Math.max(1, svg.getBoundingClientRect().width));
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(svg);
@@ -132,8 +135,8 @@ export function WorldMap({ paint, selected, onSelect, focus, relief = false, fly
   }, []);
   const drag = useRef<{ id: number; sx: number; sy: number; ox: number; oy: number; moved: boolean } | null>(null);
   const pinch = useRef<Map<number, { x: number; y: number }>>(new Map());
-  const W = world.width;
-  const H = world.height;
+  const W = MAP_W;
+  const H = MAP_H;
 
   const clampView = useCallback(
     (v: View): View => {
@@ -268,7 +271,7 @@ export function WorldMap({ paint, selected, onSelect, focus, relief = false, fly
         </pattern>
       </defs>
       <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`} style={{ willChange: "transform" }}>
-        {relief && <Relief view={view} width={W} height={H} />}
+        {relief && reliefDir && <Relief dir={reliefDir} view={view} width={W} height={H} />}
         <Regions paint={paint} selected={selected} strokeWidth={0.8 / view.k} />
         {flash && <path d={allRegions().find((r) => r.id === flash)?.path ?? ""} fill="#fbbf24" stroke="#fde68a" strokeWidth={3 / view.k} strokeLinejoin="round" pointerEvents="none" className="region-flash" />}
         {badges.filter((b) => b.battleId).map((b) => {
@@ -491,8 +494,8 @@ export function WorldMap({ paint, selected, onSelect, focus, relief = false, fly
         const h = harbors.find((x) => x.regionId === hoverHarbor);
         const p = COAST[hoverHarbor];
         if (!h || !p) return null;
-        const sx = ((p.x * view.k + view.x) / world.width) * 100;
-        const sy = ((p.y * view.k + view.y) / world.height) * 100;
+        const sx = ((p.x * view.k + view.x) / MAP_W) * 100;
+        const sy = ((p.y * view.k + view.y) / MAP_H) * 100;
         const level = h.buildings.harbor ?? 0;
         const wall = wallOf(h.buildings);
         const defences = Object.entries(h.buildings)
@@ -501,7 +504,7 @@ export function WorldMap({ paint, selected, onSelect, focus, relief = false, fly
         const ships = Object.fromEntries(Object.entries(h.units).filter(([id, n]) => n > 0 && unitById.get(id)?.naval));
         const anyShip = Object.keys(ships).length > 0;
         return (
-          <foreignObject x={0} y={0} width={world.width} height={world.height} pointerEvents="none">
+          <foreignObject x={0} y={0} width={MAP_W} height={MAP_H} pointerEvents="none">
             <div style={{ position: "absolute", left: `${sx}%`, top: `${sy}%`, transform: "translate(34px, -50%)" }} className="pointer-events-none w-max max-w-[24rem] rounded-md border border-slate-700 bg-slate-950/95 px-3 py-2 text-xs text-slate-200 shadow-xl">
               <p className="text-sm font-medium">Harbour at {regionById(hoverHarbor)?.name ?? hoverHarbor}</p>
               <p className="text-slate-400">
@@ -519,10 +522,10 @@ export function WorldMap({ paint, selected, onSelect, focus, relief = false, fly
       {hoverArmy && (() => {
         const a = armies.find((x) => x.id === hoverArmy);
         if (!a) return null;
-        const sx = ((a.x * view.k + view.x) / world.width) * 100;
-        const sy = ((a.y * view.k + view.y) / world.height) * 100;
+        const sx = ((a.x * view.k + view.x) / MAP_W) * 100;
+        const sy = ((a.y * view.k + view.y) / MAP_H) * 100;
         return (
-          <foreignObject x={0} y={0} width={world.width} height={world.height} pointerEvents="none" className="hidden lg:block">
+          <foreignObject x={0} y={0} width={MAP_W} height={MAP_H} pointerEvents="none" className="hidden lg:block">
             <div style={{ position: "absolute", left: `${sx}%`, top: `${sy}%`, transform: "translate(34px, -50%)" }} className="pointer-events-none w-max max-w-[24rem] rounded-md border border-slate-700 bg-slate-950/95 px-3 py-2 text-xs text-slate-200 shadow-xl">
               <p className="text-sm font-medium">{a.title}</p>
               <UnitChips units={a.units} />
@@ -578,8 +581,8 @@ export function WorldMap({ paint, selected, onSelect, focus, relief = false, fly
  * current ice edge is drawn as two dashed lines.
  */
 const IceLayer = memo(function IceLayer({ ice, k: zoom }: { ice: { latitude: number; forecast: boolean; day: number }; k: number }) {
-  const H = world.height;
-  const W = world.width;
+  const H = MAP_H;
+  const W = MAP_W;
   const yN = ((90 - ice.latitude) / 180) * H;
   const yS = ((90 + ice.latitude) / 180) * H;
   // Sizes are divided by the zoom so lines and labels stay the same size on screen.
@@ -635,7 +638,7 @@ const RELIEF_ROWS = 4;
  * The shaded-relief terrain: one 4000x2000 image always, plus the 8000x4000 tiles that lie in view once zoomed past
  * RELIEF_HI_K. The tile set follows the view with a short delay so a pinch does not add and drop tiles every frame.
  */
-const Relief = memo(function Relief({ view, width, height }: { view: View; width: number; height: number }) {
+const Relief = memo(function Relief({ dir, view, width, height }: { dir: string; view: View; width: number; height: number }) {
   const [tileView, setTileView] = useState(view);
   useEffect(() => {
     const t = setTimeout(() => setTileView(view), 100);
@@ -652,9 +655,9 @@ const Relief = memo(function Relief({ view, width, height }: { view: View; width
   }
   return (
     <g pointerEvents="none">
-      <image href="/map/relief/relief-4000.webp" x={0} y={0} width={width} height={height} preserveAspectRatio="none" />
+      <image href={`${dir}/relief-4000.webp`} x={0} y={0} width={width} height={height} preserveAspectRatio="none" />
       {tiles.map(({ col, row }) => (
-        <image key={`${col}_${row}`} href={`/map/relief/relief-8000/${col}_${row}.webp`} x={col * RELIEF_TILE} y={row * RELIEF_TILE} width={RELIEF_TILE} height={RELIEF_TILE} preserveAspectRatio="none" />
+        <image key={`${col}_${row}`} href={`${dir}/relief-8000/${col}_${row}.webp`} x={col * RELIEF_TILE} y={row * RELIEF_TILE} width={RELIEF_TILE} height={RELIEF_TILE} preserveAspectRatio="none" />
       ))}
     </g>
   );

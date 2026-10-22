@@ -17,7 +17,8 @@ const NEAR_KM = 1200;
 const NEAR_COUNT = 4;
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
-const WORLD = path.join(ROOT, "packages", "shared", "src", "map", "world.json");
+const MAP = process.argv.find((a) => a.startsWith("--map="))?.slice(6) ?? "earth";
+const WORLD = path.join(ROOT, "packages", "shared", "src", "map", MAP === "earth" ? "world.json" : `${MAP}.json`);
 const world = JSON.parse(readFileSync(WORLD, "utf8"));
 const byId = new Map(world.regions.map((r) => [r.id, r]));
 const rad = (x) => (x * Math.PI) / 180;

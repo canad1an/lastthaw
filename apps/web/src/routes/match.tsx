@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePageMeta, useSlugAddress } from "../seo.js";
 import { Link, Navigate, useNavigate, useParams } from "@tanstack/react-router";
 import { useCallback, useMemo, useState, useRef, useEffect } from "react";
-import { balance, formatCountdown, iceLatitudeOnDay, regionById, type MapRegion, type MatchStateView, loyaltyBand, wallOf, unitById } from "@lastthaw/shared";
+import { balance, formatCountdown, iceLatitudeOnDay, regionById, type MapRegion, type MatchStateView, loyaltyBand, wallOf, unitById , MAP_NAMES} from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { useMatchRealtime } from "../api/realtime.js";
 import { RegionPanel, ageName } from "../components/RegionPanel.js";
@@ -25,6 +25,7 @@ import { MatchIntro, useIntroOpen } from "../components/MatchIntro.js";
 import { DayBrief, useDayBriefOpen } from "../components/DayBrief.js";
 import { RefugeePanel } from "../components/RefugeePanel.js";
 import { noteBadges, overlayBadges, useOverlays, advisorBadges, battleBadges, RELIEF_FILL, FOG_FILL } from "../map/overlays.js";
+import { MapScope, mapAssets } from "../map/activeMap.js";
 import { BattleWindow } from "../components/BattleWindow.js";
 import { setMusicAge } from "../audio/sound.js";
 import { IncomingWarnings } from "../components/ArmyPanel.js";
@@ -66,7 +67,7 @@ export function MatchPage() {
   // The address may be the readable slug; the socket and the match's own links want the id.
   const rt = useMatchRealtime(state.data?.match.id ?? null);
   useSlugAddress(matchId, state.data?.match.slug, "");
-  usePageMeta({ title: state.data ? `${state.data.match.name}: the map` : "Match", description: state.data ? `${state.data.match.name}: a Last Thaw match in progress. Thirty days on a freezing Earth.` : undefined, path: `/match/${state.data?.match.slug || matchId}`, noindex: true });
+  usePageMeta({ title: state.data ? `${state.data.match.name}: the map` : "Match", description: state.data ? `${state.data.match.name}: a Last Thaw match in progress. Thirty days on a freezing ${MAP_NAMES[state.data.match.map]}.` : undefined, path: `/match/${state.data?.match.slug || matchId}`, noindex: true });
 
   if (state.isLoading) return <p className="p-6 text-slate-400">Loading match...</p>;
   if (state.error || !state.data) {
@@ -81,7 +82,11 @@ export function MatchPage() {
   }
   const s = state.data;
   if (s.match.status === "lobby") return <Navigate to="/match/$matchId/lobby" params={{ matchId }} replace />;
-  return <GameView matchId={matchId} state={s} rtStatus={rt.status} />;
+  return (
+    <MapScope map={s.match.map} fallback={<p className="p-6 text-slate-400">Loading the map...</p>}>
+      <GameView matchId={matchId} state={s} rtStatus={rt.status} />
+    </MapScope>
+  );
 }
 
 /** The waiting room: the countdown, who has joined, the start pick on the map, and a chat, until the match begins. */
@@ -102,7 +107,11 @@ export function MatchLobbyPage() {
     );
   }
   if (state.data.match.status !== "lobby") return <Navigate to="/match/$matchId" params={{ matchId }} replace />;
-  return <LobbyRoom matchId={matchId} state={state.data} />;
+  return (
+    <MapScope map={state.data.match.map} fallback={<p className="p-6 text-slate-400">Loading the map...</p>}>
+      <LobbyRoom matchId={matchId} state={state.data} />
+    </MapScope>
+  );
 }
 
 /** The waiting room: countdown, who is here and who is online, chat, and a step out to the map to choose a capital. */
@@ -407,7 +416,8 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
   const { enabled: overlays, toggle: toggleOverlay } = useOverlays();
   const menu = useMenuData(matchId, state, overlays, phone && screen.kind === "panel" && screen.id === "messages", phone && screen.kind === "panel" && screen.id === "chat");
   const hideHaulers = overlays.has("hidehaulers");
-  const relief = !overlays.has("flat");
+  // Relief needs the map's tiles; a map without them (Pangaea) is painted flat.
+  const relief = !overlays.has("flat") && mapAssets().relief !== null;
   const shownArmies = useMemo(
     () => (hideHaulers ? state.armies.filter((a) => a.mission === "relocate" || !Object.entries(a.units).every(([id, n]) => n <= 0 || unitById.get(id)?.hauler)) : state.armies),
     [state.armies, hideHaulers],

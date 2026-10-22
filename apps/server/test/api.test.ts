@@ -633,6 +633,31 @@ describe("api routes", () => {
     }
   });
 
+  it("a match on Pangaea plays on Pangaea's regions while Earth matches keep theirs, and an unknown map is refused", async () => {
+    // The admin may open a game whatever else is running; everyone else is bound to one game at a time.
+    expect((await A.call("POST", "/api/matches", { name: "Nowhere", speed: 10, startsInMinutes: 0, kind: "public", aiFillTo: 2, map: "nowhere" })).statusCode).toBe(400);
+    const made = await A.call("POST", "/api/matches", { name: "Old World", speed: 10, startsInMinutes: 0, kind: "public", aiFillTo: 2, map: "pangaea" });
+    expect(made.statusCode, made.body).toBe(201);
+    const pid = (made.json() as { id: string }).id;
+    const base = `/api/matches/${pid}`;
+    expect([200, 201]).toContain((await A.call("POST", `${base}/join`, {})).statusCode);
+    expect((await A.call("GET", "/api/matches")).json().find((m: { id: string; map: string }) => m.id === pid)?.map).toBe("pangaea");
+    const options = (await A.call("GET", `${base}/start-options`)).json() as { options: string[] };
+    expect(options.options.length).toBeGreaterThan(0);
+    for (const id of options.options) expect(id.startsWith("pg-"), `${id} is a Pangaea region`).toBe(true);
+    expect((await A.call("POST", `${base}/dev/start`, {})).statusCode).toBe(200);
+    const st = matchStateView.parse((await A.call("GET", `${base}/state`)).json());
+    expect(st.match.map).toBe("pangaea");
+    expect(st.owned.length).toBeGreaterThan(0);
+    for (const r of st.owned) expect(r.regionId.startsWith("pg-")).toBe(true);
+    expect(st.sighted.every((r) => r.regionId.startsWith("pg-"))).toBe(true);
+    // Earth matches in the same process are untouched.
+    const earth = matchStateView.parse((await Ben.call("GET", `/api/matches/${gameId}/state`)).json());
+    expect(earth.match.map).toBe("earth");
+    expect(earth.owned.every((r) => !r.regionId.startsWith("pg-"))).toBe(true);
+    await db.update(matches).set({ status: "finished", finishedAt: new Date() }).where(eq(matches.id, pid));
+  });
+
   it("an admin looks into any match from outside and sees every region, army and march; others are refused", async () => {
     const base = `/api/matches/${gameId}`;
     expect((await Out.call("GET", `${base}/state`)).statusCode).toBe(404);

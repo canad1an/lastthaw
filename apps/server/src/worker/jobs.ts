@@ -1,4 +1,5 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
+import { enterMatchMap } from "../map/scope.js";
 import type pino from "pino";
 import { AGES, buildingById, techById, unitById, balance, HAULER_IDS } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
@@ -21,7 +22,7 @@ const MAX_ATTEMPTS = 5;
  */
 export async function runDueJobs(db: Db, publisher: Publisher, log: pino.Logger): Promise<number> {
   const due = await db
-    .select({ id: jobs.id })
+    .select({ id: jobs.id, matchId: jobs.matchId })
     .from(jobs)
     .innerJoin(matches, eq(matches.id, jobs.matchId))
     .where(
@@ -34,7 +35,8 @@ export async function runDueJobs(db: Db, publisher: Publisher, log: pino.Logger)
     .limit(500);
 
   let done = 0;
-  for (const { id } of due) {
+  for (const { id, matchId } of due) {
+    await enterMatchMap(db, matchId);
     const after: Array<() => Promise<void>> = [];
     try {
       await db.transaction(async (tx) => {

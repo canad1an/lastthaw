@@ -5,7 +5,7 @@ import {
   neighborsOf,
   regionById,
   validateWorld,
-  world,
+  earth as world,
 } from "../src/map/index.js";
 
 /**

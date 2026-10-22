@@ -88,6 +88,9 @@ export type UserView = z.infer<typeof userView>;
 export const matchStatus = z.enum(["lobby", "running", "finished"]);
 export type MatchStatus = z.infer<typeof matchStatus>;
 
+/** The maps a match can be played on (see MAP_IDS in the map module). */
+export const mapIdSchema = z.enum(["earth", "pangaea"]);
+
 export const matchSummary = z.object({
   id: z.string(),
   /** Readable address for links; the UUID when an old match has none. */
@@ -112,6 +115,7 @@ export const matchSummary = z.object({
   createdByMe: z.boolean().default(false),
   /** The game's resource multiplier (1 = normal). */
   resourceMult: z.number().default(1),
+  map: mapIdSchema.default("earth"),
   /** Tournaments: how many have registered, whether I have, and when joining opens. */
   registrations: z.number().default(0),
   registered: z.boolean().default(false),
@@ -137,6 +141,8 @@ export const createMatchBody = z.object({
   aiDifficulty: z.enum(["mixed", "easy", "medium", "hard"]).optional(),
   /** Everything gathered or extracted is scaled by this, independent of speed. 1 is normal; tournaments are always 1. */
   resourceMult: z.number().min(1).max(10).optional(),
+  /** The map to play on; Earth when left out. */
+  map: mapIdSchema.optional(),
 });
 
 export const pickStartBody = z.object({ regionId: z.string() });
@@ -599,6 +605,8 @@ export const matchStateView = z.object({
     speed: z.number(),
     /** Everything gathered or extracted is scaled by this (1 = normal). */
     resourceMult: z.number().default(1),
+    /** The map this match is played on. */
+    map: mapIdSchema.default("earth"),
     startsAt: z.string(),
     endsAt: z.string(),
     /** Match clock (server time plus any dev time skip), ISO. While paused this is the moment the pause began. */

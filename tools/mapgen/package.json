@@ -7,15 +7,20 @@
   "scripts": {
     "generate": "tsx src/generate.ts && tsx src/anchors.ts && tsx src/extents.ts",
     "typecheck": "tsc --noEmit",
-    "relief": "python -P src/relief.py data/relief-src/NE1_HR_LC_SR_W.tif ../../apps/web/public/map/relief"
+    "relief": "python -P src/relief.py data/relief-src/NE1_HR_LC_SR_W.tif ../../apps/web/public/map/earth/relief",
+    "pangaea": "tsx src/generate-pangaea.ts && node src/dense-lanes.mjs --map=pangaea && node src/sea-paths.mjs --map=pangaea && node ../unit-pictures/coast-points.mjs ../../packages/shared/src/map/pangaea.json ../../apps/web/public/map/pangaea/coastPoints.json && node -e \"require('fs').copyFileSync('../../packages/shared/src/map/pangaea.json','../../apps/web/public/map/pangaea/world.json')\""
   },
   "dependencies": {
+    "d3-delaunay": "^6.0.4",
     "d3-geo": "^3.1.1",
+    "d3-geo-voronoi": "^2.1.0",
+    "shapefile": "^0.6.6",
     "topojson-client": "^3.1.0",
     "topojson-server": "^3.0.1",
     "topojson-simplify": "^3.0.3"
   },
   "devDependencies": {
+    "@types/d3-delaunay": "^6.0.4",
     "@types/d3-geo": "^3.1.0",
     "@types/geojson": "^7946.0.16",
     "@types/node": "^22.0.0",

@@ -1,4 +1,6 @@
 import Fastify from "fastify";
+import { DEFAULT_MAP } from "@lastthaw/shared";
+import { enterMap, mapOfMatch, mapScope } from "../map/scope.js";
 import cors from "@fastify/cors";
 import cookie from "@fastify/cookie";
 import websocket from "@fastify/websocket";
@@ -78,7 +80,11 @@ export async function buildApp(deps: AppDeps = {}) {
   await app.register(rateLimit, { global: true, max: cfg.LOAD_TEST ? 1_000_000 : 300, timeWindow: "1 minute", redis, nameSpace: "lt-rl:", keyGenerator: (req) => req.ip, skipOnError: true });
   // Cross-site writes are refused outright: browsers always send Origin on cross-site POSTs.
   const allowedOrigins = new Set([cfg.PUBLIC_URL, cfg.PUBLIC_URL.replace("://", "://www.")]);
-  // Match addresses: every /api/matches/:id route takes the UUID or the readable slug; the slug is swapped for the UUID here.
+  // Every request runs in its own map scope (Earth until a match is known), so the shared map helpers answer for the
+  // right map however requests interleave. The callback form keeps the rest of the request inside the scope.
+  app.addHook("onRequest", (_req, _reply, done) => mapScope.run({ map: DEFAULT_MAP }, done));
+  // Match addresses: every /api/matches/:id route takes the UUID or the readable slug; the slug is swapped for the UUID here,
+  // and the match's map put in scope.
   app.addHook("preValidation", async (req, reply) => {
     const params = req.params as { id?: string } | undefined;
     if (!params?.id || !req.url.startsWith("/api/matches/")) return;
@@ -86,6 +92,7 @@ export async function buildApp(deps: AppDeps = {}) {
     if (id === "bad") return reply.code(400).send({ error: "bad match id" });
     if (!id) return reply.code(404).send({ error: "match not found" });
     params.id = id;
+    enterMap(await mapOfMatch(db, id));
   });
   app.addHook("onRequest", async (req, reply) => {
     if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") return;
