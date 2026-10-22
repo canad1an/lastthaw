@@ -90,4 +90,3 @@ export function validateWorld(w: WorldMap): void {
     }
   }
 }
-export * from "./svgPath.js";

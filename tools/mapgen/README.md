@@ -14,13 +14,6 @@ cover and water (public domain, equirectangular, which matches the map's 2000x10
 
 The output is deterministic, so rerunning it changes nothing unless the script or the source does.
 
-## Town slots (`src/town-slots.mjs`)
-
-Where each region's buildings stand when the map is zoomed in: a centre for the wonder and up to 26 slots packed
-round it, written to `apps/web/src/map/townSlots.json`. `node tools/mapgen/src/town-slots.mjs`; the shared test
-`townSlots.test.ts` checks every slot lies inside its region. `src/grid.mjs` holds the rasteriser both this and the
-lane finder use.
-
 ## Sea lanes and coasts (`src/sea-paths.mjs`, `src/dense-lanes.mjs`, `src/coast-points.mjs`)
 
 See the comments at the top of each script.

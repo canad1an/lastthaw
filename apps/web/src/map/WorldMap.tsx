@@ -4,12 +4,10 @@ import type { ArmyMarker } from "./armyMarkers.js";
 import { UnitIcon, UnitStrokes, unitPicture } from "../components/UnitIcon.js";
 import coastPoints from "./coastPoints.json";
 import { intersects, visibleRect, type View } from "./viewport.js";
-import { BADGE_K, TOWN_K, TOWN_SLOTS, placeBuildings, pictureSize } from "./townLayer.js";
-import { BUILDING_PICTURES } from "../components/buildingPictures.js";
 
 /** Where a region meets the sea: a point on its outline mid-shore, computed from the map (tools: coast-points). */
 const COAST: Record<string, { x: number; y: number; a: number } | undefined> = coastPoints as Record<string, { x: number; y: number; a: number }>;
-import { unitById, buildingById, wallOf, BUILDING_CATEGORIES } from "@lastthaw/shared";
+import { unitById, buildingById, wallOf } from "@lastthaw/shared";
 
 export type RegionPaint = {
   fill?: string;
@@ -32,8 +30,6 @@ export interface WorldMapProps {
   focus?: string | null;
   /** Draw the shaded-relief terrain under the regions (tools/mapgen/src/relief.py); region fills then tint it. */
   relief?: boolean;
-  /** The player's own regions with their buildings: zoomed right in, each is drawn as a town of building pictures. */
-  towns?: Array<{ regionId: string; buildings: Record<string, number> }>;
   /** Centre on this region and flash its outline for a moment; the counter lets the same region be flown to twice. */
   flyTo?: { id: string; n: number } | null;
   className?: string;
@@ -109,18 +105,17 @@ const MARKER_SCALE = 1.75;
 const BADGE_SCALE = 1.4;
 /** A battle's crossed swords are drawn this many times larger than other badges, so a fight is seen from anywhere on the map. */
 const BATTLE_BADGE_SCALE = 5;
-// Phones pinch in close to pick out one province among many, and closer still to walk round its town (TOWN_K).
-const MAX_K = 60;
+// Phones pinch in close to pick out one province among many; the limit used to stop well short of that.
+const MAX_K = 28;
 
 /**
  * SVG world map with pointer pan, wheel/pinch zoom and click selection.
  * Rendering ~400 paths is cheap; the expensive part is re-rendering on every
  * state change, so the static layer is memoized and only the paint changes.
  */
-export function WorldMap({ paint, selected, onSelect, focus, relief = false, towns = [], flyTo, className = "", ice, flags = [], harbors = [], dashed = [], armies = [], roads = [], badges = [], storms = [], thaws = [], onBadgeClick }: WorldMapProps) {
+export function WorldMap({ paint, selected, onSelect, focus, relief = false, flyTo, className = "", ice, flags = [], harbors = [], dashed = [], armies = [], roads = [], badges = [], storms = [], thaws = [], onBadgeClick }: WorldMapProps) {
   const [hoverArmy, setHoverArmy] = useState<string | null>(null);
   const [hoverHarbor, setHoverHarbor] = useState<string | null>(null);
-  const [hoverBuilding, setHoverBuilding] = useState<HoverBuilding | null>(null);
   const [routeArmy, setRouteArmy] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [view, setView] = useState<View>({ x: 0, y: 0, k: 1 });
@@ -275,17 +270,6 @@ export function WorldMap({ paint, selected, onSelect, focus, relief = false, tow
       <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`} style={{ willChange: "transform" }}>
         {relief && <Relief view={view} width={W} height={H} />}
         <Regions paint={paint} selected={selected} strokeWidth={0.8 / view.k} />
-        {view.k >= TOWN_K && towns.length > 0 && (() => {
-          const seen = visibleRect(view, W, H);
-          const badges = view.k >= BADGE_K;
-          return towns.map((t) => {
-            const slot = TOWN_SLOTS[t.regionId];
-            if (!slot) return null;
-            const [x0, y0, x1, y1] = slot.b;
-            if (!intersects({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, seen, (x1 - x0) * 0.1)) return null;
-            return <Town key={t.regionId} regionId={t.regionId} buildings={t.buildings} badges={badges} onHover={setHoverBuilding} />;
-          });
-        })()}
         {flash && <path d={allRegions().find((r) => r.id === flash)?.path ?? ""} fill="#fbbf24" stroke="#fde68a" strokeWidth={3 / view.k} strokeLinejoin="round" pointerEvents="none" className="region-flash" />}
         {badges.filter((b) => b.battleId).map((b) => {
           // A battle in progress: the whole region flashes red until the last round.
@@ -531,23 +515,6 @@ export function WorldMap({ paint, selected, onSelect, focus, relief = false, tow
           </foreignObject>
         );
       })()}
-      {hoverBuilding && view.k >= TOWN_K && (() => {
-        const def = buildingById.get(hoverBuilding.id);
-        const sx = ((hoverBuilding.x * view.k + view.x) / world.width) * 100;
-        const sy = ((hoverBuilding.y * view.k + view.y) / world.height) * 100;
-        return (
-          <foreignObject x={0} y={0} width={world.width} height={world.height} pointerEvents="none">
-            <div style={{ position: "absolute", left: `${sx}%`, top: `${sy}%`, transform: "translate(24px, -50%)" }} className="pointer-events-none w-max max-w-[20rem] rounded-md border border-slate-700 bg-slate-950/95 px-3 py-2 text-xs text-slate-200 shadow-xl">
-              <p className="text-sm font-medium">
-                {def?.name ?? hoverBuilding.id}
-                {(def?.maxLevel ?? 1) > 1 && <span className="text-slate-400"> · level {hoverBuilding.level} of {def?.maxLevel}</span>}
-              </p>
-              <p className="text-slate-400">{regionById(hoverBuilding.regionId)?.name ?? hoverBuilding.regionId}</p>
-              {def?.description && <p className="mt-0.5 max-w-[18rem] text-slate-500">{def.description}</p>}
-            </div>
-          </foreignObject>
-        );
-      })()}
       {/* Desktop: a small card beside the marker while the pointer is on it. */}
       {hoverArmy && (() => {
         const a = armies.find((x) => x.id === hoverArmy);
@@ -654,68 +621,6 @@ const IceLayer = memo(function IceLayer({ ice, k: zoom }: { ice: { latitude: num
             </g>
           );
         })}
-    </g>
-  );
-});
-
-interface HoverBuilding {
-  regionId: string;
-  id: string;
-  level: number;
-  x: number;
-  y: number;
-}
-
-const CATEGORY_GLYPH = new Map(BUILDING_CATEGORIES.map((c) => [c.id, c.icon]));
-
-/**
- * One region's town: its buildings as pictures on the precomputed slots (townLayer.ts), the wonder at the centre,
- * each with a level badge once zoomed in far enough. Pictures are anchored to the map, so they grow with the zoom
- * like real plots do; a building without a picture yet shows its category's glyph on a disc.
- */
-const Town = memo(function Town({ regionId, buildings, badges, onHover }: { regionId: string; buildings: Record<string, number>; badges: boolean; onHover: (b: HoverBuilding | null) => void }) {
-  const slot = TOWN_SLOTS[regionId];
-  if (!slot) return null;
-  const size = pictureSize(slot);
-  const placed = placeBuildings(buildings, slot);
-  return (
-    <g>
-      {placed.map((b) => {
-        const def = buildingById.get(b.id);
-        const w = size * (def?.category === "wonder" ? 1.5 : 1);
-        const hover: HoverBuilding = { regionId, id: b.id, level: b.level, x: b.x, y: b.y };
-        return (
-          <g
-            key={b.id}
-            className="cursor-pointer"
-            onPointerEnter={() => onHover(hover)}
-            onPointerLeave={() => onHover(null)}
-            onClick={(e) => {
-              e.stopPropagation();
-              onHover(hover);
-            }}
-          >
-            {BUILDING_PICTURES.has(b.id) ? (
-              <image href={`/buildings/${b.id}.png`} x={b.x - w / 2} y={b.y - w / 2} width={w} height={w} preserveAspectRatio="xMidYMid meet" />
-            ) : (
-              <g>
-                <circle cx={b.x} cy={b.y} r={w * 0.4} fill="#f8fafc" stroke="#0f172a" strokeWidth={w * 0.04} />
-                <text x={b.x} y={b.y + w * 0.14} textAnchor="middle" fontSize={w * 0.42} style={{ userSelect: "none" }}>
-                  {(def && CATEGORY_GLYPH.get(def.category)) ?? "▪"}
-                </text>
-              </g>
-            )}
-            {badges && (def?.maxLevel ?? 1) > 1 && (
-              <g transform={`translate(${b.x + w * 0.38} ${b.y + w * 0.38})`}>
-                <circle r={w * 0.14} fill="#0f172a" stroke="#f8fafc" strokeWidth={w * 0.02} />
-                <text y={w * 0.05} textAnchor="middle" fontSize={w * 0.16} fontWeight={700} fill="#f8fafc" style={{ userSelect: "none" }}>
-                  {b.level}
-                </text>
-              </g>
-            )}
-          </g>
-        );
-      })}
     </g>
   );
 });
