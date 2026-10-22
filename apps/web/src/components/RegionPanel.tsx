@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AGES, availableBuildings, availableUnits, buildingBlockedBy, balance, buildingById, buildingCost, matchDayOf, buildingSeconds, canAfford, computeRates, normalizeAssignment, realSeconds, regionById, settle, totalPopulation, trainSeconds, unitById, unitCost, formatCountdown, type MatchStateView, type OwnedRegionView, type RegionEconomy, type SightedRegionView, type SpecialResource, distanceKm, NOTE_COLOURS, type NoteColour, loyaltyBand, loyaltyOutlook, HAULER_IDS, haulerCarry, type AgeIndex } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { useNow } from "../hooks/useNow.js";
-import { Button, Card, ErrorText, fmt, signed } from "./ui.js";
+import { Button, Card, ConfirmDialog, ErrorText, fmt, signed } from "./ui.js";
 import { UnitIcon } from "./UnitIcon.js";
 import { Countdown, CostLine, JobTime } from "./Countdown.js";
 import { SendArmy } from "./ArmyPanel.js";
@@ -555,8 +555,12 @@ function BuildTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
   });
   const pull = useMutation({
     mutationFn: (buildingId: string) => api.demolish(matchId, owned.regionId, buildingId),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matchState(matchId) }),
+    onSuccess: () => {
+      setPulling(null);
+      void qc.invalidateQueries({ queryKey: keys.matchState(matchId) });
+    },
   });
+  const [pulling, setPulling] = useState<string | null>(null);
   // Buildings draw on the capital's treasury too, so affordability counts both.
   // Buildings draw on every region: this one first, then the capital, then the rest.
   const here = stockOf(live.e);
@@ -620,7 +624,7 @@ function BuildTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
                   className="rounded border border-rose-500/40 px-2 py-1 text-xs text-rose-300 hover:bg-rose-500/10 disabled:opacity-40"
                   title={b.maxLevel === 1 ? `Remove the ${b.name}. Nothing is refunded.` : `Pull ${b.name} down one level. Nothing is refunded.`}
                   disabled={pull.isPending || queued > 0}
-                  onClick={() => window.confirm(`${b.maxLevel === 1 ? `Remove the ${b.name}` : `Pull ${b.name} down to level ${(owned.buildings[b.id] ?? 1) - 1}`} in ${regionById(owned.regionId)?.name}? Nothing is refunded.`) && pull.mutate(b.id)}
+                  onClick={() => setPulling(b.id)}
                   data-demolish={b.id}
                 >
                   {b.maxLevel === 1 ? "Remove" : "−1"}
@@ -635,6 +639,23 @@ function BuildTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
     <div className="space-y-2">
       {queueFull && <p className="text-xs text-amber-300">Queue full ({balance.queue.slotsPerRegion} slots).</p>}
       <ErrorText>{m.error?.message ?? pull.error?.message}</ErrorText>
+      {pulling &&
+        (() => {
+          const b = buildingById.get(pulling)!;
+          const have = owned.buildings[pulling] ?? 0;
+          return (
+            <ConfirmDialog
+              title={b.maxLevel === 1 ? `Remove the ${b.name} in ${regionById(owned.regionId)?.name}?` : `Pull ${b.name} down to level ${have - 1} in ${regionById(owned.regionId)?.name}?`}
+              confirmLabel={b.maxLevel === 1 ? "Remove it" : "Pull it down"}
+              danger
+              pending={pull.isPending}
+              onConfirm={() => pull.mutate(pulling)}
+              onCancel={() => setPulling(null)}
+            >
+              <p>Nothing is refunded{have > 1 ? `, and the other ${have - 1} level${have - 1 === 1 ? "" : "s"} stay` : ""}. What the building did for this region stops at once.</p>
+            </ConfirmDialog>
+          );
+        })()}
       {BUILDING_CATEGORIES.map((c) => {
         const bs = list.filter((b) => b.category === c.id);
         if (!bs.length) return null;

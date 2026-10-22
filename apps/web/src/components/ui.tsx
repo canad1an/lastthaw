@@ -1,4 +1,5 @@
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 export function Button({ className = "", variant = "primary", ...rest }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "ghost" | "danger" }) {
   const base = "inline-flex min-h-11 items-center justify-center rounded-md px-3 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50 sm:min-h-0";
@@ -44,4 +45,43 @@ export function fmt(n: number, digits = 0): string {
 export function signed(n: number, digits = 1): string {
   const s = fmt(Math.abs(n), digits);
   return n >= 0 ? `+${s}` : `-${s}`;
+}
+
+/** The game's own yes-or-no box, in place of the browser's: a title, a line or two, and two buttons. */
+export function ConfirmDialog({
+  title,
+  children,
+  confirmLabel = "Yes",
+  cancelLabel = "Keep it",
+  danger = false,
+  pending = false,
+  onConfirm,
+  onCancel,
+}: {
+  title: string;
+  children?: ReactNode;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  danger?: boolean;
+  pending?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return createPortal(
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm" onClick={onCancel} role="dialog" aria-modal="true">
+      <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-950 p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <h2 className="text-lg font-semibold text-white">{title}</h2>
+        {children && <div className="mt-2 space-y-2 text-sm text-slate-300">{children}</div>}
+        <div className="mt-4 flex flex-wrap justify-end gap-2">
+          <Button variant="ghost" onClick={onCancel} disabled={pending}>
+            {cancelLabel}
+          </Button>
+          <Button variant={danger ? "danger" : "primary"} onClick={onConfirm} disabled={pending}>
+            {pending ? "…" : confirmLabel}
+          </Button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
 }

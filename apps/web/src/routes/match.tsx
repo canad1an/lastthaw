@@ -31,7 +31,7 @@ import { IncomingWarnings } from "../components/ArmyPanel.js";
 import { ActivityPanel } from "../components/ActivityPanel.js";
 import { ChatChannel } from "../components/Chat.js";
 import { TradeRoutesPanel } from "../components/TradeRoutesPanel.js";
-import { Button, Card, ErrorText, fmt } from "../components/ui.js";
+import { Button, Card, ConfirmDialog, ErrorText, fmt } from "../components/ui.js";
 import { useNow } from "../hooks/useNow.js";
 import { useServerInfo } from "../hooks/useServerInfo.js";
 import { useMe } from "../api/auth.js";
@@ -130,6 +130,7 @@ function LobbyRoom({ matchId, state }: { matchId: string; state: MatchStateView 
       void qc.invalidateQueries({ queryKey: keys.matches });
     },
   });
+  const [ask, setAsk] = useState<"start" | "cancel" | null>(null);
   const cancel = useMutation({
     mutationFn: () => api.cancelGame(matchId),
     onSuccess: () => {
@@ -179,12 +180,24 @@ function LobbyRoom({ matchId, state }: { matchId: string; state: MatchStateView 
               <h2 className="font-medium text-white">Your game</h2>
               <p className="text-sm text-slate-400">You made this game, so you decide when it begins. Starting now fills the empty seats with AI tribes at once.</p>
               <div className="flex flex-wrap gap-2">
-                <Button onClick={() => window.confirm(`Start ${state.match.name} now with ${state.players.length} player${state.players.length === 1 ? "" : "s"} and AI tribes in the rest of the seats?`) && startNow.mutate()} disabled={startNow.isPending}>
+                <Button onClick={() => setAsk("start")} disabled={startNow.isPending}>
                   Start now
                 </Button>
-                <Button variant="danger" onClick={() => window.confirm(`Cancel ${state.match.name}? Everyone who joined is sent back to the Matches page.`) && cancel.mutate()} disabled={cancel.isPending}>
+                <Button variant="danger" onClick={() => setAsk("cancel")} disabled={cancel.isPending}>
                   Cancel game
                 </Button>
+                {ask === "start" && (
+                  <ConfirmDialog title={`Start ${state.match.name} now?`} confirmLabel="Start now" pending={startNow.isPending} onConfirm={() => { startNow.mutate(); setAsk(null); }} onCancel={() => setAsk(null)}>
+                    <p>
+                      {state.players.length} player{state.players.length === 1 ? "" : "s"} are in. AI tribes fill the rest of the seats at once.
+                    </p>
+                  </ConfirmDialog>
+                )}
+                {ask === "cancel" && (
+                  <ConfirmDialog title={`Cancel ${state.match.name}?`} confirmLabel="Cancel the game" cancelLabel="Keep it" danger pending={cancel.isPending} onConfirm={() => { cancel.mutate(); setAsk(null); }} onCancel={() => setAsk(null)}>
+                    <p>Everyone who joined is sent back to the Matches page.</p>
+                  </ConfirmDialog>
+                )}
               </div>
               <ErrorText>{startNow.error?.message ?? cancel.error?.message}</ErrorText>
             </Card>
