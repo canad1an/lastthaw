@@ -6,7 +6,8 @@
   "description": "One-time world map generator for Last Thaw (Natural Earth admin-1 -> ~400 regions)",
   "scripts": {
     "generate": "tsx src/generate.ts && tsx src/anchors.ts && tsx src/extents.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "relief": "python -P src/relief.py data/relief-src/NE1_HR_LC_SR_W.tif ../../apps/web/public/map/relief"
   },
   "dependencies": {
     "d3-geo": "^3.1.1",

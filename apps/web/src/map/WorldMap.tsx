@@ -3,6 +3,7 @@ import { allRegions, balance, freezeDayForLatitude, iceExposure, iceLatitudeOnDa
 import type { ArmyMarker } from "./armyMarkers.js";
 import { UnitIcon, UnitStrokes, unitPicture } from "../components/UnitIcon.js";
 import coastPoints from "./coastPoints.json";
+import { intersects, visibleRect, type View } from "./viewport.js";
 
 /** Where a region meets the sea: a point on its outline mid-shore, computed from the map (tools: coast-points). */
 const COAST: Record<string, { x: number; y: number; a: number } | undefined> = coastPoints as Record<string, { x: number; y: number; a: number }>;
@@ -27,6 +28,8 @@ export interface WorldMapProps {
   onSelect: (regionId: string | null) => void;
   /** Region id to center on when it changes (e.g. the capital). */
   focus?: string | null;
+  /** Draw the shaded-relief terrain under the regions (tools/mapgen/src/relief.py); region fills then tint it. */
+  relief?: boolean;
   /** Centre on this region and flash its outline for a moment; the counter lets the same region be flown to twice. */
   flyTo?: { id: string; n: number } | null;
   className?: string;
@@ -95,12 +98,6 @@ export function terrainFill(terrain: string): string {
   return TERRAIN_FILL[terrain] ?? "#777";
 }
 
-interface View {
-  x: number;
-  y: number;
-  k: number;
-}
-
 const MIN_K = 1;
 /** Moving units are drawn this much larger than their base art: caravans and settlers must read at a glance on a phone. */
 const MARKER_SCALE = 1.75;
@@ -116,7 +113,7 @@ const MAX_K = 28;
  * Rendering ~400 paths is cheap; the expensive part is re-rendering on every
  * state change, so the static layer is memoized and only the paint changes.
  */
-export function WorldMap({ paint, selected, onSelect, focus, flyTo, className = "", ice, flags = [], harbors = [], dashed = [], armies = [], roads = [], badges = [], storms = [], thaws = [], onBadgeClick }: WorldMapProps) {
+export function WorldMap({ paint, selected, onSelect, focus, relief = false, flyTo, className = "", ice, flags = [], harbors = [], dashed = [], armies = [], roads = [], badges = [], storms = [], thaws = [], onBadgeClick }: WorldMapProps) {
   const [hoverArmy, setHoverArmy] = useState<string | null>(null);
   const [hoverHarbor, setHoverHarbor] = useState<string | null>(null);
   const [routeArmy, setRouteArmy] = useState<string | null>(null);
@@ -270,7 +267,8 @@ export function WorldMap({ paint, selected, onSelect, focus, flyTo, className = 
           <line x1={0} y1={0} x2={0} y2={6} stroke="#e0f2fe" strokeWidth={2} opacity={0.75} />
         </pattern>
       </defs>
-      <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>
+      <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`} style={{ willChange: "transform" }}>
+        {relief && <Relief view={view} width={W} height={H} />}
         <Regions paint={paint} selected={selected} strokeWidth={0.8 / view.k} />
         {flash && <path d={allRegions().find((r) => r.id === flash)?.path ?? ""} fill="#fbbf24" stroke="#fde68a" strokeWidth={3 / view.k} strokeLinejoin="round" pointerEvents="none" className="region-flash" />}
         {badges.filter((b) => b.battleId).map((b) => {
@@ -623,6 +621,41 @@ const IceLayer = memo(function IceLayer({ ice, k: zoom }: { ice: { latitude: num
             </g>
           );
         })}
+    </g>
+  );
+});
+
+/** Zoom from which the sharper relief tiles are drawn on top of the base image. */
+const RELIEF_HI_K = 6;
+const RELIEF_TILE = 250; // map units per tile (1000 px of the 8000x4000 image)
+const RELIEF_COLS = 8;
+const RELIEF_ROWS = 4;
+
+/**
+ * The shaded-relief terrain: one 4000x2000 image always, plus the 8000x4000 tiles that lie in view once zoomed past
+ * RELIEF_HI_K. The tile set follows the view with a short delay so a pinch does not add and drop tiles every frame.
+ */
+const Relief = memo(function Relief({ view, width, height }: { view: View; width: number; height: number }) {
+  const [tileView, setTileView] = useState(view);
+  useEffect(() => {
+    const t = setTimeout(() => setTileView(view), 100);
+    return () => clearTimeout(t);
+  }, [view]);
+  const tiles: { col: number; row: number }[] = [];
+  if (tileView.k >= RELIEF_HI_K) {
+    const seen = visibleRect(tileView, width, height);
+    for (let row = 0; row < RELIEF_ROWS; row++) {
+      for (let col = 0; col < RELIEF_COLS; col++) {
+        if (intersects({ x: col * RELIEF_TILE, y: row * RELIEF_TILE, w: RELIEF_TILE, h: RELIEF_TILE }, seen)) tiles.push({ col, row });
+      }
+    }
+  }
+  return (
+    <g pointerEvents="none">
+      <image href="/map/relief/relief-4000.webp" x={0} y={0} width={width} height={height} preserveAspectRatio="none" />
+      {tiles.map(({ col, row }) => (
+        <image key={`${col}_${row}`} href={`/map/relief/relief-8000/${col}_${row}.webp`} x={col * RELIEF_TILE} y={row * RELIEF_TILE} width={RELIEF_TILE} height={RELIEF_TILE} preserveAspectRatio="none" />
+      ))}
     </g>
   );
 });

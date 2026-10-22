@@ -18,6 +18,7 @@ export const OVERLAYS: OverlayDef[] = [
   { id: "ice", label: "Ice within 3 days", description: "Regions the ice reaches within three days. Evacuate or accept the loss.", colour: "#e0f2fe", glyph: "❄" },
   { id: "noroads", label: "No roads", description: "Regions that could build Roads but have not.", colour: "#94a3b8", glyph: "⌁" },
   { id: "hidehaulers", label: "Hide haulers", description: "Hides caravans, wagons, freight wagons, trains, lorries and cogs on the move. Soldiers, settlers, enemies and the capital wagon still show.", colour: "#64748b", glyph: "≡" },
+  { id: "flat", label: "Flat map", description: "Hides the terrain relief under the regions and paints them in plain colours. Lighter on an old phone.", colour: "#475569", glyph: "▭" },
   { id: "loyalty", label: "Loyalty", description: "Tints your regions by loyalty: green secure, amber uneasy, red at risk of rebellion. Badge on regions heading down.", colour: "#f43f5e", glyph: "!" },
 ];
 
@@ -57,6 +58,13 @@ export function useOverlays(): { enabled: Set<string>; toggle: (id: string) => v
   }, []);
   return { enabled, toggle };
 }
+
+/**
+ * How much of the terrain relief shows through a region's fill. Own and rival colours stay strong enough to read at
+ * a glance; neutral land is barely tinted; unseen land is darkened rather than coloured, so the fog still reads.
+ */
+export const RELIEF_FILL = { own: 0.55, rival: 0.6, enemy: 0.65, target: 0.8, terrain: 0.25, frontier: 0.2, unseen: 0.45, picking: 0.3 } as const;
+export const FOG_FILL = "#0b1a2b";
 
 const NOTE_HEX: Record<string, string> = { red: "#f43f5e", amber: "#f59e0b", green: "#22c55e", blue: "#38bdf8", purple: "#a78bfa" };
 

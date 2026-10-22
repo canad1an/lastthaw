@@ -24,7 +24,7 @@ import { MatchNight, useWinterNight } from "../components/MatchNight.js";
 import { MatchIntro, useIntroOpen } from "../components/MatchIntro.js";
 import { DayBrief, useDayBriefOpen } from "../components/DayBrief.js";
 import { RefugeePanel } from "../components/RefugeePanel.js";
-import { noteBadges, overlayBadges, useOverlays, advisorBadges, battleBadges } from "../map/overlays.js";
+import { noteBadges, overlayBadges, useOverlays, advisorBadges, battleBadges, RELIEF_FILL, FOG_FILL } from "../map/overlays.js";
 import { BattleWindow } from "../components/BattleWindow.js";
 import { setMusicAge } from "../audio/sound.js";
 import { IncomingWarnings } from "../components/ArmyPanel.js";
@@ -273,7 +273,7 @@ function LobbyView({ matchId, state, onBack }: { matchId: string; state: MatchSt
 
   return (
     <div className="flex h-[calc(100dvh-3rem)] flex-col bg-slate-950 lg:flex-row">
-      <WorldMap paint={paint} selected={selected} onSelect={setSelected} focus={current ?? options.data?.options[0] ?? null} className="h-1/2 w-full lg:h-full lg:flex-1" />
+      <WorldMap paint={paint} selected={selected} onSelect={setSelected} focus={current ?? options.data?.options[0] ?? null} relief className="h-1/2 w-full lg:h-full lg:flex-1" />
       <aside className="w-full space-y-3 overflow-y-auto border-t border-slate-800 p-4 lg:w-96 lg:border-l lg:border-t-0">
         {onBack && (
           <Button variant="ghost" onClick={onBack}>
@@ -407,6 +407,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
   const { enabled: overlays, toggle: toggleOverlay } = useOverlays();
   const menu = useMenuData(matchId, state, overlays, phone && screen.kind === "panel" && screen.id === "messages", phone && screen.kind === "panel" && screen.id === "chat");
   const hideHaulers = overlays.has("hidehaulers");
+  const relief = !overlays.has("flat");
   const shownArmies = useMemo(
     () => (hideHaulers ? state.armies.filter((a) => a.mission === "relocate" || !Object.entries(a.units).every(([id, n]) => n <= 0 || unitById.get(id)?.hauler)) : state.armies),
     [state.armies, hideHaulers],
@@ -467,30 +468,33 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
   const borderSet = useMemo(() => new Set(state.owned.flatMap((o) => regionById(o.regionId)?.neighbors ?? [])), [state.owned]);
   const paint = useCallback(
     (r: MapRegion): RegionPaint => {
-      if (r.id === target) return { fill: "#facc15", opacity: 1, stroke: "#fff" };
+      if (r.id === target) return { fill: "#facc15", opacity: relief ? RELIEF_FILL.target : 1, stroke: "#fff" };
       if (ownedSet.has(r.id)) {
         const o = ownedById.get(r.id);
         const walls = wallPaint(wallOf(o?.buildings));
         if (overlays.has("loyalty")) {
           if (o && !o.isCapital) {
             const band = loyaltyBand(o.loyalty);
-            return { fill: band === "secure" ? "#22c55e" : band === "uneasy" ? "#f59e0b" : "#ef4444", opacity: 1, ...walls, ...(incomingSet.has(r.id) ? { stroke: "#f43f5e" } : {}) };
+            return { fill: band === "secure" ? "#22c55e" : band === "uneasy" ? "#f59e0b" : "#ef4444", opacity: relief ? RELIEF_FILL.own : 1, ...walls, ...(incomingSet.has(r.id) ? { stroke: "#f43f5e" } : {}) };
           }
         }
-        return { fill: colorOf(state.me.playerId), opacity: 1, ...walls, ...(incomingSet.has(r.id) ? { stroke: "#f43f5e" } : {}) };
+        return { fill: colorOf(state.me.playerId), opacity: relief ? RELIEF_FILL.own : 1, ...walls, ...(incomingSet.has(r.id) ? { stroke: "#f43f5e" } : {}) };
       }
       const s = sightedBy.get(r.id);
       if (s) {
         const walls = wallPaint(s.wall);
         // An enemy next door is painted red so the front line reads at a glance.
         const enemy = !!s.ownerPlayerId && s.ownerPlayerId !== state.me.playerId && !allySet.has(s.ownerPlayerId) && borderSet.has(r.id);
-        if (enemy) return { fill: "#b91c1c", opacity: 0.85, stroke: "#fca5a5", ...walls };
-        return { fill: s.ownerPlayerId ? colorOf(s.ownerPlayerId) : terrainFill(r.terrain), opacity: 0.8, ...walls };
+        if (enemy) return { fill: "#b91c1c", opacity: relief ? RELIEF_FILL.enemy : 0.85, stroke: "#fca5a5", ...walls };
+        if (s.ownerPlayerId) return { fill: colorOf(s.ownerPlayerId), opacity: relief ? RELIEF_FILL.rival : 0.8, ...walls };
+        return { fill: terrainFill(r.terrain), opacity: relief ? RELIEF_FILL.terrain : 0.8, ...walls };
       }
+      // Beyond sight the relief is shaded rather than coloured: the frontier a little, the unknown more.
+      if (relief) return { fill: FOG_FILL, opacity: frontierSet.has(r.id) ? RELIEF_FILL.frontier : picking ? RELIEF_FILL.picking : RELIEF_FILL.unseen };
       if (frontierSet.has(r.id)) return { opacity: 0.6 };
       return { opacity: picking ? 0.5 : 0.3 };
     },
-    [ownedSet, ownedById, overlays, sightedBy, colorOf, state.me.playerId, target, incomingSet, picking, frontierSet, allySet, borderSet],
+    [ownedSet, ownedById, overlays, relief, sightedBy, colorOf, state.me.playerId, target, incomingSet, picking, frontierSet, allySet, borderSet],
   );
 
   const totals = state.owned.reduce(
@@ -579,6 +583,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
           selected={selected}
           onSelect={onMapSelect}
           focus={state.me.capitalRegionId}
+          relief={relief}
           flyTo={flyTo}
           className={`h-full w-full ${picking ? "cursor-crosshair" : ""}`}
           ice={ice}
