@@ -594,8 +594,8 @@ function BuildTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
                 className="min-w-0 flex-1 cursor-help"
                 trigger={
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{b.name}</span>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                      <span className="whitespace-nowrap font-medium">{b.name}</span>
                       {blocked && <span className="rounded bg-rose-500/20 px-1 text-xs text-rose-300">not here</span>}
                       <span className="text-xs text-slate-500">
                         lvl {owned.buildings[b.id] ?? 0}
@@ -724,9 +724,9 @@ function TrainTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
                 className="min-w-0 flex-1 cursor-help"
                 trigger={
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                       <UnitIcon id={u.id} className="h-6 w-6 text-slate-200" />
-                      <span className="font-medium">{u.name}</span>
+                      <span className="whitespace-nowrap font-medium">{u.name}</span>
                       {(owned.units[u.id] ?? 0) > 0 && <span className="rounded bg-slate-800 px-1.5 text-xs text-slate-300">{fmt(owned.units[u.id]!)} here</span>}
                       <span className="text-xs text-slate-500">
                         atk {u.attack} · def {u.defense} · spd {u.speed}{u.carry ? ` · carry ${fmt(u.carry)}` : ""}{u.breach ? ` · siege ${u.breach}` : ""}
@@ -847,7 +847,7 @@ function ArmyTab({ matchId, owned, state }: { matchId: string; owned: OwnedRegio
         <ul className="space-y-1">
           {entries.map(([id, n]) => (
             <li key={id} className="flex items-center justify-between gap-2">
-              <span className="flex items-center gap-1.5">
+              <span className="flex items-center gap-1.5 whitespace-nowrap">
                 <UnitIcon id={id} className="h-5 w-5 text-slate-300" />
                 {unitById.get(id)?.name ?? id}
               </span>

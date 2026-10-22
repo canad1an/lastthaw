@@ -116,7 +116,7 @@ export function SendArmy({
         <ul className="space-y-1">
           {available.map(([id, n]) => (
             <li key={id} className="grid grid-cols-[1fr_6rem_3rem] items-center gap-2">
-              <span className="flex items-center gap-1.5">
+              <span className="flex items-center gap-1.5 whitespace-nowrap">
                 <UnitIcon id={id} className="h-5 w-5 text-slate-300" />
                 {unitById.get(id)?.name ?? id}
               </span>
