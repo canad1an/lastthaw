@@ -1,4 +1,35 @@
-import { balance, carryCapacity, regionById, unitById, type ArmyView, type IncomingView, missionLabel, laneName } from "@lastthaw/shared";
+import { balance, carryCapacity, regionById, unitById, type ArmyView, type IncomingView, missionLabel, laneName, laneKey } from "@lastthaw/shared";
+import lanePaths from "./lanePaths.json";
+
+/** Every sea lane's water path (tools/mapgen/src/sea-paths.mjs), from one shore to the other, in map units. */
+const LANE_PATHS: Record<string, { from: string; points: Array<[number, number]> } | undefined> = lanePaths as unknown as Record<string, { from: string; points: Array<[number, number]> }>;
+
+/**
+ * The points a convoy is drawn along: region centres on land, and on a sea lane the lane's water path, shore to shore,
+ * so a ship is never drawn crossing land. A voyage that starts at sea begins at the shore, not the region's centre.
+ */
+export function routePoints(ids: readonly string[]): Array<{ x: number; y: number }> {
+  const pts: Array<{ x: number; y: number }> = [];
+  for (let i = 0; i < ids.length; i++) {
+    const r = regionById(ids[i]!);
+    if (!r) continue;
+    const prev = i > 0 ? regionById(ids[i - 1]!) : null;
+    const lane = prev && !prev.neighbors.includes(r.id) && prev.seaRoutes.includes(r.id) ? LANE_PATHS[laneKey(prev.id, r.id)] : undefined;
+    if (lane) {
+      const water = lane.from === prev!.id ? lane.points : [...lane.points].reverse();
+      // Leaving the shore: if the convoy began on this lane, the shore is where it starts.
+      if (pts.length === 1 && i === 1) pts.length = 0;
+      for (const [x, y] of water) pts.push({ x, y });
+      continue;
+    }
+    // By land: the next region's centre (and, for a voyage just landed, the shore already ends the sea run).
+    if (prev && pts.length && LANE_PATHS[laneKey(prev.id, r.id)] === undefined && !prev.neighbors.includes(r.id)) {
+      // A hop the map does not know (no lane, no border): straight to the centre.
+    }
+    pts.push({ x: r.x, y: r.y });
+  }
+  return pts;
+}
 
 export interface ArmyMarker {
   id: string;
@@ -87,7 +118,7 @@ export function armyMarkers(armies: ArmyView[], incoming: IncomingView[], nowMs:
   const out: ArmyMarker[] = [];
   for (const a of armies) {
     const ids = a.path.length >= 2 ? a.path : [a.originRegionId, a.targetRegionId];
-    const pts = ids.map((id) => regionById(id)).filter((r): r is NonNullable<typeof r> => !!r).map((r) => ({ x: r.x, y: r.y }));
+    const pts = routePoints(ids);
     const returning = a.status === "returning";
     const route = returning ? [...pts].reverse() : pts;
     const start = returning ? Date.parse(a.arrivesAt) : Date.parse(a.departsAt);
