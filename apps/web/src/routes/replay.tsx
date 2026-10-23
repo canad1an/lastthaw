@@ -20,7 +20,10 @@ interface Replay {
 }
 
 const COLORS = ["#38bdf8", "#f472b6", "#a3e635", "#fb923c", "#c084fc", "#2dd4bf", "#facc15", "#f87171", "#60a5fa", "#4ade80", "#e879f9", "#fbbf24", "#34d399", "#f9a8d4", "#93c5fd", "#fde68a"];
-const SECONDS = 30;
+/** A full thirty-day match plays in this many seconds at 1x; shorter matches take proportionally less, never under a few seconds. */
+const SECONDS = 20;
+const MIN_SECONDS = 4;
+const SPEEDS = [1, 2, 4] as const;
 
 /**
  * Thirty seconds for thirty days: every quarter-day frame of who held what,
@@ -66,30 +69,43 @@ export function ReplayPage() {
 
   const [i, setI] = useState(0);
   const [playing, setPlaying] = useState(true);
-  const raf = useRef<number | null>(null);
+  const [speed, setSpeed] = useState<(typeof SPEEDS)[number]>(() => {
+    try {
+      const v = Number(localStorage.getItem("lt_replay_speed"));
+      return (SPEEDS as readonly number[]).includes(v) ? (v as (typeof SPEEDS)[number]) : 1;
+    } catch {
+      return 1;
+    }
+  });
   const startRef = useRef<{ t: number; from: number } | null>(null);
   const last = Math.max(0, frames.length - 1);
+  const lastDay = frames[last]?.day ?? 0;
+  // The whole replay's length: proportional to how long the match ran, divided by the chosen speed.
+  const totalMs = (Math.max(MIN_SECONDS, (SECONDS * Math.min(balance.match.lengthDays, Math.max(1, lastDay))) / balance.match.lengthDays) * 1000) / speed;
   useEffect(() => {
     if (!playing || frames.length < 2) return;
-    const perFrame = (SECONDS * 1000) / frames.length;
+    const perFrame = totalMs / frames.length;
     startRef.current = { t: performance.now(), from: i >= last ? 0 : i };
-    const step = (t: number) => {
+    // A timer rather than animation frames: the clock keeps running when the tab is in the background, so the replay
+    // does not freeze until it is looked at, and a slow render skips frames rather than stretching the time.
+    const timer = setInterval(() => {
       const s = startRef.current!;
-      const idx = Math.min(last, s.from + Math.floor((t - s.t) / perFrame));
+      const idx = Math.min(last, s.from + Math.floor((performance.now() - s.t) / perFrame));
       setI(idx);
-      if (idx >= last) {
-        setPlaying(false);
-        return;
-      }
-      raf.current = requestAnimationFrame(step);
-    };
-    raf.current = requestAnimationFrame(step);
-    return () => {
-      if (raf.current) cancelAnimationFrame(raf.current);
-    };
-    // Restarting on `i` would fight the animation; it only restarts when play is toggled.
+      if (idx >= last) setPlaying(false);
+    }, 50);
+    return () => clearInterval(timer);
+    // Restarting on `i` would fight the animation; it only restarts when play is toggled or the speed changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playing, frames.length]);
+  }, [playing, frames.length, totalMs]);
+  const pickSpeed = (v: (typeof SPEEDS)[number]) => {
+    setSpeed(v);
+    try {
+      localStorage.setItem("lt_replay_speed", String(v));
+    } catch {
+      // ignore
+    }
+  };
 
   const state = states[i];
   const day = frames[i]?.day ?? 0;
@@ -121,6 +137,13 @@ export function ReplayPage() {
         <span className="text-slate-500">· day {day.toFixed(1)} of {balance.match.lengthDays}</span>
         <span className="text-slate-500">· ice beyond {iceLatitudeOnDay(day).toFixed(0)}°</span>
         <div className="ml-auto flex items-center gap-2">
+          <span className="flex items-center gap-1 text-xs text-slate-400" title="How fast the replay runs">
+            {SPEEDS.map((v) => (
+              <button key={v} className={`rounded px-1.5 py-0.5 ${speed === v ? "bg-slate-700 text-white" : "hover:bg-slate-800"}`} onClick={() => pickSpeed(v)}>
+                {v}x
+              </button>
+            ))}
+          </span>
           <Button variant="ghost" onClick={() => { if (i >= last) setI(0); setPlaying((p) => !p); }} disabled={frames.length < 2}>
             {playing ? "Pause" : i >= last ? "Replay" : "Play"}
           </Button>
