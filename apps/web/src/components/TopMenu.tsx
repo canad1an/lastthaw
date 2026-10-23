@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { ageTheme } from "../ageTheme.js";
 import { useChatWatch, type ChatToast } from "./chatWatch.js";
-import { TECHS, balance, regionById, type MatchStateView } from "@lastthaw/shared";
+import { TECHS, balance, regionById, MAP_NAMES, type MatchStateView } from "@lastthaw/shared";
 import { api, keys, type MessageView } from "../api/client.js";
 import { MessagesList, isImportant, messageIcon, useMessageToast } from "./Messages.js";
 import { BattleHistory } from "./BattleHistory.js";
@@ -22,7 +22,7 @@ import { Ticker } from "./Ticker.js";
 import { DiplomacyPanel } from "./DiplomacyPanel.js";
 import { AdvisorsPanel } from "./AdvisorsPanel.js";
 
-export type MenuId = "messages" | "battles" | "sound" | "alliance" | "chat" | "market" | "players" | "leaderboard" | "view" | "empire" | "logistics" | "advisors" | "tech";
+export type MenuId = "messages" | "battles" | "sound" | "alliance" | "chat" | "market" | "players" | "leaderboard" | "view" | "empire" | "logistics" | "advisors" | "tech" | "game";
 type Menu = MenuId | "menu";
 
 /** The bar's four tabs, each a family of panels: the dropdown shows the family's panels as tabs of its own. */
@@ -30,9 +30,9 @@ export const MENU_GROUPS: ReadonlyArray<{ id: string; label: string; items: read
   { id: "talk", label: "Talk", items: ["messages", "chat", "alliance"] },
   { id: "war", label: "War", items: ["battles", "players", "leaderboard"] },
   { id: "empire", label: "Empire", items: ["empire", "logistics", "market", "advisors", "tech"] },
-  { id: "settings", label: "Settings", items: ["view", "sound"] },
+  { id: "settings", label: "Settings", items: ["view", "sound", "game"] },
 ];
-const TITLES: Record<Menu, string> = { messages: "Messages", battles: "Battles", sound: "Sound", alliance: "Alliance", chat: "Chat", market: "Market", players: "Players", leaderboard: "Leaderboard", view: "View", empire: "Resources", logistics: "Logistics", advisors: "Advisors", tech: "Tech tree", menu: "Menu" };
+const TITLES: Record<Menu, string> = { messages: "Messages", battles: "Battles", sound: "Sound", alliance: "Alliance", chat: "Chat", market: "Market", players: "Players", leaderboard: "Leaderboard", view: "View", empire: "Resources", logistics: "Logistics", advisors: "Advisors", tech: "Tech tree", game: "Game", menu: "Menu" };
 const groupOf = (m: Menu) => MENU_GROUPS.find((g) => (g.items as readonly string[]).includes(m)) ?? null;
 
 export interface MenuEntry {
@@ -104,6 +104,7 @@ export function useMenuData(matchId: string, state: MatchStateView, overlays: Se
     { id: "tech", label: "Tech", badge: `${state.me.techs.length}/${TECHS.length}` },
     { id: "view", label: "View", badge: overlays.size || undefined },
     { id: "sound", label: "Sound", badge: audio.music ? "music" : audio.effects ? "on" : "off" },
+    { id: "game", label: "Game" },
   ];
   const alerts = (unread ? 1 : 0) + (chat.unread ? 1 : 0) + (logisticsBadge ? 1 : 0) + (invites ? 1 : 0) + (proposals ? 1 : 0);
   return { entries, alerts, messages: q.data?.messages ?? [], newest, toast: toast ? { kind: toast.kind, subject: toast.subject, regionId: regionOf(toast), battleId: typeof (toast.payload as { battleId?: unknown }).battleId === "string" ? (toast.payload as { battleId: string }).battleId : undefined } : null, clearToast, chatToast: chat.toast, clearChatToast: chat.clearToast };
@@ -367,6 +368,22 @@ export function MenuPanelBody({
           <EmpirePanel matchId={matchId} state={state} onSelect={onSelectRegion} />
         )}
         {menu === "sound" && <AudioControls />}
+        {menu === "game" && (
+          <div className="text-sm">
+            <div className="space-y-1 border-b border-slate-800 px-3 py-2 text-xs text-slate-400">
+              <p>
+                <span className="text-slate-200">{state.match.name}</span> · {state.match.speed}x · {MAP_NAMES[state.match.map]}
+                {state.match.resourceMult !== 1 ? ` · ${state.match.resourceMult}x resources` : ""}
+                {state.match.tournament ? " · tournament" : ""}
+              </p>
+            </div>
+            {state.match.createdByMe && !state.match.tournament && state.match.status === "running" ? (
+              <EndGame matchId={matchId} name={state.match.name} />
+            ) : (
+              <p className="px-3 py-2 text-xs text-slate-500">{state.match.tournament ? "Tournaments run to the end." : "Only the game's creator can end it early."}</p>
+            )}
+          </div>
+        )}
         {menu === "view" && (
           <div className="space-y-1 p-3 text-sm">
             <p className="mb-2 text-xs text-slate-400">Map overlays. Each marks your regions with a badge; several can be on at once.</p>
@@ -385,7 +402,6 @@ export function MenuPanelBody({
             <p className="pt-1 text-xs text-slate-500">{OVERLAY_HINT}</p>
           </div>
         )}
-        {menu === "players" && state.match.createdByMe && !state.match.tournament && state.match.status === "running" && <EndGame matchId={matchId} name={state.match.name} />}
       {menu === "players" && (state.objective || state.bounties.length > 0) && (
           <div className="space-y-1 border-b border-slate-800 px-3 py-2 text-xs text-slate-300">
             {state.objective && (

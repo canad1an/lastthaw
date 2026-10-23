@@ -361,6 +361,31 @@ function CreateMatch({ admin }: { admin: boolean }) {
     onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matches }),
   });
   const suggest = useMutation({ mutationFn: () => api.nameSuggestion(), onSuccess: (r) => setName(r.name) });
+  // Once a game is made the form gives way to a note with the lobby link, so a second press cannot make a twin.
+  if (m.isSuccess && m.data) {
+    const made = m.data;
+    return (
+      <Card>
+        <h2 className="mb-1 font-medium">{kind === "tournament" ? "Tournament created" : "Game created"}</h2>
+        <p className="text-sm text-slate-300">
+          <span className="font-medium text-white">{name}</span> is open on {MAP_NAMES[map]} at {speed}x. Players can join in the lobby until it starts; AI tribes fill the rest.
+        </p>
+        {made.inviteCode && (
+          <p className="mt-2 text-sm text-emerald-200">
+            Private game. Invite code: <span className="font-mono">{made.inviteCode}</span>. Share it; joiners enter it on this page.
+          </p>
+        )}
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Link to="/match/$matchId/lobby" params={{ matchId: made.id }}>
+            <Button>Go to the lobby</Button>
+          </Link>
+          <Button variant="ghost" onClick={() => { m.reset(); setName(""); }}>
+            Create another
+          </Button>
+        </div>
+      </Card>
+    );
+  }
   return (
     <Card>
       <h2 className="mb-1 font-medium">{admin ? "Create a tournament or game" : "Create a game"}</h2>
@@ -440,11 +465,6 @@ function CreateMatch({ admin }: { admin: boolean }) {
           </Button>
         </div>
       </form>
-      {m.data?.inviteCode && (
-        <p className="mt-2 text-sm text-emerald-200">
-          Private game created. Invite code: <span className="font-mono">{m.data.inviteCode}</span>. Share it; joiners enter it on this page.
-        </p>
-      )}
       <ErrorText>{m.error?.message}</ErrorText>
     </Card>
   );
