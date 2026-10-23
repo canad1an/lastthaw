@@ -37,6 +37,21 @@ const MAX_RATIO = 2.6; // a lane may be at most this many times longer by water 
 const KEEP_EVERY = 8; // simplification: keep every n-th point of a water path
 const NEAR_COUNT = 4; // lanes each coast gets to its nearest coasts by water...
 const NEAR_WATER_KM = 1500; // ...within this sailing distance
+/** Ocean crossings: two coasts within this many km of open water... */
+const CROSS_KM = 3600;
+/** ...get a direct lane when the lanes already there make the trip more than this many times longer. */
+const CROSS_DETOUR = 2.2;
+/** At most this many crossings leave any one coast, so an ocean does not fill with lanes. */
+const CROSS_PER_COAST = 2;
+/** A crossing is open sea: at least this long, and clear of land by OPEN_CELLS along the way (bar its ends near the shores). */
+const CROSS_MIN_KM = 1000;
+const OPEN_CELLS = 2;
+const SHORE_CELLS = 25;
+/** Isthmuses no crossing may sail through, though the outlines leave a hairline of "sea" there: [lon, lat] to [lon, lat]. */
+const CLOSED = [
+  ["Suez", [31.8, 29.4], [33.2, 31.8]],
+  ["Panama", [-80.6, 8.2], [-77.2, 9.8]],
+];
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 const WORLD = path.join(ROOT, "packages", "shared", "src", "map", MAP === "earth" ? "world.json" : `${MAP}.json`);
@@ -317,6 +332,106 @@ while (n > 1 && guard++ < 50) {
   bridges.push(`${byId.get(a).name} - ${byId.get(b).name} (${Math.round(pathKm(cells))} km by water)`);
   ({ comp, n } = pieces());
 }
+// ---- Ocean crossings. Lanes so far follow coasts and straits, so a sea joined only round its rim (the Atlantic, by the
+// Arctic chain) has no lane across it, and a fleet from West Africa to Brazil sails by Iceland. Every pair of coasts
+// within CROSS_KM of open water whose lanes make the trip more than CROSS_DETOUR times longer gets a direct lane,
+// shortest gaps first, re-checking after each one so a single crossing serves its neighbours too.
+function reachByWater(fromId) {
+  const me = regionIndex.get(fromId);
+  dist.fill(-1);
+  const queue = new Int32Array(W * H);
+  let head = 0, tail = 0;
+  const kmAt = new Float64Array(0);
+  void kmAt;
+  for (const c of shoreOf.get(fromId)) for (const n of nbr(c)) if (owner[n] === 0 && dist[n] < 0) { dist[n] = 0; queue[tail++] = n; }
+  const found = new Map(); // other region id -> approximate km by water
+  while (head < tail) {
+    const c = queue[head++];
+    const approx = dist[c] * cellKm(c) * Math.SQRT1_2 * 1.2;
+    if (approx > CROSS_KM) continue;
+    const o = shoreOwner[c];
+    if (o >= 0 && o !== me) {
+      const other = world.regions[o - 1].id;
+      if (!found.has(other) && adj.has(other)) found.set(other, approx);
+    }
+    for (const n of nbr(c)) if (owner[n] === 0 && dist[n] < 0) { dist[n] = dist[c] + 1; queue[tail++] = n; }
+  }
+  return found;
+}
+/** Shortest trip over the lanes as they stand, in km (great circle per lane, as the game prices a lane). */
+function laneKmBetween(a, b) {
+  const best = new Map([[a, 0]]);
+  const open = [[0, a]];
+  while (open.length) {
+    open.sort((x, y) => x[0] - y[0]);
+    const [d, x] = open.shift();
+    if (x === b) return d;
+    if (d > (best.get(x) ?? Infinity)) continue;
+    for (const y of adj.get(x) ?? []) {
+      const nd = d + km(x, y);
+      if (nd < (best.get(y) ?? Infinity)) { best.set(y, nd); open.push([nd, y]); }
+    }
+  }
+  return Infinity;
+}
+// Distance from land, in cells, for every sea cell: a crossing must keep to open water, not thread the gaps between outlines.
+const landDist = new Int32Array(W * H).fill(-1);
+{
+  const queue = new Int32Array(W * H);
+  let head = 0, tail = 0;
+  for (let c = 0; c < owner.length; c++) if (owner[c] !== 0) { landDist[c] = 0; queue[tail++] = c; }
+  while (head < tail) {
+    const c = queue[head++];
+    if (landDist[c] >= 8) continue;
+    for (const n of nbr(c)) if (landDist[n] < 0) { landDist[n] = landDist[c] + 1; queue[tail++] = n; }
+  }
+}
+const closedBoxes = (MAP === "earth" ? CLOSED : []).map(([, a, b]) => {
+  const [x0, y0] = cellOf(Math.min(a[0], b[0]), Math.max(a[1], b[1]));
+  const [x1, y1] = cellOf(Math.max(a[0], b[0]), Math.min(a[1], b[1]));
+  return [x0, y0, x1, y1];
+});
+function openSea(cells) {
+  for (let i = 0; i < cells.length; i++) {
+    const c = cells[i];
+    const x = c % W, y = Math.floor(c / W);
+    if (closedBoxes.some(([x0, y0, x1, y1]) => x >= x0 && x <= x1 && y >= y0 && y <= y1)) return false;
+    if (i < SHORE_CELLS || i >= cells.length - SHORE_CELLS) continue;
+    const d = landDist[c];
+    if (d >= 0 && d < OPEN_CELLS) return false;
+  }
+  return true;
+}
+const candidates = [];
+for (const r of coastal) {
+  for (const [other, water] of reachByWater(r.id)) {
+    if (r.id >= other || adj.get(r.id).has(other) || byId.get(r.id).neighbors.includes(other)) continue;
+    candidates.push({ a: r.id, b: other, water });
+  }
+}
+candidates.sort((x, y) => x.water - y.water || x.a.localeCompare(y.a) || x.b.localeCompare(y.b));
+const crossings = [];
+const rejected = [];
+const crossCount = new Map();
+for (const { a, b, water } of candidates) {
+  if ((crossCount.get(a) ?? 0) >= CROSS_PER_COAST || (crossCount.get(b) ?? 0) >= CROSS_PER_COAST) continue;
+  if (water < CROSS_MIN_KM * 0.8) continue;
+  const now = laneKmBetween(a, b);
+  if (now <= CROSS_DETOUR * Math.max(water, km(a, b))) continue;
+  const cells = waterPath([a], [b]);
+  if (!cells) continue;
+  const exact = pathKm(cells);
+  if (exact < CROSS_MIN_KM || exact > CROSS_KM * 1.15 || now <= CROSS_DETOUR * exact) continue;
+  if (!openSea(cells)) { rejected.push(`${byId.get(a).name} - ${byId.get(b).name}`); continue; }
+  adj.get(a).add(b); adj.get(b).add(a);
+  paths[laneKey(a, b)] = { from: a, points: toPoints(cells), coasts: { [a]: coastAt(a, cells[0]), [b]: coastAt(b, cells[cells.length - 1]) } };
+  crossCount.set(a, (crossCount.get(a) ?? 0) + 1);
+  crossCount.set(b, (crossCount.get(b) ?? 0) + 1);
+  crossings.push(`${byId.get(a).name} - ${byId.get(b).name} (${Math.round(pathKm(cells))} km by water; was ${Number.isFinite(now) ? Math.round(now) : "no"} km by lanes)`);
+}
+console.log(`ocean crossings: ${crossings.length} of ${candidates.length} candidates`);
+console.log("crossings: " + crossings.join("; "));
+console.log("rejected (not open sea): " + rejected.join("; "));
 const after = [...adj.values()].reduce((s, v) => s + v.size, 0) / 2;
 console.log(`grid ${W}x${H}; lanes by water added ${addedByWater}, kept ${kept}, dropped ${dropped.length}, bridges ${bridges.length}, now ${after}; pieces left: ${n}`);
 if (landlocked.length) console.log(`coastal by data but with no shore on the grid (left alone): ${landlocked.join(", ")}`);

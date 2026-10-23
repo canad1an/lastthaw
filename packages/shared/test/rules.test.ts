@@ -303,5 +303,12 @@ describe("voyages", () => {
     const long = seaPath("mz-niassa", "ga-gabon", Infinity);
     expect(long).not.toBeNull();
     check(long!.path);
+    // The Atlantic has crossings of its own: West Africa to Brazil is a short hop over open sea, not the long way by
+    // Iceland and Greenland round the rim of the ocean.
+    const atlantic = seaPath("ga-gabon", "br-paraiba", Infinity);
+    expect(atlantic).not.toBeNull();
+    expect(atlantic!.path.length).toBeLessThanOrEqual(6);
+    expect(atlantic!.path.some((id) => id === "is-iceland" || id.startsWith("gl-"))).toBe(false);
+    check(atlantic!.path);
   });
 });
