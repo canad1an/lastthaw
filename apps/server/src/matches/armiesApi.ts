@@ -201,7 +201,7 @@ export async function armyRoutes(app: FastifyInstance, opts: { db: Db; publisher
         .update(jobs)
         .set({ cancelledAt: now })
         .where(and(eq(jobs.matchId, matchId), eq(jobs.kind, "mission"), eq(jobs.refId, army.id), isNull(jobs.completedAt), isNull(jobs.cancelledAt)));
-      await tx.update(armies).set({ status: "returning", returnsAt }).where(eq(armies.id, army.id));
+      await tx.update(armies).set({ status: "returning", returnsAt, recalledAt: now }).where(eq(armies.id, army.id));
       await tx.insert(jobs).values({ matchId, playerId: p.id, regionId: army.originRegionId, kind: "mission", refId: army.id, startsAt: now, endsAt: returnsAt });
       return { returnsAt, targetOwner: army.targetRegionId };
     });

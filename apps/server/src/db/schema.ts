@@ -325,6 +325,8 @@ export const armies = pgTable(
     departsAt: timestamp("departs_at", { withTimezone: true }).notNull(),
     arrivesAt: timestamp("arrives_at", { withTimezone: true }).notNull(),
     returnsAt: timestamp("returns_at", { withTimezone: true }),
+    /** When an outbound army was turned around before it arrived; it walks home from where it was then, not from the target. */
+    recalledAt: timestamp("recalled_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("armies_match_status_idx").on(t.matchId, t.status), index("armies_target_idx").on(t.matchId, t.targetRegionId)],

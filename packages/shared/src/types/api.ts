@@ -254,6 +254,8 @@ export const armyView = z.object({
   departsAt: z.string(),
   arrivesAt: z.string(),
   returnsAt: z.string().nullable(),
+  /** Set when the army was turned around on the way: it heads home from where it was then. */
+  recalledAt: z.string().nullable().default(null),
   /** Region ids from origin to target. */
   path: z.array(z.string()).default([]),
   /** Why it turned back, when returning early. */

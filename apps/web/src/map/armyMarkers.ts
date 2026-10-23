@@ -112,26 +112,51 @@ const fmtUnits = (u: Record<string, number>) =>
     })
     .join(", ") || "no units";
 
+/** The first `p` (0..1) of a polyline, by distance: the points passed and the point reached. */
+function upTo(points: Array<{ x: number; y: number }>, p: number): Array<{ x: number; y: number }> {
+  if (points.length < 2 || p >= 1) return points;
+  const end = along(points, p);
+  let total = 0;
+  for (let i = 1; i < points.length; i++) total += Math.hypot(points[i]!.x - points[i - 1]!.x, points[i]!.y - points[i - 1]!.y);
+  let left = Math.max(0, p) * total;
+  const out = [points[0]!];
+  for (let i = 1; i < points.length; i++) {
+    const d = Math.hypot(points[i]!.x - points[i - 1]!.x, points[i]!.y - points[i - 1]!.y);
+    if (d >= left) break;
+    left -= d;
+    out.push(points[i]!);
+  }
+  out.push(end);
+  return out;
+}
+
 /** Where every army is right now, for drawing on the map. */
 export function armyMarkers(armies: ArmyView[], incoming: IncomingView[], nowMs: number, formatCountdown: (s: number) => string, techs?: readonly string[], ships: ShipSightingView[] = [], allies: ReadonlySet<string> = new Set()): ArmyMarker[] {
   const out: ArmyMarker[] = [];
   for (const a of armies) {
     const ids = a.path.length >= 2 ? a.path : [a.originRegionId, a.targetRegionId];
-    const pts = routePoints(ids);
     const returning = a.status === "returning";
+    // A recalled army turned round part of the way out: its way home starts where it was then, back along the way it came.
+    const departs = Date.parse(a.departsAt);
+    const planned = Date.parse(a.arrivesAt);
+    const turned = returning && a.recalledAt ? Date.parse(a.recalledAt) : null;
+    const turnedAt = turned !== null && planned > departs ? Math.min(1, Math.max(0, (turned - departs) / (planned - departs))) : 1;
+    const outbound = routePoints(ids);
+    const pts = turnedAt < 1 ? upTo(outbound, turnedAt) : outbound;
     const route = returning ? [...pts].reverse() : pts;
-    const start = returning ? Date.parse(a.arrivesAt) : Date.parse(a.departsAt);
+    const start = returning ? (turned ?? planned) : departs;
     const end = returning ? Date.parse(a.returnsAt ?? a.arrivesAt) : Date.parse(a.arrivesAt);
     const legStart = returning ? Math.min(start, nowMs) : start;
     const progress = end > legStart ? Math.min(1, Math.max(0, (nowMs - legStart) / (end - legStart))) : 1;
     const pos = a.mission === "patrol" && route.length >= 2 ? { x: (route[0]!.x + route[route.length - 1]!.x) / 2, y: (route[0]!.y + route[route.length - 1]!.y) / 2 } : along(route, progress);
     const dest = regionById(returning ? a.originRegionId : a.targetRegionId)?.name ?? "";
+    const passed = turnedAt < 1 ? ids.slice(0, Math.max(1, Math.min(ids.length, Math.floor(turnedAt * (ids.length - 1)) + 1))) : ids;
     const people = Math.round(a.cargo.people ?? 0);
     const goods = Object.entries(a.cargo).filter(([k, n]) => k !== "people" && n > 0);
     const goodsTotal = goods.reduce((x, [, n]) => x + n, 0);
     const capacity = carryCapacity(a.units, techs) + people * balance.travel.carryPerPerson;
     const cargo = goods.map(([k, n]) => `${Math.round(n)} ${k.replace("_", " ")}`).join(", ");
-    const routeIds = returning ? [...ids].reverse() : ids;
+    const routeIds = returning ? [...passed].reverse() : ids;
     out.push({
       id: a.id,
       x: pos.x,

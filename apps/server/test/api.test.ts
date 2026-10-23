@@ -658,6 +658,35 @@ describe("api routes", () => {
     await db.update(matches).set({ status: "finished", finishedAt: new Date() }).where(eq(matches.id, pid));
   });
 
+  it("a recalled army turns round where it is: it records when, and walks home over the time it had been out", async () => {
+    const base = `/api/matches/${gameId}`;
+    const ann = matchStateView.parse((await Ann.call("GET", `${base}/state`)).json());
+    const cap = ann.me.capitalRegionId!;
+    const target = regionById(cap)!.neighbors[0]!;
+    const now = Date.parse(ann.match.now);
+    const [army] = await db
+      .insert(armies)
+      .values({ matchId: gameId, playerId: ann.me.playerId, mission: "move", originRegionId: cap, targetRegionId: target, units: { warrior: 1 }, cargo: {}, path: [cap, target], status: "outbound", departsAt: new Date(now - 20 * 60_000), arrivesAt: new Date(now + 60 * 60_000) })
+      .returning({ id: armies.id });
+    try {
+      const res = await Ann.call("POST", `${base}/armies/${army!.id}/recall`, {});
+      expect(res.statusCode, res.body).toBe(200);
+      const view = matchStateView.parse((await Ann.call("GET", `${base}/state`)).json()).armies.find((a) => a.id === army!.id)!;
+      expect(view.status).toBe("returning");
+      expect(view.recalledAt).not.toBeNull();
+      const turned = Date.parse(view.recalledAt!);
+      // It turned about a fifth of the way out (20 minutes of 80), well before the planned arrival.
+      expect(turned).toBeLessThan(Date.parse(view.arrivesAt));
+      expect((turned - Date.parse(view.departsAt)) / (Date.parse(view.arrivesAt) - Date.parse(view.departsAt))).toBeLessThan(0.4);
+      // Home in about the time it had been out.
+      expect(Math.abs(Date.parse(view.returnsAt!) - turned - (turned - Date.parse(view.departsAt)))).toBeLessThan(5_000);
+      expect((await Ann.call("POST", `${base}/armies/${army!.id}/recall`, {})).statusCode).toBe(409);
+    } finally {
+      await db.delete(jobs).where(and(eq(jobs.matchId, gameId), eq(jobs.refId, army!.id)));
+      await db.delete(armies).where(eq(armies.id, army!.id));
+    }
+  });
+
   it("an admin looks into any match from outside and sees every region, army and march; others are refused", async () => {
     const base = `/api/matches/${gameId}`;
     expect((await Out.call("GET", `${base}/state`)).statusCode).toBe(404);
