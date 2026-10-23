@@ -30,7 +30,15 @@ export function ReplayPage() {
   const { matchId } = useParams({ from: "/match/$matchId/replay" });
   const q = useQuery({
     queryKey: ["replay", matchId],
-    queryFn: () => fetch(`/api/matches/${matchId}/replay`, { credentials: "include" }).then((r) => r.json() as Promise<Replay>),
+    // A 404 is a real miss; anything else (an API replica being replaced during a deploy) is retried before giving up.
+    queryFn: async () => {
+      const r = await fetch(`/api/matches/${matchId}/replay`, { credentials: "include" });
+      if (r.status === 404) return { missing: true } as unknown as Replay;
+      if (!r.ok) throw new Error(`the replay could not be loaded (${r.status})`);
+      return (await r.json()) as Replay;
+    },
+    retry: 4,
+    retryDelay: (n) => Math.min(8000, 1000 * 2 ** n),
   });
   const data = q.data;
   useSlugAddress(matchId, data?.match?.slug, "/replay");
@@ -104,7 +112,8 @@ export function ReplayPage() {
       .slice(0, 8);
   }, [state, data?.players]);
 
-  if (q.isError || (data && !("frames" in data))) return <main className="mx-auto max-w-3xl px-4 py-10 text-slate-300">No match with that id.</main>;
+  if (q.isError) return <main className="mx-auto max-w-3xl px-4 py-10 text-slate-300">The replay could not be loaded just now. <button className="text-sky-300 hover:underline" onClick={() => void q.refetch()}>Try again</button></main>;
+  if (data && !("frames" in data)) return <main className="mx-auto max-w-3xl px-4 py-10 text-slate-300">No match with that id.</main>;
   return (
     <main className="flex h-[calc(100dvh-3rem)] flex-col">
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 px-3 py-2 text-sm">
