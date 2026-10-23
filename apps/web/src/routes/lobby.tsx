@@ -7,6 +7,7 @@ import { balance, formatCountdown, type MatchSummary , MAP_IDS, MAP_NAMES, MAP_B
 import { useMe } from "../api/auth.js";
 import { api, keys } from "../api/client.js";
 import { Button, Card, ErrorText, Field, Input } from "../components/ui.js";
+import { PastMatchRow, type PastMatchesPage } from "./pastMatches.js";
 import { useNow } from "../hooks/useNow.js";
 import { useServerInfo } from "../hooks/useServerInfo.js";
 
@@ -154,43 +155,25 @@ interface PastMatch {
   players: number;
 }
 
-/** Finished matches: open the report, or watch the whole month replayed in thirty seconds. */
+/** The last five finished matches, and the way to the whole archive. */
 function PastMatches() {
   const q = useQuery({
-    queryKey: ["past-matches"],
-    queryFn: () => fetch("/api/matches/past", { credentials: "include" }).then((r) => r.json() as Promise<{ matches: PastMatch[] }>),
+    queryKey: ["past-matches", "latest"],
+    queryFn: () => fetch("/api/matches/past?limit=5", { credentials: "include" }).then((r) => r.json() as Promise<PastMatchesPage>),
   });
   const list = q.data?.matches ?? [];
   if (list.length === 0) return null;
-  const how = (k: string | null) => (k === "hold" ? "held 60% of the world" : k === "wonder" ? "finished the Great Hearth" : k === "survival" ? "outlasted the ice" : k === "score" ? "highest score" : "");
   return (
     <section className="space-y-3">
-      <h2 className="display text-xl font-semibold text-white">Past matches</h2>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="display text-xl font-semibold text-white">Past matches</h2>
+        <Link to="/matches/past" search={{} as never} className="text-sm text-sky-300 hover:underline">
+          All {q.data?.total ?? ""} past matches, searchable →
+        </Link>
+      </div>
       <div className="space-y-2">
         {list.map((m) => (
-          <Card key={m.id} className="flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="font-medium text-slate-100">
-                {m.name} <span className="text-xs text-slate-500">· {m.kind === "tournament" ? "tournament" : "game"} · {m.speed}x · {m.players} players</span>
-              </p>
-              <p className="text-sm text-slate-400">
-                {m.finishedAt ? new Date(m.finishedAt).toLocaleDateString() : ""}
-                {m.winnerName && (
-                  <>
-                    {" "}· <span className="text-amber-200">{m.winnerName}</span> won{how(m.winKind) ? `: ${how(m.winKind)}` : ""}
-                  </>
-                )}
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <Link to="/match/$matchId/replay" params={{ matchId: m.slug || m.id }}>
-                <Button variant="ghost">▶ Replay</Button>
-              </Link>
-              <Link to="/match/$matchId/report" params={{ matchId: m.slug || m.id }}>
-                <Button variant="ghost">Review</Button>
-              </Link>
-            </div>
-          </Card>
+          <PastMatchRow key={m.id} m={m} />
         ))}
       </div>
     </section>
@@ -390,7 +373,7 @@ function CreateMatch({ admin }: { admin: boolean }) {
     <Card>
       <h2 className="mb-1 font-medium">{admin ? "Create a tournament or game" : "Create a game"}</h2>
       <p className="mb-3 text-xs text-slate-400">
-        Players join in the lobby until the start time; AI tribes fill the rest up to the number you set. Speed 1 is the thirty-day pace; 10 means a three-day match. Private games get an invite code to share.
+        Players join in the lobby until the start time; AI tribes fill the rest up to the number you set. Speed 1 is the thirty-day pace; 10 means a three-day match. Private games get an invite code to share; like every game, the report is public once it ends.
         {admin ? " Tournaments are the scheduled, ranked kind." : " Games are not ranked; tournaments are."}
       </p>
       <form

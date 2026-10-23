@@ -35,8 +35,10 @@ export async function titlesOf(db: Db, userIds: string[]): Promise<Map<string, A
 }
 import { matchNow } from "../sim/clock.js";
 
-/** Private games never appear anywhere public: not in the lists, the sitemap, the hall of fame or a search engine. */
+/** Private games stay out of the public lists while they run (lobby and in play); once finished they are public like any other. */
 export const notPrivate = sql`coalesce(${matches.settings}->>'kind', '') <> 'private'`;
+/** Finished matches that may be shown and indexed: every kind, private ones included once they are over. */
+export const finishedPublic = eq(matches.status, "finished");
 
 /** Public, login-free views for the home page: matches in play, top players, past winners. */
 export async function publicRoutes(app: FastifyInstance, opts: { db: Db }) {
@@ -45,12 +47,13 @@ export async function publicRoutes(app: FastifyInstance, opts: { db: Db }) {
   /** The sitemap: the public pages plus every finished match's report and replay, by readable address. */
   app.get("/sitemap.xml", async (_req, reply) => {
     const site = config().PUBLIC_URL;
-    const finished = await db.select({ slug: matches.slug, id: matches.id, finishedAt: matches.finishedAt }).from(matches).where(and(eq(matches.status, "finished"), notPrivate)).orderBy(desc(matches.finishedAt)).limit(500);
+    const finished = await db.select({ slug: matches.slug, id: matches.id, finishedAt: matches.finishedAt }).from(matches).where(finishedPublic).orderBy(desc(matches.finishedAt)).limit(500);
     const esc = (s: string) => s.replace(/&/g, "&amp;");
     const urls: Array<{ loc: string; lastmod?: string; priority: string }> = [
       { loc: `${site}/`, priority: "1.0" },
       { loc: `${site}/how-to-play`, priority: "0.9" },
       { loc: `${site}/matches`, priority: "0.8" },
+      { loc: `${site}/matches/past`, priority: "0.7" },
       { loc: `${site}/hall-of-fame`, priority: "0.7" },
       { loc: `${site}/about`, priority: "0.5" },
       { loc: `${site}/register`, priority: "0.6" },
@@ -128,7 +131,7 @@ export async function publicRoutes(app: FastifyInstance, opts: { db: Db }) {
     const finished = await db
       .select()
       .from(matches)
-      .where(and(eq(matches.status, "finished"), notPrivate))
+      .where(finishedPublic)
       .orderBy(desc(matches.finishedAt))
       .limit(50);
     const out = [];

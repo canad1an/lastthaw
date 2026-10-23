@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { pastMatches, pastSearchOf } from "./pastMatches.js";
 import { enterMap, mapOf } from "../map/scope.js";
 import { parseProfile } from "../sim/ai.js";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
@@ -37,9 +38,9 @@ export async function leaderboardRoutes(app: FastifyInstance, opts: { db: Db }) 
     const [p] = await db.select({ id: players.id }).from(players).where(and(eq(players.matchId, matchId), eq(players.userId, userId))).limit(1);
     return !!p;
   };
-  /** A private game's pages are for the people who played it and admins, before and after it ends. */
-  const guardPrivate = async (m: { id: string; settings: unknown }, user: { id: string; isAdmin: boolean } | null) => {
-    if (((m.settings ?? {}) as { kind?: string }).kind !== "private") return;
+  /** A private game's pages are for the people who played it and admins while it runs; once it has finished they are public like any other. */
+  const guardPrivate = async (m: { id: string; status: string; settings: unknown }, user: { id: string; isAdmin: boolean } | null) => {
+    if (((m.settings ?? {}) as { kind?: string }).kind !== "private" || m.status === "finished") return;
     if (user?.isAdmin) return;
     if (user && (await isMember(m.id, user.id))) return;
     throw httpError(403, "this is a private game: its pages are only for the people who played it");
@@ -215,36 +216,8 @@ export async function leaderboardRoutes(app: FastifyInstance, opts: { db: Db }) 
     };
   });
 
-  /** Finished matches, newest first, for the lobby's Past matches list. Public. */
-  app.get("/api/matches/past", async () => {
-    const rows = await db.select().from(matches).where(eq(matches.status, "finished")).orderBy(desc(matches.finishedAt)).limit(30);
-    const ids = rows.map((r) => r.id);
-    const winners = ids.length ? await db.select({ id: players.id, name: players.name }).from(players).where(inArray(players.id, rows.map((r) => r.winnerPlayerId).filter((x): x is string => !!x))) : [];
-    const counts = ids.length
-      ? await db
-          .select({ matchId: players.matchId, humans: sql<number>`count(*) filter (where not is_ai)::int`, total: sql<number>`count(*) filter (where not hidden)::int` })
-          .from(players)
-          .where(inArray(players.matchId, ids))
-          .groupBy(players.matchId)
-      : [];
-    const countBy = new Map(counts.map((c) => [c.matchId, c]));
-    const winnerBy = new Map(winners.map((w) => [w.id, w.name]));
-    return {
-      matches: rows.map((m) => ({
-        id: m.id,
-        slug: m.slug ?? m.id,
-        name: m.name,
-        speed: m.speed,
-        startsAt: m.startsAt.toISOString(),
-        finishedAt: m.finishedAt?.toISOString() ?? null,
-        winnerName: m.winnerPlayerId ? (winnerBy.get(m.winnerPlayerId) ?? null) : null,
-        winKind: m.winKind ?? null,
-        kind: ((m.settings ?? {}) as { kind?: string; weekly?: boolean }).kind ?? (((m.settings ?? {}) as { weekly?: boolean }).weekly ? "tournament" : "public"),
-        humans: countBy.get(m.id)?.humans ?? 0,
-        players: countBy.get(m.id)?.total ?? 0,
-      })),
-    };
-  });
+  /** Finished public matches, newest first: the lobby's last few, and the archive page's search (name or player, map, kind) twenty to a page. */
+  app.get("/api/matches/past", async (req) => pastMatches(db, pastSearchOf(req.query as Record<string, unknown>)));
 
   /** Account history across matches, for the profile page. */
   app.get("/api/me/history", async (req) => {

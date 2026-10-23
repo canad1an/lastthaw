@@ -14,6 +14,7 @@ import { HomePage } from "./routes/home.js";
 import { AboutPage } from "./routes/about.js";
 import { HowToPlayPage } from "./routes/howToPlay.js";
 import { HallOfFamePage } from "./routes/hallOfFame.js";
+import { PastMatchesPage, pastSearch } from "./routes/pastMatches.js";
 
 const rootRoute = createRootRoute({
   component: () => (
@@ -34,6 +35,7 @@ const tokenSearch = (s: Record<string, unknown>) => ({ token: typeof s.token ===
 const routes = [
   createRoute({ getParentRoute: () => rootRoute, path: "/", component: HomePage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/matches", component: LobbyPage }),
+  createRoute({ getParentRoute: () => rootRoute, path: "/matches/past", component: PastMatchesPage, validateSearch: pastSearch }),
   createRoute({ getParentRoute: () => rootRoute, path: "/about", component: AboutPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/how-to-play", component: HowToPlayPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/hall-of-fame", component: HallOfFamePage }),

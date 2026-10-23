@@ -7,6 +7,8 @@ import { matchRegions, matches, players } from "../db/schema.js";
 import { resolveMatchRef } from "./slug.js";
 import { buildStory } from "./story.js";
 import { config } from "../config.js";
+import { pastMatches, pastSearchOf } from "./pastMatches.js";
+import { MAP_NAMES } from "@lastthaw/shared";
 
 /**
  * Match pages are served with their own title, description, sharing card and structured data already in the
@@ -95,8 +97,8 @@ export async function matchPageMeta(db: Db, ref: string, page: "report" | "repla
   const slug = m.slug ?? m.id;
   const finished = m.status === "finished";
   const url = `${site}/match/${slug}${page === "play" ? "" : `/${page}`}`;
-  // A private game is never indexed, whatever its state: its address is only for the people who played it and an admin.
-  if (((m.settings ?? {}) as { kind?: string }).kind === "private") {
+  // A private game is nobody's business while it runs; once finished its report is public and indexed like any other.
+  if (((m.settings ?? {}) as { kind?: string }).kind === "private" && !finished) {
     return { title: m.name, description: "A private Last Thaw game.", url, noindex: true };
   }
   if (!finished) {
@@ -135,9 +137,50 @@ export async function matchPageMeta(db: Db, ref: string, page: "report" | "repla
   return { title: titles[page], description, url, noindex: false, jsonLd, body };
 }
 
+/** The archive page: every finished match, twenty to a page, with the page of results in the HTML. Filtered views are not indexed; pages are. */
+async function pastMatchesPage(db: Db, query: Record<string, unknown>): Promise<PageMeta> {
+  const site = config().PUBLIC_URL;
+  const s = pastSearchOf(query);
+  const filtered = !!(s.q || s.map || s.kind);
+  const r = await pastMatches(db, s);
+  const qs = (page: number) => {
+    const p = new URLSearchParams();
+    if (s.q) p.set("q", s.q);
+    if (s.map) p.set("map", s.map);
+    if (s.kind) p.set("kind", s.kind);
+    if (page > 1) p.set("page", String(page));
+    const str = p.toString();
+    return str ? `?${str}` : "";
+  };
+  const url = `${site}/matches/past${r.page > 1 ? `?page=${r.page}` : ""}`;
+  const how = (k: string | null) => (k === "hold" ? "held 60% of the world" : k === "wonder" ? "finished the Great Hearth" : k === "survival" ? "outlasted the ice" : k === "score" ? "highest score" : k === "ended" ? "ended early" : "");
+  const items = r.matches
+    .map((m) => {
+      const when = m.finishedAt ? m.finishedAt.slice(0, 10) : "";
+      const won = m.winnerName ? `${esc(m.winnerName)} won${how(m.winKind) ? `: ${how(m.winKind)}` : ""}` : m.winKind === "ended" ? "ended early, no winner" : "";
+      return `<li><a href="${site}/match/${esc(m.slug)}/report">${esc(m.name)}</a> · ${m.kind} · ${m.speed}x · ${esc(MAP_NAMES[m.map])} · ${m.players} players · ${when}${won ? ` · ${won}` : ""} · <a href="${site}/match/${esc(m.slug)}/replay">replay</a></li>`;
+    })
+    .join("");
+  const nav = [r.page > 1 ? `<a href="${site}/matches/past${qs(r.page - 1)}" rel="prev">Newer</a>` : "", r.page < r.pages ? `<a href="${site}/matches/past${qs(r.page + 1)}" rel="next">Older</a>` : ""].filter(Boolean).join(" · ");
+  const body = `<main class="mx-auto max-w-3xl px-4 py-8 text-slate-200"><p class="text-xs uppercase tracking-widest text-slate-400">The archive · Last Thaw</p><h1 class="text-3xl font-semibold text-white">Past matches${r.page > 1 ? `, page ${r.page} of ${r.pages}` : ""}</h1><p>Every finished tournament and game, newest first, with its written report and a thirty-second replay. ${r.total} ${r.total === 1 ? "match" : "matches"} in all.</p><ol>${items}</ol><p>${nav}</p><p><a href="${site}/matches">Tournaments and games</a> · <a href="${site}/hall-of-fame">Hall of fame</a></p></main>`;
+  return {
+    title: r.page > 1 ? `Past matches, page ${r.page}` : "Past matches",
+    description: "Every finished Last Thaw match: tournaments and games on Earth and Pangaea, who won and how, each with its written report and a thirty-second replay. Search by match or player name.",
+    url,
+    noindex: filtered,
+    body,
+  };
+}
+
 /** Serve the built page for a match address with that match's words in its head. */
 export async function matchPageRoutes(app: FastifyInstance, opts: { db: Db }) {
   const { db } = opts;
+  app.get("/matches/past", async (req, reply) => {
+    const html = indexHtml();
+    if (!html) return reply.code(404).send({ error: "the site is not built here" });
+    const meta = await pastMatchesPage(db, (req.query ?? {}) as Record<string, unknown>).catch(() => null);
+    return reply.type("text/html; charset=utf-8").header("cache-control", "no-cache").send(meta ? injectMeta(html, meta) : html);
+  });
   app.get("/match/:ref", async (req, reply) => serve(req.params as { ref: string }, "play", reply));
   app.get("/match/:ref/:page", async (req, reply) => {
     const { ref, page } = req.params as { ref: string; page: string };

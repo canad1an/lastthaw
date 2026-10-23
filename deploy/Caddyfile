@@ -13,7 +13,17 @@ lastthaw.com, www.lastthaw.com {
         -Server
     }
 
-    # Match pages come from the API with their own title, description, sharing card and structured data in the head.
+    # Match pages and the archive of past matches come from the API with their own title, description, sharing card,
+    # structured data and the page's words already in the HTML.
+    handle /matches/past {
+        reverse_proxy {
+            dynamic a api 3000 {
+                refresh 2s
+            }
+            health_interval 3s
+            health_timeout 2s
+        }
+    }
     handle /match/* {
         reverse_proxy {
             dynamic a api 3000 {

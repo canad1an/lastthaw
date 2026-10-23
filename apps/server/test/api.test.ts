@@ -2192,33 +2192,54 @@ describe("api routes", () => {
     expect(await detectAutomation(db)).toBe(0);
   });
 
-  it("a private game is never public: not in the sitemap, the public lists or the hall of fame; its pages are noindex; and its report, standings and replay are for its players and admins only", async () => {
+  it("a private game is hidden while it runs and public once it has finished: then it is in the sitemap, the archive and the hall of fame, indexed, and open to anyone", async () => {
     const { mkdtempSync, writeFileSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");
     const { join } = await import("node:path");
     const dir = mkdtempSync(join(tmpdir(), "lt-web-"));
-    writeFileSync(join(dir, "index.html"), '<!doctype html><html><head><meta name="description" content="generic" /><title>Last Thaw</title></head><body></body></html>');
+    writeFileSync(join(dir, "index.html"), '<!doctype html><html><head><meta name="description" content="generic" /><title>Last Thaw</title></head><body><div id="root"></div></body></html>');
     const before = process.env.WEB_DIST;
     process.env.WEB_DIST = dir;
     const slug = `2026-10-secret-${Date.now().toString(36)}`;
     const [priv] = await db
       .insert(matches)
-      .values({ name: "Secret Thaw", slug, speed: 1, seed: "secret", startsAt: new Date(Date.now() - 40 * 86400_000), endsAt: new Date(Date.now() - 10 * 86400_000), finishedAt: new Date(Date.now() - 10 * 86400_000), status: "finished", settings: { kind: "private", createdBy: "nobody" } })
+      .values({ name: "Secret Thaw", slug, speed: 1, seed: "secret", startsAt: new Date(Date.now() - 2 * 86400_000), endsAt: new Date(Date.now() + 28 * 86400_000), status: "running", settings: { kind: "private", createdBy: "nobody" } })
       .returning({ id: matches.id });
     try {
-      const sitemap = await app.inject({ method: "GET", url: "/sitemap.xml" });
-      expect(sitemap.body).not.toContain(slug);
-      expect(JSON.stringify((await app.inject({ method: "GET", url: "/api/public/hall-of-fame" })).json())).not.toContain(priv!.id);
+      // Running: nobody's business but its players'.
+      expect((await app.inject({ method: "GET", url: "/sitemap.xml" })).body).not.toContain(slug);
       expect(JSON.stringify((await app.inject({ method: "GET", url: "/api/public/matches" })).json())).not.toContain(priv!.id);
-      const page = await Out.call("GET", `/match/${slug}/report`);
-      expect(page.statusCode).toBe(200);
-      expect(page.body).toContain("noindex");
-      // Nobody outside: not anonymous, not a logged-in stranger; an admin may look.
-      expect((await Out.call("GET", `/api/matches/${priv!.id}/summary`)).statusCode).toBe(403);
-      expect((await Ben.call("GET", `/api/matches/${priv!.id}/summary`)).statusCode).toBe(403);
+      expect((await Out.call("GET", `/match/${slug}/report`)).body).toContain("noindex");
       expect((await Ben.call("GET", `/api/matches/${priv!.id}/replay`)).statusCode).toBe(403);
-      expect((await Ben.call("GET", `/api/matches/${priv!.id}/leaderboard`)).statusCode).toBe(403);
       expect((await A.call("GET", `/api/matches/${priv!.id}/replay`)).statusCode).toBe(200);
+      // Finished: public like any other match.
+      await db.update(matches).set({ status: "finished", finishedAt: new Date() }).where(eq(matches.id, priv!.id));
+      expect((await app.inject({ method: "GET", url: "/sitemap.xml" })).body).toContain(slug);
+      expect(JSON.stringify((await app.inject({ method: "GET", url: "/api/public/hall-of-fame" })).json())).toContain(priv!.id);
+      // By id rather than slug: the page served a minute ago by slug is still cached as it was while the game ran.
+      const page = await Out.call("GET", `/match/${priv!.id}/report`);
+      expect(page.statusCode).toBe(200);
+      expect(page.body).toContain("index, follow");
+      expect(page.body).toContain("Secret Thaw");
+      expect((await Out.call("GET", `/api/matches/${priv!.id}/summary`)).statusCode).toBe(200);
+      expect((await Ben.call("GET", `/api/matches/${priv!.id}/replay`)).statusCode).toBe(200);
+      expect((await Ben.call("GET", `/api/matches/${priv!.id}/leaderboard`)).statusCode).toBe(200);
+      // The archive: searchable by name, map and kind, five for the lobby, twenty to a page, and served as a page of its own.
+      const found = (await Out.call("GET", "/api/matches/past?q=secret%20thaw")).json() as { matches: Array<{ id: string; map: string; kind: string }>; total: number; page: number; pages: number };
+      expect(found.matches.some((m) => m.id === priv!.id)).toBe(true);
+      expect(found.matches.every((m) => m.map === "earth" || m.map === "pangaea")).toBe(true);
+      const five = (await Out.call("GET", "/api/matches/past?limit=5")).json() as { matches: unknown[]; total: number };
+      expect(five.matches.length).toBeLessThanOrEqual(5);
+      expect(five.total).toBeGreaterThanOrEqual(five.matches.length);
+      const pangaea = (await Out.call("GET", "/api/matches/past?map=pangaea")).json() as { matches: Array<{ map: string }> };
+      expect(pangaea.matches.every((m) => m.map === "pangaea")).toBe(true);
+      expect(((await Out.call("GET", "/api/matches/past?kind=tournament")).json() as { matches: Array<{ kind: string }> }).matches.every((m) => m.kind === "tournament")).toBe(true);
+      const archive = await Out.call("GET", "/matches/past");
+      expect(archive.statusCode).toBe(200);
+      expect(archive.body).toContain("<title>Past matches | Last Thaw</title>");
+      expect(archive.body).toContain("Secret Thaw");
+      expect(archive.body).toContain("index, follow");
+      expect((await Out.call("GET", "/matches/past?q=secret")).body).toContain("noindex");
     } finally {
       await db.delete(matches).where(eq(matches.id, priv!.id));
       if (before === undefined) delete process.env.WEB_DIST;
