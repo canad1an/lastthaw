@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { balance } from "@lastthaw/shared";
+import { AGES, balance } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { matchRegions, matches, players } from "../db/schema.js";
 import { resolveMatchRef } from "./slug.js";
@@ -38,6 +38,8 @@ export interface PageMeta {
   url: string;
   noindex: boolean;
   jsonLd?: Record<string, unknown> | undefined;
+  /** The page's words as HTML for the root element, so a crawler reads the report without running the app; the app replaces it on load. */
+  body?: string | undefined;
 }
 
 /** Put a page's own words into the built index.html. */
@@ -54,7 +56,31 @@ export function injectMeta(html: string, meta: PageMeta): string {
     `<meta name="robots" content="${meta.noindex ? "noindex, nofollow" : "index, follow"}" />`,
     ...(meta.jsonLd ? [`<script type="application/ld+json">${JSON.stringify(meta.jsonLd).replace(/</g, "\\u003c")}</script>`] : []),
   ].join("\n    ");
-  return out.replace("</head>", `    ${extra}\n  </head>`);
+  out = out.replace("</head>", `    ${extra}\n  </head>`);
+  if (meta.body) out = out.replace('<div id="root"></div>', `<div id="root">${meta.body}</div>`);
+  return out;
+}
+
+type Standing = { id: string; name: string; score: number; regions: number; population: number; age: number; eliminated: boolean; won: boolean };
+const num = (n: number) => Math.round(n).toLocaleString("en-US");
+
+/** The finished match's report as plain HTML: the story, the standings and the ways on. */
+function reportBody(m: { name: string; slug: string | null; id: string; speed: number; winKind: string | null; tournament: boolean }, page: "report" | "replay" | "leaderboard", title: string, paragraphs: string[], howWon: string | null, standings: Standing[], site: string): string {
+  const slug = m.slug ?? m.id;
+  const rows = standings
+    .map((p, i) => `<tr><td>${i + 1}</td><td>${esc(p.name)}${p.won ? " (winner)" : p.eliminated ? " (eliminated)" : ""}</td><td>${num(p.score)}</td><td>${num(p.regions)}</td><td>${num(p.population)}</td><td>${esc(AGES[p.age] ?? String(p.age))}</td></tr>`)
+    .join("");
+  const table = `<h2>Final standings</h2><table><thead><tr><th>Rank</th><th>Tribe</th><th>Score</th><th>Regions</th><th>People</th><th>Age</th></tr></thead><tbody>${rows}</tbody></table>`;
+  const links = [
+    page !== "report" ? `<a href="${site}/match/${slug}/report">Final report</a>` : "",
+    page !== "replay" ? `<a href="${site}/match/${slug}/replay">Replay of all ${balance.match.lengthDays} days</a>` : "",
+    page !== "leaderboard" ? `<a href="${site}/match/${slug}/leaderboard">Final standings</a>` : "",
+    `<a href="${site}/hall-of-fame">Hall of fame</a>`,
+    `<a href="${site}/how-to-play">How to play Last Thaw</a>`,
+  ].filter(Boolean);
+  const intro = page === "replay" ? `<p>Thirty seconds for thirty days: every quarter-day of who held what in ${esc(m.name)}, a ${m.tournament ? "Last Thaw tournament" : "Last Thaw match"} at ${m.speed}x, folded onto the map in order.</p>` : "";
+  const story = page === "replay" ? "" : paragraphs.map((p) => `<p>${esc(p)}</p>`).join("");
+  return `<main class="mx-auto max-w-3xl px-4 py-10 text-slate-200"><p class="text-xs uppercase tracking-widest text-slate-400">${m.tournament ? "Tournament" : "Game"} · Last Thaw</p><h1 class="text-3xl font-bold text-white">${esc(title)}</h1>${howWon && page !== "replay" ? `<p>${esc(howWon)}</p>` : ""}${intro}${story}${table}<p>${links.join(" · ")}</p></main>`;
 }
 
 const PAGE_CACHE_MS = 60_000;
@@ -91,6 +117,7 @@ export async function matchPageMeta(db: Db, ref: string, page: "report" | "repla
   const first = story.paragraphs[0] ?? `${m.name}, a finished Last Thaw match.`;
   const description = (first.length > 300 ? `${first.slice(0, 297).trimEnd()}…` : first).replace(/\s+/g, " ");
   const titles = { report: m.winKind === "ended" ? `${m.name}: ended early` : `${m.name}: final report, won by ${winner?.name ?? "nobody"}`, replay: `${m.name}: replay of all ${balance.match.lengthDays} days`, leaderboard: `${m.name}: final standings`, lobby: `${m.name}`, play: `${m.name}` };
+  const body = page === "report" || page === "replay" || page === "leaderboard" ? reportBody({ name: m.name, slug: m.slug, id: m.id, speed: m.speed, winKind: m.winKind ?? null, tournament: ((m.settings ?? {}) as { kind?: string }).kind === "tournament" }, page, titles[page], story.paragraphs, story.howWon ?? null, standings, site) : undefined;
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "Event",
@@ -105,7 +132,7 @@ export async function matchPageMeta(db: Db, ref: string, page: "report" | "repla
     url,
     ...(winner ? { subjectOf: { "@type": "CreativeWork", name: `${m.name}: final report`, url: `${site}/match/${slug}/report`, about: `Won by ${winner.name}` } } : {}),
   };
-  return { title: titles[page], description, url, noindex: false, jsonLd };
+  return { title: titles[page], description, url, noindex: false, jsonLd, body };
 }
 
 /** Serve the built page for a match address with that match's words in its head. */
