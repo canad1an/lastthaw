@@ -273,3 +273,13 @@ input[type="radio"] {
 @media (prefers-reduced-motion: reduce) {
   .hero-cap-big, .hero-tick { animation: none; }
 }
+
+/*
+ * A pinned card header straight on a phone screen (the region screen has no card around it) spans the screen's
+ * 0.75rem padding, not a card's 1rem; the card's reach ran 4px past the right edge and let the screen scroll sideways.
+ */
+[data-phone-body] > [data-card-header] {
+  margin: -0.75rem -0.75rem 0;
+  padding: 0.75rem 0.75rem 0.5rem;
+  border-radius: 0;
+}

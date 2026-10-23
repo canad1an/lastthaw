@@ -18,3 +18,12 @@ export function isBrowserExtensionNoise(message: string, stack?: string | null):
   if (/(chrome|moz|safari(-web)?)-extension:\/\//.test(stack ?? "") || /(chrome|moz|safari(-web)?)-extension:\/\//.test(message)) return true;
   return /\bruntime\.sendMessage\b|Extension context invalidated/.test(message);
 }
+
+/**
+ * "ResizeObserver loop completed with undelivered notifications" is the browser telling the page that
+ * a resize callback changed a layout it was observing, so the rest were delivered a frame later. Nothing
+ * failed and the player sees nothing (Chrome on the landing page's map, 2026-10-22); it is not a bug.
+ */
+export function isBenignBrowserNotice(message: string): boolean {
+  return /^ResizeObserver loop (completed with undelivered notifications|limit exceeded)/.test(message);
+}

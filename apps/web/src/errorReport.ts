@@ -1,4 +1,4 @@
-import { isBrowserExtensionNoise } from "@lastthaw/shared";
+import { isBenignBrowserNotice, isBrowserExtensionNoise } from "@lastthaw/shared";
 import { APP_VERSION } from "./version.js";
 
 /**
@@ -17,7 +17,7 @@ export function reportClientError(kind: ClientErrorKind, err: unknown, extra: { 
   try {
     const e = err as { message?: unknown; stack?: unknown } | null;
     const message = (typeof e?.message === "string" && e.message) || (typeof err === "string" ? err : String(err ?? "unknown error"));
-    if (isBrowserExtensionNoise(message, typeof e?.stack === "string" ? e.stack : null)) return;
+    if (isBrowserExtensionNoise(message, typeof e?.stack === "string" ? e.stack : null) || isBenignBrowserNotice(message)) return;
     const key = `${kind}:${message}:${extra.request ?? ""}`;
     if (seen.has(key) || sent >= MAX_PER_PAGE) return;
     seen.add(key);

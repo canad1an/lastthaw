@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isBrowserExtensionNoise, shouldReloadForNewVersion } from "../src/types/version.js";
+import { isBenignBrowserNotice, isBrowserExtensionNoise, shouldReloadForNewVersion } from "../src/types/version.js";
 
 // 2026-10-20: a phone left on Silent Vanguard on build 1.33 polled a 1.4x server whose armies could be
 // "fighting"; every state poll failed to parse until the player reloaded by hand.
@@ -33,5 +33,17 @@ describe("isBrowserExtensionNoise", () => {
   it("keeps the game's own errors", () => {
     expect(isBrowserExtensionNoise("armies.24.status: Invalid option", "Error\n    at K (https://lastthaw.com/assets/index.js:64:41966)")).toBe(false);
     expect(isBrowserExtensionNoise("Cannot read properties of undefined (reading 'units')")).toBe(false);
+  });
+});
+
+describe("isBenignBrowserNotice", () => {
+  it("drops the ResizeObserver loop notice (Chrome on the landing page, 2026-10-22)", () => {
+    expect(isBenignBrowserNotice("ResizeObserver loop completed with undelivered notifications.")).toBe(true);
+    expect(isBenignBrowserNotice("ResizeObserver loop limit exceeded")).toBe(true);
+  });
+
+  it("keeps real errors that merely mention ResizeObserver", () => {
+    expect(isBenignBrowserNotice("ResizeObserver is not defined")).toBe(false);
+    expect(isBenignBrowserNotice("Cannot read properties of null (reading 'clientWidth')")).toBe(false);
   });
 });

@@ -38,7 +38,7 @@ export function Card({ children, className = "" }: { children: ReactNode; classN
  * gone by. Spans the card's padding so rows slide under it edge to edge.
  */
 export function CardHeader({ children, className = "" }: { children: ReactNode; className?: string }) {
-  return <div className={`sticky top-0 z-10 -mx-4 -mt-4 rounded-t-lg border-b border-slate-800/70 bg-[#07111f] px-4 pb-2 pt-4 ${className}`}>{children}</div>;
+  return <div data-card-header className={`sticky top-0 z-10 -mx-4 -mt-4 rounded-t-lg border-b border-slate-800/70 bg-[#07111f] px-4 pb-2 pt-4 ${className}`}>{children}</div>;
 }
 
 export function ErrorText({ children }: { children: ReactNode }) {
