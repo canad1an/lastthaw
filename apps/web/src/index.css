@@ -277,9 +277,15 @@ input[type="radio"] {
 /*
  * A pinned card header straight on a phone screen (the region screen has no card around it) spans the screen's
  * 0.75rem padding, not a card's 1rem; the card's reach ran 4px past the right edge and let the screen scroll sideways.
+ * It must not pull itself up over the screen's top padding with a negative margin: the browser pins a sticky element
+ * below that padding, so the header slid back down over the first 12px of the content, which nothing could scroll to.
+ * The screen drops its top padding instead and the header supplies it.
  */
+[data-phone-body]:has(> [data-card-header]:first-child) {
+  padding-top: 0;
+}
 [data-phone-body] > [data-card-header] {
-  margin: -0.75rem -0.75rem 0;
+  margin: 0 -0.75rem 0;
   padding: 0.75rem 0.75rem 0.5rem;
   border-radius: 0;
 }
