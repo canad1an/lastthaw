@@ -70,7 +70,8 @@ function CrashedPage({ error, reset }: ErrorComponentProps) {
   );
 }
 
-export const router = createRouter({ routeTree: rootRoute.addChildren(routes), defaultErrorComponent: CrashedPage });
+export const routeTree = rootRoute.addChildren(routes);
+export const router = createRouter({ routeTree, defaultErrorComponent: CrashedPage });
 
 declare module "@tanstack/react-router" {
   interface Register {
