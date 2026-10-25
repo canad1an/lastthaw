@@ -16,6 +16,7 @@ const SKIP_LABEL: Record<string, string> = {
   blocked: "cannot stand there, or needs another building first",
   notYetAvailable: "needs an age or tech you do not have",
   haulingBusy: "enough builds already waiting on hauling",
+  promised: "the empire's stock is already promised to builds waiting on convoys",
   protected: "target under beginner protection",
   pact: "target under a pact or ceasefire",
   noRoute: "no route to safe ground, or to the target",

@@ -1312,6 +1312,27 @@ describe("api routes", () => {
         expect((await Ben.call("PUT", `${base}/advisors/economic/settings`, { minLevels: { quarry: 1 }, useOtherRegions: true, skipRegions: [], population: "balanced" })).statusCode).toBe(200);
       }
 
+      // No cap on convoy builds: a region with empty stores gets level after level queued for convoys until its queue is
+      // full, not one a pass; and nothing is queued that the empire's unpromised stock could not supply.
+      {
+        const others = await db.select({ regionId: matchRegions.regionId, buildings: matchRegions.buildings }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid), eq(matchRegions.isCapital, false), sql`${matchRegions.frozenAt} is null`));
+        const poor = others[0];
+        expect(poor, "Ben holds a region besides his capital").toBeTruthy();
+        const hutsThere = (poor!.buildings as { huts?: number }).huts ?? 0;
+        await fill(12000, 12000, 9000, 100, 100);
+        await db.update(matchRegions).set({ food: 0, wood: 0, stone: 0, settledAt: new Date(await nowIso()) }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, poor!.regionId)));
+        // Only Huts wanted, and only in the poor region (every other region is skipped).
+        const skipRegions = (await db.select({ regionId: matchRegions.regionId }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid)))).map((r) => r.regionId).filter((id) => id !== poor!.regionId);
+        expect((await Ben.call("PUT", `${base}/advisors/economic/settings`, { minLevels: { huts: Math.min(20, hutsThere + 6) }, useOtherRegions: true, skipRegions, population: "off" })).statusCode).toBe(200);
+        await db.update(advisors).set({ lastPassAt: null }).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
+        const runC = await forcePassAs(ben, "economic", gameId);
+        expect(runC.statusCode, runC.body).toBe(200);
+        const waiting = await db.select().from(jobs).where(and(eq(jobs.matchId, gameId), eq(jobs.playerId, benPid), eq(jobs.regionId, poor!.regionId), eq(jobs.kind, "build"), eq(jobs.refId, "huts"), sql`${jobs.completedAt} is null`, sql`${jobs.cancelledAt} is null`));
+        expect(waiting.length, "several levels queued for convoys in one pass").toBeGreaterThan(1);
+        await db.update(jobs).set({ cancelledAt: new Date() }).where(and(eq(jobs.matchId, gameId), eq(jobs.playerId, benPid), eq(jobs.regionId, poor!.regionId), sql`${jobs.completedAt} is null`, sql`${jobs.cancelledAt} is null`));
+        expect((await Ben.call("PUT", `${base}/advisors/economic/settings`, { minLevels: { quarry: 1 }, useOtherRegions: true, skipRegions: [], population: "balanced" })).statusCode).toBe(200);
+      }
+
       // Workers: a capital gathering no food while its store is nearly empty is put back on food by the next pass; a store near its cap gets no more.
       const [capRow] = await db.select({ buildings: matchRegions.buildings, isCapital: matchRegions.isCapital }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
       const capCaps = storageCaps(effectsOf(capRow!.buildings), capRow!.isCapital);

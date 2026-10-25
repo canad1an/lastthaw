@@ -266,8 +266,9 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
   const skipped: Record<string, number> = {};
   const bump = (k: string) => (skipped[k] = (skipped[k] ?? 0) + 1);
   let queued = 0;
-  // Builds waiting on materials pull haulers; the advisor keeps them few, and prefers builds a region can pay for itself.
-  let waitingBuilds = pending.filter((j) => j.kind === "build" && j.waitingFor).length;
+  // Goods already promised to builds and training waiting on convoys: the advisor never promises the same stock twice.
+  const promised: Record<string, number> = {};
+  for (const j of pending) for (const [k, v] of Object.entries((j.waitingFor ?? {}) as Record<string, number>)) promised[k] = (promised[k] ?? 0) + (v ?? 0);
   const matchDay = matchDayAt(m, now);
   const avail = new Map(availableBuildings(p.age, techs).map((b) => [b.id, b]));
 
@@ -283,10 +284,12 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
       empireGross[k] = (empireGross[k] ?? 0) + Math.max(0, x.rates.gross[k] ?? 0);
       empireStock[k] = (empireStock[k] ?? 0) + (x.economy[k] ?? 0);
     }
+    // Ores and horses too: a build owing iron must find it unpromised somewhere.
+    for (const [k, v] of Object.entries(stockOf(x.row))) if (k !== "food" && k !== "wood" && k !== "stone") empireStock[k] = (empireStock[k] ?? 0) + (v ?? 0);
   }
-  // Builds come in two sweeps. First, and always: every upgrade a region can pay for from its own stores, level after
-  // level up to the minimums set, as far as the queue's slots allow. That is never rationed. Only then come the builds
-  // that need materials from elsewhere, at most maxQueuedPerPass of them a pass and one waiting build per region.
+  // Builds come in two sweeps. First: every upgrade a region can pay for from its own stores, level after level up to
+  // the minimums set, as far as the queue's slots allow. Then the builds that need materials from elsewhere, again
+  // level after level until the queue is full: no cap per pass or per region, only the empire's unpromised stock.
   const pendingBuilds = (regionId: string) => pending.filter((j) => j.regionId === regionId && (j.kind === "build" || j.kind === "train"));
   const queuedLevels = (regionId: string, id: string) => pending.filter((j) => j.regionId === regionId && j.kind === "build" && j.refId === id).length;
   const localExtra = new Map<string, Record<string, number>>();
@@ -321,7 +324,10 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
           bump(/queue is full/.test(msg) ? "queueFull" : /not enough/.test(msg) ? "unaffordable" : "blocked");
           break;
         }
-        for (const [k, v] of Object.entries(costNow)) local[k] = (local[k] ?? 0) - v;
+        for (const [k, v] of Object.entries(costNow)) {
+          local[k] = (local[k] ?? 0) - v;
+          empireStock[k] = (empireStock[k] ?? 0) - v;
+        }
         extra[id] = (extra[id] ?? 0) + 1;
         have += 1;
         queued += 1;
@@ -335,59 +341,66 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
     localExtra.set(row.regionId, extra);
   }
 
-  let queuedWaiting = 0;
   for (const { row, economy } of projected) {
     if (skip.has(row.regionId)) continue;
-    if (queuedWaiting >= c.maxQueuedPerPass) break;
+    if (!settings.useOtherRegions) break;
     const region = regionById(row.regionId);
     if (!region) continue;
     const extra = localExtra.get(row.regionId) ?? {};
     const here = pendingBuilds(row.regionId);
     let slots = balance.queue.slotsPerRegion - here.length - Object.values(extra).reduce((a, n) => a + n, 0);
-    const waitingHere = here.some((j) => j.kind === "build" && j.waitingFor);
+    // What this region still holds after the builds it paid for itself this pass.
+    const local = stockOf(row);
+    for (const [bid, n] of Object.entries(extra)) {
+      const def = buildingById.get(bid);
+      if (!def) continue;
+      const base = (row.buildings[bid] ?? 0) + queuedLevels(row.regionId, bid);
+      for (let lv = base + 1; lv <= base + n; lv++) for (const [k, v] of Object.entries(buildingCost(def, lv, matchDay, region.neighbors.length))) local[k] = (local[k] ?? 0) - (v ?? 0);
+    }
     for (const id of buildOrderFor(row, economy, false)) {
+      if (slots <= 0) break;
       const target = Math.min(settings.minLevels[id] ?? 0, buildingById.get(id)?.maxLevel ?? 0);
       if (target <= 0) continue;
       const def = avail.get(id);
       if (!def) continue;
-      const have = (row.buildings[id] ?? 0) + queuedLevels(row.regionId, id) + (extra[id] ?? 0);
-      if (have >= target) continue;
       if (buildingBlockedBy(def, region, row.buildings, row.isCapital)) continue;
-      if (slots <= 0) {
-        bump("queueFull");
-        break;
-      }
-      if (queuedWaiting >= c.maxQueuedPerPass) break;
-      const costNow = buildingCost(def, have + 1, matchDay, region.neighbors.length);
-      const mayWait = settings.useOtherRegions && !waitingHere && waitingBuilds < c.maxWaitingBuilds;
-      if (!mayWait) {
-        bump(waitingBuilds >= c.maxWaitingBuilds ? "haulingBusy" : "unaffordable");
-        continue;
-      }
-      const local = stockOf(row);
-      const starved = (["food", "wood", "stone"] as const).find((k) => {
-        const short = (costNow[k] ?? 0) - (local[k] ?? 0);
-        return short > 0 && (empireGross[k] ?? 0) < 1 && (empireStock[k] ?? 0) < 2 * short;
-      });
-      if (starved) {
-        bump(`no_${starved}`);
-        continue;
-      }
-      try {
-        await queueBuild(ctx, row.regionId, id, { allowWait: true, maxOwed: c.maxOwed });
-        const short = Object.fromEntries(Object.entries(costNow).map(([k, v]) => [k, Math.max(0, (v ?? 0) - (local[k] ?? 0))]));
+      let have = (row.buildings[id] ?? 0) + queuedLevels(row.regionId, id) + (extra[id] ?? 0);
+      while (have < target && slots > 0) {
+        const costNow = buildingCost(def, have + 1, matchDay, region.neighbors.length);
+        const short: Record<string, number> = {};
+        for (const [k, v] of Object.entries(costNow)) if ((v ?? 0) > Math.max(0, local[k] ?? 0)) short[k] = (v ?? 0) - Math.max(0, local[k] ?? 0);
+        // A build short of a resource nothing produces and nobody holds would wait forever.
+        const starved = (["food", "wood", "stone"] as const).find((k) => (short[k] ?? 0) > 0 && (empireGross[k] ?? 0) < 1 && (empireStock[k] ?? 0) < 2 * (short[k] ?? 0));
+        if (starved) {
+          bump(`no_${starved}`);
+          break;
+        }
+        // Never promise the same stock twice: what is owed must be in the empire's stores beyond what is already promised.
+        const overPromised = Object.entries(short).some(([k, v]) => (empireStock[k] ?? 0) - (promised[k] ?? 0) < v);
+        if (overPromised) {
+          bump("promised");
+          break;
+        }
+        try {
+          await queueBuild(ctx, row.regionId, id, { allowWait: true });
+        } catch (err) {
+          const msg = (err as Error).message ?? "";
+          bump(/not enough/.test(msg) ? "unaffordable" : /queue is full/.test(msg) ? "queueFull" : "blocked");
+          break;
+        }
         events.push({ action: "build", regionId: row.regionId, text: `Queued ${def.name} level ${have + 1} at ${nameOf(row.regionId)}; ${costText(short) || "the balance"} to come by caravan.` });
+        for (const [k, v] of Object.entries(costNow)) {
+          const paidHere = Math.min(v ?? 0, Math.max(0, local[k] ?? 0));
+          local[k] = (local[k] ?? 0) - paidHere;
+          empireStock[k] = (empireStock[k] ?? 0) - paidHere;
+        }
+        for (const [k, v] of Object.entries(short)) promised[k] = (promised[k] ?? 0) + v;
+        have += 1;
         queued += 1;
-        queuedWaiting += 1;
         slots -= 1;
-        waitingBuilds += 1;
-        // One waiting build per region: the rest of this region's wants come next pass.
-        break;
-      } catch (err) {
-        const msg = (err as Error).message ?? "";
-        bump(/not enough|too much would have to be shipped/.test(msg) ? "unaffordable" : /queue is full/.test(msg) ? "queueFull" : "blocked");
       }
     }
+    if (slots <= 0) bump("queueFull");
   }
 
   // Workers: each region's shares from what it and the empire need.

@@ -381,8 +381,8 @@ export const balance = {
   scoutUnit: "tracker",
   /**
    * Advisors: hired staff paid by the game hour, scaling with the empire. The Economic advisor raises buildings to the
-   * minimum levels set, lets convoys supply what a region cannot pay (up to maxOwed per build), moves people as chosen,
-   * and makes a pass every passMinutes, queueing at most maxQueuedPerPass builds a pass. No hiring fee.
+   * minimum levels set, filling every region's build queue, lets convoys supply what a region cannot pay, moves people
+   * as chosen, and makes a pass every passMinutes. No hiring fee.
    */
   /**
    * A battle's result is decided the moment the army arrives (see `combat`); it is then played out in short real-time
@@ -405,10 +405,6 @@ export const balance = {
     outputShare: 0.25,
     economic: {
       passMinutes: 30,
-      maxQueuedPerPass: 6,
-      /** The advisor never has more than this many builds waiting on materials across the empire; beyond it, only builds a region can pay for itself. */
-      maxWaitingBuilds: 8,
-      maxOwed: 20000,
       /** Balanced population: regions more than this share of capacity above the empire's mean fill give people away. */
       balanceBand: 0.1,
       /** Balanced population: at most this share of a region's people leaves in one pass. */
