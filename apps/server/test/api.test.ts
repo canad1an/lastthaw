@@ -21,6 +21,7 @@ import { chargeAdvisors, wageFor } from "../src/sim/advisors.js";
 import { economyNow } from "../src/sim/ledger.js";
 import { logger } from "../src/logger.js";
 import { inviteMail } from "../src/mail.js";
+import { nameSuffix } from "./suffix.js";
 
 process.env.DATABASE_URL ??= "postgres://lastthaw:lastthaw@localhost:5432/lastthaw";
 process.env.SESSION_SECRET ??= "test-secret-test-secret-test-secret";
@@ -61,7 +62,7 @@ describe("api routes", () => {
   });
   let app: App;
   let db: Db;
-  const suffix = Date.now().toString(36);
+  const suffix = nameSuffix();
   const pw = "correct horse battery";
   const admin = { email: `adm-${suffix}@example.test`, password: pw, displayName: `Adm${suffix}` };
   const ann = { email: `ann-${suffix}@example.test`, password: pw, displayName: `Ann${suffix}` };
@@ -1127,11 +1128,13 @@ describe("api routes", () => {
     const taken = new Set((await db.select({ regionId: matchRegions.regionId }).from(matchRegions).where(eq(matchRegions.matchId, gameId))).map((r) => r.regionId));
     const limit = balance.travel.canoeMaxLaneKm;
     // An island with a port across a short lane, and another with a port only across long lanes. Regions Ben already
-    // holds from earlier tests may be reused; only other players' regions are off limits.
+    // holds from earlier tests may be reused; only other players' regions are off limits, and so is an island an earlier
+    // test already runs routes into (their goods set aside would supply the build before the port's canoes are asked).
     const others = new Set((await db.select({ regionId: matchRegions.regionId }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), sql`${matchRegions.ownerPlayerId} is distinct from ${benPid}`))).map((r) => r.regionId));
+    const supplied = new Set((await db.select({ regionId: tradeRoutes.toRegionId }).from(tradeRoutes).where(eq(tradeRoutes.matchId, gameId))).map((r) => r.regionId));
     taken.clear();
     for (const id of others) taken.add(id);
-    const islands = allRegions().filter((r) => r.neighbors.length === 0 && !taken.has(r.id));
+    const islands = allRegions().filter((r) => r.neighbors.length === 0 && !taken.has(r.id) && !supplied.has(r.id));
     const shortPick = islands.map((isle) => ({ isle, port: isle.seaRoutes.find((id) => !taken.has(id) && distanceKm(isle.id, id) <= limit) })).find((x) => x.port);
     const longPick = islands.filter((i) => i !== shortPick?.isle).map((isle) => ({ isle, port: isle.seaRoutes.find((id) => !taken.has(id) && distanceKm(isle.id, id) > limit && seaPath(id, isle.id, limit) === null) })).find((x) => x.port);
     expect(shortPick, "an island on a short lane").toBeTruthy();
@@ -1145,8 +1148,10 @@ describe("api routes", () => {
     const redis = createRedis();
     const pub = new Publisher(redis);
     try {
-      // Short lane, canoes only: they sail, as many as the goods need. The port is the only stocked source.
-      await db.update(matchRegions).set({ food: 0, wood: 0, stone: 0 }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid)));
+      // Short lane, canoes only: they sail, as many as the goods need. The port is the only stocked source: Ben's other regions are
+      // emptied and settled now, or the production they accrued since their last settle stocks them again when the build
+      // sources its goods, and a nearer coast of Ben's supplies the island instead of the port.
+      await db.update(matchRegions).set({ food: 0, wood: 0, stone: 0, settledAt: atMatchNow }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid)));
       await claim(shortPick!.port!, { food: 500, wood: 2000, stone: 1500, units: { canoe: 6 } });
       await claim(shortPick!.isle.id, { food: 50, wood: 0, stone: 0, units: {} });
       const built = await Ben.call("POST", `${base}/regions/${shortPick!.isle.id}/build`, { buildingId: "lumber_camp" });
@@ -1160,7 +1165,7 @@ describe("api routes", () => {
       const aboard = Object.values(byCanoe!.cargo).reduce((x, y) => x + y, 0);
       expect(byCanoe!.units.canoe! * unitById.get("canoe")!.carry).toBeGreaterThanOrEqual(aboard);
       // Long lane, canoes only: nothing sails, and the route says to build a cog. The port is the only stocked source.
-      await db.update(matchRegions).set({ food: 0, wood: 0, stone: 0 }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid)));
+      await db.update(matchRegions).set({ food: 0, wood: 0, stone: 0, settledAt: atMatchNow }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid)));
       await claim(longPick!.port!, { food: 500, wood: 2000, stone: 1500, units: { canoe: 6 } });
       await claim(longPick!.isle.id, { food: 50, wood: 0, stone: 0, units: {} });
       const far = await Ben.call("POST", `${base}/regions/${longPick!.isle.id}/build`, { buildingId: "lumber_camp" });

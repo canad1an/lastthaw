@@ -13,6 +13,7 @@ import { Publisher } from "../src/realtime/publish.js";
 import { createRedis } from "../src/redis.js";
 import { runDueJobs } from "../src/worker/jobs.js";
 import { logger } from "../src/logger.js";
+import { nameSuffix } from "./suffix.js";
 
 process.env.DATABASE_URL ??= "postgres://lastthaw:lastthaw@localhost:5432/lastthaw";
 process.env.SESSION_SECRET ??= "test-secret-test-secret-test-secret";
@@ -51,7 +52,7 @@ describe("a complete match", () => {
   let app: App;
   let db: Db;
   let matchId = "";
-  const suffix = Date.now().toString(36);
+  const suffix = nameSuffix();
   const user = { email: `full-${suffix}@example.test`, password: "correct horse battery", displayName: `Full${suffix}` };
   const SPEED = 10;
   // A day per step and six AI tribes keep the whole run under five minutes; the AI pass is the cost that grows with the empires.

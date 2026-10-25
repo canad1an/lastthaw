@@ -19,6 +19,7 @@ import { logger } from "../src/logger.js";
 import { applyIceStep } from "../src/sim/ice.js";
 import { foundCapital, projectRegion } from "../src/sim/regions.js";
 import { matchNow } from "../src/sim/clock.js";
+import { nameSuffix } from "./suffix.js";
 
 process.env.DATABASE_URL ??= "postgres://lastthaw:lastthaw@localhost:5432/lastthaw";
 process.env.SESSION_SECRET ??= "test-secret-test-secret-test-secret";
@@ -29,7 +30,7 @@ process.env.SMTP_PORT ??= "1";
 describe("world events", () => {
   let app: Awaited<ReturnType<typeof buildApp>>;
   let db: Db;
-  const suffix = Date.now().toString(36);
+  const suffix = nameSuffix();
   const user = { email: `ev-${suffix}@example.test`, password: "correct horse battery", displayName: `Eve${suffix}` };
   let cookie = "";
   let matchId = "";

@@ -13,6 +13,7 @@ import { foundCapital } from "../src/sim/regions.js";
 import { queueBuild } from "../src/sim/commands.js";
 import { cancelOrphanedJobs } from "../src/sim/endgame.js";
 import { logger } from "../src/logger.js";
+import { nameSuffix } from "./suffix.js";
 
 process.env.DATABASE_URL ??= "postgres://lastthaw:lastthaw@localhost:5432/lastthaw";
 process.env.SESSION_SECRET ??= "test-secret-test-secret-test-secret";
@@ -46,7 +47,7 @@ class Client {
 describe("milestone 1 flow", () => {
   let app: App;
   let db: Db;
-  const suffix = Date.now().toString(36);
+  const suffix = nameSuffix();
   const alice = { email: `alice-${suffix}@example.test`, password: "correct horse battery", displayName: `Alice${suffix}` };
   const bob = { email: `bob-${suffix}@example.test`, password: "correct horse battery", displayName: `Bob${suffix}` };
 
@@ -515,7 +516,7 @@ describe("milestone 1 flow", () => {
 describe("milestone 5 social", () => {
   let app: App;
   let db: Db;
-  const suffix = `s${Date.now().toString(36)}`;
+  const suffix = `s${nameSuffix()}`;
   const alice = { email: `alice-${suffix}@example.test`, password: "correct horse battery", displayName: `Alice${suffix}` };
   const bob = { email: `bob-${suffix}@example.test`, password: "correct horse battery", displayName: `Bob${suffix}` };
   const createdMatches: string[] = [];

@@ -1,9 +1,11 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
+import { registerBody } from "@lastthaw/shared";
 import { buildApp } from "../src/api/app.js";
 import { createDb, type Db } from "../src/db/client.js";
 import { users } from "../src/db/schema.js";
 import { createRedis } from "../src/redis.js";
+import { nameSuffix } from "./suffix.js";
 
 process.env.DATABASE_URL ??= "postgres://lastthaw:lastthaw@localhost:5432/lastthaw";
 process.env.SESSION_SECRET ??= "test-secret-test-secret-test-secret";
@@ -14,7 +16,7 @@ process.env.SMTP_PORT ??= "1";
 describe("security", () => {
   let app: Awaited<ReturnType<typeof buildApp>>;
   let db: Db;
-  const suffix = Date.now().toString(36);
+  const suffix = nameSuffix();
   const email = `sec-${suffix}@example.test`;
   beforeAll(async () => {
     db = createDb();
@@ -29,6 +31,21 @@ describe("security", () => {
     await db.delete(users).where(eq(users.email, email));
     await app.close();
     await db.close();
+  });
+
+  it("test suffixes never spell a word the name filter refuses", () => {
+    // 2026-10-25: a suffix read as "b7c" (btc) refused the sign-up above with a 400.
+    for (const bad of ["mvnqtb7c", "mvnqsnf7", "mvnqs87c"]) {
+      vi.useFakeTimers({ now: parseInt(bad, 36), toFake: ["Date"] });
+      try {
+        expect(registerBody.safeParse({ email, password: "correct horse battery", displayName: `Sec ${bad}` }).success).toBe(false);
+        const ok = nameSuffix();
+        expect(ok).not.toBe(bad);
+        expect(registerBody.safeParse({ email, password: "correct horse battery", displayName: `Sec ${ok}` }).success).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
+    }
   });
 
   it("locks an account after ten wrong passwords and refuses cross-site writes and bad ids", async () => {

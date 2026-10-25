@@ -4,13 +4,14 @@ import { createDb, type Db } from "../src/db/client.js";
 import { fairplayFlags, matches, players, sessions, transfers, users } from "../src/db/schema.js";
 import { detectMultiAccounts } from "../src/fairplay/detect.js";
 import { hashPassword } from "../src/auth/password.js";
+import { nameSuffix } from "./suffix.js";
 
 process.env.DATABASE_URL ??= "postgres://lastthaw:lastthaw@localhost:5432/lastthaw";
 process.env.SESSION_SECRET ??= "test-secret-test-secret-test-secret";
 
 describe("multi-account detection", () => {
   let db: Db;
-  const suffix = Date.now().toString(36);
+  const suffix = nameSuffix();
   const emails = [`fp-a-${suffix}@example.test`, `fp-b-${suffix}@example.test`, `fp-c-${suffix}@example.test`];
   let matchId: string;
   let userIds: string[] = [];
