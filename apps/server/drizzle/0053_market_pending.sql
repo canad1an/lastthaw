@@ -1,0 +1,1 @@
+ALTER TABLE "market_orders" ADD COLUMN "accepted_at" timestamp with time zone;

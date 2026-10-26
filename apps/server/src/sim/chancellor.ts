@@ -165,13 +165,13 @@ export async function chancellorPass(db: Db, m: MatchRow, p: PlayerRow, a: Advis
     const open = mine.filter((o) => o.status === "open");
 
     // Buying: what the empire owes plus what his own listings ask for, largest first, from the cheapest offer not too far
-    // above fair, paid from whichever region of yours holds the most of the price beyond its reserve (the capital when tied).
+    // above fair, paid from the capital (every trade is paid from and delivered to it) when it holds the price beyond its reserve.
     if (settings.buy) {
       const offers = await db.select().from(marketOrders).where(and(eq(marketOrders.matchId, m.id), eq(marketOrders.status, "open"), ne(marketOrders.playerId, p.id)));
       // His own open listings say what he is after: a tribe offering that for sale is a quicker way to the same goods.
       const wanted: Record<string, number> = { ...owed };
       for (const o of open) wanted[o.askResource] = (wanted[o.askResource] ?? 0) + o.askAmount;
-      const stocks = new Map(owned.filter((r) => !r.frozenAt && !r.evacuatedAt && !skip.has(r.regionId)).map((r) => [r.regionId, { row: r, stock: stockOf(r) as Record<string, number> }]));
+      const stocks = new Map(owned.filter((r) => r.regionId === capital.regionId && !r.frozenAt && !r.evacuatedAt).map((r) => [r.regionId, { row: r, stock: stockOf(r) as Record<string, number> }]));
       const payerFor = (res: string, amount: number) =>
         [...stocks.values()]
           .map((x) => ({ x, spare: (x.stock[res] ?? 0) - settings.reserveShare * capFor(x.row, res) }))
@@ -189,11 +189,11 @@ export async function chancellorPass(db: Db, m: MatchRow, p: PlayerRow, a: Advis
           .sort((x, y) => x.price - y.price);
         const pick = candidates[0];
         if (!pick || !pick.payer) {
-          suggestions.push({ regionId: null, text: `Nothing on the market offers ${Math.ceil(need)} ${res} within ${Math.round((settings.overpay - 1) * 100)}% of fair that a region of yours can pay for beyond its reserve.` });
+          suggestions.push({ regionId: null, text: `Nothing on the market offers ${Math.ceil(need)} ${res} within ${Math.round((settings.overpay - 1) * 100)}% of fair that your capital can pay for beyond its reserve.` });
           continue;
         }
         const payer = pick.payer;
-        const err = await attempt(() => acceptMarketOrder(db, m, p, pick.o.id, payer.row.regionId, true));
+        const err = await attempt(() => acceptMarketOrder(db, m, p, pick.o.id, { byAdvisor: true }));
         if (err) bump("blocked");
         else {
           bought += 1;
@@ -214,7 +214,8 @@ export async function chancellorPass(db: Db, m: MatchRow, p: PlayerRow, a: Advis
         const ores = (["iron", "copper", "tin", "horses"] as const).filter((k) => k !== give).sort((x, y) => (pooled[x] ?? 0) - (pooled[y] ?? 0));
         return ores[0]!;
       };
-      for (const row of [...owned].sort((x, y) => Number(y.isCapital) - Number(x.isCapital))) {
+      // Every offer is escrowed from the capital, so only the capital's stores are listed.
+      for (const row of owned.filter((r) => r.regionId === capital.regionId)) {
         if (open.length >= settings.maxOrders) break;
         if (skip.has(row.regionId) || row.evacuatedAt) continue;
         const stock = stockOf(row) as Record<string, number>;
@@ -236,7 +237,7 @@ export async function chancellorPass(db: Db, m: MatchRow, p: PlayerRow, a: Advis
             if (open.length >= settings.maxOrders) break;
             const askAmount = Math.max(1, fairAmount(res, lotAmount, ask));
             const err = await attempt(async () => {
-              const o = await createMarketOrder(db, m, p, { regionId: row.regionId, offerResource: res, offerAmount: lotAmount, askResource: ask, askAmount }, true);
+              const o = await createMarketOrder(db, m, p, { offerResource: res, offerAmount: lotAmount, askResource: ask, askAmount }, true);
               open.push(o);
             });
             if (err) {

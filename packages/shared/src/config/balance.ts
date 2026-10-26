@@ -215,6 +215,10 @@ export const balance = {
     /** Techs that raise how much each hauler carries (added together: +50% and +50% = 2x). */
     caravanCarryTechs: { the_wheel: 0.5, engineering: 0.5, scholasticism: 1.0 } as Record<string, number>,
   },
+  market: {
+    /** A purchase the buyer's capital cannot pay yet is held this many game hours, then goes back on the market. */
+    payWithinHours: 24,
+  },
   naval: {
     /** A patrol holds its lane for this many game hours, then sails home. */
     patrolHours: 12,

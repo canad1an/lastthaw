@@ -828,6 +828,8 @@ export const marketOrders = pgTable(
     filledByAdvisor: boolean("filled_by_advisor").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     filledAt: timestamp("filled_at", { withTimezone: true }),
+    /** Status "pending": bought by filledByPlayerId at this time, paid and delivered once their capital holds the ask. */
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
   },
   (t) => [index("market_orders_match_idx").on(t.matchId, t.status)],
 );

@@ -165,10 +165,10 @@ export const api = {
   chat: (id: string, channel: "global" | "alliance") => request("GET", `/api/matches/${id}/chat?channel=${channel}`, undefined, chatResponse),
   postChat: (id: string, channel: "global" | "alliance", body: string) => request<ChatMessageView>("POST", `/api/matches/${id}/chat`, { channel, body }),
   market: (id: string) => request("GET", `/api/matches/${id}/market`, undefined, marketResponse),
-  postOrder: (id: string, b: { regionId: string; offerResource: TradeResource; offerAmount: number; askResource: TradeResource; askAmount: number }) =>
+  postOrder: (id: string, b: { offerResource: TradeResource; offerAmount: number; askResource: TradeResource; askAmount: number }) =>
     request<MarketOrderView>("POST", `/api/matches/${id}/market`, b),
   cancelOrder: (id: string, orderId: string) => request<{ ok: true; refundedTo: string | null }>("POST", `/api/matches/${id}/market/${orderId}/cancel`, {}),
-  acceptOrder: (id: string, orderId: string, regionId: string) => request<{ ok: true; received: number }>("POST", `/api/matches/${id}/market/${orderId}/accept`, { regionId }),
+  acceptOrder: (id: string, orderId: string) => request<{ ok: true; received: number; pending: boolean }>("POST", `/api/matches/${id}/market/${orderId}/accept`, {}),
 };
 
 export interface MessageView {
