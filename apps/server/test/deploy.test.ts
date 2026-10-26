@@ -70,6 +70,20 @@ describe("deploy/deploy.sh log archive", () => {
   });
 });
 
+describe("deploy/deploy.sh stale containers", () => {
+  // On 2026-10-25 compose left worker and ai running the previous build after a deploy that rebuilt them, so the
+  // advisor change it shipped ran in the API but not in the AI process.
+  it("recreates worker, ai and web whenever their container runs another image than the fresh build", () => {
+    const deploy = read("deploy/deploy.sh");
+    const loop = deploy.search(/^for s in worker ai web; do$/m);
+    expect(loop).toBeGreaterThan(deploy.indexOf("up -d --no-deps --remove-orphans"));
+    const body = deploy.slice(loop, deploy.indexOf("\ndone", loop));
+    expect(body).toMatch(/docker image inspect --format '\{\{\.Id\}\}'/);
+    expect(body).toMatch(/docker inspect --format '\{\{\.Image\}\}' "\$cid"/);
+    expect(body).toMatch(/up -d --no-deps --force-recreate "\$s"/);
+  });
+});
+
 describe("deploy/deploy.sh build cache", () => {
   // On 2026-10-26 the box's Docker build cache held 39 GB of a 77 GB disk: every deploy added to it and nothing pruned.
   it("caps the build cache after the new images are built, and a failed prune never fails the deploy", () => {

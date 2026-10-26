@@ -30,6 +30,18 @@ find "$HOME/logs" -name 'app-*.log.gz' -mtime +14 -delete || true
 # live upstream (the "no upstreams available" 503s came from both replicas restarting at once).
 # --no-deps: without it compose would also recreate the API (caddy and web depend on it) and take both replicas down at once.
 $COMPOSE --profile app up -d --no-deps --remove-orphans $($COMPOSE --profile app config --services | grep -vx api)
+# Compose does not always see a rebuilt image: on 2026-10-25 it left worker and ai "Running" on the previous build
+# while the API ran the new one, so the advisor and balance changes of that deploy never reached them. Any service
+# whose container runs another image than the one just built is recreated here.
+for s in worker ai web; do
+  cid="$($COMPOSE ps -q "$s" | head -n1)"
+  [ -n "$cid" ] || continue
+  want="$(docker image inspect --format '{{.Id}}' "$(docker inspect --format '{{.Config.Image}}' "$cid")" 2>/dev/null || true)"
+  have="$(docker inspect --format '{{.Image}}' "$cid")"
+  if [ -n "$want" ] && [ "$want" != "$have" ]; then
+    $COMPOSE --profile app up -d --no-deps --force-recreate "$s" && echo "$s recreated on the new image"
+  fi
+done
 for c in $($COMPOSE ps -q api); do
   docker rm -f "$c" >/dev/null
   $COMPOSE --profile app up -d --no-deps --no-recreate --scale 2 api >/dev/null 2>&1 || $COMPOSE --profile app up -d --no-deps --no-recreate --scale api=2 api
