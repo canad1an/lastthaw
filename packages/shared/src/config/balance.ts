@@ -86,7 +86,7 @@ export const balance = {
     /** The capital's storage caps are multiplied by this: it is where surplus from every region ends up. */
     capitalStorageMult: 3,
     /** Cap for each metal/horse stock per region. */
-    specialStorage: 1000,
+    specialStorage: 2000,
     /** Settle sub-step in game minutes. Smaller is more accurate and slower. */
     settleStepMinutes: 5,
     /** Beyond this many sub-steps a single settle snaps the remainder in one coarse step. */
@@ -414,6 +414,11 @@ export const balance = {
       /** At most this many settler trainings a pass for at-risk regions, and this many settlers in each. */
       settlerTrainsPerPass: 3,
       settlersPerTraining: 10,
+      /**
+       * Scarce ores and horses: a build that costs one and does not produce it waits while the empire would hold less
+       * than this many game hours of its output, unpromised, once paid. The rest is kept for research and training.
+       */
+      scarceReserveHours: 3,
       /** Balanced population: regions more than this share of capacity above the empire's mean fill give people away. */
       balanceBand: 0.1,
       /** Balanced population: at most this share of a region's people leaves in one pass. */

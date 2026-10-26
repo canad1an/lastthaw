@@ -298,6 +298,17 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
     for (const k of Object.keys(promised)) delete promised[k];
     for (const j of pending) for (const [k, v] of Object.entries((j.waitingFor ?? {}) as Record<string, number>)) promised[k] = (promised[k] ?? 0) + (v ?? 0);
   }
+  // Scarce ores and horses: what the empire makes an hour, and the reserve kept back for research and training.
+  const reserve: Record<string, number> = {};
+  for (const x of projected) for (const [k, v] of Object.entries(x.rates.special)) reserve[k] = (reserve[k] ?? 0) + Math.max(0, v) * c.scarceReserveHours;
+  // A building that works an ore or herd the region lacks gains it nothing (a Forge works iron only where there is iron).
+  const worksNothingHere = (def: { effect: { extract?: Record<string, number | undefined> } }, resources: readonly string[]) => {
+    const ex = Object.keys(def.effect.extract ?? {});
+    return ex.length > 0 && !ex.some((k) => resources.includes(k));
+  };
+  // A scarce resource this build would spend below the reserve, unless the build itself produces it here.
+  const scarceFor = (def: { effect: { extract?: Record<string, number | undefined> } }, resources: readonly string[], cost: Record<string, number | undefined>) =>
+    Object.entries(cost).find(([k, v]) => k !== "food" && k !== "wood" && k !== "stone" && (v ?? 0) > 0 && !(resources.includes(k) && (def.effect.extract?.[k] ?? 0) > 0) && (empireStock[k] ?? 0) - (promised[k] ?? 0) - (v ?? 0) < (reserve[k] ?? 0))?.[0];
   // At-risk regions are looked after first in the sweeps below too.
   projected.sort((x, y) => Number(guard.atRisk.has(y.row.regionId)) - Number(guard.atRisk.has(x.row.regionId)));
   // Builds come in two sweeps. First: every upgrade a region can pay for from its own stores, level after level up to
@@ -325,10 +336,19 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
         bump("blocked");
         continue;
       }
+      if (worksNothingHere(def, region.resources)) {
+        bump("worksNothing");
+        continue;
+      }
       let have = (row.buildings[id] ?? 0) + queuedLevels(row.regionId, id) + (extra[id] ?? 0);
       while (have < target && slots > 0) {
         const costNow = buildingCost(def, have + 1, matchDay, region.neighbors.length);
         if (!canAfford(local, costNow)) break;
+        const scarce = scarceFor(def, region.resources, costNow);
+        if (scarce) {
+          bump(`save_${scarce}`);
+          break;
+        }
         try {
           await queueBuild(ctx, row.regionId, id, { allowWait: false });
           events.push({ action: "build", regionId: row.regionId, text: `Queued ${def.name} level ${have + 1} at ${nameOf(row.regionId)}, paid from its own stores (${costText(costNow)}).` });
@@ -376,10 +396,15 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
       if (target <= 0) continue;
       const def = avail.get(id);
       if (!def) continue;
-      if (buildingBlockedBy(def, region, row.buildings, row.isCapital)) continue;
+      if (buildingBlockedBy(def, region, row.buildings, row.isCapital) || worksNothingHere(def, region.resources)) continue;
       let have = (row.buildings[id] ?? 0) + queuedLevels(row.regionId, id) + (extra[id] ?? 0);
       while (have < target && slots > 0) {
         const costNow = buildingCost(def, have + 1, matchDay, region.neighbors.length);
+        const scarce = scarceFor(def, region.resources, costNow);
+        if (scarce) {
+          bump(`save_${scarce}`);
+          break;
+        }
         const short: Record<string, number> = {};
         for (const [k, v] of Object.entries(costNow)) if ((v ?? 0) > Math.max(0, local[k] ?? 0)) short[k] = (v ?? 0) - Math.max(0, local[k] ?? 0);
         // A build short of a resource nothing produces and nobody holds would wait forever.
@@ -429,6 +454,10 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
   for (const k of ["food", "wood", "stone"] as const) {
     const n = skipped[`no_${k}`];
     if (n) suggestions.unshift({ regionId: p.capitalRegionId ?? projected[0]?.row.regionId ?? "", text: `${n} build${n === 1 ? "" : "s"} held back for want of ${k}: nothing in the empire gathers it and the stores are bare. Put workers on ${k}${settings.workers ? "" : ", or let the advisor set shares"}.` });
+  }
+  for (const k of ["copper", "tin", "iron", "horses"]) {
+    const n = skipped[`save_${k}`];
+    if (n) suggestions.unshift({ regionId: p.capitalRegionId ?? projected[0]?.row.regionId ?? "", text: `${n} build${n === 1 ? "" : "s"} held back to keep ${k} for research and training: the empire holds ${Math.round(Math.max(0, (empireStock[k] ?? 0) - (promised[k] ?? 0))).toLocaleString("en-US")} unpromised, and keeps ${Math.round(reserve[k] ?? 0).toLocaleString("en-US")} (${c.scarceReserveHours} hours of its output) in reserve. More mines in ${k} regions raise both.` });
   }
   const report: AdvisorReport = { at: now.toISOString(), queued: queued + guard.queued, moved, rebalanced, trained: guard.trained, fortified: 0, exposed: [], evacuated: 0, settled: guard.settlersSent, clock: [], researched: 0, listed: 0, bought: 0, skipped, suggestions };
   await db.update(advisors).set({ lastPassAt: now, lastReport: report }).where(eq(advisors.id, a.id));
