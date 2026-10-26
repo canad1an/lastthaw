@@ -306,9 +306,10 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
     const ex = Object.keys(def.effect.extract ?? {});
     return ex.length > 0 && !ex.some((k) => resources.includes(k));
   };
-  // A scarce resource this build would spend below the reserve, unless the build itself produces it here.
-  const scarceFor = (def: { effect: { extract?: Record<string, number | undefined> } }, resources: readonly string[], cost: Record<string, number | undefined>) =>
-    Object.entries(cost).find(([k, v]) => k !== "food" && k !== "wood" && k !== "stone" && (v ?? 0) > 0 && !(resources.includes(k) && (def.effect.extract?.[k] ?? 0) > 0) && (empireStock[k] ?? 0) - (promised[k] ?? 0) - (v ?? 0) < (reserve[k] ?? 0))?.[0];
+  // A scarce resource this build would spend below the reserve. No exemption for a build that produces it: a Forge level
+  // in an iron region costs far more iron than it returns in days, and Mines cost none.
+  const scarceFor = (cost: Record<string, number | undefined>) =>
+    Object.entries(cost).find(([k, v]) => k !== "food" && k !== "wood" && k !== "stone" && (v ?? 0) > 0 && (empireStock[k] ?? 0) - (promised[k] ?? 0) - (v ?? 0) < (reserve[k] ?? 0))?.[0];
   // At-risk regions are looked after first in the sweeps below too.
   projected.sort((x, y) => Number(guard.atRisk.has(y.row.regionId)) - Number(guard.atRisk.has(x.row.regionId)));
   // Builds come in two sweeps. First: every upgrade a region can pay for from its own stores, level after level up to
@@ -344,7 +345,7 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
       while (have < target && slots > 0) {
         const costNow = buildingCost(def, have + 1, matchDay, region.neighbors.length);
         if (!canAfford(local, costNow)) break;
-        const scarce = scarceFor(def, region.resources, costNow);
+        const scarce = scarceFor(costNow);
         if (scarce) {
           bump(`save_${scarce}`);
           break;
@@ -400,7 +401,7 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
       let have = (row.buildings[id] ?? 0) + queuedLevels(row.regionId, id) + (extra[id] ?? 0);
       while (have < target && slots > 0) {
         const costNow = buildingCost(def, have + 1, matchDay, region.neighbors.length);
-        const scarce = scarceFor(def, region.resources, costNow);
+        const scarce = scarceFor(costNow);
         if (scarce) {
           bump(`save_${scarce}`);
           break;
