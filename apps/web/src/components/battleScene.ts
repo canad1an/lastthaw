@@ -57,6 +57,12 @@ const depthOf = (d: number) => ({ y: FT + d * (FB - FT), s: 0.95 + d * 0.75 });
 const projX = (x: number, d: number) => CX + (x - CX) * (0.86 + 0.14 * d);
 const dirOf = (side: 0 | 1) => (side === 0 ? 1 : -1);
 const baseX = (side: 0 | 1, col: number) => CX - dirOf(side) * (GAP + col * COLW);
+/** Engines and ships hold their place; they never close up or walk into the melee. */
+const fixed = (look: FigureLook) => look.cat === "siege" || look.cat === "ship";
+/** The water behind the field, between the camp and the settlement, and where each side's ships lie on it. */
+const WATER_X0 = 150;
+const WATER_X1 = 850;
+const shipX = (side: 0 | 1, col: number) => CX - dirOf(side) * (62 + col * 66);
 
 interface Fig {
   f: FieldFigure;
@@ -235,9 +241,10 @@ export class BattleScene {
         if (g.f.side !== side) continue;
         if (this.standing(g, t)) {
           g.tcol = cols.get(g.f.n) ?? g.tcol;
-          if (g.f.look.cat !== "siege") maxCol = Math.max(maxCol, g.tcol);
-          const tx = baseX(side, g.tcol) + g.f.jx + off;
-          if (t < APPROACH || g.f.look.cat === "siege") g.x = tx;
+          if (!fixed(g.f.look)) maxCol = Math.max(maxCol, g.tcol);
+          // Ships are on the water from the start; everyone else marches in.
+          const tx = g.f.look.cat === "ship" ? shipX(side, g.f.col0) + g.f.jx : baseX(side, g.tcol) + g.f.jx + off;
+          if (t < APPROACH || fixed(g.f.look)) g.x = tx;
           else g.x += clamp(tx - g.x, -26 * dt, 26 * dt);
           g.moving = t < APPROACH || Math.abs(tx - g.x) > 0.4;
           if (fighting && t > APPROACH) this.shoot(g, t);
@@ -264,8 +271,8 @@ export class BattleScene {
 
     if (fighting && t > APPROACH - 0.2 && !this.reduce) {
       for (let file = 0; file < FIELD_FILES; file++) {
-        const a = this.figs.find((g) => g.f.side === 0 && g.f.file === file && g.tcol === 0 && g.f.look.cat !== "siege" && this.standing(g, t));
-        const d = this.figs.find((g) => g.f.side === 1 && g.f.file === file && g.tcol === 0 && g.f.look.cat !== "siege" && this.standing(g, t));
+        const a = this.figs.find((g) => g.f.side === 0 && g.f.file === file && g.tcol === 0 && !fixed(g.f.look) && this.standing(g, t));
+        const d = this.figs.find((g) => g.f.side === 1 && g.f.file === file && g.tcol === 0 && !fixed(g.f.look) && this.standing(g, t));
         if (!a || !d) continue;
         const pa = this.screenOf(a), pd = this.screenOf(d);
         if (Math.random() < dt * 2.4) this.burst((pa.x + pd.x) / 2, pa.y - (12 + Math.random() * 8) * pa.s, 4);
@@ -319,10 +326,14 @@ export class BattleScene {
       }
   }
 
-  /** Archers and gunners loose every few seconds at someone across the field; siege engines throw now and then. */
+  /**
+   * Archers and gunners loose every few seconds at someone across the field; siege engines throw now and then. A
+   * warship's crew looses a volley from the deck, or its guns fire, at the enemy on the field or on the water.
+   */
   private shoot(g: Fig, t: number) {
     const cat = g.f.look.cat;
-    if (cat !== "ranged" && cat !== "siege") return;
+    if (cat !== "ranged" && cat !== "siege" && cat !== "ship") return;
+    if (cat === "ship" && g.f.look.weapon === "none") return;
     if (t < g.nextShot + APPROACH) return;
     const foes = this.figs.filter((x) => x.f.side !== g.f.side && x.f.look.cat !== "siege" && this.standing(x, t));
     if (!foes.length) return;
@@ -331,10 +342,16 @@ export class BattleScene {
       this.fire(g, foes[Math.floor(Math.random() * foes.length)]!, 1 + Math.random() * 0.3, false);
       return;
     }
+    if (cat === "ship" && g.f.look.weapon === "bow") {
+      g.nextShot = t - APPROACH + 2.4 + Math.random() * 2;
+      for (let i = 0; i < 3; i++) this.fire(g, foes[Math.floor(Math.random() * foes.length)]!, 1.2 + Math.random() * 0.5, false, i * 7 - 7);
+      return;
+    }
     if (t < APPROACH + 1) return;
     g.nextShot = t - APPROACH + 5 + Math.random() * 3;
     g.armT = t;
-    const back = [...foes].sort((a, b) => b.tcol - a.tcol).slice(0, 12);
+    // Engines lob into the rear ranks; a ship's guns fire at whoever is nearest the water, the rear ranks of the field.
+    const back = [...foes].sort((a, b) => b.tcol - a.tcol || a.d - b.d).slice(0, 12);
     const target = back[Math.floor(Math.random() * back.length)]!;
     const p = this.screenOf(g), q = this.screenOf(target);
     const cannon = g.f.look.weapon === "cannon";
@@ -345,9 +362,11 @@ export class BattleScene {
     this.stones.push({ x0: p.x + dirOf(g.f.side) * 10 * p.s, y0: p.y - (cannon ? 9 : 28) * p.s, x1: q.x + (Math.random() - 0.5) * 30, y1: q.y + (Math.random() - 0.5) * 10, apex: cannon ? 30 : 150 + Math.random() * 40, t: cannon ? 0 : -0.35 / 1.8, dur: cannon ? 0.7 : 1.8, s: q.s, r: cannon ? 2 : 2.6 });
   }
 
-  private fire(g: Fig, target: Fig, dur: number, hit: boolean) {
+  private fire(g: Fig, target: Fig, dur: number, hit: boolean, along = 0) {
     g.drawT = this.t;
-    const p = this.screenOf(g), q = this.screenOf(target);
+    const p0 = this.screenOf(g), q = this.screenOf(target);
+    // From a ship: the archers stand along the deck.
+    const p = g.f.look.cat === "ship" ? { x: p0.x + along * p0.s, y: p0.y + 5 * p0.s, s: p0.s } : p0;
     const dir = dirOf(g.f.side);
     if (g.f.look.weapon === "gun") {
       this.burst(p.x + dir * 13 * p.s, p.y - 16 * p.s, 4, "#ffd28a");
@@ -407,6 +426,7 @@ export class BattleScene {
       c.fillRect(-rx - 60, -200, (rx + 60) * 2, 400);
       c.restore();
     }
+    if (this.figs.some((g) => g.f.look.cat === "ship")) drawWater(c, t);
     for (const cr of this.craters) {
       c.fillStyle = `rgba(80,66,52,${0.5 * (1 - (t - cr.t) / 14)})`;
       c.beginPath();
@@ -510,7 +530,7 @@ export class BattleScene {
     const o = { walk: t * (routing ? 16 : 10) + f.ph, moving: g.moving || routing, swing: 0, thrust: 0, raise: false, draw: 0, brace: 0, rear: 0, arm: 0 };
     let dx = 0, dy = 0;
     if (up) {
-      const engaged = !ended && t > APPROACH - 0.3 && g.tcol === 0 && look.cat !== "siege";
+      const engaged = !ended && t > APPROACH - 0.3 && g.tcol === 0 && !fixed(look);
       const ph = t * 5 + f.ph;
       if (engaged) {
         const l = Math.max(0, Math.sin(ph));
@@ -524,13 +544,13 @@ export class BattleScene {
         dy = Math.sin(t * 2 + f.ph) * 0.4;
       }
       // The winners raise their weapons for a while once it is over.
-      if (ended && t < this.endAt + 20 && look.cat !== "siege" && g.routAt === Infinity) {
+      if (ended && t < this.endAt + 20 && !fixed(look) && g.routAt === Infinity) {
         o.raise = true;
         o.moving = false;
         dx = 0;
         dy = -Math.abs(Math.sin(t * 5 + f.ph)) * 2.6;
       }
-      if (look.cat === "ranged") o.draw = clamp(1 - (t - g.drawT) / 0.45, 0, 1);
+      if (look.cat === "ranged" || look.cat === "ship") o.draw = clamp(1 - (t - g.drawT) / 0.45, 0, 1);
       if (look.cat === "siege") {
         const since = t - g.armT;
         o.arm = since < 0.35 ? 0 : since < 0.6 ? ease((since - 0.35) / 0.25) : since < 3 ? 1 - clamp((since - 1.2) / 1.8, 0, 1) : 0;
@@ -540,16 +560,35 @@ export class BattleScene {
     c.save();
     c.globalAlpha = alpha;
     c.translate(x, y);
-    if (fallP > 0) {
+    if (fallP > 0 && look.cat === "ship") {
+      // Foam where a ship goes down.
+      c.strokeStyle = `rgba(225,236,244,${0.55 * (1 - fallP * 0.6)})`;
+      c.lineWidth = 1;
+      c.beginPath();
+      c.ellipse(0, 1, (16 + 30 * fallP) * s, (3 + 5 * fallP) * s, 0, 0, Math.PI * 2);
+      c.stroke();
+    } else if (fallP > 0) {
       // A dark stain in the snow under the fallen.
       c.fillStyle = `rgba(70,28,24,${0.38 * fallP})`;
       c.beginPath();
       c.ellipse(-face * f.fb * 10 * s, 1, 13 * s * fallP, 3 * s * fallP, 0, 0, Math.PI * 2);
       c.fill();
     }
-    const big = look.cat === "siege" ? 1.15 : 1;
+    const big = look.cat === "siege" ? 1.15 : look.cat === "ship" ? 1.7 : 1;
     c.scale(s * face * big, s * big);
     c.translate(dx, dy);
+    if (look.cat === "ship") {
+      // Riding the swell; a sunk ship settles by the stern and slips under.
+      const e = fallP > 0 ? clamp((t - g.fallAt) / (FALL * 4), 0, 1) : 0;
+      c.translate(0, Math.sin(t * 1.6 + f.ph) * 0.8 + e * 14);
+      c.rotate(Math.sin(t * 1.1 + f.ph) * 0.03 - e * 0.35);
+      c.beginPath();
+      c.rect(-40, -60, 80, 62);
+      c.clip();
+      drawShip(c, P, look, o, t + f.ph);
+      c.restore();
+      return;
+    }
     if (fallP > 0) {
       const e = fallP * fallP;
       c.translate(-f.fb * 3 * e, 0);
@@ -562,6 +601,119 @@ export class BattleScene {
     else if (look.cat === "siege") (look.weapon === "cannon" ? drawCannon : drawCatapult)(c, P, o);
     else drawFoot(c, P, look, o);
     c.restore();
+  }
+}
+
+/** A bay of grey winter water behind the field, between the camp and the settlement, with a rim of shore ice. */
+function drawWater(c: CanvasRenderingContext2D, t: number) {
+  const top = HOR - 6, bot = FT + 2;
+  c.save();
+  c.beginPath();
+  c.moveTo(WATER_X0, top);
+  c.lineTo(WATER_X1, top);
+  c.quadraticCurveTo(WATER_X1 + 28, (top + bot) / 2, WATER_X1 - 20, bot);
+  c.lineTo(WATER_X0 + 20, bot);
+  c.quadraticCurveTo(WATER_X0 - 28, (top + bot) / 2, WATER_X0, top);
+  c.closePath();
+  const gr = c.createLinearGradient(0, top, 0, bot);
+  gr.addColorStop(0, "#4d6a82");
+  gr.addColorStop(1, "#2f4a61");
+  c.fillStyle = gr;
+  c.fill();
+  c.strokeStyle = "rgba(232,240,246,.8)";
+  c.lineWidth = 1.6;
+  c.stroke();
+  c.clip();
+  c.strokeStyle = "rgba(200,220,234,.35)";
+  c.lineWidth = 0.8;
+  for (let i = 0; i < 16; i++) {
+    const y = top + 4 + (i % 4) * 9;
+    const x = WATER_X0 + ((i * 97 + t * 9) % (WATER_X1 - WATER_X0 + 60)) - 30;
+    line(c, x, y, x + 14, y);
+  }
+  c.restore();
+}
+
+/**
+ * A ship, waterline at the origin, bow toward +x. A galley: low hull, a row of shields, oars that pull, a square sail
+ * in the side's colour and archers on deck who draw as they loose. Guns (ironclad and later): a grey hull, a funnel and
+ * a deck gun. A merchantman: a round hull and a sail.
+ */
+function drawShip(c: CanvasRenderingContext2D, P: Pal, look: FigureLook, o: Pose, t: number) {
+  const steam = look.weapon === "cannon";
+  // Oars, under the hull's line, pulling.
+  if (look.weapon === "bow") {
+    c.strokeStyle = P.wood;
+    c.lineWidth = 1;
+    for (let i = 0; i < 6; i++) {
+      const x = -15 + i * 6, sw = Math.sin(t * 3 + i * 0.2) * 3;
+      line(c, x, -3, x - 4 + sw, 3);
+    }
+  }
+  // Hull.
+  c.fillStyle = steam ? "#4b5158" : P.wood;
+  c.beginPath();
+  c.moveTo(-24, -7);
+  c.lineTo(steam ? 24 : 22, -7);
+  c.quadraticCurveTo(steam ? 26 : 27, -9, steam ? 25 : 28, -12);
+  c.lineTo(steam ? 21 : 18, 1);
+  c.lineTo(-19, 1);
+  c.quadraticCurveTo(-25, -2, -24, -7);
+  c.fill();
+  c.fillStyle = P.trim;
+  c.fillRect(-21, -7, 41, 1.6);
+  if (steam) {
+    // Funnel with a drift of smoke, and the deck gun forward.
+    c.fillStyle = "#2c3036";
+    c.fillRect(-4, -18, 5, 11);
+    c.fillStyle = P.cloth;
+    c.fillRect(-4, -18, 5, 2);
+    c.fillStyle = "rgba(170,176,184,.45)";
+    for (let i = 0; i < 3; i++) dot(c, -3 - i * 4 - ((t * 4) % 4), -21 - i * 3, 2 + i);
+    c.fillStyle = "#3a3f45";
+    c.fillRect(8, -11, 7, 4);
+    c.strokeStyle = "#2a2e33";
+    c.lineWidth = 1.6;
+    line(c, 14, -9.5, 20 + o.draw * -2, -10.5);
+    return;
+  }
+  // Shields along the gunwale.
+  if (look.weapon === "bow") {
+    c.fillStyle = P.cloth;
+    for (let i = 0; i < 6; i++) dot(c, -16 + i * 6, -8.5, 1.6);
+  }
+  // Mast and sail.
+  c.strokeStyle = "#3a2c20";
+  c.lineWidth = 1.2;
+  line(c, 0, -8, 0, -36);
+  c.fillStyle = P.cloth;
+  c.beginPath();
+  c.moveTo(-9, -33);
+  c.quadraticCurveTo(-1 + Math.sin(t * 1.3) * 1.2, -24, -9, -14);
+  c.lineTo(10, -14);
+  c.quadraticCurveTo(14 + Math.sin(t * 1.3) * 1.2, -24, 10, -33);
+  c.closePath();
+  c.fill();
+  c.fillStyle = P.trim;
+  c.fillRect(-9, -26, 19, 1.4);
+  if (look.weapon !== "bow") return;
+  // Archers on deck, the forward ones drawing.
+  for (const [x, draws] of [[-14, false], [-6, true], [8, true], [15, false]] as const) {
+    c.fillStyle = P.tunic;
+    c.fillRect(x - 1.6, -13, 3.2, 5);
+    c.fillStyle = P.skin;
+    dot(c, x, -14.6, 1.6);
+    if (draws) {
+      c.strokeStyle = P.wood;
+      c.lineWidth = 0.8;
+      c.beginPath();
+      c.arc(x + 3, -12, 3, -1.3, 1.3);
+      c.stroke();
+      c.strokeStyle = "#e6e2d8";
+      c.lineWidth = 0.5;
+      line(c, x + 3 + 3 * Math.cos(1.3), -12 - 3 * Math.sin(1.3), x + 3 - o.draw * 2, -12);
+      line(c, x + 3 - o.draw * 2, -12, x + 3 + 3 * Math.cos(1.3), -12 + 3 * Math.sin(1.3));
+    }
   }
 }
 

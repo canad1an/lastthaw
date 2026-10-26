@@ -7,7 +7,7 @@ import { seededRng } from "./rng.js";
  * viewer, whenever they open the window, sees the same men fall.
  */
 
-export type FigureCat = "foot" | "horse" | "ranged" | "siege" | "civil";
+export type FigureCat = "foot" | "horse" | "ranged" | "siege" | "civil" | "ship";
 export type FigureWeapon = "club" | "axe" | "sword" | "spear" | "bow" | "sling" | "gun" | "none" | "catapult" | "cannon";
 export interface FigureLook {
   cat: FigureCat;
@@ -46,11 +46,16 @@ const LOOKS: Record<string, FigureLook> = {
   train: { cat: "civil", weapon: "none" },
 };
 
-/** How a unit is drawn on the battlefield; an unknown fighting unit is a swordsman, an unknown civilian walks unarmed. */
+/**
+ * How a unit is drawn on the battlefield; an unknown fighting unit is a swordsman, an unknown civilian walks unarmed.
+ * Ships sail on the water behind the field: warships shoot (bows until the Industrial Age, guns after), merchantmen
+ * only sail.
+ */
 export function figureLook(unitId: string): FigureLook {
   const known = LOOKS[unitId];
   if (known) return known;
   const u = unitById.get(unitId);
+  if (u?.naval) return { cat: "ship", weapon: u.hauler || u.civilian ? "none" : u.age >= 5 ? "cannon" : "bow" };
   if (u?.breach) return { cat: "siege", weapon: "catapult" };
   if (u?.civilian || u?.hauler) return { cat: "civil", weapon: "none" };
   if (u?.needsResource === "horses") return { cat: "horse", weapon: "spear" };
@@ -64,7 +69,10 @@ export const FIELD_MAX_FIGURES = 54;
 /** Partial columns fill from the middle files out. */
 const FILE_ORDER = [2, 3, 1, 4, 0, 5];
 const SIEGE_FILES = [1, 4, 2.5, 0, 5, 3];
-const CAT_RANK: Record<FigureCat, number> = { foot: 0, horse: 1, ranged: 2, civil: 3, siege: 4 };
+const CAT_RANK: Record<FigureCat, number> = { foot: 0, horse: 1, ranged: 2, civil: 3, siege: 4, ship: 5 };
+/** Ships a row on the water, and the rows behind the field (files before the first). */
+const SHIPS_PER_ROW = 5;
+const SHIP_ROWS = [-0.65, -1.25];
 
 export interface FieldFigure {
   /** Stable index across the whole field. */
@@ -72,7 +80,10 @@ export interface FieldFigure {
   side: 0 | 1;
   unit: string;
   look: FigureLook;
-  /** Starting column (0 is the front line) and file (0 farthest from the viewer). Siege engines sit behind the last column. */
+  /**
+   * Starting column (0 is the front line) and file (0 farthest from the viewer). Siege engines sit behind the last
+   * column. Ships are on the water behind the field: a negative file, and their column is their place along the shore.
+   */
   col0: number;
   file: number;
   /** Small fixed jitters so ranks do not look stamped: x in field units, depth as a fraction, a phase for idle motion. */
@@ -116,6 +127,7 @@ export function castBattlefield(seed: string, attacker: Record<string, number>, 
     let j = 0;
     const line: FieldFigure[] = [];
     const siege: FieldFigure[] = [];
+    const ships: FieldFigure[] = [];
     for (const unit of order) {
       const look = figureLook(unit);
       const count = Math.ceil((start[unit] ?? 0) / k);
@@ -123,6 +135,7 @@ export function castBattlefield(seed: string, attacker: Record<string, number>, 
         const f: FieldFigure = { n: figures.length, side: side as 0 | 1, unit, look, col0: 0, file: 0, jx: (rng() - 0.5) * 6, jd: (rng() - 0.5) * 0.05, ph: rng() * Math.PI * 2, fb: rng() < 0.78 ? 1 : -1, key: rng(), fallRound: null, stagger: 0 };
         figures.push(f);
         if (look.cat === "siege") siege.push(f);
+        else if (look.cat === "ship") ships.push(f);
         else {
           f.col0 = Math.floor(j / FIELD_FILES);
           f.file = FILE_ORDER[j % FIELD_FILES]!;
@@ -135,6 +148,10 @@ export function castBattlefield(seed: string, attacker: Record<string, number>, 
     siege.forEach((f, i) => {
       f.file = SIEGE_FILES[i % SIEGE_FILES.length]!;
       f.col0 = maxCol + 2 + Math.floor(i / SIEGE_FILES.length) * 1.4;
+    });
+    ships.forEach((f, i) => {
+      f.col0 = (i % SHIPS_PER_ROW) + (Math.floor(i / SHIPS_PER_ROW) % 2) * 0.5;
+      f.file = SHIP_ROWS[Math.floor(i / SHIPS_PER_ROW) % SHIP_ROWS.length]!;
     });
   });
 
@@ -159,7 +176,7 @@ export function closeRanks(figures: ReadonlyArray<FieldFigure>, side: 0 | 1, sta
   const byFile = new Map<number, FieldFigure[]>();
   for (const f of figures) {
     if (f.side !== side || !standing(f)) continue;
-    if (f.look.cat === "siege") {
+    if (f.look.cat === "siege" || f.look.cat === "ship") {
       out.set(f.n, f.col0);
       continue;
     }
