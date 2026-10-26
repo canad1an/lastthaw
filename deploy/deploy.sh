@@ -50,5 +50,8 @@ if ! crontab -l 2>/dev/null | diff -q - deploy/crontab >/dev/null 2>&1; then
 fi
 # The Caddyfile is a bind mount: a changed file needs a reload, not a recreate.
 $COMPOSE exec -T caddy caddy reload --config /etc/caddy/Caddyfile >/dev/null 2>&1 || true
+# Every build leaves its layers in the build cache and nothing cleared it: by 2026-10-26 it held 39 GB of the 77 GB
+# disk. Keep the newest 6 GB (enough for the next build to reuse the npm install layers) and drop the rest.
+docker builder prune -f --max-used-space 6GB >/dev/null 2>&1 || true
 $COMPOSE --profile app ps
 echo "deployed $(git rev-parse --short HEAD) at $(date -u +%FT%TZ)"

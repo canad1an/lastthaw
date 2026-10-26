@@ -69,3 +69,13 @@ describe("deploy/deploy.sh log archive", () => {
     expect(deploy).toMatch(/find "\$HOME\/logs" -name 'app-\*\.log\.gz' -mtime \+14 -delete/);
   });
 });
+
+describe("deploy/deploy.sh build cache", () => {
+  // On 2026-10-26 the box's Docker build cache held 39 GB of a 77 GB disk: every deploy added to it and nothing pruned.
+  it("caps the build cache after the new images are built, and a failed prune never fails the deploy", () => {
+    const deploy = read("deploy/deploy.sh");
+    const prune = deploy.search(/^docker builder prune -f --max-used-space \d+GB .*\|\| true$/m);
+    expect(prune).toBeGreaterThan(-1);
+    expect(prune).toBeGreaterThan(deploy.indexOf("--profile app build"));
+  });
+});
