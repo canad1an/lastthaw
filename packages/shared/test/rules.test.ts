@@ -285,6 +285,9 @@ describe("voyages", () => {
     // A chain of lanes is one voyage for the goods: the hand-over is at the near harbour, the hop its far end.
     const hop = nextHopTo(found!.a, found!.b);
     expect(hop).not.toBeNull();
+    // Gabon to Pernambuco lands at Paraiba and walks on; with Paraiba nobody friendly's, the ship sails on to Pernambuco itself.
+    expect(nextHopTo("ga-gabon", "br-pernambuco")).toEqual({ hop: "br-paraiba", relay: true });
+    expect(nextHopTo("ga-gabon", "br-pernambuco", (id) => id !== "br-paraiba")).toEqual({ hop: "br-pernambuco", relay: false });
     // A region with two coasts the sea does not join along its shore is never sailed through from one to the other: every
     // voyage keeps to one stretch of coast through each region it passes, so the Red Sea to the Mediterranean goes round
     // Africa and in by Gibraltar, not over Suez.

@@ -1,6 +1,6 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { balance } from "@lastthaw/shared";
-import { allianceInvites, allianceMembers, alliances, events, messages } from "../db/schema.js";
+import { allianceInvites, allianceMembers, alliances, events, matchRegions, messages } from "../db/schema.js";
 import type { Tx } from "./regions.js";
 import type { Db } from "../db/client.js";
 import type { Publisher } from "../realtime/publish.js";
@@ -28,6 +28,17 @@ export async function alliesOf(db: Tx | Db, matchId: string, playerId: string): 
   if (!mine) return [];
   const rows = await db.select({ playerId: allianceMembers.playerId }).from(allianceMembers).where(eq(allianceMembers.allianceId, mine.allianceId));
   return rows.map((r) => r.playerId).filter((id) => id !== playerId);
+}
+
+/**
+ * Where a player's goods may be handed over between legs of a journey: their own regions and their allies'.
+ * Pass the result to nextHopTo so a ship never tries to unload at a harbour nobody friendly holds.
+ */
+export async function landableFor(db: Tx | Db, matchId: string, playerId: string): Promise<(regionId: string) => boolean> {
+  const owners = [playerId, ...(await alliesOf(db, matchId, playerId))];
+  const rows = await db.select({ regionId: matchRegions.regionId }).from(matchRegions).where(and(eq(matchRegions.matchId, matchId), inArray(matchRegions.ownerPlayerId, owners)));
+  const ids = new Set(rows.map((r) => r.regionId));
+  return (regionId) => ids.has(regionId);
 }
 
 /** Day shown to players (1-based) on which alliances dissolve: the morning after alliancesEndDay whole days have gone. */

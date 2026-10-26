@@ -8,6 +8,7 @@ import type { Publisher } from "../realtime/publish.js";
 import { matchNow } from "./clock.js";
 import { projectRegion, stockOf, type MatchRegionRow } from "./regions.js";
 import { sendArmy, returnHeld, type CommandContext } from "./commands.js";
+import { landableFor } from "./alliances.js";
 import type { MatchRow } from "../worker/jobs.js";
 
 export type TradeRouteRow = typeof tradeRoutes.$inferSelect;
@@ -104,8 +105,8 @@ export async function dispatchRoute(db: Db, m: MatchRow, p: PlayerRow, route: Tr
   }
   if (route.forJobId || route.relayTo) return dispatchSupply(db, m, p, route, origin, owed ?? {}, now);
   // Where this leg goes: the destination by land, or the harbour where ships take over.
-  const next = nextHopTo(route.fromRegionId, route.toRegionId);
-  if (!next) return "no way there: more than one sea crossing; route to a harbour nearer the far shore instead";
+  const next = nextHopTo(route.fromRegionId, route.toRegionId, await landableFor(db, m.id, p.id));
+  if (!next) return "no way there: more than one sea crossing, or the ships would have to land at a harbour that is not yours or an ally's; route to a harbour nearer the far shore instead";
   const hop = next.hop;
   const sea = seaOnly(route.fromRegionId, hop);
   const kind = sea ? shipFor(origin.units, route.fromRegionId, hop) : bestHauler(origin.units, false);

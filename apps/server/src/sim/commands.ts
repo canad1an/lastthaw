@@ -14,7 +14,7 @@ import { legSeconds } from "./legs.js";
 import { peaceBetween } from "./diplomacy.js";
 import { applyCost, settleAndLockRegion, stockOf, type MatchRegionRow, type Tx, waySetsFor, resourceMultOf, ownerTechEffects } from "./regions.js";
 import { recordSpend } from "./ledger.js";
-import { alliesOf, areAllied } from "./alliances.js";
+import { alliesOf, areAllied, landableFor } from "./alliances.js";
 import type { MatchRow } from "../worker/jobs.js";
 
 export type PlayerRow = typeof players.$inferSelect;
@@ -140,7 +140,8 @@ export async function queueBuild(ctx: CommandContext, regionId: string, building
  * already collecting for the destination takes what it has room for. Builds and training both use it.
  */
 export async function supplyWaitingJob(tx: Tx, m: MatchRow, p: PlayerRow, techs: ReadonlySet<string>, regionId: string, jobId: string, owed: Record<string, number>, sources: MatchRegionRow[], allMine: MatchRegionRow[], now: Date): Promise<void> {
-  const plan = planByReach(owed, sources, regionId, p.capitalRegionId, techs);
+  const landable = await landableFor(tx, m.id, p.id);
+  const plan = planByReach(owed, sources, regionId, p.capitalRegionId, techs, landable);
   const [forJob] = await tx.select({ kind: jobs.kind }).from(jobs).where(eq(jobs.id, jobId)).limit(1);
   const category = forJob?.kind === "train" ? "military" : "build";
   for (const { src, part } of plan) {
@@ -148,7 +149,7 @@ export async function supplyWaitingJob(tx: Tx, m: MatchRow, p: PlayerRow, techs:
     await applyCost(tx, src, part as Cost);
     await recordSpend(tx, m, p.id, category, part);
     // Merge into an existing materials route from the same source, so one convoy carries everything queued.
-    const hop = nextHopTo(src.regionId, regionId)!;
+    const hop = nextHopTo(src.regionId, regionId, landable)!;
     const [existing] = await tx
       .select()
       .from(tradeRoutes)
@@ -801,9 +802,9 @@ export async function placeOnConvoys(tx: Tx, m: MatchRow, playerId: string, rout
  * harbour, a ship across, a land hauler on), with the capital first among the land ones. A region with no such way
  * is no use to the order.
  */
-export function planByReach(owed: Record<string, number>, sources: MatchRegionRow[], destination: string, capitalRegionId: string | null, techs: ReadonlySet<string>): Array<{ src: MatchRegionRow; part: Record<string, number> }> {
+export function planByReach(owed: Record<string, number>, sources: MatchRegionRow[], destination: string, capitalRegionId: string | null, techs: ReadonlySet<string>, landable?: (regionId: string) => boolean): Array<{ src: MatchRegionRow; part: Record<string, number> }> {
   const byLand = sources.filter((s) => !!findRoute(s.regionId, destination, false));
-  const viaSea = sources.filter((s) => !byLand.includes(s) && nextHopTo(s.regionId, destination) !== null);
+  const viaSea = sources.filter((s) => !byLand.includes(s) && nextHopTo(s.regionId, destination, landable) !== null);
   const plan = planSources(owed, byLand, stockOf, capitalRegionId, haulerCarry("caravan", techs));
   const still: Record<string, number> = { ...owed };
   for (const { part } of plan) for (const [k, v] of Object.entries(part)) still[k] = Math.max(0, (still[k] ?? 0) - v);
@@ -940,9 +941,10 @@ export async function repairWaitingBuilds(tx: Tx, m: MatchRow, now: Date): Promi
       .from(matchRegions)
       .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.ownerPlayerId, p.id), isNull(matchRegions.frozenAt)));
     const sources = mine.filter((r) => r.regionId !== regionId);
-    const plan = planByReach(still, sources, regionId, p.capitalRegionId, techs);
+    const landable = await landableFor(tx, m.id, p.id);
+    const plan = planByReach(still, sources, regionId, p.capitalRegionId, techs, landable);
     for (const { src, part } of plan) {
-      const hop = nextHopTo(src.regionId, regionId)!;
+      const hop = nextHopTo(src.regionId, regionId, landable)!;
       const existing = routes.find((r) => r.fromRegionId === src.regionId && r.toRegionId === hop.hop);
       // Set aside at the source, under its lock, so nothing else spends it before the haulers come.
       const srcRow = await settleAndLockRegion(tx, m.id, src.regionId, now, m.speed, resourceMultOf(m));

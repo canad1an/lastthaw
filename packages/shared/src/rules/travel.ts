@@ -232,8 +232,10 @@ export function seaPath(from: string, to: string, maxLaneKm: number, harbors?: R
  * destination itself. Otherwise the way may hold exactly one sea lane: a land hauler carries the goods to the near
  * harbour, a ship takes them across, a land hauler carries them on. The hop is the first of those that is not here;
  * `relay` says the goods are handed over there rather than delivered. Null when no such way exists (two crossings).
+ * With `landable` (the player's own or an ally's regions), a voyage that would land at a harbour it does not allow
+ * sails on to the destination itself if it has a coast; otherwise there is no way.
  */
-export function nextHopTo(from: string, to: string): { hop: string; relay: boolean } | null {
+export function nextHopTo(from: string, to: string, landable?: (regionId: string) => boolean): { hop: string; relay: boolean } | null {
   if (from === to) return null;
   if (findRoute(from, to, false)) return { hop: to, relay: false };
   const route = findRoute(from, to, true);
@@ -256,6 +258,10 @@ export function nextHopTo(from: string, to: string): { hop: string; relay: boole
   const { start, end } = runs[0]!;
   // At the near harbour already: the voyage's far end is the hop. Else the near harbour is.
   const hop = start === 0 ? path[end]! : path[start]!;
+  // Ships unload only where goods can be handed over: past a landing nobody friendly holds, sail on to the destination.
+  if (start === 0 && hop !== to && landable && !landable(hop)) {
+    return regionById(to)?.coastal && seaPath(from, to, Infinity) ? { hop: to, relay: false } : null;
+  }
   return { hop, relay: hop !== to };
 }
 

@@ -7,7 +7,7 @@ import { armies, battles, jobs, matchRegions, players, regionSightings, playerTe
 import type { Publisher } from "../realtime/publish.js";
 import { settleAndLockRegion, type MatchRegionRow, type Tx, setCapital, ownerTechEffects, waySetsFor, stockOf, resourceMultOf } from "./regions.js";
 import { notify, type JobRow, type MatchRow } from "../worker/jobs.js";
-import { areAllied, alliesOf } from "./alliances.js";
+import { areAllied, alliesOf, landableFor } from "./alliances.js";
 import { receiveMaterials } from "./commands.js";
 import { legContextFor, legSeconds, routeFor, type LegContext } from "./legs.js";
 import { clearMilitaryTargets } from "./advisorTargets.js";
@@ -611,7 +611,7 @@ async function deliverCargo(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publis
  * dispatch carries it on. Returns false when there is no way on, in which case the goods are simply delivered here.
  */
 async function handOver(tx: Tx, m: MatchRow, playerId: string, r: { id: string; toRegionId: string; relayTo: string | null; forJobId: string | null }, take: Record<string, number>, at: Date): Promise<boolean> {
-  const next = nextHopTo(r.toRegionId, r.relayTo!);
+  const next = nextHopTo(r.toRegionId, r.relayTo!, await landableFor(tx, m.id, playerId));
   if (!next) return false;
   const { tradeRoutes } = await import("../db/schema.js");
   const ctx = await legContextFor(tx, m.id, playerId);
