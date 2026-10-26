@@ -12,26 +12,24 @@ function stockOf(o: MatchStateView["owned"][number], res: TradeResource): number
   return o.special[res] ?? 0;
 }
 
-/** The market: open offers from everyone, my offers, and a form to post one. */
-export function MarketPanel({ matchId, state, selectedRegionId }: { matchId: string; state: MatchStateView; selectedRegionId: string | null }) {
+/** The market: open offers from everyone, my offers, and a form to post one. Every trade goes in and out of the capital. */
+export function MarketPanel({ matchId, state }: { matchId: string; state: MatchStateView; selectedRegionId?: string | null }) {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: keys.market(matchId), queryFn: () => api.market(matchId), refetchInterval: 30_000 });
   const refresh = () => {
     void qc.invalidateQueries({ queryKey: keys.market(matchId) });
     void qc.invalidateQueries({ queryKey: keys.matchState(matchId) });
   };
-  const ownedIds = state.owned.map((o) => o.regionId);
-  const defaultRegion = (selectedRegionId && ownedIds.includes(selectedRegionId) ? selectedRegionId : null) ?? state.me.capitalRegionId ?? ownedIds[0] ?? "";
+  const capitalId = state.me.capitalRegionId ?? null;
 
   const [open, setOpen] = useState(false);
-  const [regionId, setRegionId] = useState<string>(defaultRegion);
   const [offerResource, setOfferResource] = useState<TradeResource>("wood");
   const [offerAmount, setOfferAmount] = useState("100");
   const [askResource, setAskResource] = useState<TradeResource>("stone");
   const [askAmount, setAskAmount] = useState("50");
 
-  // Suggestions for the "I give" side: every other resource the chosen region holds, at a fair price for what is wanted, capped by what is there.
-  const fromRegion = state.owned.find((o) => o.regionId === (regionId || defaultRegion));
+  // Suggestions for the "I give" side: every other resource the capital holds, at a fair price for what is wanted, capped by what is there.
+  const fromRegion = state.owned.find((o) => o.regionId === capitalId);
   const wantN = Number(askAmount);
   const suggestions =
     fromRegion && wantN > 0
@@ -44,11 +42,11 @@ export function MarketPanel({ matchId, state, selectedRegionId }: { matchId: str
   const worthRatio = offerN > 0 && wantN > 0 ? (offerN * (RESOURCE_WORTH[offerResource] ?? 1)) / (wantN * (RESOURCE_WORTH[askResource] ?? 1)) : null;
 
   const post = useMutation({
-    mutationFn: () => api.postOrder(matchId, { regionId: regionId || defaultRegion, offerResource, offerAmount: Number(offerAmount), askResource, askAmount: Number(askAmount) }),
+    mutationFn: () => api.postOrder(matchId, { offerResource, offerAmount: Number(offerAmount), askResource, askAmount: Number(askAmount) }),
     onSuccess: refresh,
   });
   const cancel = useMutation({ mutationFn: (orderId: string) => api.cancelOrder(matchId, orderId), onSuccess: refresh });
-  const accept = useMutation({ mutationFn: (orderId: string) => api.acceptOrder(matchId, orderId, defaultRegion), onSuccess: refresh });
+  const accept = useMutation({ mutationFn: (orderId: string) => api.acceptOrder(matchId, orderId), onSuccess: refresh });
 
   const others = (q.data?.open ?? []).filter((o) => o.playerId !== state.me.playerId);
   const mine = q.data?.mine ?? [];
@@ -92,35 +90,50 @@ export function MarketPanel({ matchId, state, selectedRegionId }: { matchId: str
                   <span className="flex-1">
                     <span className="text-slate-200">{o.playerName}</span> offers {fmt(o.offerAmount)} {o.offerResource} for {fmt(o.askAmount)} {o.askResource}
                   </span>
-                  <Button className="px-2 py-1 text-xs" onClick={() => accept.mutate(o.id)} disabled={accept.isPending || !defaultRegion}>
+                  <Button className="px-2 py-1 text-xs" onClick={() => accept.mutate(o.id)} disabled={accept.isPending || !capitalId}>
                     Accept
                   </Button>
                 </li>
               ))}
             </ul>
-            {defaultRegion && others.length > 0 && <p className="mt-1 text-xs text-slate-500">Accepting pays from and delivers to {regionName(defaultRegion)}.</p>}
+            {capitalId && others.length > 0 && (
+              <p className="mt-1 text-xs text-slate-500">
+                Paid from and delivered to your capital, {regionName(capitalId)}. If it is short of the price, the deal is held for you and goes through as soon as it can pay (up to {balance.market.payWithinHours} game hours).
+              </p>
+            )}
+            {accept.data?.pending && <p className="mt-1 text-xs text-amber-300">Bought. It is paid and delivered once your capital holds the price.</p>}
             <ErrorText>{accept.error?.message}</ErrorText>
           </div>
 
           {mine.length > 0 && (
             <div>
-              <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-400">My offers</h3>
+              <h3 className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-400">My offers and purchases</h3>
               <ul className="space-y-1 text-sm">
-                {mine.map((o) => (
-                  <li key={o.id} className="flex items-center gap-2 rounded bg-slate-950/60 px-2 py-1 text-slate-300">
-                    <span className="flex-1">
-                      {fmt(o.offerAmount)} {o.offerResource} for {fmt(o.askAmount)} {o.askResource}
-                      <span className="ml-2 text-xs text-slate-500">
-                        {o.regionId ? regionName(o.regionId) : "your region"} · {o.status}
+                {mine.map((o) =>
+                  o.boughtByMe ? (
+                    <li key={o.id} className="flex items-center gap-2 rounded bg-slate-950/60 px-2 py-1 text-slate-300">
+                      <span className="flex-1">
+                        Buying {fmt(o.offerAmount)} {o.offerResource} from {o.playerName} for {fmt(o.askAmount)} {o.askResource}
+                        <span className="ml-2 text-xs text-amber-300">waiting for your capital to hold the {o.askResource}</span>
                       </span>
-                    </span>
-                    {o.status === "open" && (
                       <Button variant="ghost" className="px-2 py-1 text-xs" onClick={() => cancel.mutate(o.id)} disabled={cancel.isPending}>
-                        Cancel
+                        Back out
                       </Button>
-                    )}
-                  </li>
-                ))}
+                    </li>
+                  ) : (
+                    <li key={o.id} className="flex items-center gap-2 rounded bg-slate-950/60 px-2 py-1 text-slate-300">
+                      <span className="flex-1">
+                        {fmt(o.offerAmount)} {o.offerResource} for {fmt(o.askAmount)} {o.askResource}
+                        <span className="ml-2 text-xs text-slate-500">{o.status === "pending" ? "sold, waiting for the buyer to pay" : o.status}</span>
+                      </span>
+                      {o.status === "open" && (
+                        <Button variant="ghost" className="px-2 py-1 text-xs" onClick={() => cancel.mutate(o.id)} disabled={cancel.isPending}>
+                          Cancel
+                        </Button>
+                      )}
+                    </li>
+                  ),
+                )}
               </ul>
               <ErrorText>{cancel.error?.message}</ErrorText>
             </div>
@@ -134,16 +147,7 @@ export function MarketPanel({ matchId, state, selectedRegionId }: { matchId: str
             }}
           >
             <h3 className="text-xs font-medium uppercase tracking-wide text-slate-400">Post an offer</h3>
-            <Field label="From region">
-              <select className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-sm text-slate-100" value={regionId || defaultRegion} onChange={(e) => setRegionId(e.target.value)}>
-                {state.owned.map((o) => (
-                  <option key={o.regionId} value={o.regionId}>
-                    {regionName(o.regionId)}
-                    {o.isCapital ? " (capital)" : ""}
-                  </option>
-                ))}
-              </select>
-            </Field>
+            <p className="text-xs text-slate-500">{capitalId ? `The goods are set aside from your capital, ${regionName(capitalId)}, and what you ask for is delivered there.` : "You need a capital to trade."}</p>
             <div className="grid grid-cols-2 gap-2">
               <Field label="I give">
                 <select className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-sm text-slate-100" value={offerResource} onChange={(e) => setOfferResource(e.target.value as TradeResource)}>
@@ -173,7 +177,7 @@ export function MarketPanel({ matchId, state, selectedRegionId }: { matchId: str
             {suggestions.length > 0 && (
               <div className="rounded bg-slate-950/60 px-2 py-1.5 text-xs text-slate-400">
                 <p className="mb-1">
-                  A fair offer for {fmt(wantN)} {askResource}, from what {regionName(fromRegion!.regionId)} holds. Tap one to fill in the offer.
+                  A fair offer for {fmt(wantN)} {askResource}, from what your capital holds. Tap one to fill in the offer.
                 </p>
                 <div className="flex flex-wrap gap-1">
                   {suggestions.map((s) => (
@@ -205,7 +209,7 @@ export function MarketPanel({ matchId, state, selectedRegionId }: { matchId: str
                       : "About fair."}
               </p>
             )}
-            <Button type="submit" disabled={post.isPending || !(Number(offerAmount) > 0) || !(Number(askAmount) > 0) || offerResource === askResource || !state.owned.length}>
+            <Button type="submit" disabled={post.isPending || !(Number(offerAmount) > 0) || !(Number(askAmount) > 0) || offerResource === askResource || !capitalId}>
               Post offer
             </Button>
             <ErrorText>{post.error?.message}</ErrorText>

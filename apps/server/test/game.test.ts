@@ -12,6 +12,7 @@ import { runDueJobs } from "../src/worker/jobs.js";
 import { foundCapital } from "../src/sim/regions.js";
 import { queueBuild } from "../src/sim/commands.js";
 import { cancelOrphanedJobs } from "../src/sim/endgame.js";
+import { settlePendingOrders } from "../src/matches/marketApi.js";
 import { logger } from "../src/logger.js";
 import { nameSuffix } from "./suffix.js";
 
@@ -621,7 +622,6 @@ describe("milestone 5 social", () => {
     expect((await a.call("POST", `/api/matches/${matchId}/market`, { regionId: aCapital, offerResource: "iron", offerAmount: 5, askResource: "stone", askAmount: 120 })).statusCode).toBe(409);
     // A gift dressed as a trade (iron for a single stone) is refused outright.
     expect((await a.call("POST", `/api/matches/${matchId}/market`, { regionId: aCapital, offerResource: "wood", offerAmount: 5000, askResource: "stone", askAmount: 1 })).statusCode).toBe(400);
-    expect((await b.call("POST", `/api/matches/${matchId}/market`, { regionId: aCapital, offerResource: "wood", offerAmount: 1, askResource: "stone", askAmount: 1 })).statusCode).toBe(403);
     expect((await a.call("POST", `/api/matches/${matchId}/market/${orderId}/accept`, { regionId: aCapital })).statusCode).toBe(400);
 
     const listing = (await b.call("GET", `/api/matches/${matchId}/market`)).json() as { open: { id: string; playerName: string; regionId: string }[]; mine: unknown[] };
@@ -666,6 +666,40 @@ describe("milestone 5 social", () => {
     const afterCancel = (await stateOf(a)).owned.find((o) => o.regionId === aCapital)!;
     expect(afterCancel.food).toBeGreaterThan(beforeCancel.food - 5);
     expect((await a.call("POST", `/api/matches/${matchId}/market/${secondId}/cancel`, {})).statusCode).toBe(409);
+
+    // A purchase the capital cannot pay yet still goes through: it is held for the buyer and settled once the capital
+    // holds the price. Bob's capital has no iron; Alice offers 50 wood for 2 iron.
+    const ironOf = async (regionId: string) => ((await db.select({ special: matchRegions.special }).from(matchRegions).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, regionId))))[0]!.special as Record<string, number>).iron ?? 0;
+    const setIron = async (regionId: string, iron: number) => {
+      const [row] = await db.select({ special: matchRegions.special }).from(matchRegions).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, regionId)));
+      await db.update(matchRegions).set({ special: { ...(row!.special as Record<string, number>), iron } }).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, regionId)));
+    };
+    await setIron(bCapital, 0);
+    const third = await a.call("POST", `/api/matches/${matchId}/market`, { offerResource: "wood", offerAmount: 50, askResource: "iron", askAmount: 2 });
+    expect(third.statusCode, JSON.stringify(third.json())).toBe(201);
+    const thirdId = third.json().id as string;
+    const held = await b.call("POST", `/api/matches/${matchId}/market/${thirdId}/accept`, {});
+    expect(held.statusCode, JSON.stringify(held.json())).toBe(200);
+    expect(held.json()).toMatchObject({ pending: true, received: 0 });
+    const bView = (await b.call("GET", `/api/matches/${matchId}/market`)).json() as { open: { id: string }[]; mine: { id: string; status: string; boughtByMe?: boolean }[] };
+    expect(bView.open.some((o) => o.id === thirdId), "off the market while held").toBe(false);
+    expect(bView.mine).toContainEqual(expect.objectContaining({ id: thirdId, status: "pending", boughtByMe: true }));
+    expect((await a.call("POST", `/api/matches/${matchId}/market/${thirdId}/cancel`, {})).statusCode, "the seller cannot pull a sold offer").toBe(409);
+    // Still short: nothing happens.
+    expect(await settlePendingOrders(db, null)).toBe(0);
+    // Bob backs out, and the offer is open again; he buys it once more, then his capital gets the iron and it settles.
+    expect((await b.call("POST", `/api/matches/${matchId}/market/${thirdId}/cancel`, {})).statusCode).toBe(200);
+    expect(((await b.call("GET", `/api/matches/${matchId}/market`)).json() as { open: { id: string }[] }).open.some((o) => o.id === thirdId)).toBe(true);
+    expect((await b.call("POST", `/api/matches/${matchId}/market/${thirdId}/accept`, {})).json()).toMatchObject({ pending: true });
+    const aIronBefore = await ironOf(aCapital);
+    const bWoodBefore = (await stateOf(b)).owned.find((o) => o.regionId === bCapital)!.wood;
+    await setIron(bCapital, 5);
+    expect(await settlePendingOrders(db, null)).toBe(1);
+    expect(await ironOf(bCapital)).toBeLessThan(3.5);
+    expect(await ironOf(aCapital)).toBeGreaterThan(aIronBefore + 1.5);
+    expect((await stateOf(b)).owned.find((o) => o.regionId === bCapital)!.wood).toBeGreaterThan(bWoodBefore + 45);
+    const done = (await a.call("GET", `/api/matches/${matchId}/market`)).json() as { mine: { id: string; status: string }[] };
+    expect(done.mine).toContainEqual(expect.objectContaining({ id: thirdId, status: "filled" }));
 
     // Leaving: Alice (leader) leaves, Bob inherits; Bob leaves, the alliance dissolves.
     expect((await a.call("POST", `/api/matches/${matchId}/alliances/leave`, {})).json()).toMatchObject({ ok: true, dissolved: false });

@@ -825,13 +825,15 @@ export function fairAmount(want: string, amount: number, give: string): number {
   return round2((amount * (RESOURCE_WORTH[want] ?? 1)) / (RESOURCE_WORTH[give] ?? 1));
 }
 export const createOrderBody = z.object({
-  regionId: z.string(),
+  /** Ignored: offers are always escrowed from the capital. Kept so older clients still post. */
+  regionId: z.string().optional(),
   offerResource: tradeResource,
   offerAmount: z.number().int().min(1).max(1_000_000),
   askResource: tradeResource,
   askAmount: z.number().int().min(1).max(1_000_000),
 });
-export const acceptOrderBody = z.object({ regionId: z.string() });
+/** Purchases are always paid from and delivered to the capital; regionId is ignored. */
+export const acceptOrderBody = z.object({ regionId: z.string().optional() });
 export const marketOrderView = z.object({
   id: z.string(),
   playerId: z.string(),
@@ -842,8 +844,12 @@ export const marketOrderView = z.object({
   offerAmount: z.number(),
   askResource: tradeResource,
   askAmount: z.number(),
+  /** open, pending (sold, waiting on the buyer's capital to pay), filled or cancelled. */
   status: z.string(),
   createdAt: z.string(),
+  /** A purchase of yours waiting on your capital's payment. */
+  boughtByMe: z.boolean().optional(),
+  acceptedAt: z.string().nullable().optional(),
 });
 export type MarketOrderView = z.infer<typeof marketOrderView>;
 export const marketResponse = z.object({ open: z.array(marketOrderView), mine: z.array(marketOrderView) });

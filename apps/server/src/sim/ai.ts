@@ -627,7 +627,7 @@ async function buyOre(ctx: CommandContext, owned: MatchRegionRow[], matchDay: nu
     const pick = affordable[0];
     if (!pick) continue;
     try {
-      await acceptMarketOrder(db, m, p, pick.id, capital.regionId);
+      await acceptMarketOrder(db, m, p, pick.id);
     } catch {
       // Someone else got it first, or the seller changed; try again next pass.
     }

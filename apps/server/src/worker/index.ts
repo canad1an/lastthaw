@@ -11,6 +11,7 @@ import { ensureWeeklyMatch } from "./weekly.js";
 import { sendTournamentReminders } from "../matches/registrations.js";
 import { closeIdleWelcomeMatches } from "../matches/welcomeMatch.js";
 import { runTradeRoutes, runOverflow } from "../sim/trade.js";
+import { settlePendingOrders } from "../matches/marketApi.js";
 import { detectAutomation, detectMultiAccounts, pruneActions } from "../fairplay/detect.js";
 import { cleanupSessions, purgeUnverified } from "../auth/session.js";
 import { balance } from "@lastthaw/shared";
@@ -90,6 +91,7 @@ await Promise.all([
   every(Number(process.env.TICK_MS) || 30_000, "trade", async () => {
     await runTradeRoutes(db, publisher, log);
     await runOverflow(db, publisher, log);
+    await settlePendingOrders(db, publisher, log);
   }),
   every(6 * 3600_000, "sessions", async () => {
     const n = await cleanupSessions(db);
