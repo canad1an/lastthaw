@@ -7,13 +7,14 @@
 import { enterMap, mapOf } from "../map/scope.js";
 import { and, asc, eq, isNull, lte, sql } from "drizzle-orm";
 import type pino from "pino";
-import { balance, availableBuildings, buildingBlockedBy, buildingById, buildingCost, canAfford, computeRates, normalizeAssignment, regionById, unitById, HAULER_IDS, type AdvisorKind, type AdvisorSettings, type AdvisorReport, type AdvisorSuggestion, type Cost, type RegionEconomy, advisorSettings as advisorSettingsSchema, RESOURCE_WORTH, findRoute } from "@lastthaw/shared";
+import { balance, availableBuildings, buildingBlockedBy, buildingById, buildingCost, canAfford, computeRates, normalizeAssignment, regionById, unitById, HAULER_IDS, type AdvisorKind, type AdvisorSettings, type AdvisorReport, type AdvisorSuggestion, type Cost, type RegionEconomy, advisorSettings as advisorSettingsSchema, RESOURCE_WORTH, findRoute, loyaltyOutlook, distanceKm } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
-import { advisorEvents, advisors, jobs, matchRegions, matches, playerTechs, players, tradeRoutes } from "../db/schema.js";
+import { advisorEvents, advisors, armies, jobs, matchRegions, matches, playerTechs, players, tradeRoutes } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
 import { matchDayAt, matchNow } from "./clock.js";
 import { applyCost, ownerTechEffects, projectRegion, settleAndLockRegion, stockOf, resourceMultOf, traitsOf, type MatchRegionRow, type Tx } from "./regions.js";
-import { queueBuild, sendArmy, type CommandContext } from "./commands.js";
+import { pendingRegionJobs, promoteJob, queueBuild, queueTrain, sendArmy, type CommandContext } from "./commands.js";
+import { cancelPendingJob } from "../matches/jobsApi.js";
 import { recordSpend } from "./ledger.js";
 import { buildOrderFor } from "./ai.js";
 import { notify, type MatchRow } from "../worker/jobs.js";
@@ -258,10 +259,12 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
     .select()
     .from(matchRegions)
     .where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.ownerPlayerId, p.id), isNull(matchRegions.frozenAt), isNull(matchRegions.evacuatedAt)));
-  const pending = await db
-    .select({ regionId: jobs.regionId, kind: jobs.kind, refId: jobs.refId, waitingFor: jobs.waitingFor, startsAt: jobs.startsAt })
-    .from(jobs)
-    .where(and(eq(jobs.matchId, m.id), eq(jobs.playerId, p.id), isNull(jobs.completedAt), isNull(jobs.cancelledAt)));
+  const loadPending = () =>
+    db
+      .select({ regionId: jobs.regionId, kind: jobs.kind, refId: jobs.refId, waitingFor: jobs.waitingFor, startsAt: jobs.startsAt })
+      .from(jobs)
+      .where(and(eq(jobs.matchId, m.id), eq(jobs.playerId, p.id), isNull(jobs.completedAt), isNull(jobs.cancelledAt)));
+  let pending = await loadPending();
   const skip = new Set(settings.skipRegions);
   const skipped: Record<string, number> = {};
   const bump = (k: string) => (skipped[k] = (skipped[k] ?? 0) + 1);
@@ -287,6 +290,16 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
     // Ores and horses too: a build owing iron must find it unpromised somewhere.
     for (const [k, v] of Object.entries(stockOf(x.row))) if (k !== "food" && k !== "wood" && k !== "stone") empireStock[k] = (empireStock[k] ?? 0) + (v ?? 0);
   }
+  // Loyalty first: regions at risk of rebelling get their Temple and Cathedrals at the front of the queue, the next free
+  // convoys, and settlers as occupiers, before anything else is queued anywhere.
+  const guard = await guardLoyalty(ctx, projected, settings, skip, now, events, bump);
+  if (guard.changed) {
+    pending = await loadPending();
+    for (const k of Object.keys(promised)) delete promised[k];
+    for (const j of pending) for (const [k, v] of Object.entries((j.waitingFor ?? {}) as Record<string, number>)) promised[k] = (promised[k] ?? 0) + (v ?? 0);
+  }
+  // At-risk regions are looked after first in the sweeps below too.
+  projected.sort((x, y) => Number(guard.atRisk.has(y.row.regionId)) - Number(guard.atRisk.has(x.row.regionId)));
   // Builds come in two sweeps. First: every upgrade a region can pay for from its own stores, level after level up to
   // the minimums set, as far as the queue's slots allow. Then the builds that need materials from elsewhere, again
   // level after level until the queue is full: no cap per pass or per region, only the empire's unpromised stock.
@@ -417,7 +430,7 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
     const n = skipped[`no_${k}`];
     if (n) suggestions.unshift({ regionId: p.capitalRegionId ?? projected[0]?.row.regionId ?? "", text: `${n} build${n === 1 ? "" : "s"} held back for want of ${k}: nothing in the empire gathers it and the stores are bare. Put workers on ${k}${settings.workers ? "" : ", or let the advisor set shares"}.` });
   }
-  const report: AdvisorReport = { at: now.toISOString(), queued, moved, rebalanced, trained: 0, fortified: 0, exposed: [], evacuated: 0, settled: 0, clock: [], researched: 0, listed: 0, bought: 0, skipped, suggestions };
+  const report: AdvisorReport = { at: now.toISOString(), queued: queued + guard.queued, moved, rebalanced, trained: guard.trained, fortified: 0, exposed: [], evacuated: 0, settled: guard.settlersSent, clock: [], researched: 0, listed: 0, bought: 0, skipped, suggestions };
   await db.update(advisors).set({ lastPassAt: now, lastReport: report }).where(eq(advisors.id, a.id));
   await publisher.toPlayer(m.id, p.id, "advisor.report", { kind: a.kind, queued, moved });
   return report;
@@ -430,6 +443,158 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
  * region (net food below zero with under half a day in store) is out. The best split replaces the current one when it
  * differs by a tenth or more in any share, so settings do not twitch every pass.
  */
+const LOYALTY_BUILDINGS = ["temple", "cathedral"] as const;
+
+/**
+ * Guard loyalty, the first thing in the Economic advisor's pass. A region is at risk when its loyalty is low or the
+ * loyalty it is heading to is (balance.advisors.economic.atRiskLoyalty / atRiskTarget). For each, lowest first:
+ *  1. its Temple, then the next Cathedral, is queued if missing, making room by cancelling the last build not yet
+ *     started, and moved to the front of the queue;
+ *  2. the materials routes bound there take the next free convoy, a few past the empire's cap;
+ *  3. a conquered region short of occupiers is sent idle settlers from the nearest regions (settlers arriving in a
+ *     conquered region join its occupiers), or, with trainOccupiers on, has them trained nearby.
+ * Off, it only clears the route priority it set before.
+ */
+async function guardLoyalty(
+  ctx: CommandContext,
+  projected: Array<{ row: MatchRegionRow; economy: RegionEconomy; effects: { loyalty: number } }>,
+  settings: AdvisorSettings,
+  skip: Set<string>,
+  now: Date,
+  events: AdvisorEvent[],
+  bump: (k: string) => void,
+): Promise<{ atRisk: Set<string>; changed: boolean; queued: number; trained: number; settlersSent: number }> {
+  const { db, m, p, techs } = ctx;
+  const c = balance.advisors.economic;
+  const out = { atRisk: new Set<string>(), changed: false, queued: 0, trained: 0, settlersSent: 0 };
+  const name = (id: string) => regionById(id)?.name ?? id;
+  const pct = (v: number) => `${Math.round(v * 100)}%`;
+  // Priority is recomputed every pass: clear what was set last time.
+  await db.update(tradeRoutes).set({ priority: false }).where(and(eq(tradeRoutes.matchId, m.id), eq(tradeRoutes.playerId, p.id), eq(tradeRoutes.priority, true)));
+  if (!settings.guardLoyalty) return out;
+
+  const popOf = (e: RegionEconomy) => e.popWorkers + e.popSoldiers + e.popOccupiers;
+  const risks = projected
+    .filter((x) => !x.row.isCapital && !skip.has(x.row.regionId))
+    .map((x) => ({ x, outlook: loyaltyOutlook(x.row.regionId, p.capitalRegionId, x.effects.loyalty, popOf(x.economy), x.economy.popOccupiers, x.row.loyalty, x.row.conquered) }))
+    .filter(({ x, outlook }) => x.row.loyalty < c.atRiskLoyalty || outlook.target < c.atRiskTarget)
+    .sort((a, b) => a.x.row.loyalty - b.x.row.loyalty);
+  for (const r of risks) out.atRisk.add(r.x.row.regionId);
+  if (!risks.length) return out;
+
+  const avail = new Map(availableBuildings(p.age, techs).map((b) => [b.id, b]));
+  const enRoute = new Map<string, number>();
+  for (const a of await db.select({ targetRegionId: armies.targetRegionId, units: armies.units }).from(armies).where(and(eq(armies.matchId, m.id), eq(armies.playerId, p.id), eq(armies.status, "outbound"), eq(armies.mission, "move")))) {
+    const n = a.units.settler ?? 0;
+    if (n > 0) enRoute.set(a.targetRegionId, (enRoute.get(a.targetRegionId) ?? 0) + n);
+  }
+  // Idle settlers, by region, among the regions not themselves at risk.
+  const idle = new Map<string, number>();
+  for (const x of projected) if (!out.atRisk.has(x.row.regionId) && !skip.has(x.row.regionId) && (x.row.units.settler ?? 0) > 0) idle.set(x.row.regionId, x.row.units.settler ?? 0);
+  let trainsLeft = c.settlerTrainsPerPass;
+
+  for (const { x, outlook } of risks) {
+    const regionId = x.row.regionId;
+    const region = regionById(regionId);
+    if (!region) continue;
+    const why = `loyalty ${pct(x.row.loyalty)}, heading to ${pct(outlook.target)}`;
+
+    // 1. The Temple, then the next Cathedral, first in the queue.
+    for (const id of LOYALTY_BUILDINGS) {
+      const def = avail.get(id);
+      if (!def || buildingBlockedBy(def, region, x.row.buildings, x.row.isCapital)) continue;
+      const built = x.row.buildings[id] ?? 0;
+      if (built >= def.maxLevel) continue;
+      if (id === "temple" && built >= 1) continue;
+      let queue = await pendingRegionJobs(db, m.id, regionId);
+      const already = queue.find((j) => j.kind === "build" && j.refId === id);
+      if (already) {
+        const moved = await db.transaction((tx) => promoteJob(tx, m, regionId, already.id, now));
+        if (moved) {
+          out.changed = true;
+          events.push({ action: "loyalty", regionId, text: `Moved ${def.name} to the front of the queue at ${name(regionId)}: ${why}.` });
+        }
+        break; // one loyalty building at a time
+      }
+      if (queue.length >= balance.queue.slotsPerRegion) {
+        // Make room: the last build here not yet under way, a waiting one first.
+        const open = queue.filter((j) => j.kind === "build" && !LOYALTY_BUILDINGS.includes(j.refId as (typeof LOYALTY_BUILDINGS)[number]) && (j.waitingFor || j.startsAt.getTime() > now.getTime()));
+        const victim = [...open.filter((j) => j.waitingFor), ...open.filter((j) => !j.waitingFor)].pop();
+        if (!victim) {
+          bump("loyaltyNoSlot");
+          break;
+        }
+        await db.transaction((tx) => cancelPendingJob(tx, m, p, victim.id));
+        out.changed = true;
+        events.push({ action: "loyalty", regionId, text: `Cancelled ${buildingById.get(victim.refId ?? "")?.name ?? victim.refId} level ${victim.level ?? 1} at ${name(regionId)} to make room for the ${def.name}: ${why}.` });
+        queue = await pendingRegionJobs(db, m.id, regionId);
+      }
+      try {
+        const j = await queueBuild(ctx, regionId, id, { allowWait: settings.useOtherRegions });
+        await db.transaction((tx) => promoteJob(tx, m, regionId, j.id, now));
+        out.changed = true;
+        out.queued += 1;
+        events.push({ action: "loyalty", regionId, text: `Queued ${def.name}${def.maxLevel > 1 ? ` level ${built + 1}` : ""} at the front of the queue at ${name(regionId)}: ${why}.` });
+      } catch (err) {
+        const msg = (err as Error).message ?? "";
+        bump(/not enough/.test(msg) ? "unaffordable" : /queue is full/.test(msg) ? "queueFull" : "blocked");
+      }
+      break; // one loyalty building at a time
+    }
+
+    // 2. Its materials take the next free convoy.
+    const waitingLoyalty = (await pendingRegionJobs(db, m.id, regionId)).some((j) => j.waitingFor && LOYALTY_BUILDINGS.includes(j.refId as (typeof LOYALTY_BUILDINGS)[number]));
+    if (waitingLoyalty) {
+      await db
+        .update(tradeRoutes)
+        .set({ priority: true, nextAt: sql`least(${tradeRoutes.nextAt}, ${now.toISOString()}::timestamptz)` })
+        .where(and(eq(tradeRoutes.matchId, m.id), eq(tradeRoutes.playerId, p.id), sql`${tradeRoutes.forJobId} is not null`, sql`coalesce(${tradeRoutes.relayTo}, ${tradeRoutes.toRegionId}) = ${regionId}`));
+    }
+
+    // 3. Occupiers: settlers arriving in a conquered region join them.
+    if (!x.row.conquered) continue;
+    const need = (popOf(x.economy) / 100) * balance.conquest.occupiersPerHundred;
+    let deficit = Math.ceil(need - x.economy.popOccupiers - (enRoute.get(regionId) ?? 0));
+    if (deficit < 1) continue;
+    const sources = [...idle.entries()].filter(([, n]) => n > 0).sort((a, b) => distanceKm(a[0], regionId) - distanceKm(b[0], regionId));
+    for (const [src, have] of sources) {
+      if (deficit < 1) break;
+      const n = Math.min(have, deficit);
+      try {
+        await sendArmy(ctx, src, { mission: "move", targetRegionId: regionId, units: { settler: n }, people: 0, cargo: {} });
+        idle.set(src, have - n);
+        enRoute.set(regionId, (enRoute.get(regionId) ?? 0) + n);
+        deficit -= n;
+        out.settlersSent += n;
+        events.push({ action: "loyalty", regionId, text: `Sent ${n} settler${n === 1 ? "" : "s"} from ${name(src)} to ${name(regionId)} to join the occupiers: ${why}.` });
+      } catch {
+        // No way there from this region (the sea, or it changed under us): try the next.
+      }
+    }
+    if (deficit < 1 || !settings.trainOccupiers || trainsLeft <= 0) continue;
+    // None idle near enough: train them in the nearest region with people to spare, not itself at risk.
+    const trainers = projected
+      .filter((y) => y.row.regionId !== regionId && !out.atRisk.has(y.row.regionId) && !skip.has(y.row.regionId) && y.economy.popWorkers >= deficit + 20 && !!findRoute(y.row.regionId, regionId, false))
+      .sort((a, b) => distanceKm(a.row.regionId, regionId) - distanceKm(b.row.regionId, regionId));
+    for (const y of trainers) {
+      const queue = await pendingRegionJobs(db, m.id, y.row.regionId);
+      if (queue.some((j) => j.kind === "train" && j.refId === "settler") || queue.length >= balance.queue.slotsPerRegion) continue;
+      const n = Math.min(deficit, c.settlersPerTraining);
+      try {
+        await queueTrain(ctx, y.row.regionId, "settler", n, { allowWait: settings.useOtherRegions });
+        trainsLeft -= 1;
+        out.trained += n;
+        out.changed = true;
+        events.push({ action: "loyalty", regionId, text: `Training ${n} settler${n === 1 ? "" : "s"} at ${name(y.row.regionId)} to occupy ${name(regionId)}: ${why}.` });
+        break;
+      } catch {
+        // Cannot train there now (cost, queue): try the next nearest.
+      }
+    }
+  }
+  return out;
+}
+
 export async function rebalanceWorkers(db: Db, m: MatchRow, regions: Array<{ row: MatchRegionRow; economy: RegionEconomy }>, pending: Array<{ regionId: string | null; kind: string; waitingFor: unknown }>, skip: Set<string>, now: Date, log?: (regionId: string, text: string) => void): Promise<number> {
   const live = regions.filter((x) => !skip.has(x.row.regionId) && x.economy.popWorkers >= 1);
   if (!live.length) return 0;
@@ -504,7 +669,9 @@ export async function balancePeople(ctx: CommandContext, regions: Array<{ row: M
   const totalCap = live.reduce((a, x) => a + Math.max(1, x.economy.capacity), 0);
   const mean = totalPop / totalCap;
   const givers = live.filter((x) => fill(x) > mean + c.balanceBand && x.economy.popWorkers > 1).sort((x, y) => fill(y) - fill(x));
-  const takers = live.filter((x) => fill(x) < mean - c.balanceBand);
+  // A conquered region short of occupiers takes no workers: more people there only raise the occupiers it needs.
+  const shortOfOccupiers = (x: (typeof live)[number]) => x.row.conquered && x.economy.popOccupiers < (pop(x) / 100) * balance.conquest.occupiersPerHundred;
+  const takers = live.filter((x) => fill(x) < mean - c.balanceBand && !shortOfOccupiers(x));
   let moved = 0;
   const promised = new Map<string, number>();
   for (const g of givers) {

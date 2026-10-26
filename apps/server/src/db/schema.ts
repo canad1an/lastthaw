@@ -395,6 +395,8 @@ export const tradeRoutes = pgTable(
     held: jsonb("held").$type<Record<string, number>>().notNull().default({}),
     /** One leg of a chain over the sea: the goods are handed over at toRegionId and are finally bound for this region. */
     relayTo: text("relay_to"),
+    /** Materials bound for a region at risk of rebelling: the next free convoy, and a few beyond the cap. Set by the Economic advisor each pass. */
+    priority: boolean("priority").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("trade_routes_due_idx").on(t.nextAt), index("trade_routes_from_idx").on(t.matchId, t.fromRegionId)],

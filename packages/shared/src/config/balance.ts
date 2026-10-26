@@ -405,6 +405,15 @@ export const balance = {
     outputShare: 0.25,
     economic: {
       passMinutes: 30,
+      /** Guard loyalty: a region is at risk below this loyalty... */
+      atRiskLoyalty: 0.45,
+      /** ...or when the loyalty it is heading to is below this. */
+      atRiskTarget: 0.35,
+      /** Supply convoys for at-risk regions may run this many beyond the empire's convoy cap. */
+      priorityConvoys: 3,
+      /** At most this many settler trainings a pass for at-risk regions, and this many settlers in each. */
+      settlerTrainsPerPass: 3,
+      settlersPerTraining: 10,
       /** Balanced population: regions more than this share of capacity above the empire's mean fill give people away. */
       balanceBand: 0.1,
       /** Balanced population: at most this share of a region's people leaves in one pass. */

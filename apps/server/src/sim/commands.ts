@@ -632,6 +632,36 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
  * the region's storage cap never blocks a build. Returns what was not needed
  * (to be stored normally) and how many builds started.
  */
+/**
+ * Put a queued build or training first in its region's queue. A job already under way is never interrupted: a waiting
+ * job moves ahead of every other waiting job (it takes the next materials delivered here), and a scheduled job that has
+ * not started yet moves ahead of the others not yet started, which shift back by its length. Returns whether it moved.
+ */
+export async function promoteJob(tx: Tx, m: MatchRow, regionId: string, jobId: string, now: Date): Promise<boolean> {
+  const pending = await pendingRegionJobs(tx, m.id, regionId);
+  const job = pending.find((j) => j.id === jobId);
+  if (!job) return false;
+  const minSlot = Math.min(...pending.map((j) => j.slot ?? 0));
+  if (job.waitingFor) {
+    const waiting = pending.filter((j) => j.waitingFor);
+    if (waiting[0]?.id === jobId) return false;
+    const earliest = Math.min(...waiting.map((j) => j.startsAt.getTime()));
+    await tx.update(jobs).set({ startsAt: new Date(earliest - 1000), slot: minSlot - 1 }).where(eq(jobs.id, jobId));
+    return true;
+  }
+  const notStarted = pending.filter((j) => !j.waitingFor && j.startsAt.getTime() > now.getTime());
+  if (!notStarted.length || notStarted[0]!.id === jobId || !notStarted.some((j) => j.id === jobId)) return false;
+  const running = pending.filter((j) => !j.waitingFor && j.startsAt.getTime() <= now.getTime());
+  let at = Math.max(now.getTime(), ...running.map((j) => j.endsAt.getTime()));
+  const order = [job, ...notStarted.filter((j) => j.id !== jobId)];
+  for (const j of order) {
+    const length = j.endsAt.getTime() - j.startsAt.getTime();
+    await tx.update(jobs).set({ startsAt: new Date(at), endsAt: new Date(at + length), ...(j.id === jobId ? { slot: minSlot - 1 } : {}) }).where(eq(jobs.id, j.id));
+    at += length;
+  }
+  return true;
+}
+
 export async function receiveMaterials(tx: Tx, m: MatchRow, regionId: string, cargo: Record<string, number>, at: Date): Promise<{ rest: Record<string, number>; started: number }> {
   const rest: Record<string, number> = { ...cargo };
   const pending = await pendingRegionJobs(tx, m.id, regionId);

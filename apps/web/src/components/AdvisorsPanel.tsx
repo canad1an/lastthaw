@@ -17,6 +17,7 @@ const SKIP_LABEL: Record<string, string> = {
   notYetAvailable: "needs an age or tech you do not have",
   haulingBusy: "enough builds already waiting on hauling",
   promised: "the empire's stock is already promised to builds waiting on convoys",
+  loyaltyNoSlot: "a region at risk had no build she could cancel to make room for its Temple",
   protected: "target under beginner protection",
   pact: "target under a pact or ceasefire",
   noRoute: "no route to safe ground, or to the target",
@@ -776,6 +777,16 @@ function SettingsForm({ matchId, state, advisor }: { matchId: string; state: Mat
         <input type="checkbox" checked={draft.useOtherRegions} onChange={(e) => setDraft((d) => ({ ...d, useOtherRegions: e.target.checked }))} className="mt-0.5 accent-sky-400" />
         <span>Use other regions' resources: queue a build the region cannot pay for and let convoys bring the rest from the capital and the nearest stocked regions. Off, each region pays for its own.</span>
       </label>
+      <label className="flex items-start gap-2 text-xs text-slate-300">
+        <input type="checkbox" checked={draft.guardLoyalty} onChange={(e) => setDraft((d) => ({ ...d, guardLoyalty: e.target.checked }))} className="mt-0.5 accent-sky-400" />
+        <span>Guard loyalty: a region at risk of rebelling (loyalty under {Math.round(balance.advisors.economic.atRiskLoyalty * 100)}%, or heading under {Math.round(balance.advisors.economic.atRiskTarget * 100)}%) gets its Temple, then Cathedrals, at the front of its queue, cancelling the last build not yet started if the queue is full; its materials take the next free convoy; and if it was conquered and is short of occupiers, idle settlers are sent from the nearest regions to join them. Ordinary workers are never moved into such a region: more people there only raise the occupiers it needs.</span>
+      </label>
+      {draft.guardLoyalty && (
+        <label className="ml-5 flex items-start gap-2 text-xs text-slate-300">
+          <input type="checkbox" checked={draft.trainOccupiers} onChange={(e) => setDraft((d) => ({ ...d, trainOccupiers: e.target.checked }))} className="mt-0.5 accent-sky-400" />
+          <span>Train settlers for them when none are idle nearby, in the nearest region with people to spare (up to {balance.advisors.economic.settlersPerTraining} at a time).</span>
+        </label>
+      )}
       <label className="flex items-start gap-2 text-xs text-slate-300">
         <input type="checkbox" checked={draft.workers} onChange={(e) => setDraft((d) => ({ ...d, workers: e.target.checked }))} className="mt-0.5 accent-sky-400" />
         <span>Set worker shares: each pass, every region's split between food, wood and stone is set from what it and the empire need. Full stores get no more, waiting builds get what they owe, and no region is left to starve. Off, your own sliders stand.</span>

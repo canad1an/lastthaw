@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, lte, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, lte, sql, asc, desc } from "drizzle-orm";
 import { enterMap, mapOf } from "../map/scope.js";
 import type pino from "pino";
 import { balance, bestHauler, carryCapacity, distanceKm, findRoute, haulerCarry, haulerCount, HAULER_IDS, laneLimitKm, nextHopTo, regionById, reliefMoveCap, seaPath, supplyConvoyCap, unitById } from "@lastthaw/shared";
@@ -25,6 +25,8 @@ export async function runTradeRoutes(db: Db, publisher: Publisher, log: pino.Log
     .from(tradeRoutes)
     .innerJoin(matches, eq(matches.id, tradeRoutes.matchId))
     .where(and(eq(matches.status, "running"), isNull(matches.pausedAt), eq(tradeRoutes.enabled, true), lte(tradeRoutes.nextAt, sql`now() + make_interval(secs => ${matches.clockOffsetSeconds})`)))
+    // Routes for regions at risk of rebelling go first, so they take the next free convoy.
+    .orderBy(desc(tradeRoutes.priority), asc(tradeRoutes.nextAt))
     .limit(200);
   let sent = 0;
   for (const { route, m } of due) {
@@ -191,7 +193,9 @@ async function dispatchSupply(db: Db, m: MatchRow, p: PlayerRow, route: TradeRou
     .select({ n: sql<number>`count(*)::int` })
     .from(armies)
     .where(and(eq(armies.matchId, m.id), eq(armies.playerId, p.id), eq(armies.mission, "transport"), eq(armies.status, "outbound"), sql`jsonb_array_length(${armies.stops}) > 0`));
-  const cap = supplyConvoyCap(await haulerFleet(db, m, p));
+  const base = supplyConvoyCap(await haulerFleet(db, m, p));
+  // Materials for a region at risk of rebelling may run a few convoys past the cap.
+  const cap = route.priority ? base + balance.advisors.economic.priorityConvoys : base;
   if ((busy[0]?.n ?? 0) >= cap) return `waiting: ${busy[0]!.n} of ${cap} materials convoys are already on the road`;
   const ctx = await contextFor(db, m, p);
   const siblings = (

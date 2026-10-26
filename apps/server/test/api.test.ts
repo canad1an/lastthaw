@@ -1338,6 +1338,55 @@ describe("api routes", () => {
         expect((await Ben.call("PUT", `${base}/advisors/economic/settings`, { minLevels: { quarry: 1 }, useOtherRegions: true, skipRegions: [], population: "balanced" })).statusCode).toBe(200);
       }
 
+      // Guard loyalty: a conquered region at risk of rebelling gets its Temple at the front of the queue, its materials
+      // route marked for the next free convoy, and idle settlers sent from a neighbour to join its occupiers.
+      {
+        const mine = await db.select().from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid), eq(matchRegions.isCapital, false), sql`${matchRegions.frozenAt} is null`));
+        const shaky = mine[0]!;
+        const helper = mine.find((r) => r.regionId !== shaky.regionId && !!findRoute(r.regionId, shaky.regionId, false));
+        const [benRow] = await db.select({ age: players.age }).from(players).where(eq(players.id, benPid));
+        await db.update(players).set({ age: Math.max(2, benRow!.age) }).where(eq(players.id, benPid));
+        await fill(12000, 12000, 9000, 100, 100);
+        const startedAt = new Date(await nowIso());
+        const { temple: _t, cathedral: _c, ...noLoyalty } = shaky.buildings as Record<string, number>;
+        void _t; void _c;
+        await db.update(matchRegions).set({ conquered: true, loyalty: 0.31, popWorkers: 200, popOccupiers: 2, food: 0, wood: 0, stone: 0, buildings: noLoyalty, settledAt: startedAt }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, shaky.regionId)));
+        if (helper) await db.update(matchRegions).set({ units: { ...(helper.units as Record<string, number>), settler: 30 }, loyalty: 1, conquered: false, settledAt: startedAt }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, helper.regionId)));
+        // Something already queued there, so the Temple has to go ahead of it.
+        expect((await Ben.call("PUT", `${base}/advisors/economic/settings`, { minLevels: {}, useOtherRegions: true, skipRegions: [], population: "off", guardLoyalty: true, trainOccupiers: false })).statusCode).toBe(200);
+        const first = await Ben.call("POST", `${base}/regions/${shaky.regionId}/build`, { buildingId: "huts" });
+        expect(first.statusCode, first.body).toBe(200);
+        await db.update(advisors).set({ lastPassAt: null }).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
+        const runL = await forcePassAs(ben, "economic", gameId);
+        expect(runL.statusCode, runL.body).toBe(200);
+        const queue = await db.select().from(jobs).where(and(eq(jobs.matchId, gameId), eq(jobs.regionId, shaky.regionId), sql`${jobs.completedAt} is null`, sql`${jobs.cancelledAt} is null`)).orderBy(asc(jobs.startsAt), asc(jobs.id));
+        const waiting = queue.filter((j) => j.waitingFor);
+        expect(waiting[0]?.refId, "the Temple is first among the waiting builds").toBe("temple");
+        const routes = await db.select().from(tradeRoutes).where(and(eq(tradeRoutes.matchId, gameId), eq(tradeRoutes.playerId, benPid), sql`coalesce(${tradeRoutes.relayTo}, ${tradeRoutes.toRegionId}) = ${shaky.regionId}`, sql`${tradeRoutes.forJobId} is not null`));
+        expect(routes.length).toBeGreaterThan(0);
+        expect(routes.every((r) => r.priority), "its materials routes take the next free convoy").toBe(true);
+        if (helper) {
+          const columns = await db.select().from(armies).where(and(eq(armies.matchId, gameId), eq(armies.playerId, benPid), eq(armies.mission, "move"), eq(armies.status, "outbound"), eq(armies.targetRegionId, shaky.regionId)));
+          const settlers = columns.reduce((a, c) => a + (c.units.settler ?? 0), 0);
+          // 200 people need 20 occupiers; 2 are there.
+          expect(settlers).toBe(18);
+          await db.delete(armies).where(inArray(armies.id, columns.map((c) => c.id)));
+        }
+        const hist = (await Ben.call("GET", `${base}/advisors/economic/history`)).json() as { events: { action: string; regionId: string | null; text: string }[] };
+        expect(hist.events.some((e) => e.action === "loyalty" && e.regionId === shaky.regionId && /Temple/.test(e.text))).toBe(true);
+        // Turned off, the priority it set is cleared on the next pass.
+        expect((await Ben.call("PUT", `${base}/advisors/economic/settings`, { minLevels: { quarry: 1 }, useOtherRegions: true, skipRegions: [], population: "balanced", guardLoyalty: false })).statusCode).toBe(200);
+        await db.update(advisors).set({ lastPassAt: null }).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
+        expect((await forcePassAs(ben, "economic", gameId)).statusCode).toBe(200);
+        const after = await db.select({ priority: tradeRoutes.priority }).from(tradeRoutes).where(and(eq(tradeRoutes.matchId, gameId), eq(tradeRoutes.playerId, benPid), eq(tradeRoutes.priority, true)));
+        expect(after.length).toBe(0);
+        // Tidy up: the region's queue, and its loyalty back to normal.
+        for (const j of queue) await db.update(jobs).set({ cancelledAt: new Date() }).where(eq(jobs.id, j.id));
+        await db.update(matchRegions).set({ conquered: shaky.conquered, loyalty: shaky.loyalty, popWorkers: shaky.popWorkers, popOccupiers: shaky.popOccupiers, buildings: shaky.buildings }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, shaky.regionId)));
+        if (helper) await db.update(matchRegions).set({ units: helper.units, loyalty: helper.loyalty, conquered: helper.conquered }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, helper.regionId)));
+        await db.update(players).set({ age: benRow!.age }).where(eq(players.id, benPid));
+      }
+
       // Workers: a capital gathering no food while its store is nearly empty is put back on food by the next pass; a store near its cap gets no more.
       const [capRow] = await db.select({ buildings: matchRegions.buildings, isCapital: matchRegions.isCapital }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
       const capCaps = storageCaps(effectsOf(capRow!.buildings), capRow!.isCapital);

@@ -180,6 +180,8 @@ export async function migrateCrowded(tx: Tx, m: MatchRow, now: Date, hours: numb
     for (const n of regionById(r.regionId)?.neighbors ?? []) {
       const d = byId.get(n);
       if (!d || d.ownerPlayerId !== r.ownerPlayerId) continue;
+      // More workers in a conquered region short of occupiers only lowers its loyalty further.
+      if (d.conquered && d.popOccupiers < (popOf(d) / 100) * balance.conquest.occupiersPerHundred) continue;
       const room = (await capacityOf(d)) - popOf(d);
       if (room >= 1) dests.push({ row: d, room });
     }

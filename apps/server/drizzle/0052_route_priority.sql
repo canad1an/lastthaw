@@ -1,0 +1,1 @@
+ALTER TABLE "trade_routes" ADD COLUMN "priority" boolean DEFAULT false NOT NULL;
