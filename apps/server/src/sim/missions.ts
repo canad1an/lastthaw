@@ -2,16 +2,19 @@ import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { claimBounties } from "./objectives.js";
 import { tribeBattleTalk } from "./tribeVoice.js";
 import { balance, effectsOf, emptySpecial, storageCaps, regionById, resolveCombat, carryCapacity, travelSeconds, findRoute, armySpeed, type UnitCounts, HAULER_IDS, haulerCount, unitById, laneName, applyTechEffects, wallBonusAgainst, breachOf, buildingById, seededRng, availableTechs, scoutCatchChance, soldierCount, wallOf, battleSchedule, type BattleRound, type CombatResult, isAirGroup, nextHopTo, haulerCarry, splitNaval, distanceKm } from "@lastthaw/shared";
-import { matchDayAt } from "./clock.js";
+import { matchDayAt, matchNow } from "./clock.js";
 import { armies, battles, jobs, matchRegions, players, regionSightings, playerTechs, tradeRoutes, events } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
-import { settleAndLockRegion, type MatchRegionRow, type Tx, setCapital, ownerTechEffects, waySetsFor, stockOf, resourceMultOf } from "./regions.js";
+import { applyCost, settleAndLockRegion, type MatchRegionRow, type Tx, setCapital, ownerTechEffects, waySetsFor, stockOf, resourceMultOf } from "./regions.js";
 import { notify, type JobRow, type MatchRow } from "../worker/jobs.js";
 import { areAllied, alliesOf, landableFor } from "./alliances.js";
 import { receiveMaterials } from "./commands.js";
 import { legContextFor, legSeconds, routeFor, type LegContext } from "./legs.js";
 import { clearMilitaryTargets } from "./advisorTargets.js";
 import { causeForWar } from "./diplomacy.js";
+import { enterMap, mapOf } from "../map/scope.js";
+import type { Db } from "../db/client.js";
+import { recordSpend } from "./ledger.js";
 
 type ArmyRow = typeof armies.$inferSelect;
 type After = (fn: () => Promise<void>) => void;
@@ -1086,11 +1089,7 @@ async function finishBattle(tx: Tx, m: MatchRow, b: typeof battles.$inferSelect,
         assignment: { ...balance.start.assignment },
         food: Math.max((set.food as number | undefined) ?? target.food, balance.conquest.seedFood),
       });
-      // Pending jobs of the old owner in this region are lost.
-      await tx
-        .update(jobs)
-        .set({ cancelledAt: at })
-        .where(and(eq(jobs.matchId, m.id), eq(jobs.regionId, army.targetRegionId), inArray(jobs.kind, ["build", "train"]), isNull(jobs.completedAt), isNull(jobs.cancelledAt)));
+      // The old owner's builds and training here are dropped by handleRegionLost below.
     }
   }
 
@@ -1153,6 +1152,7 @@ async function finishBattle(tx: Tx, m: MatchRow, b: typeof battles.$inferSelect,
 export async function handleRegionLost(tx: Tx, m: MatchRow, playerId: string, regionId: string, at: Date, byPlayerId: string | null = null): Promise<void> {
   const [p] = await tx.select().from(players).where(eq(players.id, playerId)).for("update");
   if (!p) return;
+  await dropLostJobs(tx, m, playerId, regionId, at);
   const remaining = await tx
     .select({ regionId: matchRegions.regionId, pop: matchRegions.popWorkers })
     .from(matchRegions)
@@ -1168,6 +1168,60 @@ export async function handleRegionLost(tx: Tx, m: MatchRow, playerId: string, re
     // Lose the capital, lose the game. Taken by a player, the whole realm goes to them; frozen or rebelled, it falls apart into neutral tribes.
     await eliminatePlayer(tx, m, playerId, at, `Your capital, ${regionById(regionId)?.name ?? regionId}, has fallen. The realm is lost.`, byPlayerId);
   }
+}
+
+/**
+ * A region is no longer the player's (taken, rebelled, given up): every build and training they had queued there is
+ * cancelled at once, and the materials set aside for them at other regions go back on those regions' shelves (when
+ * still the player's), the materials routes dropped. Nothing is refunded at the lost region itself. Returns how many
+ * were cancelled.
+ */
+export async function dropLostJobs(tx: Tx, m: MatchRow, playerId: string, regionId: string, at: Date): Promise<number> {
+  const open = await tx
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(and(eq(jobs.matchId, m.id), eq(jobs.playerId, playerId), eq(jobs.regionId, regionId), inArray(jobs.kind, ["build", "train"]), isNull(jobs.completedAt), isNull(jobs.cancelledAt)));
+  if (!open.length) return 0;
+  const ids = open.map((j) => j.id);
+  await tx.update(jobs).set({ cancelledAt: at }).where(inArray(jobs.id, ids));
+  const routes = await tx.select().from(tradeRoutes).where(and(eq(tradeRoutes.matchId, m.id), inArray(tradeRoutes.forJobId, ids))).for("update");
+  for (const r of routes) {
+    const held = Object.fromEntries(Object.entries(r.held).filter(([, v]) => v > 0));
+    if (Object.keys(held).length) {
+      const src = await settleAndLockRegion(tx, m.id, r.fromRegionId, at, m.speed, resourceMultOf(m));
+      if (src.ownerPlayerId === r.playerId) {
+        await applyCost(tx, src, held, -1);
+        await recordSpend(tx, m, r.playerId, "build", held, -1);
+      }
+    }
+    await tx.delete(tradeRoutes).where(eq(tradeRoutes.id, r.id));
+  }
+  await notify(tx, m.id, playerId, "system", `${ids.length} build${ids.length === 1 ? "" : "s"} and training at ${regionById(regionId)?.name ?? regionId} cancelled: the region is no longer yours`, { regionId });
+  return ids.length;
+}
+
+/**
+ * The safety net: builds and training still queued in a region their player no longer holds, in a running match, are
+ * dropped as if the region had just been lost. Run by the worker every minute.
+ */
+export async function cancelJobsInLostRegions(db: Db): Promise<number> {
+  const { matches } = await import("../db/schema.js");
+  const stale = await db
+    .selectDistinct({ matchId: jobs.matchId, playerId: jobs.playerId, regionId: jobs.regionId })
+    .from(jobs)
+    .innerJoin(matches, eq(matches.id, jobs.matchId))
+    .leftJoin(matchRegions, and(eq(matchRegions.matchId, jobs.matchId), eq(matchRegions.regionId, jobs.regionId)))
+    .where(and(eq(matches.status, "running"), inArray(jobs.kind, ["build", "train"]), isNull(jobs.completedAt), isNull(jobs.cancelledAt), isNotNull(jobs.regionId), sql`${matchRegions.ownerPlayerId} is distinct from ${jobs.playerId}`))
+    .limit(200);
+  let n = 0;
+  for (const s of stale) {
+    if (!s.playerId || !s.regionId) continue;
+    const [m] = await db.select().from(matches).where(eq(matches.id, s.matchId)).limit(1);
+    if (!m) continue;
+    enterMap(mapOf(m));
+    n += await db.transaction((tx) => dropLostJobs(tx, m, s.playerId!, s.regionId!, matchNow(m)));
+  }
+  return n;
 }
 
 /**

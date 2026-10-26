@@ -22,6 +22,7 @@ import { economyNow } from "../src/sim/ledger.js";
 import { logger } from "../src/logger.js";
 import { inviteMail } from "../src/mail.js";
 import { nameSuffix } from "./suffix.js";
+import { cancelJobsInLostRegions } from "../src/sim/missions.js";
 
 process.env.DATABASE_URL ??= "postgres://lastthaw:lastthaw@localhost:5432/lastthaw";
 process.env.SESSION_SECRET ??= "test-secret-test-secret-test-secret";
@@ -1161,6 +1162,46 @@ describe("api routes", () => {
         if (was) await db.update(matchRegions).set({ ownerPlayerId: was.ownerPlayerId }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, id)));
         else await db.delete(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, id)));
       }
+    }
+  });
+
+  it("a region lost drops every build queued there, and what was set aside for them goes back on the shelf", async () => {
+    const base = `/api/matches/${gameId}`;
+    const ben = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
+    const benPid = ben.me.playerId;
+    const mine = await db.select().from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid), eq(matchRegions.isCapital, false), sql`${matchRegions.frozenAt} is null`));
+    // A region of Ben's with a land route from another of his, emptied so its build waits on a convoy.
+    const pick = mine.map((r) => ({ r, src: mine.find((x) => x.regionId !== r.regionId && !!findRoute(x.regionId, r.regionId, false)) })).find((x) => x.src);
+    expect(pick, "two of Ben's regions joined by land").toBeTruthy();
+    const { r: lost, src } = pick!;
+    // Bare stores as of now, so nothing gathered since its last settle pays for the build.
+    await db.update(matchRegions).set({ food: 0, wood: 0, stone: 0, settledAt: new Date(ben.match.now) }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, lost.regionId)));
+    await db.update(matchRegions).set({ food: 5000, wood: 5000, stone: 5000 }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, src!.regionId)));
+    const built = await Ben.call("POST", `${base}/regions/${lost.regionId}/build`, { buildingId: "storehouse" });
+    expect(built.statusCode, built.body).toBe(200);
+    const { jobId } = built.json() as { jobId: string };
+    const routes = await db.select().from(tradeRoutes).where(and(eq(tradeRoutes.matchId, gameId), eq(tradeRoutes.forJobId, jobId)));
+    expect(routes.length, "the build waits on a materials route").toBeGreaterThan(0);
+    const heldAt = new Map<string, number>();
+    for (const r of routes) heldAt.set(r.fromRegionId, (heldAt.get(r.fromRegionId) ?? 0) + Object.values(r.held).reduce((a, b) => a + b, 0));
+    const stockAt = async (id: string) => {
+      const [row] = await db.select({ food: matchRegions.food, wood: matchRegions.wood, stone: matchRegions.stone }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, id)));
+      return row!.food + row!.wood + row!.stone;
+    };
+    const before = new Map<string, number>();
+    for (const id of heldAt.keys()) before.set(id, await stockAt(id));
+    try {
+      // The region slips away (as after a rebellion that left the queue behind): the sweep clears it.
+      await db.update(matchRegions).set({ ownerPlayerId: null }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, lost.regionId)));
+      expect(await cancelJobsInLostRegions(db)).toBeGreaterThan(0);
+      const [job] = await db.select({ cancelledAt: jobs.cancelledAt }).from(jobs).where(eq(jobs.id, jobId));
+      expect(job!.cancelledAt, "the build is cancelled").not.toBeNull();
+      expect(await db.select().from(tradeRoutes).where(and(eq(tradeRoutes.matchId, gameId), eq(tradeRoutes.forJobId, jobId)))).toHaveLength(0);
+      for (const [id, held] of heldAt) if (held > 0) expect(await stockAt(id), "what was set aside is back").toBeGreaterThanOrEqual((before.get(id) ?? 0) + held - 1);
+      const open = await db.select({ id: jobs.id }).from(jobs).where(and(eq(jobs.matchId, gameId), eq(jobs.regionId, lost.regionId), sql`${jobs.completedAt} is null`, sql`${jobs.cancelledAt} is null`));
+      expect(open).toHaveLength(0);
+    } finally {
+      await db.update(matchRegions).set({ ownerPlayerId: benPid }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, lost.regionId)));
     }
   });
 

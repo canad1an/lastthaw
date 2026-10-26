@@ -16,6 +16,7 @@ import { detectAutomation, detectMultiAccounts, pruneActions } from "../fairplay
 import { cleanupSessions, purgeUnverified } from "../auth/session.js";
 import { balance } from "@lastthaw/shared";
 import { cancelOrphanedJobs } from "../sim/endgame.js";
+import { cancelJobsInLostRegions } from "../sim/missions.js";
 import { loadAllMaps } from "../map/scope.js";
 
 // Every map must be in memory before the first pass.
@@ -85,6 +86,8 @@ await Promise.all([
     await closeIdleWelcomeMatches(db, publisher, log);
   }),
   every(60_000, "orphaned jobs", async () => {
+    const lost = await cancelJobsInLostRegions(db);
+    if (lost) log.info({ cancelled: lost }, "jobs left in regions their player lost cancelled");
     const n = await cancelOrphanedJobs(db);
     if (n) log.info({ cancelled: n }, "jobs left open on finished matches cancelled");
   }),
