@@ -288,9 +288,24 @@ describe("voyages", () => {
     // A chain of lanes is one voyage for the goods: the hand-over is at the near harbour, the hop its far end.
     const hop = nextHopTo(found!.a, found!.b);
     expect(hop).not.toBeNull();
-    // Gabon to Pernambuco lands at Paraiba and walks on; with Paraiba nobody friendly's, the ship sails on to Pernambuco itself.
-    expect(nextHopTo("ga-gabon", "br-pernambuco")).toEqual({ hop: "br-paraiba", relay: true });
-    expect(nextHopTo("ga-gabon", "br-pernambuco", (id) => id !== "br-paraiba")).toEqual({ hop: "br-pernambuco", relay: false });
+    // Open water between them: Gabon to Pernambuco is one straight crossing, not a landing at Paraiba and a walk.
+    expect(nextHopTo("ga-gabon", "br-pernambuco")).toEqual({ hop: "br-pernambuco", relay: false });
+    // A voyage that would land at a harbour nobody friendly holds sails on to a coastal destination, or finds no way.
+    let relayed: { x: string; y: string; h: { hop: string; relay: boolean } } | null = null;
+    const coasts = allRegions().filter((r) => r.coastal);
+    search: for (const x of coasts.slice(0, 40))
+      for (const y of coasts) {
+        if (y === x || x.seaRoutes.includes(y.id)) continue;
+        const h = nextHopTo(x.id, y.id);
+        if (h?.relay) {
+          relayed = { x: x.id, y: y.id, h };
+          break search;
+        }
+      }
+    if (relayed) {
+      const away = nextHopTo(relayed.x, relayed.y, (id) => id !== relayed.h!.hop);
+      expect(away === null || (away.hop === relayed.y && !away.relay)).toBe(true);
+    }
     // A region with two coasts the sea does not join along its shore is never sailed through from one to the other: every
     // voyage keeps to one stretch of coast through each region it passes, so the Red Sea to the Mediterranean goes round
     // Africa and in by Gibraltar, not over Suez.

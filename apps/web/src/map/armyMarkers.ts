@@ -41,6 +41,8 @@ export interface ArmyMarker {
   route: Array<{ x: number; y: number }>;
   /** 0..1 progress along `route`. */
   progress: number;
+  /** Direction of travel at the marker, in degrees clockwise from east (map y runs down); null when it is not moving along a route. */
+  heading: number | null;
   mission: string;
   /** A sea convoy: any ship among the units, drawn as a boat whatever the mission. */
   naval: boolean;
@@ -79,6 +81,14 @@ export function leadUnit(units: Record<string, number>): string | null {
 }
 
 /** Point `p` (0..1) of the way along a polyline, by distance. */
+/** Which way a marker at `p` along `points` is going: the route just ahead against just behind, in degrees clockwise from east. */
+function headingAt(points: Array<{ x: number; y: number }>, p: number): number | null {
+  if (points.length < 2) return null;
+  const ahead = along(points, Math.min(1, p + 0.01)), behind = along(points, Math.max(0, p - 0.01));
+  if (Math.hypot(ahead.x - behind.x, ahead.y - behind.y) < 1e-6) return null;
+  return (Math.atan2(ahead.y - behind.y, ahead.x - behind.x) * 180) / Math.PI;
+}
+
 function along(points: Array<{ x: number; y: number }>, p: number): { x: number; y: number } {
   if (points.length === 0) return { x: 0, y: 0 };
   if (points.length === 1) return points[0]!;
@@ -149,6 +159,7 @@ export function armyMarkers(armies: ArmyView[], incoming: IncomingView[], nowMs:
     const legStart = returning ? Math.min(start, nowMs) : start;
     const progress = end > legStart ? Math.min(1, Math.max(0, (nowMs - legStart) / (end - legStart))) : 1;
     const pos = a.mission === "patrol" && route.length >= 2 ? { x: (route[0]!.x + route[route.length - 1]!.x) / 2, y: (route[0]!.y + route[route.length - 1]!.y) / 2 } : along(route, progress);
+    const heading = a.mission === "patrol" ? null : headingAt(route, progress);
     const dest = regionById(returning ? a.originRegionId : a.targetRegionId)?.name ?? "";
     const passed = turnedAt < 1 ? ids.slice(0, Math.max(1, Math.min(ids.length, Math.floor(turnedAt * (ids.length - 1)) + 1))) : ids;
     const people = Math.round(a.cargo.people ?? 0);
@@ -177,6 +188,7 @@ export function armyMarkers(armies: ArmyView[], incoming: IncomingView[], nowMs:
       ].filter(Boolean),
       route,
       progress,
+      heading,
       routeNames: routeIds.map((id) => regionById(id)?.name ?? id),
       destinationId: returning ? a.originRegionId : a.targetRegionId,
     });
@@ -201,6 +213,7 @@ export function armyMarkers(armies: ArmyView[], incoming: IncomingView[], nowMs:
       lines: [fmtUnits(s.units), `sailing from ${regionById(s.fromRegionId)?.name ?? s.fromRegionId} toward ${regionById(s.toRegionId)?.name ?? s.toRegionId}`, `spotted from the watchtower at ${regionById(s.seenFrom)?.name ?? s.seenFrom}`],
       route: [],
       progress: s.progress,
+      heading: headingAt(pts, s.progress),
       routeNames: [],
       destinationId: s.toRegionId,
     });
@@ -230,6 +243,8 @@ export function armyMarkers(armies: ArmyView[], incoming: IncomingView[], nowMs:
       ],
       route: [],
       progress: 1,
+      // Seen arriving at the region, with no route to point along.
+      heading: null,
       routeNames: [],
       destinationId: i.targetRegionId,
     });
