@@ -81,6 +81,11 @@ function UnitChips({ units, size = "h-12 w-12" }: { units: Record<string, number
 }
 
 /** More than one kind on foot or wheels together. A ship or an aircraft carrying the rest is not mixed: it shows as itself. */
+/** The radius of a marker's disc, as drawn below: the capital wagon's is biggest, a convoy with a picture next. */
+function markerRadius(a: ArmyMarker): number {
+  return a.mission === "relocate" ? 12 : a.lead ? 9 : 7;
+}
+
 function isMixed(a: ArmyMarker): boolean {
   return a.kinds.length > 1 && !a.kinds.some((id) => unitById.get(id)?.naval || unitById.get(id)?.air);
 }
@@ -446,6 +451,12 @@ export function WorldMap({ paint, selected, onSelect, focus, relief = false, fly
                 ) : (
                   // Enemy attacks pulse rose; my own military (raid, conquer, reinforce) is orange with a sword; civil traffic is blue.
                   <circle r={a.lead ? 9 : 7} fill={a.hostile ? "#f43f5e" : MILITARY.has(a.mission) ? "#f97316" : "#38bdf8"} stroke="#0b1a2b" strokeWidth={1.5} />
+                )}
+                {a.heading !== null && (
+                  // Which way it is going: a small arrowhead just outside the disc, pointing along the route.
+                  <g transform={`rotate(${a.heading})`} style={{ pointerEvents: "none" }}>
+                    <path d={`M${markerRadius(a) + 1.2} -3.2L${markerRadius(a) + 5.6} 0L${markerRadius(a) + 1.2} 3.2z`} fill="#f8fafc" stroke="#0b1a2b" strokeWidth={0.9} strokeLinejoin="round" />
+                  </g>
                 )}
                 {a.mission !== "relocate" &&
                   (isMixed(a) ? (
