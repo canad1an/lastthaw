@@ -432,6 +432,97 @@ for (const { a, b, water } of candidates) {
 console.log(`ocean crossings: ${crossings.length} of ${candidates.length} candidates`);
 console.log("crossings: " + crossings.join("; "));
 console.log("rejected (not open sea): " + rejected.join("; "));
+// ---- Direct lanes. A ship sails straight from coast to coast whenever open water lies between them: every pair of
+// coasts with a clear straight line over the sea between their shores (water all the way on the grid, not through a
+// closed isthmus, not threading a hairline between outlines) gets a lane of its own when the lanes already there make
+// the trip more than DIRECT_DETOUR times the crow's flight. Shortest first, re-checked after each, so one direct lane
+// serves its neighbours. Lines across the map's east-west edge are left to the lanes (the drawing does not wrap).
+// Every lane's drawn water path is then pulled straight wherever the water allows, so no ship zigzags in open sea.
+const DIRECT_DETOUR = 1.05;
+const ANCHORS = 48;
+const HAIRLINE_RUN = 20;
+const inClosed = (x, y) => closedBoxes.some(([x0, y0, x1, y1]) => x >= x0 && x <= x1 && y >= y0 && y <= y1);
+/** Water all the way from cell a to cell b in a straight line: no land, no closed isthmus, no long run hugging land. */
+function sight(a, b) {
+  const ax = a % W, ay = (a - ax) / W, bx = b % W, by = (b - bx) / W;
+  const steps = Math.max(Math.abs(bx - ax), Math.abs(by - ay), 1);
+  let run = 0;
+  for (let i = 1; i < steps; i++) {
+    const x = Math.round(ax + ((bx - ax) * i) / steps), y = Math.round(ay + ((by - ay) * i) / steps);
+    const c = y * W + x;
+    if (owner[c] !== 0 || inClosed(x, y)) return false;
+    // Hugging land for long, away from both shores, is a hairline gap between outlines, not sea.
+    const nearShore = i < SHORE_CELLS || i > steps - SHORE_CELLS;
+    if (!nearShore && landDist[c] >= 0 && landDist[c] <= 1) {
+      if (++run > HAIRLINE_RUN) return false;
+    } else run = 0;
+  }
+  return true;
+}
+// The sea cells off each coast, thinned to a spread of anchors a line may leave from.
+const anchorsOf = new Map();
+for (const r of coastal) {
+  const sea = [];
+  const seen = new Set();
+  for (const c of shoreOf.get(r.id)) for (const n of nbr(c)) if (owner[n] === 0 && !seen.has(n)) { seen.add(n); sea.push(n); }
+  const step = Math.max(1, Math.floor(sea.length / ANCHORS));
+  anchorsOf.set(r.id, sea.filter((_, i) => i % step === 0));
+}
+/** The closest pair of anchors of a and b with a clear line between them, trying the nearest few; null when none. */
+function clearLine(a, b) {
+  const A = anchorsOf.get(a), B = anchorsOf.get(b);
+  const pairs = [];
+  for (const ca of A) {
+    const ax = ca % W, ay = (ca - ax) / W;
+    for (const cb of B) {
+      const bx = cb % W, by = (cb - bx) / W;
+      if (Math.abs(bx - ax) > W / 2) continue;
+      pairs.push([(bx - ax) ** 2 + (by - ay) ** 2, ca, cb]);
+    }
+  }
+  pairs.sort((x, y) => x[0] - y[0]);
+  for (const [, ca, cb] of pairs.slice(0, 12)) if (sight(ca, cb)) return [ca, cb];
+  return null;
+}
+const pointOf = (c) => [Math.round(((c % W) + 0.5) / SCALE * 10) / 10, Math.round((Math.floor(c / W) + 0.5) / SCALE * 10) / 10];
+const directCandidates = [];
+for (let i = 0; i < coastal.length; i++)
+  for (let j = i + 1; j < coastal.length; j++) {
+    const a = coastal[i].id, b = coastal[j].id;
+    if (adj.get(a).has(b) || byId.get(a).neighbors.includes(b)) continue;
+    directCandidates.push({ a, b, km: km(a, b) });
+  }
+directCandidates.sort((x, y) => x.km - y.km || x.a.localeCompare(y.a) || x.b.localeCompare(y.b));
+const direct = [];
+for (const { a, b, km: crow } of directCandidates) {
+  if (laneKmBetween(a, b) <= DIRECT_DETOUR * crow) continue;
+  const line = clearLine(a, b);
+  if (!line) continue;
+  const [ca, cb] = line;
+  adj.get(a).add(b); adj.get(b).add(a);
+  paths[laneKey(a, b)] = { from: a, points: [pointOf(ca), pointOf(cb)], coasts: { [a]: coastAt(a, ca), [b]: coastAt(b, cb) } };
+  direct.push(`${byId.get(a).name} - ${byId.get(b).name} (${Math.round(crow)} km)`);
+}
+console.log(`direct lanes: ${direct.length} of ${directCandidates.length} pairs`);
+console.log("direct: " + direct.join("; "));
+// Pull every drawn path straight where the water allows: from each point, on to the farthest later point in sight.
+const cellAt = ([x, y]) => Math.min(H - 1, Math.max(0, Math.floor(y * SCALE))) * W + Math.min(W - 1, Math.max(0, Math.floor(x * SCALE)));
+let pulled = 0;
+for (const p of Object.values(paths)) {
+  const pts = p.points;
+  if (pts.length <= 2) continue;
+  const out = [pts[0]];
+  let i = 0;
+  while (i < pts.length - 1) {
+    let j = pts.length - 1;
+    while (j > i + 1 && !(owner[cellAt(pts[i])] === 0 && owner[cellAt(pts[j])] === 0 && Math.abs(pts[j][0] - pts[i][0]) < world.width / 2 && sight(cellAt(pts[i]), cellAt(pts[j])))) j--;
+    out.push(pts[j]);
+    i = j;
+  }
+  if (out.length < pts.length) pulled += 1;
+  p.points = out;
+}
+console.log(`paths pulled straight: ${pulled}`);
 const after = [...adj.values()].reduce((s, v) => s + v.size, 0) / 2;
 console.log(`grid ${W}x${H}; lanes by water added ${addedByWater}, kept ${kept}, dropped ${dropped.length}, bridges ${bridges.length}, now ${after}; pieces left: ${n}`);
 if (landlocked.length) console.log(`coastal by data but with no shore on the grid (left alone): ${landlocked.join(", ")}`);
