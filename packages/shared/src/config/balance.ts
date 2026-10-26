@@ -405,9 +405,9 @@ export const balance = {
     outputShare: 0.25,
     economic: {
       passMinutes: 30,
-      /** Guard loyalty: a region is at risk below this loyalty... */
+      /** Guard loyalty: a region is at risk below this loyalty while it is still falling... */
       atRiskLoyalty: 0.45,
-      /** ...or when the loyalty it is heading to is below this. */
+      /** ...or whenever the loyalty it is heading to is below this. */
       atRiskTarget: 0.35,
       /** Supply convoys for at-risk regions may run this many beyond the empire's convoy cap. */
       priorityConvoys: 3,

@@ -779,7 +779,7 @@ function SettingsForm({ matchId, state, advisor }: { matchId: string; state: Mat
       </label>
       <label className="flex items-start gap-2 text-xs text-slate-300">
         <input type="checkbox" checked={draft.guardLoyalty} onChange={(e) => setDraft((d) => ({ ...d, guardLoyalty: e.target.checked }))} className="mt-0.5 accent-sky-400" />
-        <span>Guard loyalty: a region at risk of rebelling (loyalty under {Math.round(balance.advisors.economic.atRiskLoyalty * 100)}%, or heading under {Math.round(balance.advisors.economic.atRiskTarget * 100)}%) gets its Temple, then Cathedrals, at the front of its queue, cancelling the last build not yet started if the queue is full; its materials take the next free convoy; and if it was conquered and is short of occupiers, idle settlers are sent from the nearest regions to join them. Ordinary workers are never moved into such a region: more people there only raise the occupiers it needs.</span>
+        <span>Guard loyalty: a region at risk of rebelling (heading under {Math.round(balance.advisors.economic.atRiskTarget * 100)}%, or under {Math.round(balance.advisors.economic.atRiskLoyalty * 100)}% and still falling) gets its Temple, then Cathedrals, at the front of its queue, cancelling the last build not yet started if the queue is full; its materials take the next free convoy; and if it was conquered and is short of occupiers, idle settlers are sent from the nearest regions to join them. Ordinary workers are never moved into such a region: more people there only raise the occupiers it needs.</span>
       </label>
       {draft.guardLoyalty && (
         <label className="ml-5 flex items-start gap-2 text-xs text-slate-300">

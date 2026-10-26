@@ -477,7 +477,8 @@ async function guardLoyalty(
   const risks = projected
     .filter((x) => !x.row.isCapital && !skip.has(x.row.regionId))
     .map((x) => ({ x, outlook: loyaltyOutlook(x.row.regionId, p.capitalRegionId, x.effects.loyalty, popOf(x.economy), x.economy.popOccupiers, x.row.loyalty, x.row.conquered) }))
-    .filter(({ x, outlook }) => x.row.loyalty < c.atRiskLoyalty || outlook.target < c.atRiskTarget)
+    // Heading too low, or already low and still falling. A low region on its way back up is left to recover.
+    .filter(({ x, outlook }) => outlook.target < c.atRiskTarget || (x.row.loyalty < c.atRiskLoyalty && outlook.target < x.row.loyalty))
     .sort((a, b) => a.x.row.loyalty - b.x.row.loyalty);
   for (const r of risks) out.atRisk.add(r.x.row.regionId);
   if (!risks.length) return out;

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { and, asc, eq, inArray, sql, desc } from "drizzle-orm";
-import { allRegions, balance, effectsOf, fairAmount, matchStateView, regionById, RESOURCE_WORTH, scoutCatchChance, seededRng, storageCaps, findRoute, travelSeconds, unitById, techEffectsOf, distanceKm, seaLegsOf, seaPath } from "@lastthaw/shared";
+import { allRegions, balance, effectsOf, fairAmount, matchStateView, regionById, RESOURCE_WORTH, scoutCatchChance, seededRng, storageCaps, findRoute, travelSeconds, unitById, techEffectsOf, distanceKm, seaLegsOf, seaPath, loyaltyOutlook } from "@lastthaw/shared";
 import { Publisher } from "../src/realtime/publish.js";
 import { runDueJobs } from "../src/worker/jobs.js";
 import { buildApp } from "../src/api/app.js";
@@ -1342,15 +1342,23 @@ describe("api routes", () => {
       // route marked for the next free convoy, and idle settlers sent from a neighbour to join its occupiers.
       {
         const mine = await db.select().from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid), eq(matchRegions.isCapital, false), sql`${matchRegions.frozenAt} is null`));
-        const shaky = mine[0]!;
-        const helper = mine.find((r) => r.regionId !== shaky.regionId && !!findRoute(r.regionId, shaky.regionId, false));
+        // The region farthest from the capital: with no occupiers, its loyalty heads furthest down.
+        const capId = (await db.select({ c: players.capitalRegionId }).from(players).where(eq(players.id, benPid)))[0]!.c!;
+        const shaky = [...mine].sort((a, b) => distanceKm(capId, b.regionId) - distanceKm(capId, a.regionId))[0]!;
+        // A helper next door if there is one (a short walk over land), else the nearest with a land route.
+        // Not itself at risk (its settlers would not count as idle): one whose own loyalty holds well up, uncontested.
+        const byNear = mine.filter((r) => r.regionId !== shaky.regionId && !!findRoute(r.regionId, shaky.regionId, false) && loyaltyOutlook(r.regionId, capId, 0, 100, 0, 1, false).target >= 0.5).sort((x, y) => distanceKm(x.regionId, shaky.regionId) - distanceKm(y.regionId, shaky.regionId));
+        const helper = byNear.find((r) => regionById(shaky.regionId)!.neighbors.includes(r.regionId)) ?? byNear[0];
         const [benRow] = await db.select({ age: players.age }).from(players).where(eq(players.id, benPid));
         await db.update(players).set({ age: Math.max(2, benRow!.age) }).where(eq(players.id, benPid));
         await fill(12000, 12000, 9000, 100, 100);
         const startedAt = new Date(await nowIso());
         const { temple: _t, cathedral: _c, ...noLoyalty } = shaky.buildings as Record<string, number>;
         void _t; void _c;
-        await db.update(matchRegions).set({ conquered: true, loyalty: 0.31, popWorkers: 200, popOccupiers: 2, food: 0, wood: 0, stone: 0, buildings: noLoyalty, settledAt: startedAt }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, shaky.regionId)));
+        // At risk means heading down: no occupiers, so the loyalty it heads to is at most half its base, and it starts above that.
+        const heading = loyaltyOutlook(shaky.regionId, capId, 0, 200, 0, 0.44, true).target;
+        expect(heading, "the test region's loyalty must be heading under 44%").toBeLessThan(0.44);
+        await db.update(matchRegions).set({ conquered: true, loyalty: 0.44, popWorkers: 200, popOccupiers: 0, food: 0, wood: 0, stone: 0, buildings: noLoyalty, settledAt: startedAt }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, shaky.regionId)));
         if (helper) await db.update(matchRegions).set({ units: { ...(helper.units as Record<string, number>), settler: 30 }, loyalty: 1, conquered: false, settledAt: startedAt }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, helper.regionId)));
         // Something already queued there, so the Temple has to go ahead of it.
         expect((await Ben.call("PUT", `${base}/advisors/economic/settings`, { minLevels: {}, useOtherRegions: true, skipRegions: [], population: "off", guardLoyalty: true, trainOccupiers: false })).statusCode).toBe(200);
@@ -1368,8 +1376,8 @@ describe("api routes", () => {
         if (helper) {
           const columns = await db.select().from(armies).where(and(eq(armies.matchId, gameId), eq(armies.playerId, benPid), eq(armies.mission, "move"), eq(armies.status, "outbound"), eq(armies.targetRegionId, shaky.regionId)));
           const settlers = columns.reduce((a, c) => a + (c.units.settler ?? 0), 0);
-          // 200 people need 20 occupiers; 2 are there.
-          expect(settlers).toBe(18);
+          // 200 people need 20 occupiers; none are there.
+          expect(settlers).toBe(20);
           await db.delete(armies).where(inArray(armies.id, columns.map((c) => c.id)));
         }
         const hist = (await Ben.call("GET", `${base}/advisors/economic/history`)).json() as { events: { action: string; regionId: string | null; text: string }[] };
@@ -2394,7 +2402,7 @@ describe("api routes", () => {
   it("the hall of fame, the standings and the report agree on the winner's regions: frozen ones count for nobody", async () => {
     const [done] = await db
       .insert(matches)
-      .values({ name: "Frozen Count", slug: `2026-10-frozen-count-${Date.now().toString(36)}`, speed: 1, seed: "frozen-count", startsAt: new Date(Date.now() - 40 * 86400_000), endsAt: new Date(Date.now() - 10 * 86400_000), finishedAt: new Date(Date.now() - 10 * 86400_000), status: "finished", settings: { kind: "public", createdBy: "nobody" } })
+      .values({ name: "Frozen Count", slug: `2026-10-frozen-count-${Date.now().toString(36)}`, speed: 1, seed: "frozen-count", startsAt: new Date(Date.now() - 40 * 86400_000), endsAt: new Date(Date.now() - 10 * 86400_000), finishedAt: new Date(), status: "finished", settings: { kind: "public", createdBy: "nobody" } })
       .returning({ id: matches.id });
     try {
       const [w] = await db.insert(players).values({ matchId: done!.id, name: "Holdfast", isAi: true, age: 4, score: 900 }).returning({ id: players.id });
