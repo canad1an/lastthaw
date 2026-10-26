@@ -196,10 +196,15 @@ export function carryCapacity(units: UnitCounts, techs?: ReadonlySet<string> | r
   return c;
 }
 
-/** Slowest unit in the army sets the pace, in km per game hour. */
+/**
+ * The pace in km per game hour: the slowest unit sets it. A group with ships goes by water, everyone aboard, so the
+ * slowest ship sets it and the soldiers, engines and settlers carried do not slow it.
+ */
 export function armySpeed(units: UnitCounts): number {
   let s = Infinity;
-  for (const [id, n] of Object.entries(units)) {
+  const { ships } = splitNaval(units);
+  const pacing = Object.keys(ships).length ? ships : units;
+  for (const [id, n] of Object.entries(pacing)) {
     if (n <= 0) continue;
     const def = unitById.get(id);
     if (def) s = Math.min(s, def.speed);

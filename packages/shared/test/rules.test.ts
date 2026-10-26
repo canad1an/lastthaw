@@ -118,6 +118,9 @@ describe("armies", () => {
     expect(armySpeed({ warrior: 3, caravan: 1 })).toBe(Math.min(warrior.speed, caravan.speed));
     expect(armySpeed({})).toBe(0);
     expect(armySpeed({ warrior: 0 })).toBe(0);
+    // By water the ships set the pace, whatever they carry: galleys with catapults and settlers sail at galley speed.
+    expect(armySpeed({ galley: 2, catapult: 4, settler: 5 })).toBe(unitById.get("galley")!.speed);
+    expect(armySpeed({ galley: 2, cog: 1, swordsman: 9 })).toBe(Math.min(unitById.get("galley")!.speed, unitById.get("cog")!.speed));
     expect(carryCapacity({ caravan: 2 })).toBeCloseTo(2 * carryCapacity({ caravan: 1 }));
     expect(carryCapacity({ warrior: 5 })).toBeCloseTo(5 * warrior.carry);
     expect(haulerCount({ caravan: 2, warrior: 3 })).toBe(2);
