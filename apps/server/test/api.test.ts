@@ -1120,6 +1120,50 @@ describe("api routes", () => {
     }
   });
 
+  it("nobody swims: settlers carried over the sea with no ships left walk home over land, or are lost", async () => {
+    const base = `/api/matches/${gameId}`;
+    const ann = matchStateView.parse((await Ann.call("GET", `${base}/state`)).json());
+    const ben = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
+    const benPid = ben.me.playerId;
+    const now = Date.parse(ben.match.now);
+    // Ben's settlers crossed the Red Sea to Al Madinah, which is Ann's: they arrive to find it hostile, with no ship.
+    const home = "eg-al-bahr-al-ahmar", far = "sa-al-madinah";
+    const before = await db.select().from(matchRegions).where(and(eq(matchRegions.matchId, gameId), inArray(matchRegions.regionId, [home, far])));
+    const claim = async (regionId: string, owner: string) =>
+      db
+        .insert(matchRegions)
+        .values({ matchId: gameId, regionId, assignment: { ...balance.start.assignment }, settledAt: new Date(now), ownerPlayerId: owner, popWorkers: 5 })
+        .onConflictDoUpdate({ target: [matchRegions.matchId, matchRegions.regionId], set: { ownerPlayerId: owner } });
+    await claim(home, benPid);
+    await claim(far, ann.me.playerId);
+    const [army] = await db
+      .insert(armies)
+      .values({ matchId: gameId, playerId: benPid, mission: "move", originRegionId: home, targetRegionId: far, units: { settler: 8 }, cargo: {}, path: [home, far], status: "outbound", departsAt: new Date(now - 60 * 60_000), arrivesAt: new Date(now - 1000) })
+      .returning();
+    await db.insert(jobs).values({ matchId: gameId, playerId: benPid, regionId: far, kind: "mission", refId: army!.id, startsAt: new Date(now - 60 * 60_000), endsAt: new Date(now - 1000) });
+    const redis = createRedis();
+    try {
+      await runDueJobs(db, new Publisher(redis), logger);
+      const [back] = await db.select().from(armies).where(eq(armies.id, army!.id));
+      expect(back!.status).toBe("returning");
+      expect(back!.note ?? "").toMatch(/No ships left/);
+      // Home over land: no sea lane anywhere on the way.
+      expect(seaLegsOf(back!.path)).toEqual([]);
+      expect(back!.path[0]).toBe(back!.originRegionId);
+      expect(back!.path[back!.path.length - 1]).toBe(far);
+      // Caught on the way costs men, never adds them.
+      expect(back!.units.settler ?? 0).toBeLessThanOrEqual(8);
+    } finally {
+      await redis.quit().catch(() => {});
+      await db.delete(armies).where(eq(armies.id, army!.id));
+      for (const id of [home, far]) {
+        const was = before.find((r) => r.regionId === id);
+        if (was) await db.update(matchRegions).set({ ownerPlayerId: was.ownerPlayerId }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, id)));
+        else await db.delete(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, id)));
+      }
+    }
+  });
+
   it("canoes sail a short lane when no cog is to be had, and never a long one", async () => {
     const base = `/api/matches/${gameId}`;
     const benState = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());

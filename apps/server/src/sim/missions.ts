@@ -1,7 +1,7 @@
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { claimBounties } from "./objectives.js";
 import { tribeBattleTalk } from "./tribeVoice.js";
-import { balance, effectsOf, emptySpecial, storageCaps, regionById, resolveCombat, carryCapacity, travelSeconds, findRoute, armySpeed, type UnitCounts, HAULER_IDS, haulerCount, unitById, laneName, applyTechEffects, wallBonusAgainst, breachOf, buildingById, seededRng, availableTechs, scoutCatchChance, soldierCount, wallOf, battleSchedule, type BattleRound, type CombatResult, isAirGroup, nextHopTo, haulerCarry } from "@lastthaw/shared";
+import { balance, effectsOf, emptySpecial, storageCaps, regionById, resolveCombat, carryCapacity, travelSeconds, findRoute, armySpeed, type UnitCounts, HAULER_IDS, haulerCount, unitById, laneName, applyTechEffects, wallBonusAgainst, breachOf, buildingById, seededRng, availableTechs, scoutCatchChance, soldierCount, wallOf, battleSchedule, type BattleRound, type CombatResult, isAirGroup, nextHopTo, haulerCarry, splitNaval, distanceKm } from "@lastthaw/shared";
 import { matchDayAt } from "./clock.js";
 import { armies, battles, jobs, matchRegions, players, regionSightings, playerTechs, tradeRoutes, events } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
@@ -429,12 +429,79 @@ async function sendHome(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, units: Uni
     return;
   }
   const ctx = await legContextFor(tx, m.id, army.playerId);
+  // Came over the sea and no ship left to carry them: nobody swims, so they walk home over land.
+  if (pathUsesSea(army.path) && Object.keys(splitNaval(units).ships).length === 0 && !isAirGroup(units)) {
+    const walk = await strandedWalk(tx, m, army, units, ctx);
+    if (!walk) return;
+    units = walk.units;
+    army = { ...army, originRegionId: walk.home };
+    note = walk.note;
+    if (sumUnits(units) === 0) {
+      await tx.update(armies).set({ status: "done", units, cargo: {} }).where(eq(armies.id, army.id));
+      return;
+    }
+    const seconds = await legSeconds(tx, m, ctx, walk.route, units, at, 5);
+    const returnsAt = new Date(at.getTime() + seconds * 1000);
+    await tx.update(armies).set({ status: "returning", units, cargo, returnsAt, note, originRegionId: walk.home, path: [...walk.route.path].reverse() }).where(eq(armies.id, army.id));
+    await tx.insert(jobs).values({ matchId: m.id, playerId: army.playerId, regionId: walk.home, kind: "mission", refId: army.id, startsAt: at, endsAt: returnsAt });
+    return;
+  }
   // The way home may use the sea only if the way out did (or the player can sail): a land convoy does not swim back.
   const route = routeFor(ctx, army.targetRegionId, army.originRegionId, pathUsesSea(army.path), units) ?? { path: [army.targetRegionId, army.originRegionId], cost: 1000, usesSea: false };
   const seconds = await legSeconds(tx, m, ctx, route, units, at, 5);
   const returnsAt = new Date(at.getTime() + seconds * 1000);
   await tx.update(armies).set({ status: "returning", units, cargo, returnsAt, note }).where(eq(armies.id, army.id));
   await tx.insert(jobs).values({ matchId: m.id, playerId: army.playerId, regionId: army.originRegionId, kind: "mission", refId: army.id, startsAt: at, endsAt: returnsAt });
+}
+
+/**
+ * A force stranded across the sea walks home over land: to where it set out if a land route goes there, else to the
+ * nearest region of the player's that one does. Every region on the way not held by the player or an ally may catch
+ * it (balance.travel.strandedCatchPerRegion), costing it a share of every unit. With no land route to any region of
+ * the player's, it is lost. Returns null when lost; the army row is closed and the player told.
+ */
+async function strandedWalk(tx: Tx, m: MatchRow, army: ArmyRow, units: UnitCounts, ctx: LegContext): Promise<{ route: { path: string[]; cost: number; usesSea: boolean }; home: string; units: UnitCounts; note: string } | null> {
+  const t = balance.travel;
+  const where = regionById(army.targetRegionId)?.name ?? army.targetRegionId;
+  const count = (u: UnitCounts) => sumUnits(u);
+  const friendlyOwners = new Set([army.playerId, ...(await alliesOf(tx, m.id, army.playerId))]);
+  const mine = await tx.select({ regionId: matchRegions.regionId }).from(matchRegions).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.ownerPlayerId, army.playerId), isNull(matchRegions.frozenAt)));
+  const candidates = [army.originRegionId, ...mine.map((r) => r.regionId).filter((id) => id !== army.originRegionId).sort((a, b) => distanceKm(army.targetRegionId, a) - distanceKm(army.targetRegionId, b))];
+  let home: string | null = null;
+  let route: { path: string[]; cost: number; usesSea: boolean } | null = null;
+  for (const id of candidates.slice(0, 40)) {
+    if (id === army.targetRegionId) continue;
+    const r = routeFor(ctx, army.targetRegionId, id, false, units);
+    if (r) {
+      home = id;
+      route = { path: [...r.path], cost: r.cost, usesSea: false };
+      break;
+    }
+  }
+  if (!home || !route) {
+    await tx.update(armies).set({ status: "done", units: {}, cargo: {} }).where(eq(armies.id, army.id));
+    await notify(tx, m.id, army.playerId, "system", `Stranded in ${where}: no ships left to carry them and no way home over land; ${count(units)} lost`, { regionId: army.targetRegionId, units });
+    return null;
+  }
+  // The regions they must cross that nobody friendly holds.
+  const crossing = route.path.slice(1, -1);
+  const owners = crossing.length ? await tx.select({ regionId: matchRegions.regionId, owner: matchRegions.ownerPlayerId }).from(matchRegions).where(and(eq(matchRegions.matchId, m.id), inArray(matchRegions.regionId, crossing))) : [];
+  const ownerOf = new Map(owners.map((r) => [r.regionId, r.owner]));
+  const hostile = crossing.filter((id) => !friendlyOwners.has(ownerOf.get(id) ?? ""));
+  let left: UnitCounts = { ...units };
+  const caughtIn: string[] = [];
+  for (const id of hostile) {
+    if (count(left) === 0 || Math.random() >= t.strandedCatchPerRegion) continue;
+    const next: UnitCounts = {};
+    for (const [u, n] of Object.entries(left)) next[u] = n - Math.ceil(n * t.strandedLossShare);
+    left = next;
+    caughtIn.push(regionById(id)?.name ?? id);
+  }
+  const lost = count(units) - count(left);
+  const homeName = regionById(home)?.name ?? home;
+  const note = `No ships left: walking home to ${homeName} over land${hostile.length ? ` through ${hostile.length} foreign region${hostile.length === 1 ? "" : "s"}` : ""}${lost ? `; caught in ${caughtIn.join(", ")}, ${lost} killed or taken` : ""}`;
+  await notify(tx, m.id, army.playerId, "system", `${note}.`, { regionId: army.targetRegionId, units: left });
+  return { route, home, units: left, note };
 }
 
 async function comeHome(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher: Publisher, after: After): Promise<void> {

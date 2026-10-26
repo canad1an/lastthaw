@@ -124,6 +124,13 @@ export const balance = {
     ],
   },
   travel: {
+    /**
+     * Stranded: a force that came over the sea and has no ships left walks home over land. In each region on the way
+     * held by someone not friendly (or by neutral tribes) it is caught with this chance, losing this share of every
+     * unit, killed or taken. With no way home over land at all it is lost.
+     */
+    strandedCatchPerRegion: 0.2,
+    strandedLossShare: 0.5,
     /** Unit speed (km per game hour in the tables) is multiplied by this to get map km per hour. */
     speedScale: 50,
     /** Minimum trip in game seconds, so adjacent regions still take a moment. */
