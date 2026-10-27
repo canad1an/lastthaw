@@ -1596,6 +1596,32 @@ describe("api routes", () => {
         expect((await Ben.call("PUT", base + "/advisors/economic/settings", { minLevels: { quarry: 1 }, useOtherRegions: true, skipRegions: [], population: "balanced" })).statusCode).toBe(200);
       }
 
+      // Even levels: a region's buildings rise together, every one to level 1 before any to level 2, and so on.
+      {
+        const taken = new Set((await db.select({ regionId: matchRegions.regionId }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), sql`${matchRegions.ownerPlayerId} is not null`))).map((r) => r.regionId));
+        const fresh = allRegions().find((r) => !taken.has(r.id) && !r.coastal)!;
+        const at = new Date(await nowIso());
+        await db
+          .insert(matchRegions)
+          .values({ matchId: gameId, regionId: fresh.id, assignment: { ...balance.start.assignment }, settledAt: at, ownerPlayerId: benPid, popWorkers: 50, buildings: {}, food: 50000, wood: 50000, stone: 50000 })
+          .onConflictDoUpdate({ target: [matchRegions.matchId, matchRegions.regionId], set: { ownerPlayerId: benPid, settledAt: at, popWorkers: 50, buildings: {}, food: 50000, wood: 50000, stone: 50000 } });
+        const kinds = ["huts", "storehouse", "hunting_grounds", "lumber_camp", "quarry"];
+        const mine = await db.select({ regionId: matchRegions.regionId }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid)));
+        const skipRegions = mine.map((r) => r.regionId).filter((id) => id !== fresh.id);
+        expect((await Ben.call("PUT", `${base}/advisors/economic/settings`, { minLevels: Object.fromEntries(kinds.map((k) => [k, 5])), useOtherRegions: true, skipRegions, population: "off", guardLoyalty: false })).statusCode).toBe(200);
+        await db.update(advisors).set({ lastPassAt: null }).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
+        const run = await forcePassAs(ben, "economic", gameId);
+        expect(run.statusCode, run.body).toBe(200);
+        const queued = await db.select({ refId: jobs.refId }).from(jobs).where(and(eq(jobs.matchId, gameId), eq(jobs.regionId, fresh.id), eq(jobs.kind, "build"), sql`${jobs.completedAt} is null`, sql`${jobs.cancelledAt} is null`));
+        const per = kinds.map((k) => queued.filter((j) => j.refId === k).length);
+        // More levels asked (25) than the queue holds: every building got its share, none more than a level ahead.
+        expect(queued.length, JSON.stringify(per)).toBeGreaterThanOrEqual(kinds.length);
+        expect(Math.max(...per) - Math.min(...per), JSON.stringify(per)).toBeLessThanOrEqual(1);
+        await db.update(jobs).set({ cancelledAt: new Date() }).where(and(eq(jobs.matchId, gameId), eq(jobs.regionId, fresh.id), sql`${jobs.completedAt} is null`, sql`${jobs.cancelledAt} is null`));
+        await db.delete(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, fresh.id)));
+        expect((await Ben.call("PUT", `${base}/advisors/economic/settings`, { minLevels: { quarry: 1 }, useOtherRegions: true, skipRegions: [], population: "balanced" })).statusCode).toBe(200);
+      }
+
       // Guard loyalty: a conquered region at risk of rebelling gets its Temple at the front of the queue, its materials
       // route marked for the next free convoy, and idle settlers sent from a neighbour to join its occupiers.
       {

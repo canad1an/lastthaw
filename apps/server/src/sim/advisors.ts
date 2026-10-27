@@ -315,9 +315,12 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
     Object.entries(cost).find(([k, v]) => k !== "food" && k !== "wood" && k !== "stone" && (v ?? 0) > 0 && (empireStock[k] ?? 0) - (promised[k] ?? 0) - (v ?? 0) < (reserve[k] ?? 0))?.[0];
   // At-risk regions are looked after first in the sweeps below too.
   projected.sort((x, y) => Number(guard.atRisk.has(y.row.regionId)) - Number(guard.atRisk.has(x.row.regionId)));
-  // Builds come in two sweeps. First: every upgrade a region can pay for from its own stores, level after level up to
-  // the minimums set, as far as the queue's slots allow. Then the builds that need materials from elsewhere, again
-  // level after level until the queue is full: no cap per pass or per region, only the empire's unpromised stock.
+  // Builds come in two sweeps. First: every upgrade a region can pay for from its own stores, up to the minimums set,
+  // as far as the queue's slots allow. Then the builds that need materials from elsewhere, until the queue is full: no
+  // cap per pass or per region, only the empire's unpromised stock. In both a region's buildings rise evenly, level by
+  // level: every one the minimums ask for to level 1 before any goes to level 2, and so on, the AI's order among equals.
+  // A building that cannot go up at all this pass (ore held in reserve, nothing producing what it needs) does not hold
+  // the others back; one this region cannot pay for itself holds the first sweep at its level, for the second to fill.
   const pendingBuilds = (regionId: string) => pending.filter((j) => j.regionId === regionId && (j.kind === "build" || j.kind === "train"));
   const queuedLevels = (regionId: string, id: string) => pending.filter((j) => j.regionId === regionId && j.kind === "build" && j.refId === id).length;
   const localExtra = new Map<string, Record<string, number>>();
@@ -328,6 +331,7 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
     let slots = balance.queue.slotsPerRegion - pendingBuilds(row.regionId).length;
     const local = stockOf(row);
     const extra: Record<string, number> = {};
+    const wanted: Array<{ id: string; def: NonNullable<ReturnType<typeof avail.get>>; target: number }> = [];
     for (const id of buildOrderFor(row, economy, false)) {
       const target = Math.min(settings.minLevels[id] ?? 0, buildingById.has(id) ? reachableLevel(buildingById.get(id)!, techs) : 0);
       if (target <= 0) continue;
@@ -344,14 +348,30 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
         bump("worksNothing");
         continue;
       }
-      let have = (row.buildings[id] ?? 0) + queuedLevels(row.regionId, id) + (extra[id] ?? 0);
-      while (have < target && slots > 0) {
+      wanted.push({ id, def, target });
+    }
+    const haveOf = (id: string) => (row.buildings[id] ?? 0) + queuedLevels(row.regionId, id) + (extra[id] ?? 0);
+    const stuck = new Set<string>();
+    const waitsForConvoy = new Set<string>();
+    while (slots > 0) {
+      const open = wanted.filter((w) => !stuck.has(w.id) && haveOf(w.id) < w.target);
+      if (!open.length) break;
+      const floor = Math.min(...open.map((w) => haveOf(w.id)));
+      const round = open.filter((w) => haveOf(w.id) === floor && !waitsForConvoy.has(w.id));
+      if (!round.length) break;
+      for (const { id, def } of round) {
+        if (slots <= 0) break;
+        const have = haveOf(id);
         const costNow = buildingCost(def, have + 1, matchDay, region.neighbors.length);
-        if (!canAfford(local, costNow)) break;
+        if (!canAfford(local, costNow)) {
+          waitsForConvoy.add(id);
+          continue;
+        }
         const scarce = scarceFor(costNow);
         if (scarce) {
           bump(`save_${scarce}`);
-          break;
+          stuck.add(id);
+          continue;
         }
         try {
           await queueBuild(ctx, row.regionId, id, { allowWait: false });
@@ -359,22 +379,19 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
         } catch (err) {
           const msg = (err as Error).message ?? "";
           bump(/queue is full/.test(msg) ? "queueFull" : /not enough/.test(msg) ? "unaffordable" : "blocked");
-          break;
+          stuck.add(id);
+          continue;
         }
         for (const [k, v] of Object.entries(costNow)) {
           local[k] = (local[k] ?? 0) - v;
           empireStock[k] = (empireStock[k] ?? 0) - v;
         }
         extra[id] = (extra[id] ?? 0) + 1;
-        have += 1;
         queued += 1;
         slots -= 1;
       }
-      if (slots <= 0) {
-        bump("queueFull");
-        break;
-      }
     }
+    if (slots <= 0) bump("queueFull");
     localExtra.set(row.regionId, extra);
   }
 
@@ -394,20 +411,31 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
       const base = (row.buildings[bid] ?? 0) + queuedLevels(row.regionId, bid);
       for (let lv = base + 1; lv <= base + n; lv++) for (const [k, v] of Object.entries(buildingCost(def, lv, matchDay, region.neighbors.length))) local[k] = (local[k] ?? 0) - (v ?? 0);
     }
+    const wanted: Array<{ id: string; def: NonNullable<ReturnType<typeof avail.get>>; target: number }> = [];
     for (const id of buildOrderFor(row, economy, false)) {
-      if (slots <= 0) break;
       const target = Math.min(settings.minLevels[id] ?? 0, buildingById.has(id) ? reachableLevel(buildingById.get(id)!, techs) : 0);
       if (target <= 0) continue;
       const def = avail.get(id);
       if (!def) continue;
       if (buildingBlockedBy(def, region, row.buildings, row.isCapital) || worksNothingHere(def, region.resources)) continue;
-      let have = (row.buildings[id] ?? 0) + queuedLevels(row.regionId, id) + (extra[id] ?? 0);
-      while (have < target && slots > 0) {
+      wanted.push({ id, def, target });
+    }
+    const added: Record<string, number> = {};
+    const haveOf = (id: string) => (row.buildings[id] ?? 0) + queuedLevels(row.regionId, id) + (extra[id] ?? 0) + (added[id] ?? 0);
+    const stuck = new Set<string>();
+    while (slots > 0) {
+      const open = wanted.filter((w) => !stuck.has(w.id) && haveOf(w.id) < w.target);
+      if (!open.length) break;
+      const floor = Math.min(...open.map((w) => haveOf(w.id)));
+      for (const { id, def } of open.filter((w) => haveOf(w.id) === floor)) {
+        if (slots <= 0) break;
+        const have = haveOf(id);
         const costNow = buildingCost(def, have + 1, matchDay, region.neighbors.length);
         const scarce = scarceFor(costNow);
         if (scarce) {
           bump(`save_${scarce}`);
-          break;
+          stuck.add(id);
+          continue;
         }
         const short: Record<string, number> = {};
         for (const [k, v] of Object.entries(costNow)) if ((v ?? 0) > Math.max(0, local[k] ?? 0)) short[k] = (v ?? 0) - Math.max(0, local[k] ?? 0);
@@ -415,20 +443,23 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
         const starved = (["food", "wood", "stone"] as const).find((k) => (short[k] ?? 0) > 0 && (empireGross[k] ?? 0) < 1 && (empireStock[k] ?? 0) < 2 * (short[k] ?? 0));
         if (starved) {
           bump(`no_${starved}`);
-          break;
+          stuck.add(id);
+          continue;
         }
         // Never promise the same stock twice: what is owed must be in the empire's stores beyond what is already promised.
         const overPromised = Object.entries(short).some(([k, v]) => (empireStock[k] ?? 0) - (promised[k] ?? 0) < v);
         if (overPromised) {
           bump("promised");
-          break;
+          stuck.add(id);
+          continue;
         }
         try {
           await queueBuild(ctx, row.regionId, id, { allowWait: true });
         } catch (err) {
           const msg = (err as Error).message ?? "";
           bump(/not enough/.test(msg) ? "unaffordable" : /queue is full/.test(msg) ? "queueFull" : "blocked");
-          break;
+          stuck.add(id);
+          continue;
         }
         events.push({ action: "build", regionId: row.regionId, text: `Queued ${def.name} level ${have + 1} at ${nameOf(row.regionId)}; ${costText(short) || "the balance"} to come by caravan.` });
         for (const [k, v] of Object.entries(costNow)) {
@@ -437,7 +468,7 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
           empireStock[k] = (empireStock[k] ?? 0) - paidHere;
         }
         for (const [k, v] of Object.entries(short)) promised[k] = (promised[k] ?? 0) + v;
-        have += 1;
+        added[id] = (added[id] ?? 0) + 1;
         queued += 1;
         slots -= 1;
       }
