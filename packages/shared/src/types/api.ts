@@ -461,6 +461,8 @@ export const advisorSettings = z.object({
   minLevels: z.record(z.string(), z.number().int().min(0).max(50)).default({}),
   /** Queue builds a region cannot pay for and let convoys bring the rest from other regions. */
   useOtherRegions: z.boolean().default(true),
+  /** Iron the Economic advisor never spends on builds: kept for research and training. 0 leaves only her automatic reserve. */
+  ironReserve: z.number().int().min(0).max(1_000_000).default(0),
   /** Guard loyalty: regions at risk of rebelling get their Temple and Cathedrals first, the next free convoys, and settlers as occupiers. */
   guardLoyalty: z.boolean().default(true),
   /** With guardLoyalty: train settlers for at-risk regions when no idle ones are near. */

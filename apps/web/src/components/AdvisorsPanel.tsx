@@ -782,6 +782,18 @@ function SettingsForm({ matchId, state, advisor }: { matchId: string; state: Mat
         <input type="checkbox" checked={draft.useOtherRegions} onChange={(e) => setDraft((d) => ({ ...d, useOtherRegions: e.target.checked }))} className="mt-0.5 accent-sky-400" />
         <span>Use other regions' resources: queue a build the region cannot pay for and let convoys bring the rest from the capital and the nearest stocked regions. Off, each region pays for its own.</span>
       </label>
+      <label className="flex items-center gap-2 text-xs text-slate-300">
+        <span className="flex-1">Iron reserve: she never spends the empire's iron below this on builds, so it is there for research and training. She keeps at least {balance.advisors.economic.scarceReserveHours} hours of your iron output back anyway; a bigger number here wins.</span>
+        <input
+          type="number"
+          min={0}
+          step={100}
+          value={draft.ironReserve}
+          onChange={(e) => setDraft((d) => ({ ...d, ironReserve: Math.max(0, Math.min(1_000_000, Math.floor(Number(e.target.value) || 0))) }))}
+          className="w-24 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-right text-slate-100"
+          data-advisor-iron-reserve
+        />
+      </label>
       <label className="flex items-start gap-2 text-xs text-slate-300">
         <input type="checkbox" checked={draft.guardLoyalty} onChange={(e) => setDraft((d) => ({ ...d, guardLoyalty: e.target.checked }))} className="mt-0.5 accent-sky-400" />
         <span>Guard loyalty: a region at risk of rebelling (heading under {Math.round(balance.advisors.economic.atRiskTarget * 100)}%, or under {Math.round(balance.advisors.economic.atRiskLoyalty * 100)}% and still falling) gets its Temple, then Cathedrals, at the front of its queue, cancelling the last build not yet started if the queue is full; its materials take the next free convoy; and if it was conquered and is short of occupiers, idle settlers are sent from the nearest regions to join them. Ordinary workers are never moved into such a region: more people there only raise the occupiers it needs.</span>
