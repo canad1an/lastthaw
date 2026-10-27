@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { and, eq, inArray, isNull } from "drizzle-orm";
-import { balance, colonizeBody, findRoute, sendArmyBody, travelSeconds, setCapitalBody, regionById, rallyBody, unitById, techEffectsOf } from "@lastthaw/shared";
+import { balance, colonizeBody, findRoute, paceFor, armySpeed, sendArmyBody, travelSeconds, setCapitalBody, regionById, rallyBody, unitById, techEffectsOf } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { armies, jobs, matchRegions, matches, playerTechs, players, tradeRoutes } from "../db/schema.js";
 import { matchNow } from "../sim/clock.js";
@@ -36,13 +36,15 @@ export async function armyRoutes(app: FastifyInstance, opts: { db: Db; publisher
   app.get("/api/matches/:id/route", async (req) => {
     const user = requireUser(req);
     const matchId = idParams.parse(req.params).id;
-    const q = req.query as { from?: string; to?: string; speed?: string };
+    const q = req.query as { from?: string; to?: string; speed?: string; units?: string };
     if (!q.from || !q.to) throw httpError(400, "from and to are required");
     const { m, p, techs } = await loadContext(matchId, user.id);
     const { roads, rails, harbors } = await waySetsFor(db, m.id, p.id, await alliesOf(db, m.id, p.id));
-    const route = findRoute(q.from, q.to, techs.has(balance.travel.seaTech), roads, rails, harbors);
+    // The units chosen ("train:3,wagon:1"), when given: a train convoy is priced at its pace on and off the track.
+    const units = Object.fromEntries((q.units ?? "").split(",").map((x) => x.split(":")).filter(([id, n]) => id && Number(n) > 0).map(([id, n]) => [id!, Number(n)]));
+    const route = findRoute(q.from, q.to, techs.has(balance.travel.seaTech), roads, rails, harbors, undefined, paceFor(units));
     if (!route) throw httpError(400, techs.has(balance.travel.seaTech) ? "no route" : "no land route; Shipbuilding allows sea crossings");
-    const speed = (Number(q.speed ?? 5) || 5) * (1 + techEffectsOf(techs).travel);
+    const speed = (Object.keys(units).length ? armySpeed(units) : Number(q.speed ?? 5) || 5) * (1 + techEffectsOf(techs).travel);
     return { path: route.path, seconds: travelSeconds(route, speed, m.speed), usesSea: route.usesSea };
   });
 

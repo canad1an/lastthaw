@@ -452,22 +452,26 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
   const sightedBy = useMemo(() => new Map(state.sighted.map((s) => [s.regionId, s])), [state.sighted]);
 
   const incomingSet = useMemo(() => new Set(state.incoming.map((i) => i.targetRegionId)), [state.incoming]);
-  // Road links: between adjacent regions that both have Roads, among mine and what I can see.
+  // Road links: between adjacent regions that both have Roads, among mine and what I can see; track where both have the
+  // Railway (Roads level 2), drawn in my colour between two of mine and grey elsewhere.
   const roadLinks = useMemo(() => {
     const colour = new Map<string, string>();
     const rail = new Set<string>();
     for (const o of state.owned) {
       if (o.frozen) continue;
       if ((o.buildings.roads ?? 0) >= 1) colour.set(o.regionId, colorOf(state.me.playerId));
-      if ((o.buildings.railway ?? 0) >= 1) rail.add(o.regionId);
+      if ((o.buildings.roads ?? 0) >= 2) rail.add(o.regionId);
     }
-    for (const s of state.sighted) if (s.roads && !colour.has(s.regionId)) colour.set(s.regionId, "#cbd5e1");
+    for (const s of state.sighted) {
+      if (s.roads && !colour.has(s.regionId)) colour.set(s.regionId, "#cbd5e1");
+      if (s.rail) rail.add(s.regionId);
+    }
     const out: Array<[string, string, string, "road" | "rail"]> = [];
     for (const [id, c] of colour) {
       for (const n of regionById(id)?.neighbors ?? []) {
         if (id < n && colour.has(n)) {
           const both = rail.has(id) && rail.has(n);
-          out.push([id, n, both ? "#f8fafc" : c === colour.get(n) ? c : "#cbd5e1", both ? "rail" : "road"]);
+          out.push([id, n, c === colour.get(n) ? c : "#cbd5e1", both ? "rail" : "road"]);
         }
       }
     }

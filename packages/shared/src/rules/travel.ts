@@ -37,8 +37,12 @@ function edgeCost(from: string, to: string, sea: boolean, roads?: ReadonlySet<st
  * Shortest route over land borders and, if allowed, sea routes. Dijkstra over
  * ~400 nodes; cheap enough to run per request. With `risk`, each region a land leg enters weighs that many km more
  * when choosing the way (unfriendly ground); the route's cost is still the real distance, its weight the risky one.
+ * With `pace` (a train convoy, see paceFor), each land leg's cost is multiplied by how much slower the convoy goes
+ * on it (1 on track, more off it) and track legs take the road factor rather than the rail cut, since the train's own
+ * speed is the track's benefit: the cost is then time at the convoy's top speed, so the quickest way wins even when
+ * it is longer.
  */
-export function findRoute(origin: string, target: string, allowSea: boolean, roads?: ReadonlySet<string>, rails?: ReadonlySet<string>, harbors?: ReadonlySet<string>, risk?: (regionId: string) => number): Route | null {
+export function findRoute(origin: string, target: string, allowSea: boolean, roads?: ReadonlySet<string>, rails?: ReadonlySet<string>, harbors?: ReadonlySet<string>, risk?: (regionId: string) => number, pace?: (onTrack: boolean) => number): Route | null {
   if (origin === target) return { path: [origin], cost: 0, usesSea: false, weight: 0 };
   const dist = new Map<string, number>([[origin, 0]]);
   const real = new Map<string, number>([[origin, 0]]);
@@ -65,7 +69,8 @@ export function findRoute(origin: string, target: string, allowSea: boolean, roa
     if (allowSea) for (const n of r.seaRoutes) edges.push([n, true]);
     for (const [n, sea] of edges) {
       if (closed.has(n)) continue;
-      const step = edgeCost(cur, n, sea, roads, rails, harbors);
+      const onTrack = !sea && !!rails && rails.has(cur) && rails.has(n);
+      const step = pace && !sea ? edgeCost(cur, n, sea, roads, undefined, harbors) * pace(onTrack) : edgeCost(cur, n, sea, roads, rails, harbors);
       const nd = best + step + (risk && !sea ? risk(n) : 0);
       if (nd < (dist.get(n) ?? Infinity)) {
         dist.set(n, nd);
@@ -114,6 +119,19 @@ export function laneLimitKm(units: Record<string, number>): number | null {
 }
 
 /** True when every unit in the group is a land hauler: a convoy, which waystations serve; a single soldier along makes it an army. */
+/**
+ * How a convoy's pace changes with the track: for a convoy with a unit that runs at full speed only on track (the
+ * Train), the factor each land leg's cost is multiplied by, 1 on track (between two Railway regions) and its top speed
+ * over its off-track speed elsewhere. Undefined for every other group, which goes at one speed everywhere.
+ */
+export function paceFor(units: Record<string, number>): ((onTrack: boolean) => number) | undefined {
+  const moving = Object.entries(units).filter(([, n]) => n > 0).map(([id]) => unitById.get(id)).filter((u): u is NonNullable<typeof u> => !!u);
+  if (!moving.length || !moving.some((u) => u.offRailSpeed !== undefined) || !isHaulerConvoy(units)) return undefined;
+  const top = Math.min(...moving.map((u) => u.speed));
+  const off = Math.min(...moving.map((u) => u.offRailSpeed ?? u.speed));
+  return (onTrack) => (onTrack ? 1 : top / Math.max(0.1, off));
+}
+
 export function isHaulerConvoy(units: Record<string, number>): boolean {
   const ids = Object.entries(units).filter(([, n]) => n > 0).map(([id]) => id);
   return ids.length > 0 && ids.every((id) => unitById.get(id)?.hauler && !unitById.get(id)?.naval);

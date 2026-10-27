@@ -324,15 +324,23 @@ export function WorldMap({ paint, selected, onSelect, focus, relief = false, fly
             const ra = regionById(a);
             const rb = regionById(b);
             if (!ra || !rb) return null;
-            const w = (unitsPerPx / view.k) * (kind === "rail" ? 2.2 : 1.6);
+            const w = (unitsPerPx / view.k) * (kind === "rail" ? 4.2 : 1.6);
             return (
               <g key={`${kind}-${a}-${b}`}>
-                <line x1={ra.x} y1={ra.y} x2={rb.x} y2={rb.y} stroke="#0f172a" strokeWidth={w * 1.9} strokeLinecap="round" opacity={0.7} />
+                <line x1={ra.x} y1={ra.y} x2={rb.x} y2={rb.y} stroke="#0f172a" strokeWidth={w * (kind === "rail" ? 1.4 : 1.9)} strokeLinecap="round" opacity={0.7} />
                 {kind === "rail" ? (
-                  <>
-                    <line x1={ra.x} y1={ra.y} x2={rb.x} y2={rb.y} stroke={colour} strokeWidth={w} strokeLinecap="round" />
-                    <line x1={ra.x} y1={ra.y} x2={rb.x} y2={rb.y} stroke="#0f172a" strokeWidth={w * 0.5} strokeDasharray={`${w * 0.8} ${w * 1.6}`} />
-                  </>
+                  (() => {
+                    // Track: sleepers across the line (a thick dashed stroke reads as a row of ties), and two rails either side of the centre.
+                    const len = Math.hypot(rb.x - ra.x, rb.y - ra.y) || 1;
+                    const ox = (-(rb.y - ra.y) / len) * w * 0.55, oy = ((rb.x - ra.x) / len) * w * 0.55;
+                    return (
+                      <>
+                        <line x1={ra.x} y1={ra.y} x2={rb.x} y2={rb.y} stroke="#a07d55" strokeWidth={w * 1.7} strokeDasharray={`${w * 0.35} ${w * 0.75}`} />
+                        <line x1={ra.x + ox} y1={ra.y + oy} x2={rb.x + ox} y2={rb.y + oy} stroke={colour} strokeWidth={w * 0.32} />
+                        <line x1={ra.x - ox} y1={ra.y - oy} x2={rb.x - ox} y2={rb.y - oy} stroke={colour} strokeWidth={w * 0.32} />
+                      </>
+                    );
+                  })()
                 ) : (
                   <line x1={ra.x} y1={ra.y} x2={rb.x} y2={rb.y} stroke={colour} strokeWidth={w} strokeLinecap="round" strokeDasharray={`${w * 3} ${w * 1.5}`} />
                 )}
@@ -511,7 +519,7 @@ export function WorldMap({ paint, selected, onSelect, focus, relief = false, fly
         const wall = wallOf(h.buildings);
         const defences = Object.entries(h.buildings)
           .filter(([id, lvl]) => lvl >= 1 && buildingById.get(id)?.category === "defense")
-          .map(([id, lvl]) => `${buildingById.get(id)?.name ?? id}${(buildingById.get(id)?.maxLevel ?? 1) > 1 ? ` lvl ${lvl}` : ""}`);
+          .map(([id, lvl]) => buildingById.get(id)?.levelNames?.[lvl] ?? `${buildingById.get(id)?.name ?? id}${(buildingById.get(id)?.maxLevel ?? 1) > 1 ? ` lvl ${lvl}` : ""}`);
         const ships = Object.fromEntries(Object.entries(h.units).filter(([id, n]) => n > 0 && unitById.get(id)?.naval));
         const anyShip = Object.keys(ships).length > 0;
         return (

@@ -65,8 +65,16 @@ export interface BuildingDef {
   category: BuildingCategory;
   /** Cost is per adjacent region: one build connects the region to all of its neighbours. */
   perNeighbor?: boolean;
-  /** Needs this building in the region first (Railway needs Roads). */
+  /** Needs this building in the region first (a Waystation needs Roads). */
   requiresBuilding?: string;
+  /** A level that needs a tech of its own: Roads level 2 is the Railway, which needs Railways. */
+  levelRequires?: Record<number, string>;
+  /** A level priced on its own base cost (still scaled by neighbours and the match day) instead of the level curve. */
+  levelCost?: Record<number, Cost>;
+  /** A level's own base build time, in seconds, instead of the level curve. */
+  levelSeconds?: Record<number, number>;
+  /** A level with a name of its own, shown beside the level number (Roads level 2: Railway). */
+  levelNames?: Record<number, string>;
   id: string;
   name: string;
   age: AgeIndex;
@@ -99,6 +107,8 @@ export interface UnitDef {
   breach?: number;
   /** Travel speed in km per game hour. */
   speed: number;
+  /** A unit that runs at `speed` only on track (between two Railway regions) goes at this speed everywhere else. */
+  offRailSpeed?: number;
   /** How much loot one unit can carry on a raid. */
   carry: number;
   cost: Cost;
@@ -191,8 +201,7 @@ export const BUILDINGS: readonly BuildingDef[] = [
   { id: "forge", category: "training", name: "Forge", age: 2, description: "Works iron faster; speeds up training.", maxLevel: 10, cost: { wood: 200, stone: 200, iron: 20 }, baseSeconds: 400, effect: { trainSpeed: 0.06, extract: { iron: 0.8 } }, requires: "iron_working" },
   { id: "walls", category: "defense", name: "Stone walls", age: 2, description: "Solid walls around the settlement. Built once, on top of a Palisade.", maxLevel: 1, cost: { stone: 2500, wood: 600 }, baseSeconds: 900, effect: { defense: 1.2 }, requires: "masonry", requiresBuilding: "palisade" },
   { id: "anti_air", category: "defense", name: "Anti-air battery", age: 6, description: "Radar-laid guns. Each level shoots down 15% of the bombers and scout planes that come over the region, up to 75%.", maxLevel: 5, cost: { iron: 300, stone: 10000 }, baseSeconds: 1800, effect: { antiAir: 0.15 }, requires: "radar" },
-  { id: "roads", category: "transport", name: "Roads", age: 1, description: "Paved roads to every neighbouring region. Built once; legs between two road regions are much faster, and the region is easier to hold.", maxLevel: 1, cost: { stone: 80, wood: 40 }, perNeighbor: true, baseSeconds: 600, effect: { loyalty: 0.1 }, requires: "road_building" },
-  { id: "railway", category: "transport", name: "Railway", age: 5, description: "Rails to every neighbouring region that also has them. Built once on top of Roads; legs between two railway regions are far faster.", maxLevel: 1, cost: { stone: 400, iron: 20 }, perNeighbor: true, baseSeconds: 1800, effect: { loyalty: 0.05 }, requires: "railways", requiresBuilding: "roads" },
+  { id: "roads", category: "transport", name: "Roads", age: 1, description: "Level 1: paved roads to every neighbouring region; legs between two road regions are much faster, and the region is easier to hold. Level 2 (Railway, with Railways): track to every neighbour that has it too, which trains run on at full speed.", maxLevel: 2, cost: { stone: 80, wood: 40 }, perNeighbor: true, baseSeconds: 600, effect: { loyalty: 0.1 }, requires: "road_building", levelRequires: { 2: "railways" }, levelCost: { 2: { stone: 400, iron: 20 } }, levelSeconds: { 2: 1800 }, levelNames: { 2: "Railway" } },
   { id: "waystation", category: "transport", name: "Waystation", age: 2, description: "Convoys arriving here unload and reload faster. Every hauler leg that ends in this region is 2% shorter per level, up to 30%, and the savings multiply along a route. Build it where your convoys arrive most: along freight corridors and in the capital. Armies and ships gain nothing.", maxLevel: 10, cost: { wood: 300, stone: 200 }, baseSeconds: 900, effect: { haul: 0.02 }, requires: "road_building", requiresBuilding: "roads" },
   { id: "airfield", category: "transport", name: "Airfield", age: 6, description: "A runway, hangars and fuel. Aircraft take off from here and transport planes land only where there is one. Built once, on Roads.", maxLevel: 1, cost: { stone: 20000, iron: 400 }, baseSeconds: 3600, effect: { airfield: true }, requires: "aviation", requiresBuilding: "roads" },
   { id: "temple", category: "loyalty", name: "Temple", age: 2, description: "Binds a conquered people to their new rulers. Built once: raises loyalty and keeps turning workers into occupiers until the region has enough, however much it grows.", maxLevel: 1, cost: { stone: 1500, wood: 800, food: 500 }, baseSeconds: 2400, effect: { loyalty: 0.2 } },
@@ -249,7 +258,7 @@ export const UNITS: readonly UnitDef[] = [
   { id: "canoe", name: "Canoe", age: 1, description: "Dugouts and rafts along the coast: carries a scout, a few settlers or a small load across a short lane. No harbour needed, but no open sea either.", attack: 0, defense: 1, speed: 10, carry: 100, cost: { wood: 80, food: 20 }, baseSeconds: 240, requires: "sailing", naval: true, hauler: true, shortLanes: true },
   { id: "galley", name: "Galley", age: 2, description: "Oared warship. Escorts crossings and sinks what it meets on its lane.", attack: 20, defense: 15, speed: 12, carry: 400, cost: { wood: 400, food: 100 }, baseSeconds: 420, requires: "shipbuilding", naval: true, needsBuilding: "harbor" },
   // Medieval
-  { id: "train", name: "Train", age: 5, description: "Iron rails and steam: carries eight caravans' worth and moves three times as fast. Needs Railways, and Railway on top of Roads to run at full speed.", attack: 0, defense: 1, speed: 24, carry: 4000, cost: { wood: 400, iron: 30 }, baseSeconds: 900, requires: "railways", civilian: true, hauler: true },
+  { id: "train", name: "Train", age: 5, description: "Iron rails and steam: carries eight caravans' worth. On track (between two regions with Roads level 2, the Railway) it runs three times as fast as a caravan; off the track it goes on as a freight wagon. Convoys take whichever way is quickest, a longer one along the track if it is.", attack: 0, defense: 1, speed: 24, offRailSpeed: 16, carry: 4000, cost: { wood: 400, iron: 30 }, baseSeconds: 900, requires: "railways", civilian: true, hauler: true },
   { id: "lorry", name: "Lorry", age: 6, description: "An engine on every road and diesel on every rail: carries 5,000 and outruns a train. Needs Internal combustion.", attack: 0, defense: 1, speed: 30, carry: 5000, cost: { wood: 500, iron: 60 }, baseSeconds: 900, requires: "internal_combustion", civilian: true, hauler: true },
   { id: "knight", name: "Knight", age: 4, description: "The finest heavy cavalry.", attack: 32, defense: 22, speed: 12, carry: 70, cost: { food: 250, iron: 20, horses: 1 }, baseSeconds: 600, requires: "chivalry", needsResource: "horses" },
   { id: "longbowman", name: "Longbowman", age: 4, description: "Deadly at range.", attack: 24, defense: 10, speed: 6, carry: 30, cost: { food: 120, wood: 80 }, baseSeconds: 420, requires: "chivalry" },
@@ -350,7 +359,7 @@ export const TECHS: readonly TechDef[] = [
   { id: "trade_fairs", name: "Trade fairs", age: 4, description: "Markets that draw people from far away.", cost: {food: 30000, wood: 20000}, baseSeconds: 7200, requires: ["guilds", "currency"], effect: {capacity: 20} },
   { id: "banking", name: "Banking", age: 4, description: "Letters of credit and vaults: stores grow again.", cost: {stone: 30000, copper: 100}, baseSeconds: 8640, requires: ["currency"], effect: {storage: 0.2} },
   { id: "wainwrights", name: "Wainwrights", age: 4, description: "Iron-tyred wheels, sprung beds and relay teams. When it completes, every wagon you have becomes a Freight wagon: it carries 2,000 and moves a third faster.", cost: {wood: 25000, iron: 200}, baseSeconds: 7200, requires: ["logistics", "guilds"] },
-  { id: "railways", name: "Railways", age: 5, description: "Iron rails and steam engines. When it completes, every wagon and freight wagon you have becomes a Train, and Railway can be built on top of Roads.", cost: {stone: 60000, wood: 40000, iron: 2000}, baseSeconds: 17280, requires: ["steam_power", "iron_casting", "wainwrights"] },
+  { id: "railways", name: "Railways", age: 5, description: "Iron rails and steam engines. When it completes, every wagon and freight wagon you have becomes a Train, and Roads can be raised to level 2, the Railway: track to every neighbour that has it too.", cost: {stone: 60000, wood: 40000, iron: 2000}, baseSeconds: 17280, requires: ["steam_power", "iron_casting", "wainwrights"] },
   { id: "compass", name: "Compass", age: 4, description: "A needle that always knows north: faster travel everywhere.", cost: {iron: 200, wood: 15000}, baseSeconds: 7200, requires: ["navigation"], effect: {travel: 0.1} },
   { id: "siege_engines", name: "Siege engines", age: 4, description: "Trebuchets.", cost: {wood: 3000, iron: 200}, baseSeconds: 5400, requires: ["siegecraft", "engineering"] },
   { id: "scholasticism", name: "Scholasticism", age: 4, description: "Universities: research goes much faster.", cost: {wood: 2500, stone: 2500}, baseSeconds: 5400, requires: ["literature"], effect: {researchSpeed: 0.3} },

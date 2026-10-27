@@ -1,10 +1,11 @@
 import { legIndex } from "../src/rules/travel.js";
+import { reachableLevel, levelName } from "../src/rules/buildings.js";
 import { describe, expect, it } from "vitest";
 import { balance } from "../src/config/balance.js";
 import { buildingById, techById, unitById } from "../src/config/ages.js";
 import { formatCountdown, realSecondsToGameHours, scaledDuration, tickGapSeconds } from "../src/rules/time.js";
 import { buildingCost, buildingSeconds, canAfford, dayCostMultiplier, missingFor, scaleCost, techCost, trainSeconds, unitCost } from "../src/rules/timers.js";
-import { findRoute, laneKey, missionLabel, seaLegsOf, travelSeconds } from "../src/rules/travel.js";
+import { findRoute, laneKey, missionLabel, paceFor, seaLegsOf, travelSeconds } from "../src/rules/travel.js";
 import { armySpeed, bestHauler, breachOf, carryCapacity, haulerCount, splitNaval } from "../src/rules/combat.js";
 import { loyaltyBand, loyaltyOutlook } from "../src/rules/loyalty.js";
 import { seededRng } from "../src/rules/rng.js";
@@ -95,6 +96,55 @@ describe("travel", () => {
     const oneSided = findRoute(start.id, next, false, new Set([start.id]))!;
     expect(oneSided.cost).toBeLessThanOrEqual(plain.cost);
     expect(oneSided.cost).toBeGreaterThanOrEqual(road.cost);
+  });
+  it("Roads level 2 is the Railway: its own price and time, and out of reach without Railways", () => {
+    const roads = buildingById.get("roads")!;
+    expect(reachableLevel(roads, new Set())).toBe(1);
+    expect(reachableLevel(roads, new Set(["railways"]))).toBe(2);
+    expect(levelName(roads, 2)).toBe("Railway");
+    expect(levelName(roads, 1)).toBeNull();
+    // Priced on the Railway's own cost, per neighbour, not on the level curve.
+    { const { levelCost: _lc, ...plain } = roads; void _lc; expect(buildingCost(roads, 2, 0, 3)).toEqual(buildingCost({ ...plain, cost: roads.levelCost![2]! }, 1, 0, 3)); }
+    expect(buildingSeconds(roads, 2)).toBe(roads.levelSeconds![2]);
+  });
+  it("trains run at full speed on track and as a freight wagon off it, and take the quickest way", () => {
+    const pace = paceFor({ train: 3 })!;
+    expect(pace(true)).toBe(1);
+    expect(pace(false)).toBeCloseTo(unitById.get("train")!.speed / unitById.get("train")!.offRailSpeed!);
+    expect(paceFor({ freight_wagon: 2 })).toBeUndefined();
+    expect(paceFor({ train: 1, swordsman: 1 })).toBeUndefined();
+    // Somewhere on the map: A and D two hops apart through B or through C. Track on A, C and D (not B): the shortest way
+    // goes by B, the quickest for a train by C.
+    let found: { a: string; b: string; c: string; d: string } | null = null;
+    // A Railway region has Roads too, so the track regions are road regions as well.
+    const leg = (x: string, y: string, rails?: ReadonlySet<string>, p?: (t: boolean) => number) => findRoute(x, y, false, rails, rails, undefined, undefined, p)!.cost;
+    search: for (const a of allRegions()) {
+      for (const d of allRegions()) {
+        if (d === a || a.neighbors.includes(d.id)) continue;
+        const mids = a.neighbors.filter((m) => d.neighbors.includes(m));
+        for (const b of mids)
+          for (const c of mids) {
+            if (b === c) continue;
+            const rails = new Set([a.id, c, d.id]);
+            const viaB = leg(a.id, b) + leg(b, d.id);
+            const viaC = leg(a.id, c) + leg(c, d.id);
+            if (viaB >= viaC) continue;
+            const trainB = leg(a.id, b, rails, pace) + leg(b, d.id, rails, pace);
+            const trainC = leg(a.id, c, rails, pace) + leg(c, d.id, rails, pace);
+            if (trainC < trainB) { found = { a: a.id, b, c, d: d.id }; break search; }
+          }
+      }
+    }
+    expect(found, "two ways of two hops where the track makes the longer one quicker").toBeTruthy();
+    const { a, b, c, d } = found!;
+    const rails = new Set([a, c, d]);
+    expect(findRoute(a, d, false)!.path).toEqual([a, b, d]);
+    const train = findRoute(a, d, false, rails, rails, undefined, undefined, pace)!;
+    expect(train.path).toEqual([a, c, d]);
+    // Its cost is time at the train's top speed: the track legs at the road rate (the train's speed is the track's gain).
+    expect(train.cost).toBeCloseTo(findRoute(a, c, false, rails)!.cost + findRoute(c, d, false, rails)!.cost, 6);
+    // Armies on the same track keep the rail cut.
+    expect(findRoute(a, c, false, undefined, rails)!.cost).toBeCloseTo(findRoute(a, c, false)!.cost * balance.travel.railBothFactor, 6);
   });
   it("travel time falls with speed and the match speed", () => {
     const r = findRoute(start.id, start.neighbors[0]!, false)!;

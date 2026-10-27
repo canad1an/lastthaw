@@ -4,7 +4,7 @@
  * techs and the weather on the path count on every leg, not only the first.
  */
 import { and, eq, gt, inArray, sql } from "drizzle-orm";
-import { airRoute, armySpeed, balance, findRoute, haulFactor, isAirGroup, isHaulerConvoy, techEffectsOf, travelSeconds, unitById, type Route, type UnitCounts, splitNaval, seaPath, laneLimitKm } from "@lastthaw/shared";
+import { airRoute, armySpeed, balance, findRoute, paceFor, haulFactor, isAirGroup, isHaulerConvoy, techEffectsOf, travelSeconds, unitById, type Route, type UnitCounts, splitNaval, seaPath, laneLimitKm } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { matchRegions, playerTechs } from "../db/schema.js";
 import { alliesOf } from "./alliances.js";
@@ -43,7 +43,8 @@ export function routeFor(ctx: LegContext, from: string, to: string, allowSea?: b
   if (ships && units) return seaPath(from, to, laneLimitKm(units) ?? Infinity, ctx.harbors) ?? findRoute(from, to, true, ctx.roads, ctx.rails, ctx.harbors);
   // Haulers on land keep to friendly ground where they can: a road through strangers' country risks an ambush.
   const risk = units && ctx.friendly && isHaulerConvoy(units) ? (id: string) => (id === to || ctx.friendly!.has(id) ? 0 : balance.travel.unfriendlyRiskKm) : undefined;
-  return findRoute(from, to, allowSea ?? false, ctx.roads, ctx.rails, ctx.harbors, risk);
+  // A train convoy goes at full speed on track and as a freight wagon off it: the quickest way, not the shortest.
+  return findRoute(from, to, allowSea ?? false, ctx.roads, ctx.rails, ctx.harbors, risk, units ? paceFor(units) : undefined);
 }
 
 /** A storm anywhere on the path slows the leg by the storm's travel factor. */

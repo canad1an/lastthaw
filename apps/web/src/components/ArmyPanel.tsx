@@ -53,8 +53,8 @@ export function SendArmy({
   const chosen = Object.fromEntries(Object.entries(units).filter(([, n]) => n > 0));
   const speed = Object.keys(chosen).length ? armySpeed(chosen) : 5;
   const route = useQuery({
-    queryKey: ["route", matchId, owned.regionId, target, speed],
-    queryFn: () => fetch(`/api/matches/${matchId}/route?from=${owned.regionId}&to=${target}&speed=${speed}`, { credentials: "include" }).then((r) => r.json() as Promise<{ seconds?: number; path?: string[]; usesSea?: boolean; error?: string }>),
+    queryKey: ["route", matchId, owned.regionId, target, speed, JSON.stringify(chosen)],
+    queryFn: () => fetch(`/api/matches/${matchId}/route?from=${owned.regionId}&to=${target}&speed=${speed}&units=${encodeURIComponent(Object.entries(chosen).map(([id, n]) => `${id}:${n}`).join(","))}`, { credentials: "include" }).then((r) => r.json() as Promise<{ seconds?: number; path?: string[]; usesSea?: boolean; error?: string }>),
     enabled: !!target && target !== owned.regionId,
   });
   const send = useMutation({

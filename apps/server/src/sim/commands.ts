@@ -5,7 +5,7 @@
  * pays costs up front and returns what it created. Errors carry statusCode.
  */
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
-import { availableUnits, armySpeed, balance, buildingBlockedBy, carryCapacity, buildingById, buildingCost, buildingSeconds, canAfford, effectsOf, findRoute, missingFor, realSeconds, regionById, techById, techCost, techSeconds, trainSeconds, travelSeconds, unitById, unitCost, type Cost, type MissionKind, caravanCarry, techEffectsOf, distanceKm, haulerCarry, HAULER_IDS, splitNaval, seaLegsOf, laneKey, laneName, resolveCombat, laneLimitKm, isAirGroup, airRangeKm, airRoute, nextHopTo, seaPath, isHaulerConvoy } from "@lastthaw/shared";
+import { availableUnits, armySpeed, balance, buildingBlockedBy, carryCapacity, buildingById, buildingCost, buildingSeconds, canAfford, effectsOf, findRoute, missingFor, realSeconds, regionById, techById, techCost, techSeconds, trainSeconds, travelSeconds, unitById, unitCost, type Cost, type MissionKind, caravanCarry, techEffectsOf, distanceKm, haulerCarry, HAULER_IDS, splitNaval, seaLegsOf, laneKey, laneName, resolveCombat, laneLimitKm, isAirGroup, airRangeKm, airRoute, nextHopTo, seaPath, isHaulerConvoy, paceFor, reachableLevel, levelName } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { armies, battles, jobs, matchRegions, matches, messages, players, tradeRoutes, regionSightings, playerTechs } from "../db/schema.js";
 import { matchDayAt, matchNow } from "./clock.js";
@@ -89,6 +89,7 @@ export async function queueBuild(ctx: CommandContext, regionId: string, building
     const queuedLevels = pending.filter((j) => j.kind === "build" && j.refId === buildingId).length;
     const level = (row.buildings[buildingId] ?? 0) + queuedLevels + 1;
     if (level > def.maxLevel) throw httpError(400, `${def.name} is at its maximum level`);
+    if (level > reachableLevel(def, ctx.techs)) throw httpError(400, `${def.name} level ${level}${levelName(def, level) ? ` (${levelName(def, level)})` : ""} needs ${techById.get(def.levelRequires?.[level] ?? "")?.name ?? "a tech you do not have"}`);
     if (def.requiresBuilding && (row.buildings[def.requiresBuilding] ?? 0) < 1) throw httpError(400, `${def.name} needs ${buildingById.get(def.requiresBuilding)?.name ?? def.requiresBuilding} here first`);
     const cost = buildingCost(def, level, matchDayAt(m, now), regionById(regionId)?.neighbors.length ?? 1);
     const pooled: Record<string, number> = {};
@@ -474,7 +475,7 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
   const risk = friendly ? (id: string) => (id === body.targetRegionId || friendly(id) ? 0 : balance.travel.unfriendlyRiskKm) : undefined;
   const route = air
     ? airRoute(regionId, body.targetRegionId)
-    : voyage ?? findRoute(regionId, body.targetRegionId, false, roads, rails, harbors, risk);
+    : voyage ?? findRoute(regionId, body.targetRegionId, false, roads, rails, harbors, risk, paceFor(units));
   // Nothing walks on water: a convoy without ships stays on land. Goods cross by ship from a harbour; armies sail aboard ships.
   if (!route) throw httpError(400, regionById(regionId)?.seaRoutes.includes(body.targetRegionId) ? "no land route: that crossing takes ships (a canoe or a cog), sent with the units aboard" : "no land route to that region");
   const now = matchNow(m);

@@ -1,5 +1,5 @@
 import { and, eq, gt, inArray, isNotNull, isNull, sql } from "drizzle-orm";
-import { availableBuildings, availableTechs, buildingBlockedBy, availableUnits, balance, buildingById, buildingCost, dayCostMultiplier, effectsOf, freezeDayForLatitude, distanceKm, regionById, seededRng, techById, techCost, normalizeAssignment, type Cost, techEffectsOf, haulerCount, unitById, TECHS, breachOf, wallBonusAgainst } from "@lastthaw/shared";
+import { reachableLevel, availableBuildings, availableTechs, buildingBlockedBy, availableUnits, balance, buildingById, buildingCost, dayCostMultiplier, effectsOf, freezeDayForLatitude, distanceKm, regionById, seededRng, techById, techCost, normalizeAssignment, type Cost, techEffectsOf, haulerCount, unitById, TECHS, breachOf, wallBonusAgainst } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { armies, bounties, jobs, marketOrders, matchRegions, mercenaryOffers, playerTechs, players, refugeeOffers, pacts } from "../db/schema.js";
 import { hireMercenaries } from "./worldEvents.js";
@@ -16,7 +16,7 @@ import type { MatchRow } from "../worker/jobs.js";
 export type Difficulty = "easy" | "medium" | "hard";
 export type Temperament = "peaceful" | "balanced" | "raider";
 
-const BUILD_ORDER = ["huts", "hunting_grounds", "lumber_camp", "storehouse", "quarry", "farm", "watchtower", "palisade", "granary", "mine", "stables", "walls", "barracks", "roads", "waystation", "railway", "temple", "forge", "market", "aqueduct", "fort", "library", "harbor", "windmill", "castle", "guild_hall", "university", "cathedral", "factory", "arsenal", "power_plant", "bunker", "great_hearth"];
+const BUILD_ORDER = ["huts", "hunting_grounds", "lumber_camp", "storehouse", "quarry", "farm", "watchtower", "palisade", "granary", "mine", "stables", "walls", "barracks", "roads", "waystation", "temple", "forge", "market", "aqueduct", "fort", "library", "harbor", "windmill", "castle", "guild_hall", "university", "cathedral", "factory", "arsenal", "power_plant", "bunker", "great_hearth"];
 const RESEARCH_ORDER = [
   "fire_making", "flint_tools", "agriculture", "fishing_nets", "stone_axes", "animal_husbandry", "weaving", "bronze_working",
   "mining", "irrigation", "writing", "the_wheel", "wagon_building", "pottery", "herbal_medicine", "road_building", "bronze_weapons", "iron_working",
@@ -250,7 +250,7 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
       if (!def) continue;
       if (buildingBlockedBy(def, region, row.buildings, row.isCapital)) continue;
       const level = row.buildings[id] ?? 0;
-      if (level >= Math.min(def.maxLevel, tier.buildCap(p.age))) continue;
+      if (level >= Math.min(reachableLevel(def, techs), tier.buildCap(p.age))) continue;
       const cost = buildingCost(def, level + 1, matchDay, region.neighbors.length);
       if (!wanted) wanted = cost;
       if (slots <= 0) break;

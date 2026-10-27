@@ -63,7 +63,7 @@ export function buildingPreview(def: BuildingDef, level: number, buildings: Reco
   if (e.researchSpeed) rows.push({ label: "Research speed", before: `+${pct(before.researchSpeed)}`, after: `+${pct(after.researchSpeed)}`, tone: "up" });
   if (def.perNeighbor) rows.push({ label: "Connects to", before: "", after: `${region.neighbors.length} neighbouring regions`, tone: "up" });
   if (e.harbor) rows.push({ label: "Sea legs", before: "", after: `${Math.round((1 - balance.travel.harborBothFactor) * 100)}% faster to another harbour, ${Math.round((1 - balance.travel.harborOneFactor) * 100)}% faster to open coast`, tone: "up" });
-  if (def.perNeighbor && def.id === "railway") rows.push({ label: "Travel on rail legs", before: "", after: `${Math.round((1 - balance.travel.railBothFactor) * 100)}% faster between two railway regions`, tone: "up" });
+  if (def.perNeighbor && def.levelNames?.[level] === "Railway") rows.push({ label: "Track", before: "", after: `trains run at full speed to every neighbour with a Railway too (off the track they go at freight-wagon pace); armies ${Math.round((1 - balance.travel.railBothFactor) * 100)}% faster between two railway regions`, tone: "up" });
   else if (def.perNeighbor) rows.push({ label: "Travel on road legs", before: "", after: `${Math.round((1 - balance.travel.roadBothFactor) * 100)}% faster (both ends), ${Math.round((1 - balance.travel.roadOneFactor) * 100)}% (one end)`, tone: "up" });
   if (e.harbor) rows.push({ label: "Sea routes", before: before.harbor ? "yes" : "no", after: "yes", tone: "up" });
 

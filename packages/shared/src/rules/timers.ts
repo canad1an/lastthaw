@@ -11,6 +11,8 @@ import { scaledDuration } from "./time.js";
 export function buildingSeconds(def: BuildingDef, level: number): number {
   const t = balance.timers;
   if (def.wonder) return def.baseSeconds;
+  const own = def.levelSeconds?.[level];
+  if (own !== undefined) return Math.min(t.maxSeconds, own);
   return Math.min(t.maxSeconds, def.baseSeconds * Math.pow(t.levelGrowth, Math.max(0, level - 1)) * Math.pow(t.lateTimeGrowth, Math.max(0, level - t.lateLevel)));
 }
 
@@ -28,8 +30,10 @@ export function dayCostMultiplier(day: number): number {
 
 export function buildingCost(def: BuildingDef, level: number, day = 0, neighbors = 1): Cost {
   const t = balance.timers;
-  const g = Math.pow(t.costGrowth, Math.max(0, level - 1)) * Math.pow(t.lateCostGrowth, Math.max(0, level - t.lateLevel));
-  return scaleCost(def.cost, g * (def.wonder ? 1 : dayCostMultiplier(day)) * (def.perNeighbor ? Math.max(1, neighbors) : 1));
+  // A level with its own price (Roads level 2, the Railway) is not on the level curve.
+  const own = def.levelCost?.[level];
+  const g = own ? 1 : Math.pow(t.costGrowth, Math.max(0, level - 1)) * Math.pow(t.lateCostGrowth, Math.max(0, level - t.lateLevel));
+  return scaleCost(own ?? def.cost, g * (def.wonder ? 1 : dayCostMultiplier(day)) * (def.perNeighbor ? Math.max(1, neighbors) : 1));
 }
 
 /** Age advances are priced in absolute empire wealth (paid from every region) and do not scale with the day; other techs do. */

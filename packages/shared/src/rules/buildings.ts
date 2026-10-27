@@ -97,6 +97,18 @@ export function wallOf(buildings: Record<string, number> | undefined | null): st
 }
 
 /** Buildings a player of `age` with `techs` may build or upgrade. */
+/** The highest level of a building these techs allow: a level needing a tech not known (Roads level 2 needs Railways) is out of reach, and every level above it. */
+export function reachableLevel(def: BuildingDef, techs: ReadonlySet<string>): number {
+  let top = def.maxLevel;
+  for (const [lv, tech] of Object.entries(def.levelRequires ?? {})) if (!techs.has(tech)) top = Math.min(top, Number(lv) - 1);
+  return top;
+}
+
+/** What a level is called when it has a name of its own ("Railway" for Roads level 2), else null. */
+export function levelName(def: BuildingDef, level: number): string | null {
+  return def.levelNames?.[level] ?? null;
+}
+
 export function availableBuildings(age: number, techs: ReadonlySet<string>): BuildingDef[] {
   return BUILDINGS.filter((b) => b.age <= age && (!b.requires || techs.has(b.requires)));
 }

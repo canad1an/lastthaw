@@ -1258,6 +1258,70 @@ describe("api routes", () => {
     }
   });
 
+  it("the Railway is Roads level 2: out of reach before Railways, old Railways become it, and trains run faster on the track", async () => {
+    const base = `/api/matches/${gameId}`;
+    const ben = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
+    const benPid = ben.me.playerId;
+    const now = Date.parse(ben.match.now);
+    const taken = new Set((await db.select({ regionId: matchRegions.regionId }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), sql`${matchRegions.ownerPlayerId} is not null`))).map((r) => r.regionId));
+    // Two free neighbours for Ben.
+    const a = allRegions().find((r) => !taken.has(r.id) && r.neighbors.some((n) => !taken.has(n)))!;
+    const b = a.neighbors.find((n) => !taken.has(n))!;
+    const claim = (id: string, buildings: Record<string, number>, units: Record<string, number> = {}) =>
+      db
+        .insert(matchRegions)
+        .values({ matchId: gameId, regionId: id, assignment: { ...balance.start.assignment }, settledAt: new Date(now), ownerPlayerId: benPid, popWorkers: 5, buildings, units, food: 2000, wood: 9000, stone: 9000, special: { iron: 500 } })
+        .onConflictDoUpdate({ target: [matchRegions.matchId, matchRegions.regionId], set: { ownerPlayerId: benPid, buildings, units, settledAt: new Date(now), food: 2000, wood: 9000, stone: 9000, special: { iron: 500 } } });
+    await claim(a.id, { roads: 1 }, { train: 2 });
+    await claim(b, { roads: 1 });
+    const [benRow] = await db.select({ age: players.age }).from(players).where(eq(players.id, benPid));
+    await db.update(players).set({ age: Math.max(5, benRow!.age) }).where(eq(players.id, benPid));
+    const hadRailways = (await db.select().from(playerTechs).where(and(eq(playerTechs.playerId, benPid), eq(playerTechs.techId, "railways")))).length > 0;
+    const hadRoads = (await db.select().from(playerTechs).where(and(eq(playerTechs.playerId, benPid), eq(playerTechs.techId, "road_building")))).length > 0;
+    await db.insert(playerTechs).values({ matchId: gameId, playerId: benPid, techId: "road_building", completedAt: new Date() }).onConflictDoNothing();
+    const sentIds: string[] = [];
+    try {
+      // Without Railways, Roads stops at level 1.
+      await db.delete(playerTechs).where(and(eq(playerTechs.playerId, benPid), eq(playerTechs.techId, "railways")));
+      const early = await Ben.call("POST", `${base}/regions/${a.id}/build`, { buildingId: "roads" });
+      expect(early.statusCode).toBe(400);
+      expect(early.body).toMatch(/Railway/);
+      await db.insert(playerTechs).values({ matchId: gameId, playerId: benPid, techId: "railways", completedAt: new Date() }).onConflictDoNothing();
+      const ok = await Ben.call("POST", `${base}/regions/${a.id}/build`, { buildingId: "roads" });
+      expect(ok.statusCode, ok.body).toBe(200);
+      await db.update(jobs).set({ cancelledAt: new Date() }).where(eq(jobs.id, (ok.json() as { jobId: string }).jobId));
+
+      // Trains: on plain roads first, then with both ends raised to the Railway.
+      const send = async () => {
+        const r = await Ben.call("POST", `${base}/regions/${a.id}/send`, { mission: "transport", targetRegionId: b, units: { train: 1 }, people: 0, cargo: { wood: 100 } });
+        expect(r.statusCode, r.body).toBe(200);
+        const id = (r.json() as { armyId: string }).armyId;
+        sentIds.push(id);
+        const [row] = await db.select().from(armies).where(eq(armies.id, id));
+        return row!.arrivesAt.getTime() - row!.departsAt.getTime();
+      };
+      const onRoads = await send();
+      await claim(a.id, { roads: 2 }, { train: 1 });
+      await claim(b, { roads: 2 });
+      const onTrack = await send();
+      expect(onTrack).toBeLessThan(onRoads);
+
+      // A region from before still carrying the old Railway building is converted by the migration.
+      await db.update(matchRegions).set({ buildings: { roads: 1, railway: 1 } }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, b)));
+      const { readFileSync } = await import("node:fs");
+      const sqlText = readFileSync(new URL("../drizzle/0054_roads_rail.sql", import.meta.url), "utf8");
+      for (const stmt of sqlText.split("--> statement-breakpoint")) if (stmt.replace(/--[^\n]*\n/g, "").trim()) await db.execute(sql.raw(stmt));
+      const [converted] = await db.select({ buildings: matchRegions.buildings }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, b)));
+      expect(converted!.buildings).toEqual({ roads: 2 });
+    } finally {
+      if (sentIds.length) await db.delete(armies).where(inArray(armies.id, sentIds));
+      if (!hadRailways) await db.delete(playerTechs).where(and(eq(playerTechs.playerId, benPid), eq(playerTechs.techId, "railways")));
+      if (!hadRoads) await db.delete(playerTechs).where(and(eq(playerTechs.playerId, benPid), eq(playerTechs.techId, "road_building")));
+      await db.update(players).set({ age: benRow!.age }).where(eq(players.id, benPid));
+      for (const id of [a.id, b]) await db.delete(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, id)));
+    }
+  });
+
   it("canoes sail a short lane when no cog is to be had, and never a long one", async () => {
     const base = `/api/matches/${gameId}`;
     const benState = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());

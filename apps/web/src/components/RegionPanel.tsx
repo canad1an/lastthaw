@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { AGES, availableBuildings, availableUnits, buildingBlockedBy, balance, buildingById, buildingCost, matchDayOf, buildingSeconds, canAfford, computeRates, normalizeAssignment, realSeconds, regionById, settle, totalPopulation, trainSeconds, unitById, unitCost, formatCountdown, type MatchStateView, type OwnedRegionView, type RegionEconomy, type SightedRegionView, type SpecialResource, distanceKm, NOTE_COLOURS, type NoteColour, loyaltyBand, loyaltyOutlook, HAULER_IDS, haulerCarry, type AgeIndex } from "@lastthaw/shared";
+import { reachableLevel, levelName, techById, AGES, availableBuildings, availableUnits, buildingBlockedBy, balance, buildingById, buildingCost, matchDayOf, buildingSeconds, canAfford, computeRates, normalizeAssignment, realSeconds, regionById, settle, totalPopulation, trainSeconds, unitById, unitCost, formatCountdown, type MatchStateView, type OwnedRegionView, type RegionEconomy, type SightedRegionView, type SpecialResource, distanceKm, NOTE_COLOURS, type NoteColour, loyaltyBand, loyaltyOutlook, HAULER_IDS, haulerCarry, type AgeIndex } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { useNow } from "../hooks/useNow.js";
 import { Button, Card, CardHeader, ConfirmDialog, ErrorText, fmt, signed } from "./ui.js";
@@ -611,9 +611,12 @@ function BuildTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
           const queued = pendingHere.filter((j) => j.kind === "build" && j.refId === b.id).length;
           const level = (owned.buildings[b.id] ?? 0) + queued + 1;
           const maxed = level > b.maxLevel;
+          // A level that needs a tech not known yet (Roads level 2, the Railway, needs Railways).
+          const locked = !maxed && level > reachableLevel(b, techs);
+          const named = levelName(b, level);
           const cost = buildingCost(b, level, matchDayOf(state, clockOffsetMs), regionById(owned.regionId)?.neighbors.length ?? 1);
           const blocked = buildingBlockedBy(b, regionById(owned.regionId)!, owned.buildings, owned.isCapital);
-          const ok = !maxed && !queueFull && !blocked && canAfford(stock, cost);
+          const ok = !maxed && !locked && !queueFull && !blocked && canAfford(stock, cost);
           const secs = realSeconds(buildingSeconds(b, level), 0, state.match.speed);
           return (
             <li key={b.id} className={`flex items-center justify-between gap-2 py-2 text-sm ${blocked ? "opacity-60" : ""}`}>
@@ -631,6 +634,8 @@ function BuildTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
                       <span className="text-xs text-slate-600">ⓘ</span>
                     </div>
                     <p className="truncate text-xs text-slate-400">{b.description}</p>
+                    {!maxed && named && <p className="text-xs text-sky-300">Level {level}: {named}</p>}
+                    {locked && <p className="text-xs text-rose-300">Level {level} needs {techById.get(b.levelRequires?.[level] ?? "")?.name ?? "a tech you do not have"}</p>}
                     {!maxed && (
                       <p>
                         <CostLine cost={cost} stock={stock} suffix={formatCountdown(secs)} />
@@ -643,7 +648,7 @@ function BuildTab({ matchId, state, owned, clockOffsetMs }: { matchId: string; s
                 {blocked ? <p className="text-rose-300">{blocked}</p> : <BuildingTip def={b} level={Math.min(level, b.maxLevel)} owned={owned} economy={live.e} speed={state.match.speed} maxed={maxed} />}
               </Tooltip>
               <Button variant="ghost" disabled={!ok || m.isPending} onClick={() => m.mutate(b.id)}>
-                {maxed ? "Max" : blocked ? "—" : `Lvl ${level}`}
+                {maxed ? "Max" : blocked ? "—" : named ? `${named}` : `Lvl ${level}`}
               </Button>
               {(owned.buildings[b.id] ?? 0) >= 1 && !b.wonder && (
                 <button

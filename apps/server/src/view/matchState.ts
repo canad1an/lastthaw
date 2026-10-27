@@ -100,6 +100,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string, o
       population: snap.population ?? null,
       seenAt: s.seenAt.toISOString(),
       roads: (snap.buildings?.roads ?? 0) >= 1,
+      rail: (snap.buildings?.roads ?? 0) >= 2,
       wall: wallOf(snap.buildings),
       storm: false,
     };
@@ -129,6 +130,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string, o
         population: economy.popWorkers + economy.popSoldiers + economy.popOccupiers,
         seenAt: now.toISOString(),
         roads: ((row.buildings as Record<string, number>).roads ?? 0) >= 1,
+        rail: ((row.buildings as Record<string, number>).roads ?? 0) >= 2,
         wall: wallOf(row.buildings as Record<string, number>),
         storm: false,
       };
@@ -164,6 +166,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string, o
           population: economy.popWorkers + economy.popSoldiers + economy.popOccupiers,
           seenAt: now.toISOString(),
           roads: ((row.buildings as Record<string, number>).roads ?? 0) >= 1,
+          rail: ((row.buildings as Record<string, number>).roads ?? 0) >= 2,
           wall: wallOf(row.buildings as Record<string, number>),
           storm: false,
           units,
@@ -206,6 +209,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string, o
           population: economy.popWorkers + economy.popSoldiers + economy.popOccupiers,
           seenAt: now.toISOString(),
           roads: ((row.buildings as Record<string, number>).roads ?? 0) >= 1,
+          rail: ((row.buildings as Record<string, number>).roads ?? 0) >= 2,
           wall: wallOf(row.buildings as Record<string, number>),
           storm: false,
         };
@@ -219,7 +223,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string, o
       // Empty land in view is listed too, so it reads as explored.
       for (const id of visible) {
         if (seen.has(id)) continue;
-        sighted.push({ regionId: id, ownerPlayerId: null, ownerName: null, population: 0, seenAt: now.toISOString(), roads: false, wall: null, storm: false });
+        sighted.push({ regionId: id, ownerPlayerId: null, ownerName: null, population: 0, seenAt: now.toISOString(), roads: false, rail: false, wall: null, storm: false });
         seen.add(id);
       }
     }
@@ -495,6 +499,7 @@ async function buildObserverState(db: Db, m: typeof matches.$inferSelect, matchI
       population: economy.popWorkers + economy.popSoldiers + economy.popOccupiers,
       seenAt: now.toISOString(),
       roads: ((row.buildings as Record<string, number>).roads ?? 0) >= 1,
+      rail: ((row.buildings as Record<string, number>).roads ?? 0) >= 2,
       wall: wallOf(row.buildings as Record<string, number>),
       storm: !!row.stormUntil && row.stormUntil > now,
       units: Object.fromEntries(Object.entries(row.units as Record<string, number>).filter(([, n]) => n > 0)),

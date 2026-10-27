@@ -157,7 +157,8 @@ export async function waySetsFor(db: Db | Tx, matchId: string, playerId: string,
     .from(matchRegions)
     .where(and(eq(matchRegions.matchId, matchId), inArray(matchRegions.ownerPlayerId, owners), isNull(matchRegions.frozenAt)));
   const roads = new Set(rows.filter((r) => ((r.buildings as Record<string, number>).roads ?? 0) >= 1).map((r) => r.regionId));
-  const rails = new Set(rows.filter((r) => ((r.buildings as Record<string, number>).railway ?? 0) >= 1).map((r) => r.regionId));
+  // Track: Roads at level 2, the Railway.
+  const rails = new Set(rows.filter((r) => ((r.buildings as Record<string, number>).roads ?? 0) >= 2).map((r) => r.regionId));
   const harbors = new Set(rows.filter((r) => ((r.buildings as Record<string, number>).harbor ?? 0) >= 1).map((r) => r.regionId));
   // Waystations: the share each region cuts from hauler legs ending there.
   const stations = new Map<string, number>();

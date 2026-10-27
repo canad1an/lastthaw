@@ -133,10 +133,16 @@ describe("the hauler ladder", () => {
     for (const u of unitById.values()) if (u.requires) expect(techById.get(u.requires)?.age, `${u.id} needs ${u.requires}`).toBeLessThanOrEqual(u.age);
     for (const b of buildingById.values()) if (b.requires) expect(techById.get(b.requires)?.age, `${b.id} needs ${b.requires}`).toBeLessThanOrEqual(b.age);
   });
-  it("the train, the Railway and Railways arrive together, in the Industrial Age", () => {
+  it("the train and Railways arrive together, in the Industrial Age, and the Railway is Roads level 2", () => {
     expect(unitById.get("train")!.age).toBe(5);
-    expect(buildingById.get("railway")!.age).toBe(5);
     expect(techById.get("railways")!.age).toBe(5);
+    expect(buildingById.has("railway")).toBe(false);
+    const roads = buildingById.get("roads")!;
+    expect(roads.maxLevel).toBe(2);
+    expect(roads.levelRequires?.[2]).toBe("railways");
+    expect(roads.levelNames?.[2]).toBe("Railway");
+    // Every tech a level needs is a real tech.
+    for (const b of buildingById.values()) for (const t of Object.values(b.levelRequires ?? {})) expect(techById.has(t), `${b.id} level needs ${t}`).toBe(true);
   });
   it("each fleet rebuild comes with its age and carries more and moves faster than the one before", () => {
     const steps = Object.entries(balance.trade.fleetUpgradeTech)

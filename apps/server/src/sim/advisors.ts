@@ -7,7 +7,7 @@
 import { enterMap, mapOf } from "../map/scope.js";
 import { and, asc, eq, isNull, lte, sql } from "drizzle-orm";
 import type pino from "pino";
-import { balance, availableBuildings, buildingBlockedBy, buildingById, buildingCost, canAfford, computeRates, normalizeAssignment, regionById, unitById, HAULER_IDS, type AdvisorKind, type AdvisorSettings, type AdvisorReport, type AdvisorSuggestion, type Cost, type RegionEconomy, advisorSettings as advisorSettingsSchema, RESOURCE_WORTH, findRoute, loyaltyOutlook, distanceKm } from "@lastthaw/shared";
+import { balance, reachableLevel, availableBuildings, buildingBlockedBy, buildingById, buildingCost, canAfford, computeRates, normalizeAssignment, regionById, unitById, HAULER_IDS, type AdvisorKind, type AdvisorSettings, type AdvisorReport, type AdvisorSuggestion, type Cost, type RegionEconomy, advisorSettings as advisorSettingsSchema, RESOURCE_WORTH, findRoute, loyaltyOutlook, distanceKm } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { advisorEvents, advisors, armies, jobs, matchRegions, matches, playerTechs, players, tradeRoutes } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
@@ -326,7 +326,7 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
     const local = stockOf(row);
     const extra: Record<string, number> = {};
     for (const id of buildOrderFor(row, economy, false)) {
-      const target = Math.min(settings.minLevels[id] ?? 0, buildingById.get(id)?.maxLevel ?? 0);
+      const target = Math.min(settings.minLevels[id] ?? 0, buildingById.has(id) ? reachableLevel(buildingById.get(id)!, techs) : 0);
       if (target <= 0) continue;
       const def = avail.get(id);
       if (!def) {
@@ -393,7 +393,7 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
     }
     for (const id of buildOrderFor(row, economy, false)) {
       if (slots <= 0) break;
-      const target = Math.min(settings.minLevels[id] ?? 0, buildingById.get(id)?.maxLevel ?? 0);
+      const target = Math.min(settings.minLevels[id] ?? 0, buildingById.has(id) ? reachableLevel(buildingById.get(id)!, techs) : 0);
       if (target <= 0) continue;
       const def = avail.get(id);
       if (!def) continue;
