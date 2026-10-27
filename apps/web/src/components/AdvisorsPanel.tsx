@@ -348,7 +348,7 @@ function MilitarySettings({ matchId, state, advisor, onSelect }: { matchId: stri
           </label>
         </div>
         <details className="text-xs text-slate-300">
-          <summary className="cursor-pointer text-slate-400">Regions he leaves alone ({draft.skipRegions.length})</summary>
+          <summary className="cursor-pointer text-slate-400">Regions he leaves alone ({draft.skipRegions.filter((id) => regions.some((r) => r.regionId === id)).length})</summary>
           <div className="mt-1 grid gap-0.5 sm:grid-cols-2">
             {regions.map((r) => (
               <label key={r.regionId} className="flex items-center gap-2">
@@ -488,7 +488,7 @@ function ThawSettings({ matchId, state, advisor, onSelect }: { matchId: string; 
           </label>
         </div>
         <details className="text-xs text-slate-300">
-          <summary className="cursor-pointer text-slate-400">Regions she leaves alone ({draft.skipRegions.length})</summary>
+          <summary className="cursor-pointer text-slate-400">Regions she leaves alone ({draft.skipRegions.filter((id) => regions.some((r) => r.regionId === id)).length})</summary>
           <div className="mt-1 grid gap-0.5 sm:grid-cols-2">
             {regions.map((r) => (
               <label key={r.regionId} className="flex items-center gap-2">
@@ -595,7 +595,7 @@ function ChancellorSettings({ matchId, state, advisor }: { matchId: string; stat
         </label>
       </div>
       <details className="text-xs text-slate-300">
-        <summary className="cursor-pointer text-slate-400">Regions he leaves alone ({draft.skipRegions.length})</summary>
+        <summary className="cursor-pointer text-slate-400">Regions he leaves alone ({draft.skipRegions.filter((id) => regions.some((r) => r.regionId === id)).length})</summary>
         <div className="mt-1 grid gap-0.5 sm:grid-cols-2">
           {regions.map((r) => (
             <label key={r.regionId} className="flex items-center gap-2">
@@ -825,7 +825,7 @@ function SettingsForm({ matchId, state, advisor }: { matchId: string; state: Mat
         <p className="mt-1 text-slate-500">Without an Economic advisor nobody moves on their own; you move people by hand.</p>
       </div>
       <details className="text-xs text-slate-300">
-        <summary className="cursor-pointer text-slate-400">Regions the advisor leaves alone ({draft.skipRegions.length})</summary>
+        <summary className="cursor-pointer text-slate-400">Regions the advisor leaves alone ({draft.skipRegions.filter((id) => regions.some((r) => r.regionId === id)).length})</summary>
         <div className="mt-1 grid gap-0.5 sm:grid-cols-2">
           {regions.map((r) => (
             <label key={r.regionId} className="flex items-center gap-2">

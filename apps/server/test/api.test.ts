@@ -1586,6 +1586,16 @@ describe("api routes", () => {
         }
       }
 
+      // Regions to leave alone keep only regions still held: one lost (or never held) is dropped on save.
+      {
+        const held = (await db.select({ regionId: matchRegions.regionId }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid))))[0]!.regionId;
+        const notHeld = allRegions().find((r) => r.id !== held)!.id;
+        const saved = await Ben.call("PUT", base + "/advisors/economic/settings", { minLevels: { quarry: 1 }, useOtherRegions: true, skipRegions: [held, "zz-nowhere", notHeld === held ? "zz-none" : "zz-gone"], population: "balanced" });
+        expect(saved.statusCode, saved.body).toBe(200);
+        expect((saved.json() as { settings: { skipRegions: string[] } }).settings.skipRegions).toEqual([held]);
+        expect((await Ben.call("PUT", base + "/advisors/economic/settings", { minLevels: { quarry: 1 }, useOtherRegions: true, skipRegions: [], population: "balanced" })).statusCode).toBe(200);
+      }
+
       // Guard loyalty: a conquered region at risk of rebelling gets its Temple at the front of the queue, its materials
       // route marked for the next free convoy, and idle settlers sent from a neighbour to join its occupiers.
       {

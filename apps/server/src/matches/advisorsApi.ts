@@ -111,7 +111,10 @@ export async function advisorRoutes(app: FastifyInstance, opts: { db: Db; publis
     const user = requireUser(req);
     const { id: matchId, kind } = kindParams.parse(req.params);
     const { p } = await loadContext(matchId, user.id);
-    const body = advisorSettings.parse(req.body);
+    const parsed = advisorSettings.parse(req.body);
+    // Regions to leave alone: only those still held (a region lost since would linger in the list, counted but not shown).
+    const held = new Set((await db.select({ regionId: matchRegions.regionId }).from(matchRegions).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.ownerPlayerId, p.id)))).map((r) => r.regionId));
+    const body = { ...parsed, skipRegions: parsed.skipRegions.filter((id) => held.has(id)) };
     const updated = await db
       .update(advisors)
       .set({ settings: body })

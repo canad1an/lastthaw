@@ -3,7 +3,7 @@ import { claimBounties } from "./objectives.js";
 import { tribeBattleTalk } from "./tribeVoice.js";
 import { balance, effectsOf, emptySpecial, storageCaps, regionById, resolveCombat, carryCapacity, travelSeconds, findRoute, armySpeed, type UnitCounts, HAULER_IDS, haulerCount, unitById, laneName, applyTechEffects, wallBonusAgainst, breachOf, buildingById, seededRng, availableTechs, scoutCatchChance, soldierCount, wallOf, battleSchedule, type BattleRound, type CombatResult, isAirGroup, nextHopTo, haulerCarry, splitNaval, distanceKm } from "@lastthaw/shared";
 import { matchDayAt, matchNow } from "./clock.js";
-import { armies, battles, jobs, matchRegions, players, regionSightings, playerTechs, tradeRoutes, events } from "../db/schema.js";
+import { advisors, armies, battles, jobs, matchRegions, players, regionSightings, playerTechs, tradeRoutes, events } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
 import { applyCost, settleAndLockRegion, type MatchRegionRow, type Tx, setCapital, ownerTechEffects, waySetsFor, stockOf, resourceMultOf } from "./regions.js";
 import { notify, type JobRow, type MatchRow } from "../worker/jobs.js";
@@ -1203,6 +1203,8 @@ export async function handleRegionLost(tx: Tx, m: MatchRow, playerId: string, re
   const [p] = await tx.select().from(players).where(eq(players.id, playerId)).for("update");
   if (!p) return;
   await dropLostJobs(tx, m, playerId, regionId, at);
+  // Nor is it on any advisor's list of regions to leave alone any more.
+  await tx.execute(sql`update ${advisors} set settings = jsonb_set(settings, '{skipRegions}', (settings->'skipRegions') - ${regionId}) where match_id = ${m.id} and player_id = ${playerId} and settings->'skipRegions' ? ${regionId}`);
   const remaining = await tx
     .select({ regionId: matchRegions.regionId, pop: matchRegions.popWorkers })
     .from(matchRegions)
