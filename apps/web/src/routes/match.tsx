@@ -602,7 +602,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
           className={`h-full w-full ${picking ? "cursor-crosshair" : ""}`}
           ice={ice}
           flags={state.me.capitalRegionId ? [state.me.capitalRegionId] : []}
-          harbors={state.owned.filter((o) => o.effects.harbor).map((o) => ({ regionId: o.regionId, buildings: o.buildings, units: o.units }))}
+          harbors={overlays.has("hideharbors") ? [] : state.owned.filter((o) => o.effects.harbor).map((o) => ({ regionId: o.regionId, buildings: o.buildings, units: o.units }))}
           dashed={state.frontier}
           armies={markers}
           roads={overlays.has("hideroads") ? [] : roadLinks}
