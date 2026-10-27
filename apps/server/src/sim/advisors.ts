@@ -301,6 +301,9 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
   // Scarce ores and horses: what the empire makes an hour, and the reserve kept back for research and training.
   const reserve: Record<string, number> = {};
   for (const x of projected) for (const [k, v] of Object.entries(x.rates.special)) reserve[k] = (reserve[k] ?? 0) + Math.max(0, v) * c.scarceReserveHours;
+  // The player's own iron reserve, when it is more than her automatic one.
+  const ironSet = settings.ironReserve > (reserve.iron ?? 0);
+  if (ironSet) reserve.iron = settings.ironReserve;
   // A building that works an ore or herd the region lacks gains it nothing (a Forge works iron only where there is iron).
   const worksNothingHere = (def: { effect: { extract?: Record<string, number | undefined> } }, resources: readonly string[]) => {
     const ex = Object.keys(def.effect.extract ?? {});
@@ -458,7 +461,7 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
   }
   for (const k of ["copper", "tin", "iron", "horses"]) {
     const n = skipped[`save_${k}`];
-    if (n) suggestions.unshift({ regionId: p.capitalRegionId ?? projected[0]?.row.regionId ?? "", text: `${n} build${n === 1 ? "" : "s"} held back to keep ${k} for research and training: the empire holds ${Math.round(Math.max(0, (empireStock[k] ?? 0) - (promised[k] ?? 0))).toLocaleString("en-US")} unpromised, and keeps ${Math.round(reserve[k] ?? 0).toLocaleString("en-US")} (${c.scarceReserveHours} hours of its output) in reserve. More mines in ${k} regions raise both.` });
+    if (n) suggestions.unshift({ regionId: p.capitalRegionId ?? projected[0]?.row.regionId ?? "", text: `${n} build${n === 1 ? "" : "s"} held back to keep ${k} for research and training: the empire holds ${Math.round(Math.max(0, (empireStock[k] ?? 0) - (promised[k] ?? 0))).toLocaleString("en-US")} unpromised, and keeps ${Math.round(reserve[k] ?? 0).toLocaleString("en-US")} (${k === "iron" && ironSet ? "the reserve you set" : `${c.scarceReserveHours} hours of its output`}) in reserve. More mines in ${k} regions raise both.` });
   }
   const report: AdvisorReport = { at: now.toISOString(), queued: queued + guard.queued, moved, rebalanced, trained: guard.trained, fortified: 0, exposed: [], evacuated: 0, settled: guard.settlersSent, clock: [], researched: 0, listed: 0, bought: 0, skipped, suggestions };
   await db.update(advisors).set({ lastPassAt: now, lastReport: report }).where(eq(advisors.id, a.id));

@@ -1562,6 +1562,30 @@ describe("api routes", () => {
         }
       }
 
+      // The iron reserve the player sets: no build spends iron below it, a Forge in an iron region included.
+      {
+        const mine = await db.select().from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid), sql`${matchRegions.frozenAt} is null`));
+        const ore = mine.find((r) => regionById(r.regionId)!.resources.includes("iron") && ((r.buildings as Record<string, number>).forge ?? 0) < 3);
+        if (ore) {
+          const [benRow] = await db.select({ age: players.age }).from(players).where(eq(players.id, benPid));
+          await db.update(players).set({ age: Math.max(2, benRow!.age) }).where(eq(players.id, benPid));
+          await db.insert(playerTechs).values({ matchId: gameId, playerId: benPid, techId: "iron_working", completedAt: new Date() }).onConflictDoNothing();
+          await fill(12000, 12000, 9000, 100, 900);
+          const skipRegions = mine.map((r) => r.regionId).filter((id) => id !== ore.regionId);
+          expect((await Ben.call("PUT", `${base}/advisors/economic/settings`, { minLevels: { forge: 3 }, useOtherRegions: true, skipRegions, population: "off", guardLoyalty: false, ironReserve: 1_000_000 })).statusCode).toBe(200);
+          await db.update(advisors).set({ lastPassAt: null }).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
+          const run = await forcePassAs(ben, "economic", gameId);
+          expect(run.statusCode, run.body).toBe(200);
+          const report = (run.json() as { report: { skipped: Record<string, number>; suggestions: { text: string }[] } }).report;
+          const forges = await db.select().from(jobs).where(and(eq(jobs.matchId, gameId), eq(jobs.regionId, ore.regionId), eq(jobs.refId, "forge"), sql`${jobs.completedAt} is null`, sql`${jobs.cancelledAt} is null`));
+          expect(forges.length, "no Forge spends the reserved iron").toBe(0);
+          expect(report.skipped.save_iron).toBeGreaterThan(0);
+          expect(report.suggestions.some((x) => /the reserve you set/.test(x.text))).toBe(true);
+          await db.update(players).set({ age: benRow!.age }).where(eq(players.id, benPid));
+          expect((await Ben.call("PUT", `${base}/advisors/economic/settings`, { minLevels: { quarry: 1 }, useOtherRegions: true, skipRegions: [], population: "balanced" })).statusCode).toBe(200);
+        }
+      }
+
       // Guard loyalty: a conquered region at risk of rebelling gets its Temple at the front of the queue, its materials
       // route marked for the next free convoy, and idle settlers sent from a neighbour to join its occupiers.
       {
