@@ -264,6 +264,23 @@ describe("aircraft", () => {
 });
 
 describe("voyages", () => {
+  it("goods for a far holding over the sea take ship rather than march through strangers' land, though a land route exists", () => {
+    // East Africa and the Horn are ours; a strip of India's south-east coast is too. Land runs round by Arabia, Iran and Pakistan.
+    const ours = new Set(["so-somalia", "ke-north-eastern", "et-afar", "er-eritrea", "tz-manyara", "in-tamil-nadu"]);
+    expect(findRoute("so-somalia", "in-tamil-nadu", false), "a land route exists").not.toBeNull();
+    // Blind to who holds what, the land route wins.
+    expect(nextHopTo("so-somalia", "in-tamil-nadu")).toMatchObject({ hop: "in-tamil-nadu", bySea: false });
+    // Knowing it, and with cargo ships to carry them, the goods sail; without ships they keep to land.
+    expect(nextHopTo("so-somalia", "in-tamil-nadu", (id) => ours.has(id))).toMatchObject({ bySea: false });
+    const way = nextHopTo("so-somalia", "in-tamil-nadu", (id) => ours.has(id), true);
+    expect(way?.bySea, JSON.stringify(way)).toBe(true);
+    // The risk only steers the choice: the route's cost stays the real distance.
+    const plain = findRoute("so-somalia", "in-tamil-nadu", false)!;
+    const risky = findRoute("so-somalia", "in-tamil-nadu", false, undefined, undefined, undefined, (id) => (ours.has(id) ? 0 : balance.travel.unfriendlyRiskKm))!;
+    expect(risky.weight!).toBeGreaterThan(risky.cost);
+    expect(risky.cost).toBeGreaterThanOrEqual(plain.cost - 1e-6);
+  });
+
   it("chain lanes along the coast, each within the ship's limit, and refuse what no chain reaches", () => {
     const limit = balance.travel.canoeMaxLaneKm;
     // Somewhere on the map two coasts have no short lane between them but a chain of short lanes along the coast.
@@ -289,7 +306,7 @@ describe("voyages", () => {
     const hop = nextHopTo(found!.a, found!.b);
     expect(hop).not.toBeNull();
     // Open water between them: Gabon to Pernambuco is one straight crossing, not a landing at Paraiba and a walk.
-    expect(nextHopTo("ga-gabon", "br-pernambuco")).toEqual({ hop: "br-pernambuco", relay: false });
+    expect(nextHopTo("ga-gabon", "br-pernambuco")).toEqual({ hop: "br-pernambuco", relay: false, bySea: true });
     // A voyage that would land at a harbour nobody friendly holds sails on to a coastal destination, or finds no way.
     let relayed: { x: string; y: string; h: { hop: string; relay: boolean } } | null = null;
     const coasts = allRegions().filter((r) => r.coastal);

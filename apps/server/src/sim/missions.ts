@@ -7,7 +7,7 @@ import { armies, battles, jobs, matchRegions, players, regionSightings, playerTe
 import type { Publisher } from "../realtime/publish.js";
 import { applyCost, settleAndLockRegion, type MatchRegionRow, type Tx, setCapital, ownerTechEffects, waySetsFor, stockOf, resourceMultOf } from "./regions.js";
 import { notify, type JobRow, type MatchRow } from "../worker/jobs.js";
-import { areAllied, alliesOf, landableFor } from "./alliances.js";
+import { areAllied, alliesOf, landableFor, sailsFor } from "./alliances.js";
 import { receiveMaterials } from "./commands.js";
 import { legContextFor, legSeconds, routeFor, type LegContext } from "./legs.js";
 import { clearMilitaryTargets } from "./advisorTargets.js";
@@ -595,7 +595,57 @@ async function deliverUnits(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publis
   }
 }
 
+/**
+ * A land convoy that crossed unfriendly ground on this leg (regions neither its player's nor an ally's) may have been
+ * ambushed: for each such region entered by land, before the last, balance.travel.roadAmbushPerRegion of the time it
+ * loses roadAmbushLoss of its haulers and of every load aboard. What a materials route loaded and lost comes off that
+ * route's total, so the order it was for is sourced again. The player is told. Returns the army as it arrives.
+ */
+async function roadAmbush(tx: Tx, m: MatchRow, army: ArmyRow, at: Date): Promise<ArmyRow> {
+  const t = balance.travel;
+  const haulers = Object.entries(army.units).some(([id, n]) => n > 0 && unitById.get(id)?.hauler && !unitById.get(id)?.naval);
+  if (!haulers || army.path.length < 3) return army;
+  const entered = army.path.slice(1, -1).filter((id, i) => regionById(army.path[i]!)?.neighbors.includes(id));
+  if (!entered.length) return army;
+  const friendly = await landableFor(tx, m.id, army.playerId);
+  const hostile = entered.filter((id) => !friendly(id));
+  let keep = 1;
+  const where: string[] = [];
+  for (const id of hostile) {
+    if (Math.random() >= t.roadAmbushPerRegion) continue;
+    keep *= 1 - t.roadAmbushLoss;
+    where.push(regionById(id)?.name ?? id);
+  }
+  if (keep === 1) return army;
+  const scale = (o: Record<string, number>) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, Math.floor(v * keep)]));
+  const units = scale(army.units);
+  const cargo = scale(army.cargo);
+  const stops = army.stops.map((s) => (s.done && s.routeId ? { ...s, take: scale(s.take) } : s));
+  // Goods a materials route loaded and lost: off its total, so its order is sourced again.
+  for (const [i, s] of army.stops.entries()) {
+    if (!s.done || !s.routeId) continue;
+    const lost: Record<string, number> = {};
+    for (const [k, v] of Object.entries(s.take)) if (v - (stops[i]!.take[k] ?? 0) > 0) lost[k] = v - (stops[i]!.take[k] ?? 0);
+    if (!Object.keys(lost).length) continue;
+    const [r] = await tx.select().from(tradeRoutes).where(eq(tradeRoutes.id, s.routeId)).for("update");
+    if (!r?.target) continue;
+    const target = { ...r.target };
+    for (const [k, v] of Object.entries(lost)) target[k] = Math.max(0, (target[k] ?? 0) - v);
+    await tx.update(tradeRoutes).set({ target, load: target }).where(eq(tradeRoutes.id, r.id));
+  }
+  const lostHaulers = sumUnits(army.units) - sumUnits(units);
+  const lostGoods = Object.values(army.cargo).reduce((a, b) => a + b, 0) - Object.values(cargo).reduce((a, b) => a + b, 0) + army.stops.reduce((a, s, i) => a + Object.values(s.take).reduce((x, y) => x + y, 0) - Object.values(stops[i]!.take).reduce((x, y) => x + y, 0), 0);
+  await notify(tx, m.id, army.playerId, "system", `Your convoy to ${regionById(army.targetRegionId)?.name ?? army.targetRegionId} was ambushed in ${where.join(", ")}: ${lostHaulers} hauler${lostHaulers === 1 ? "" : "s"} and ${Math.round(lostGoods).toLocaleString("en-US")} goods lost on strangers' land`, { regionId: army.targetRegionId });
+  await tx.update(armies).set({ units, cargo, stops }).where(eq(armies.id, army.id));
+  return { ...army, units, cargo, stops };
+}
+
 async function deliverCargo(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publisher: Publisher, after: After): Promise<void> {
+  army = await roadAmbush(tx, m, army, at);
+  if (sumUnits(army.units) === 0) {
+    await tx.update(armies).set({ status: "done" }).where(eq(armies.id, army.id));
+    return;
+  }
   // A collecting convoy: at a pickup, load what the materials route there set aside and head for the next stop.
   if (army.stops.length) {
     const stops = army.stops.map((s) => ({ ...s }));
@@ -681,14 +731,14 @@ async function deliverCargo(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publis
  * dispatch carries it on. Returns false when there is no way on, in which case the goods are simply delivered here.
  */
 async function handOver(tx: Tx, m: MatchRow, playerId: string, r: { id: string; toRegionId: string; relayTo: string | null; forJobId: string | null }, take: Record<string, number>, at: Date): Promise<boolean> {
-  const next = nextHopTo(r.toRegionId, r.relayTo!, await landableFor(tx, m.id, playerId));
+  const next = nextHopTo(r.toRegionId, r.relayTo!, await landableFor(tx, m.id, playerId), await sailsFor(tx, m.id, playerId));
   if (!next) return false;
   const { tradeRoutes } = await import("../db/schema.js");
   const ctx = await legContextFor(tx, m.id, playerId);
   const total = Object.values(take).reduce((a, b) => a + b, 0);
   if (total < 1) return false;
   // Over the lane the leg is by ship; otherwise by land hauler.
-  const byShip = regionById(r.toRegionId)?.seaRoutes.includes(next.hop) && !findRoute(r.toRegionId, next.hop, false);
+  const byShip = next.bySea;
   const caravans = Math.max(1, Math.min(balance.trade.maxSupplyCaravans, Math.ceil(total / haulerCarry(byShip ? "cog" : "caravan", ctx.techs))));
   const [existing] = await tx
     .select()

@@ -1,5 +1,5 @@
 import { and, eq, inArray } from "drizzle-orm";
-import { balance } from "@lastthaw/shared";
+import { balance, unitById } from "@lastthaw/shared";
 import { allianceInvites, allianceMembers, alliances, events, matchRegions, messages } from "../db/schema.js";
 import type { Tx } from "./regions.js";
 import type { Db } from "../db/client.js";
@@ -39,6 +39,15 @@ export async function landableFor(db: Tx | Db, matchId: string, playerId: string
   const rows = await db.select({ regionId: matchRegions.regionId }).from(matchRegions).where(and(eq(matchRegions.matchId, matchId), inArray(matchRegions.ownerPlayerId, owners)));
   const ids = new Set(rows.map((r) => r.regionId));
   return (regionId) => ids.has(regionId);
+}
+
+/**
+ * Whether the player has cargo ships (canoes, cogs and their successors) anywhere at home: only then do goods take
+ * ship over a land route that crosses strangers' country, since without ships they would wait at the harbour forever.
+ */
+export async function sailsFor(db: Tx | Db, matchId: string, playerId: string): Promise<boolean> {
+  const rows = await db.select({ units: matchRegions.units }).from(matchRegions).where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.ownerPlayerId, playerId)));
+  return rows.some((r) => Object.entries(r.units as Record<string, number>).some(([id, n]) => n > 0 && !!unitById.get(id)?.hauler && !!unitById.get(id)?.naval));
 }
 
 /** Day shown to players (1-based) on which alliances dissolve: the morning after alliancesEndDay whole days have gone. */

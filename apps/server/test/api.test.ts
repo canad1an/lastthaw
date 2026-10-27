@@ -1198,10 +1198,63 @@ describe("api routes", () => {
       expect(job!.cancelledAt, "the build is cancelled").not.toBeNull();
       expect(await db.select().from(tradeRoutes).where(and(eq(tradeRoutes.matchId, gameId), eq(tradeRoutes.forJobId, jobId)))).toHaveLength(0);
       for (const [id, held] of heldAt) if (held > 0) expect(await stockAt(id), "what was set aside is back").toBeGreaterThanOrEqual((before.get(id) ?? 0) + held - 1);
-      const open = await db.select({ id: jobs.id }).from(jobs).where(and(eq(jobs.matchId, gameId), eq(jobs.regionId, lost.regionId), sql`${jobs.completedAt} is null`, sql`${jobs.cancelledAt} is null`));
+      const open = await db.select({ id: jobs.id }).from(jobs).where(and(eq(jobs.matchId, gameId), eq(jobs.regionId, lost.regionId), inArray(jobs.kind, ["build", "train"]), sql`${jobs.completedAt} is null`, sql`${jobs.cancelledAt} is null`));
       expect(open).toHaveLength(0);
     } finally {
       await db.update(matchRegions).set({ ownerPlayerId: benPid }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, lost.regionId)));
+    }
+  });
+
+  it("a convoy crossing strangers' land may be ambushed: haulers and goods lost, and the player told", async () => {
+    const base = `/api/matches/${gameId}`;
+    const ben = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
+    const benPid = ben.me.playerId;
+    const now = Date.parse(ben.match.now);
+    const taken = new Set((await db.select({ regionId: matchRegions.regionId }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), sql`${matchRegions.ownerPlayerId} is not null`))).map((r) => r.regionId));
+    // Four regions in a line by land, none held: Ben takes the two ends, the two between stay strangers' land.
+    let line: string[] | null = null;
+    for (const a of allRegions()) {
+      if (taken.has(a.id)) continue;
+      for (const b of a.neighbors) {
+        if (taken.has(b)) continue;
+        const c = regionById(b)!.neighbors.find((x) => !taken.has(x) && x !== a.id && !a.neighbors.includes(x));
+        if (!c) continue;
+        const d = regionById(c)!.neighbors.find((x) => !taken.has(x) && x !== b && x !== a.id && !a.neighbors.includes(x) && !regionById(b)!.neighbors.includes(x));
+        if (d) { line = [a.id, b, c, d]; break; }
+      }
+      if (line) break;
+    }
+    expect(line, "four free regions in a line").toBeTruthy();
+    const [home, , , far] = line!;
+    for (const id of [home!, far!])
+      await db
+        .insert(matchRegions)
+        .values({ matchId: gameId, regionId: id, assignment: { ...balance.start.assignment }, settledAt: new Date(now), ownerPlayerId: benPid, popWorkers: 5 })
+        .onConflictDoUpdate({ target: [matchRegions.matchId, matchRegions.regionId], set: { ownerPlayerId: benPid, settledAt: new Date(now), wood: 0 } });
+    const [army] = await db
+      .insert(armies)
+      .values({ matchId: gameId, playerId: benPid, mission: "transport", originRegionId: home!, targetRegionId: far!, units: { caravan: 4 }, cargo: { wood: 400 }, path: line!, status: "outbound", departsAt: new Date(now - 60 * 60_000), arrivesAt: new Date(now - 1000) })
+      .returning();
+    await db.insert(jobs).values({ matchId: gameId, playerId: benPid, regionId: far!, kind: "mission", refId: army!.id, startsAt: new Date(now - 60 * 60_000), endsAt: new Date(now - 1000) });
+    const travel = balance.travel as { roadAmbushPerRegion: number };
+    const was = travel.roadAmbushPerRegion;
+    travel.roadAmbushPerRegion = 1;
+    const redis = createRedis();
+    try {
+      await runDueJobs(db, new Publisher(redis), logger);
+      const [after] = await db.select().from(armies).where(eq(armies.id, army!.id));
+      // Ambushed in both regions between: a quarter of the caravans and of the goods are left.
+      expect(after!.units.caravan).toBe(1);
+      const [dest] = await db.select({ wood: matchRegions.wood }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, far!)));
+      expect(dest!.wood).toBeGreaterThanOrEqual(99);
+      expect(dest!.wood).toBeLessThan(150);
+      const inbox = (await Ben.call("GET", `${base}/messages`)).json() as { messages: { subject: string }[] };
+      expect(inbox.messages.some((x) => /ambushed/.test(x.subject))).toBe(true);
+    } finally {
+      travel.roadAmbushPerRegion = was;
+      await redis.quit().catch(() => {});
+      await db.delete(armies).where(eq(armies.id, army!.id));
+      for (const id of [home!, far!]) await db.delete(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, id)));
     }
   });
 
@@ -2064,6 +2117,10 @@ describe("api routes", () => {
     const [capRow] = await db.select({ units: matchRegions.units, buildings: matchRegions.buildings }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
     await db.update(matchRegions).set({ units: { ...capRow!.units, caravan: (capRow!.units.caravan ?? 0) + 1 }, buildings: { ...capRow!.buildings, roads: 1 }, food: 2000, settledAt: at }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
     await db.insert(playerTechs).values({ matchId: gameId, playerId: benPid, techId: "harness", completedAt: at }).onConflictDoNothing();
+    // Pricing only: the risk of strangers' land would send the caravan round them, which is tested elsewhere.
+    const travelBalance = balance.travel as { unfriendlyRiskKm: number };
+    const riskWas = travelBalance.unfriendlyRiskKm;
+    travelBalance.unfriendlyRiskKm = 0;
     const sent = await Ben.call("POST", `${base}/regions/${cap}/send`, { mission: "transport", targetRegionId: N, units: { caravan: 1 }, people: 0, cargo: { food: 50 } });
     expect(sent.statusCode, sent.body).toBe(200);
     const armyId = (sent.json() as { armyId: string }).armyId;
@@ -2087,6 +2144,7 @@ describe("api routes", () => {
       expect(homeward).toBeLessThan(bareBack);
       expect(ctx.techs.has("harness")).toBe(true);
     } finally {
+      travelBalance.unfriendlyRiskKm = riskWas;
       await redis.quit().catch(() => {});
       await db.delete(playerTechs).where(and(eq(playerTechs.playerId, benPid), eq(playerTechs.techId, "harness")));
     }

@@ -8,7 +8,7 @@ import type { Publisher } from "../realtime/publish.js";
 import { matchNow } from "./clock.js";
 import { projectRegion, stockOf, type MatchRegionRow } from "./regions.js";
 import { sendArmy, returnHeld, type CommandContext } from "./commands.js";
-import { landableFor } from "./alliances.js";
+import { landableFor, sailsFor } from "./alliances.js";
 import type { MatchRow } from "../worker/jobs.js";
 
 export type TradeRouteRow = typeof tradeRoutes.$inferSelect;
@@ -105,10 +105,11 @@ export async function dispatchRoute(db: Db, m: MatchRow, p: PlayerRow, route: Tr
   }
   if (route.forJobId || route.relayTo) return dispatchSupply(db, m, p, route, origin, owed ?? {}, now);
   // Where this leg goes: the destination by land, or the harbour where ships take over.
-  const next = nextHopTo(route.fromRegionId, route.toRegionId, await landableFor(db, m.id, p.id));
+  const landable = await landableFor(db, m.id, p.id);
+  const next = nextHopTo(route.fromRegionId, route.toRegionId, landable, await sailsFor(db, m.id, p.id));
   if (!next) return "no way there: more than one sea crossing, or the ships would have to land at a harbour that is not yours or an ally's; route to a harbour nearer the far shore instead";
   const hop = next.hop;
-  const sea = seaOnly(route.fromRegionId, hop);
+  const sea = next.bySea;
   const kind = sea ? shipFor(origin.units, route.fromRegionId, hop) : bestHauler(origin.units, false);
   if (!kind) return sea ? `goods waiting at ${regionNameOf(route.fromRegionId)}: ${await fetchShips(db, m, p, route.fromRegionId, hop, { ships: route.caravans }, now, origin.units)}` : fetchCaravans(db, m, p, route.fromRegionId, route.caravans, now);
   const home = origin.units[kind] ?? 0;
@@ -206,7 +207,7 @@ async function dispatchSupply(db: Db, m: MatchRow, p: PlayerRow, route: TradeRou
       .where(and(eq(tradeRoutes.matchId, m.id), eq(tradeRoutes.playerId, p.id), eq(tradeRoutes.toRegionId, route.toRegionId), sql`(${tradeRoutes.forJobId} is not null or ${tradeRoutes.relayTo} is not null)`, sql`${tradeRoutes.id} <> ${route.id}`))
   ).filter((r) => Object.values(r.held).some((v) => v >= 1));
   const groupTotal = [route, ...siblings].reduce((a, r) => a + Object.values(r.held).reduce((x, y) => x + y, 0), 0);
-  const sea = seaOnly(route.fromRegionId, route.toRegionId);
+  const sea = seaOnly(route.fromRegionId, route.toRegionId, await landableFor(db, m.id, p.id), await sailsFor(db, m.id, p.id));
   const kind = sea ? shipFor(origin.units, route.fromRegionId, route.toRegionId) : bestHauler(origin.units, false);
   if (!kind && sea) return `goods waiting at ${regionNameOf(route.fromRegionId)}: ${await fetchShips(db, m, p, route.fromRegionId, route.toRegionId, { goods: groupTotal }, now, origin.units)}`;
   if (!kind) {
@@ -293,7 +294,13 @@ async function dispatchSupply(db: Db, m: MatchRow, p: PlayerRow, route: TradeRou
 }
 
 /** True when the only way from one region to the other is by sea: no land route, and a chain of lanes between them. */
-export function seaOnly(fromRegionId: string, toRegionId: string): boolean {
+export function seaOnly(fromRegionId: string, toRegionId: string, landable?: (regionId: string) => boolean, preferSea = false): boolean {
+  // With the player's friendly ground known, a leg is sailed whenever the way chosen by risk sails straight there,
+  // though a land route exists (a far holding over the sea is reached by ship, not by marching through strangers).
+  if (landable) {
+    const next = nextHopTo(fromRegionId, toRegionId, landable, preferSea);
+    return !!next && next.bySea && next.hop === toRegionId;
+  }
   if (findRoute(fromRegionId, toRegionId, false)) return false;
   return seaPath(fromRegionId, toRegionId, Infinity) !== null;
 }

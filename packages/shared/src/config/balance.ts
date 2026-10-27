@@ -165,6 +165,15 @@ export const balance = {
     seaTech: "shipbuilding",
     /** Goods each travelling person can carry on moves, reinforcements and evacuations. */
     carryPerPerson: 20,
+    /**
+     * Unfriendly ground: land that is neither the player's nor an ally's. Choosing a way for goods, each such region a
+     * land leg enters weighs as this many extra km, so a convoy keeps to its own land and takes ship for a far holding
+     * rather than march through strangers' country (the time on the road is still the real distance).
+     */
+    unfriendlyRiskKm: 1200,
+    /** Land haulers entering an unfriendly region on the way may be ambushed: this chance per region, costing this share of haulers and goods. */
+    roadAmbushPerRegion: 0.05,
+    roadAmbushLoss: 0.5,
   },
   combat: {
     maxRounds: 6,

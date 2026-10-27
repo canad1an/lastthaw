@@ -9,6 +9,8 @@ export interface Route {
   /** Effective distance in km after terrain and water modifiers. */
   cost: number;
   usesSea: boolean;
+  /** With a risk given to findRoute: the cost the route was chosen by, the risk included. */
+  weight?: number;
 }
 
 function edgeCost(from: string, to: string, sea: boolean, roads?: ReadonlySet<string>, rails?: ReadonlySet<string>, harbors?: ReadonlySet<string>): number {
@@ -33,11 +35,13 @@ function edgeCost(from: string, to: string, sea: boolean, roads?: ReadonlySet<st
 
 /**
  * Shortest route over land borders and, if allowed, sea routes. Dijkstra over
- * ~400 nodes; cheap enough to run per request.
+ * ~400 nodes; cheap enough to run per request. With `risk`, each region a land leg enters weighs that many km more
+ * when choosing the way (unfriendly ground); the route's cost is still the real distance, its weight the risky one.
  */
-export function findRoute(origin: string, target: string, allowSea: boolean, roads?: ReadonlySet<string>, rails?: ReadonlySet<string>, harbors?: ReadonlySet<string>): Route | null {
-  if (origin === target) return { path: [origin], cost: 0, usesSea: false };
+export function findRoute(origin: string, target: string, allowSea: boolean, roads?: ReadonlySet<string>, rails?: ReadonlySet<string>, harbors?: ReadonlySet<string>, risk?: (regionId: string) => number): Route | null {
+  if (origin === target) return { path: [origin], cost: 0, usesSea: false, weight: 0 };
   const dist = new Map<string, number>([[origin, 0]]);
+  const real = new Map<string, number>([[origin, 0]]);
   const prev = new Map<string, { from: string; sea: boolean }>();
   const open = new Set<string>([origin]);
   const closed = new Set<string>();
@@ -61,9 +65,11 @@ export function findRoute(origin: string, target: string, allowSea: boolean, roa
     if (allowSea) for (const n of r.seaRoutes) edges.push([n, true]);
     for (const [n, sea] of edges) {
       if (closed.has(n)) continue;
-      const nd = best + edgeCost(cur, n, sea, roads, rails, harbors);
+      const step = edgeCost(cur, n, sea, roads, rails, harbors);
+      const nd = best + step + (risk && !sea ? risk(n) : 0);
       if (nd < (dist.get(n) ?? Infinity)) {
         dist.set(n, nd);
+        real.set(n, real.get(cur)! + step);
         prev.set(n, { from: cur, sea });
         open.add(n);
       }
@@ -80,7 +86,7 @@ export function findRoute(origin: string, target: string, allowSea: boolean, roa
     path.push(at);
   }
   path.reverse();
-  return { path, cost: dist.get(target)!, usesSea };
+  return { path, cost: real.get(target)!, usesSea, weight: dist.get(target)! };
 }
 
 /** True when every unit in the group flies: aircraft go straight, alone, and only between airfields' reach. */
@@ -232,14 +238,22 @@ export function seaPath(from: string, to: string, maxLaneKm: number, harbors?: R
  * destination itself. Otherwise the way may hold exactly one sea lane: a land hauler carries the goods to the near
  * harbour, a ship takes them across, a land hauler carries them on. The hop is the first of those that is not here;
  * `relay` says the goods are handed over there rather than delivered. Null when no such way exists (two crossings).
- * With `landable` (the player's own or an ally's regions), a voyage that would land at a harbour it does not allow
- * sails on to the destination itself if it has a coast; otherwise there is no way.
+ * With `landable` (the player's own or an ally's regions) the way is chosen by risk as well as distance: every region
+ * a land leg enters that is not landable weighs balance.travel.unfriendlyRiskKm more, so goods for a far holding take
+ * ship from a harbour of the player's rather than march through strangers' land, even where a land route exists. A
+ * voyage that would land at a harbour it does not allow sails on to the destination itself if it has a coast.
+ * The sea is preferred over a land route only when `preferSea` says the player has cargo ships to carry the goods; a
+ * player without any keeps to land wherever land goes. `bySea` says the leg from here to the hop is sailed.
  */
-export function nextHopTo(from: string, to: string, landable?: (regionId: string) => boolean): { hop: string; relay: boolean } | null {
+export function nextHopTo(from: string, to: string, landable?: (regionId: string) => boolean, preferSea = false): { hop: string; relay: boolean; bySea: boolean } | null {
   if (from === to) return null;
-  if (findRoute(from, to, false)) return { hop: to, relay: false };
-  const route = findRoute(from, to, true);
-  if (!route) return null;
+  const risk = landable ? (id: string) => (id === to || landable(id) ? 0 : balance.travel.unfriendlyRiskKm) : undefined;
+  const land = findRoute(from, to, false, undefined, undefined, undefined, risk);
+  const byLand = land ? { hop: to, relay: false, bySea: false } : null;
+  if (byLand && (!landable || !preferSea)) return byLand;
+  const route = findRoute(from, to, true, undefined, undefined, undefined, risk);
+  if (!route) return byLand;
+  if (byLand && (!route.usesSea || (land!.weight ?? land!.cost) <= (route.weight ?? route.cost))) return byLand;
   const path = route.path;
   // Runs of sea edges: one run is one voyage, lane to lane along the coast if need be. Two runs means a landing and a
   // second embarkation, which is refused.
@@ -254,15 +268,15 @@ export function nextHopTo(from: string, to: string, landable?: (regionId: string
     if (last && last.end === i) last.end = i + 1;
     else runs.push({ start: i, end: i + 1 });
   }
-  if (runs.length !== 1) return null;
+  if (runs.length !== 1) return byLand;
   const { start, end } = runs[0]!;
   // At the near harbour already: the voyage's far end is the hop. Else the near harbour is.
   const hop = start === 0 ? path[end]! : path[start]!;
   // Ships unload only where goods can be handed over: past a landing nobody friendly holds, sail on to the destination.
   if (start === 0 && hop !== to && landable && !landable(hop)) {
-    return regionById(to)?.coastal && seaPath(from, to, Infinity) ? { hop: to, relay: false } : null;
+    return regionById(to)?.coastal && seaPath(from, to, Infinity) ? { hop: to, relay: false, bySea: true } : byLand;
   }
-  return { hop, relay: hop !== to };
+  return { hop, relay: hop !== to, bySea: start === 0 };
 }
 
 /** Label for a mission as a moving group, continued: patrols. */

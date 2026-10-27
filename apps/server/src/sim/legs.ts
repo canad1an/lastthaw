@@ -19,12 +19,16 @@ export interface LegContext {
   harbors: ReadonlySet<string>;
   /** Waystations: the share each region cuts from hauler legs ending there. */
   stations: ReadonlyMap<string, number>;
+  /** The player's and their allies' regions: land haulers choose their way to keep to these. */
+  friendly?: ReadonlySet<string>;
 }
 
 export async function legContextFor(db: Db | Tx, matchId: string, playerId: string): Promise<LegContext> {
   const techRows = await db.select({ id: playerTechs.techId }).from(playerTechs).where(eq(playerTechs.playerId, playerId));
-  const ways = await waySetsFor(db, matchId, playerId, await alliesOf(db, matchId, playerId));
-  return { techs: new Set(techRows.map((t) => t.id)), ...ways };
+  const allies = await alliesOf(db, matchId, playerId);
+  const ways = await waySetsFor(db, matchId, playerId, allies);
+  const held = await db.select({ regionId: matchRegions.regionId }).from(matchRegions).where(and(eq(matchRegions.matchId, matchId), inArray(matchRegions.ownerPlayerId, [playerId, ...allies])));
+  return { techs: new Set(techRows.map((t) => t.id)), ...ways, friendly: new Set(held.map((r) => r.regionId)) };
 }
 
 /**
@@ -37,7 +41,9 @@ export function routeFor(ctx: LegContext, from: string, to: string, allowSea?: b
   // A group with ships sails lane to lane along the coasts; a land convoy never takes a lane, whatever the player has researched.
   const ships = units ? Object.keys(splitNaval(units).ships).length > 0 : false;
   if (ships && units) return seaPath(from, to, laneLimitKm(units) ?? Infinity, ctx.harbors) ?? findRoute(from, to, true, ctx.roads, ctx.rails, ctx.harbors);
-  return findRoute(from, to, allowSea ?? false, ctx.roads, ctx.rails, ctx.harbors);
+  // Haulers on land keep to friendly ground where they can: a road through strangers' country risks an ambush.
+  const risk = units && ctx.friendly && isHaulerConvoy(units) ? (id: string) => (id === to || ctx.friendly!.has(id) ? 0 : balance.travel.unfriendlyRiskKm) : undefined;
+  return findRoute(from, to, allowSea ?? false, ctx.roads, ctx.rails, ctx.harbors, risk);
 }
 
 /** A storm anywhere on the path slows the leg by the storm's travel factor. */
