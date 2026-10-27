@@ -324,6 +324,12 @@ describe("voyages", () => {
     expect(nextHopTo("so-somalia", "in-tamil-nadu", (id) => ours.has(id))).toMatchObject({ bySea: false });
     const way = nextHopTo("so-somalia", "in-tamil-nadu", (id) => ours.has(id), true);
     expect(way?.bySea, JSON.stringify(way)).toBe(true);
+    // From North Africa the cheapest way with the sea allowed crosses twice (the Mediterranean, then the Red Sea to
+    // India); the one-crossing way is still found: overland to a harbour of ours on the Red Sea, then by ship.
+    const north = new Set([...ours, "tn-tunisia", "sd-red-sea"]);
+    const fromTunisia = nextHopTo("tn-tunisia", "in-tamil-nadu", (id) => north.has(id), true);
+    expect(fromTunisia, JSON.stringify(fromTunisia)).toMatchObject({ relay: true, bySea: false });
+    expect(north.has(fromTunisia!.hop), fromTunisia!.hop).toBe(true);
     // The risk only steers the choice: the route's cost stays the real distance.
     const plain = findRoute("so-somalia", "in-tamil-nadu", false)!;
     const risky = findRoute("so-somalia", "in-tamil-nadu", false, undefined, undefined, undefined, (id) => (ours.has(id) ? 0 : balance.travel.unfriendlyRiskKm))!;
@@ -371,7 +377,7 @@ describe("voyages", () => {
       }
     if (relayed) {
       const away = nextHopTo(relayed.x, relayed.y, (id) => id !== relayed.h!.hop);
-      expect(away === null || (away.hop === relayed.y && !away.relay)).toBe(true);
+      expect(away === null || away.hop !== relayed.h!.hop).toBe(true);
     }
     // A region with two coasts the sea does not join along its shore is never sailed through from one to the other: every
     // voyage keeps to one stretch of coast through each region it passes, so the Red Sea to the Mediterranean goes round

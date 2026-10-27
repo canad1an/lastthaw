@@ -451,8 +451,16 @@ async function fetchCaravans(db: Db, m: MatchRow, p: PlayerRow, fromRegionId: st
   for (const c of claims) claimed.set(c.fromRegionId, (claimed.get(c.fromRegionId) ?? 0) + c.caravans);
   const landHaulers = (r: { units: Record<string, number> }) => HAULER_IDS.filter((id) => !unitById.get(id)?.naval).reduce((a, id) => a + (r.units[id] ?? 0), 0);
   const spareOf = (r: { regionId: string; units: Record<string, number> }) => Math.max(0, landHaulers(r) - (claimed.get(r.regionId) ?? 0));
+  // Spare haulers walk over only through the player's or allies' land: a relief column marching through strangers'
+  // country to a far holding would be ambushed on the way, and a far holding over the sea trains its own or waits.
+  const friendly = await landableFor(db, m.id, p.id);
+  const safeWalk = (src: string) => {
+    const way = findRoute(src, fromRegionId, false);
+    return !!way && way.path.slice(1, -1).every((id) => friendly(id));
+  };
   const candidates = mine
     .filter((r) => r.regionId !== fromRegionId && !r.frozenAt && spareOf(r) > 0)
+    .filter((r) => safeWalk(r.regionId))
     .sort((a, b) => {
       const ia = claimed.has(a.regionId) ? 1 : 0;
       const ib = claimed.has(b.regionId) ? 1 : 0;

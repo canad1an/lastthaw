@@ -269,32 +269,70 @@ export function nextHopTo(from: string, to: string, landable?: (regionId: string
   const land = findRoute(from, to, false, undefined, undefined, undefined, risk);
   const byLand = land ? { hop: to, relay: false, bySea: false } : null;
   if (byLand && (!landable || !preferSea)) return byLand;
-  const route = findRoute(from, to, true, undefined, undefined, undefined, risk);
-  if (!route) return byLand;
-  if (byLand && (!route.usesSea || (land!.weight ?? land!.cost) <= (route.weight ?? route.cost))) return byLand;
-  const path = route.path;
-  // Runs of sea edges: one run is one voyage, lane to lane along the coast if need be. Two runs means a landing and a
-  // second embarkation, which is refused.
-  const seaEdge = (i: number) => {
-    const a = regionById(path[i]!);
-    return !!a && !a.neighbors.includes(path[i + 1]!) && a.seaRoutes.includes(path[i + 1]!);
-  };
-  const runs: Array<{ start: number; end: number }> = [];
-  for (let i = 0; i < path.length - 1; i++) {
-    if (!seaEdge(i)) continue;
-    const last = runs[runs.length - 1];
-    if (last && last.end === i) last.end = i + 1;
-    else runs.push({ start: i, end: i + 1 });
-  }
-  if (runs.length !== 1) return byLand;
-  const { start, end } = runs[0]!;
+  const way = oneCrossing(from, to, landable ?? (() => true), risk);
+  if (!way || way.seaStart < 0) return byLand;
+  if (land && (land.weight ?? land.cost) <= way.weight) return byLand;
   // At the near harbour already: the voyage's far end is the hop. Else the near harbour is.
-  const hop = start === 0 ? path[end]! : path[start]!;
-  // Ships unload only where goods can be handed over: past a landing nobody friendly holds, sail on to the destination.
-  if (start === 0 && hop !== to && landable && !landable(hop)) {
-    return regionById(to)?.coastal && seaPath(from, to, Infinity) ? { hop: to, relay: false, bySea: true } : byLand;
+  const hop = way.seaStart === 0 ? way.path[way.seaEnd]! : way.path[way.seaStart]!;
+  return { hop, relay: hop !== to, bySea: way.seaStart === 0 };
+}
+
+/**
+ * The best way from one region to another with at most one sea crossing: overland to a harbour (here, or one the
+ * player may hand goods over at), one voyage lane to lane, then overland on from where it lands (a harbour the
+ * player may unload at, or the destination itself). Dijkstra over (region, stage) with stage 0 before the voyage,
+ * 1 at sea and 2 after landing, so the cheapest such way is found even where a cheaper way would need two crossings
+ * (Tunisia to India: over the Mediterranean, then again from the Red Sea). Land legs weigh their risk too. Returns the
+ * path, where the voyage starts (-1 for none) and ends, and the weight; null when there is no such way.
+ */
+function oneCrossing(from: string, to: string, landable: (regionId: string) => boolean, risk?: (regionId: string) => number): { path: string[]; seaStart: number; seaEnd: number; weight: number } | null {
+  // At sea a state also knows the stretch of coast the ship arrived on: a region with two coasts the sea does not join
+  // (Egypt's Mediterranean and Red Sea shores) is never sailed through from one to the other, as in seaPath.
+  const key = (id: string, stage: number, coast = -1) => `${id}|${stage}|${coast}`;
+  const dist = new Map<string, number>([[key(from, 0), 0]]);
+  const prev = new Map<string, string>();
+  const open = new Set<string>([key(from, 0)]);
+  const done = new Set<string>();
+  let end: string | null = null;
+  while (open.size) {
+    let cur: string | null = null;
+    let best = Infinity;
+    for (const k of open) {
+      const d = dist.get(k)!;
+      if (d < best) { best = d; cur = k; }
+    }
+    if (!cur) break;
+    open.delete(cur);
+    done.add(cur);
+    const [id, stageText, coastText] = cur.split("|") as [string, string, string];
+    const stage = Number(stageText);
+    const arrived = Number(coastText);
+    if (id === to) { end = cur; break; }
+    const r = regionById(id);
+    if (!r) continue;
+    const step = (n: string, nextStage: number, cost: number, coast = -1) => {
+      const k = key(n, nextStage, coast);
+      if (done.has(k)) return;
+      const nd = best + cost;
+      if (nd < (dist.get(k) ?? Infinity)) { dist.set(k, nd); prev.set(k, cur!); open.add(k); }
+    };
+    // Overland: before the voyage, or on from a landing where the goods may be handed over.
+    if (stage !== 1 || landable(id)) for (const n of r.neighbors) step(n, stage === 0 ? 0 : 2, edgeCost(id, n, false) + (risk ? risk(n) : 0));
+    // By sea: setting out from here or a harbour where the goods may be handed over, or sailing on.
+    if (stage === 1 || (stage === 0 && (id === from || landable(id))))
+      for (const n of r.seaRoutes) {
+        const leaving = r.laneCoasts?.[n] ?? -1;
+        if (stage === 1 && arrived !== -1 && leaving !== -1 && leaving !== arrived) continue;
+        step(n, 1, edgeCost(id, n, true), regionById(n)?.laneCoasts?.[id] ?? -1);
+      }
   }
-  return { hop, relay: hop !== to, bySea: start === 0 };
+  if (!end) return null;
+  const keys: string[] = [];
+  for (let k: string | undefined = end; k; k = prev.get(k)) keys.unshift(k);
+  const path = keys.map((k) => k.split("|")[0]!);
+  const stages = keys.map((k) => Number(k.split("|")[1]));
+  const firstSea = stages.indexOf(1);
+  return { path, seaStart: firstSea < 0 ? -1 : firstSea - 1, seaEnd: firstSea < 0 ? -1 : stages.lastIndexOf(1), weight: dist.get(end)! };
 }
 
 /** Label for a mission as a moving group, continued: patrols. */
