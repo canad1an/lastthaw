@@ -132,6 +132,13 @@ export function paceFor(units: Record<string, number>): ((onTrack: boolean) => n
   return (onTrack) => (onTrack ? 1 : top / Math.max(0.1, off));
 }
 
+/** Whether every leg of `path` runs on track: each step between two regions with the Railway. */
+export function onTrack(path: readonly string[], rails: ReadonlySet<string>): boolean {
+  if (path.length < 2) return false;
+  for (let i = 1; i < path.length; i++) if (!rails.has(path[i - 1]!) || !rails.has(path[i]!)) return false;
+  return true;
+}
+
 export function isHaulerConvoy(units: Record<string, number>): boolean {
   const ids = Object.entries(units).filter(([, n]) => n > 0).map(([id]) => id);
   return ids.length > 0 && ids.every((id) => unitById.get(id)?.hauler && !unitById.get(id)?.naval);

@@ -1,4 +1,4 @@
-import { balance, carryCapacity, regionById, unitById, type ArmyView, type IncomingView, type ShipSightingView, missionLabel, laneName, laneKey } from "@lastthaw/shared";
+import { balance, carryCapacity, onTrack, regionById, unitById, type ArmyView, type IncomingView, type ShipSightingView, missionLabel, laneName, laneKey } from "@lastthaw/shared";
 import { mapAssets } from "./activeMap.js";
 
 /** Every sea lane's water path (tools/mapgen/src/sea-paths.mjs), from one shore to the other, in map units. */
@@ -184,7 +184,7 @@ export function armyMarkers(armies: ArmyView[], incoming: IncomingView[], nowMs:
     const people = Math.round(a.cargo.people ?? 0);
     const goods = Object.entries(a.cargo).filter(([k, n]) => k !== "people" && n > 0);
     const goodsTotal = goods.reduce((x, [, n]) => x + n, 0);
-    const capacity = carryCapacity(a.units, techs) + people * balance.travel.carryPerPerson;
+    const capacity = carryCapacity(a.units, techs, !onTrack(ids, rail)) + people * balance.travel.carryPerPerson;
     const cargo = goods.map(([k, n]) => `${Math.round(n)} ${k.replace("_", " ")}`).join(", ");
     const routeIds = returning ? [...passed].reverse() : ids;
     const shown = offTrack(a.units, routeIds, progress, rail);

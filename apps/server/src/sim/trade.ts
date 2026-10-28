@@ -1,14 +1,14 @@
 import { and, eq, inArray, isNull, lte, sql, asc, desc } from "drizzle-orm";
 import { enterMap, mapOf } from "../map/scope.js";
 import type pino from "pino";
-import { balance, bestHauler, carryCapacity, distanceKm, findRoute, haulerCarry, haulerCount, HAULER_IDS, laneLimitKm, nextHopTo, regionById, reliefMoveCap, seaPath, supplyConvoyCap, unitById } from "@lastthaw/shared";
+import { balance, bestHauler, carryCapacity, distanceKm, findRoute, haulerCarry, haulerCount, HAULER_IDS, laneLimitKm, nextHopTo, onTrack, paceFor, regionById, reliefMoveCap, seaPath, supplyConvoyCap, unitById } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { armies, matchRegions, matches, playerTechs, players, tradeRoutes } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
 import { matchNow } from "./clock.js";
-import { projectRegion, stockOf, type MatchRegionRow } from "./regions.js";
+import { projectRegion, stockOf, waySetsFor, type MatchRegionRow } from "./regions.js";
 import { sendArmy, returnHeld, type CommandContext } from "./commands.js";
-import { landableFor, sailsFor } from "./alliances.js";
+import { alliesOf, landableFor, sailsFor } from "./alliances.js";
 import type { MatchRow } from "../worker/jobs.js";
 
 export type TradeRouteRow = typeof tradeRoutes.$inferSelect;
@@ -114,7 +114,8 @@ export async function dispatchRoute(db: Db, m: MatchRow, p: PlayerRow, route: Tr
   if (!kind) return sea ? `goods waiting at ${regionNameOf(route.fromRegionId)}: ${await fetchShips(db, m, p, route.fromRegionId, hop, { ships: route.caravans }, now, origin.units)}` : fetchCaravans(db, m, p, route.fromRegionId, route.caravans, now);
   const home = origin.units[kind] ?? 0;
   const ctx = await contextFor(db, m, p);
-  const perCaravan = haulerCarry(kind, ctx.techs);
+  const offTrack = !sea && kind === "train" && (await trainLeavesTrack(db, m, p, route.fromRegionId, hop));
+  const perCaravan = haulerCarry(kind, ctx.techs, offTrack);
   const n = Math.min(route.caravans, home);
   const capacity = n * perCaravan;
 
@@ -148,7 +149,7 @@ export async function dispatchRoute(db: Db, m: MatchRow, p: PlayerRow, route: Tr
     total = Object.values(cargo).reduce((a, b) => a + b, 0);
   }
   const caravans = Math.max(1, Math.min(n, Math.ceil(total / perCaravan)));
-  if (carryCapacity({ [kind]: caravans }, ctx.techs) < total) return "haulers cannot carry that much";
+  if (carryCapacity({ [kind]: caravans }, ctx.techs, offTrack) < total) return "haulers cannot carry that much";
   const kindName = (unitById.get(kind)?.name ?? kind).toLowerCase();
 
   // A leg that ends at a harbour hands the goods over there for the next leg; a leg to the destination delivers.
@@ -226,7 +227,7 @@ async function dispatchSupply(db: Db, m: MatchRow, p: PlayerRow, route: TradeRou
     const per = haulerCarry("caravan", ctx.techs);
     return fetchCaravans(db, m, p, route.fromRegionId, Math.max(1, Math.min(balance.trade.maxSupplyCaravans, Math.ceil(groupTotal / per))), now);
   }
-  const perCaravan = haulerCarry(kind, ctx.techs);
+  const perCaravan = haulerCarry(kind, ctx.techs, true);
   const home = origin.units[kind] ?? 0;
   const n = Math.max(1, Math.min(home, balance.trade.maxSupplyCaravans, Math.ceil(groupTotal / perCaravan)));
   let room = n * perCaravan;
@@ -573,4 +574,13 @@ export async function runOverflow(db: Db, publisher: Publisher, log: pino.Logger
     }
   }
   return sent;
+}
+
+/** Whether a train convoy's way from `from` to `to` leaves the track anywhere: then it is loaded as freight wagons. */
+async function trainLeavesTrack(db: Db, m: { id: string }, p: { id: string }, from: string, to: string): Promise<boolean> {
+  const { roads, rails, harbors } = await waySetsFor(db, m.id, p.id, await alliesOf(db, m.id, p.id));
+  const friendly = await landableFor(db, m.id, p.id);
+  const risk = (id: string) => (id === to || friendly(id) ? 0 : balance.travel.unfriendlyRiskKm);
+  const way = findRoute(from, to, false, roads, rails, harbors, risk, paceFor({ train: 1 }));
+  return !way || !onTrack(way.path, rails);
 }

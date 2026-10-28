@@ -124,9 +124,10 @@ export function resolveCombat(attacker: CombatSide, defender: CombatSide, seed: 
 /** Hauler unit ids, best (largest carry) first. */
 export const HAULER_IDS: readonly string[] = UNITS.filter((u) => u.hauler).sort((a, b) => b.carry - a.carry).map((u) => u.id);
 
-/** How much one hauler of this kind carries, after the owner's techs. */
-export function haulerCarry(id: string, techs?: ReadonlySet<string> | readonly string[]): number {
-  const base = unitById.get(id)?.carry ?? 0;
+/** How much one hauler of this kind carries, after the owner's techs; `offTrack` for a trip that leaves the track (a train loads as a freight wagon). */
+export function haulerCarry(id: string, techs?: ReadonlySet<string> | readonly string[], offTrack = false): number {
+  const u = unitById.get(id);
+  const base = (offTrack ? u?.offRailCarry : undefined) ?? u?.carry ?? 0;
   if (!techs) return base;
   const has = techs instanceof Set ? (t: string) => techs.has(t) : (t: string) => (techs as readonly string[]).includes(t);
   let bonus = 0;
@@ -190,9 +191,9 @@ export function haulerCount(units: UnitCounts): number {
   return HAULER_IDS.reduce((a, id) => a + (units[id] ?? 0), 0);
 }
 
-export function carryCapacity(units: UnitCounts, techs?: ReadonlySet<string> | readonly string[]): number {
+export function carryCapacity(units: UnitCounts, techs?: ReadonlySet<string> | readonly string[], offTrack = false): number {
   let c = 0;
-  for (const [id, n] of Object.entries(units)) c += n * (unitById.get(id)?.hauler ? haulerCarry(id, techs) : (unitById.get(id)?.carry ?? 0));
+  for (const [id, n] of Object.entries(units)) c += n * (unitById.get(id)?.hauler ? haulerCarry(id, techs, offTrack) : (unitById.get(id)?.carry ?? 0));
   return c;
 }
 

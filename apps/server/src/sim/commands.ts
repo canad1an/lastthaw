@@ -5,7 +5,7 @@
  * pays costs up front and returns what it created. Errors carry statusCode.
  */
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
-import { availableUnits, armySpeed, balance, buildingBlockedBy, carryCapacity, buildingById, buildingCost, buildingSeconds, canAfford, effectsOf, findRoute, missingFor, realSeconds, regionById, techById, techCost, techSeconds, trainSeconds, travelSeconds, unitById, unitCost, type Cost, type MissionKind, caravanCarry, techEffectsOf, distanceKm, haulerCarry, HAULER_IDS, splitNaval, seaLegsOf, laneKey, laneName, resolveCombat, laneLimitKm, isAirGroup, airRangeKm, airRoute, nextHopTo, seaPath, isHaulerConvoy, paceFor, reachableLevel, levelName } from "@lastthaw/shared";
+import { availableUnits, armySpeed, balance, buildingBlockedBy, carryCapacity, buildingById, buildingCost, buildingSeconds, canAfford, effectsOf, findRoute, missingFor, realSeconds, regionById, techById, techCost, techSeconds, trainSeconds, travelSeconds, unitById, unitCost, type Cost, type MissionKind, caravanCarry, techEffectsOf, distanceKm, haulerCarry, HAULER_IDS, splitNaval, seaLegsOf, laneKey, laneName, resolveCombat, laneLimitKm, isAirGroup, airRangeKm, airRoute, nextHopTo, seaPath, isHaulerConvoy, paceFor, onTrack, reachableLevel, levelName } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { armies, battles, jobs, matchRegions, matches, messages, players, tradeRoutes, regionSightings, playerTechs } from "../db/schema.js";
 import { matchDayAt, matchNow } from "./clock.js";
@@ -451,10 +451,6 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
   }
   if (!["settle", "conquer", "move", "reinforce"].includes(body.mission) && (units.settler ?? 0) > 0) throw httpError(400, "settlers only go on settle, conquer, move and reinforce missions");
   const goods = Object.entries(body.cargo).reduce((a, [, v]) => a + v, 0);
-  if (goods > 0) {
-    const cap = carryCapacity(units, techs) + (HOSTILE.has(body.mission) ? 0 : body.people * balance.travel.carryPerPerson);
-    if (goods > cap) throw httpError(400, `not enough carrying capacity: these units and people carry ${cap}, you are sending ${Math.round(goods)}. Caravans carry ${caravanCarry(techs)} each.`);
-  }
   const { roads, rails, harbors, stations } = await waySetsFor(db, m.id, p.id, await alliesOf(db, m.id, p.id));
   const origin0 = regionById(regionId);
   // Ships sail lane to lane along the coasts. Canoes keep to short lanes, so they hug the coast where a cog would cross
@@ -478,6 +474,12 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
     : voyage ?? findRoute(regionId, body.targetRegionId, false, roads, rails, harbors, risk, paceFor(units));
   // Nothing walks on water: a convoy without ships stays on land. Goods cross by ship from a harbour; armies sail aboard ships.
   if (!route) throw httpError(400, regionById(regionId)?.seaRoutes.includes(body.targetRegionId) ? "no land route: that crossing takes ships (a canoe or a cog), sent with the units aboard" : "no land route to that region");
+  if (goods > 0) {
+    // A train loads as a freight wagon for a trip that leaves the track anywhere, and so does any convoy calling at stops on the way.
+    const offTrack = !!body.stops?.length || !onTrack(route.path, rails);
+    const cap = carryCapacity(units, techs, offTrack) + (HOSTILE.has(body.mission) ? 0 : body.people * balance.travel.carryPerPerson);
+    if (goods > cap) throw httpError(400, `not enough carrying capacity: these units and people carry ${cap}${offTrack && (units.train ?? 0) > 0 ? " (trains carry half off the track)" : ""}, you are sending ${Math.round(goods)}. Caravans carry ${caravanCarry(techs)} each.`);
+  }
   const now = matchNow(m);
   const lanes = air ? [] : seaLegsOf(route.path);
 
@@ -765,7 +767,7 @@ export async function placeOnConvoys(tx: Tx, m: MatchRow, playerId: string, rout
     if (stops.some((s) => s.regionId === fromRegionId && s.done)) continue;
     const aboard = Object.entries(a.cargo).reduce((x, [k, v]) => x + (k === "people" ? 0 : v), 0);
     const manifest = stops.filter((s) => !s.done).reduce((x, s) => x + Object.values(s.take).reduce((y, z) => y + z, 0), 0);
-    let spare = carryCapacity(a.units, techs) - aboard - manifest;
+    let spare = carryCapacity(a.units, techs, true) - aboard - manifest;
     if (spare < 1) continue;
     // A new stop must be reachable by land from the convoy's last pickup; a stop it already plans needs no check.
     const pendingHere = stops.some((s) => !s.done && s.regionId === fromRegionId);

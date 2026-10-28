@@ -5,7 +5,7 @@ import { balance } from "../src/config/balance.js";
 import { buildingById, techById, unitById } from "../src/config/ages.js";
 import { formatCountdown, realSecondsToGameHours, scaledDuration, tickGapSeconds } from "../src/rules/time.js";
 import { buildingCost, buildingSeconds, canAfford, dayCostMultiplier, missingFor, scaleCost, techCost, trainSeconds, unitCost } from "../src/rules/timers.js";
-import { findRoute, laneKey, missionLabel, paceFor, seaLegsOf, travelSeconds } from "../src/rules/travel.js";
+import { findRoute, laneKey, missionLabel, onTrack, paceFor, seaLegsOf, travelSeconds } from "../src/rules/travel.js";
 import { armySpeed, bestHauler, breachOf, carryCapacity, haulerCount, splitNaval } from "../src/rules/combat.js";
 import { loyaltyBand, loyaltyOutlook } from "../src/rules/loyalty.js";
 import { seededRng } from "../src/rules/rng.js";
@@ -106,6 +106,14 @@ describe("travel", () => {
     // Priced on the Railway's own cost, per neighbour, not on the level curve.
     { const { levelCost: _lc, ...plain } = roads; void _lc; expect(buildingCost(roads, 2, 0, 3)).toEqual(buildingCost({ ...plain, cost: roads.levelCost![2]! }, 1, 0, 3)); }
     expect(buildingSeconds(roads, 2)).toBe(roads.levelSeconds![2]);
+  });
+  it("a train carries in full only on a trip that stays on track, as a freight wagon otherwise", () => {
+    expect(carryCapacity({ train: 2 })).toBe(2 * unitById.get("train")!.carry);
+    expect(carryCapacity({ train: 2 }, undefined, true)).toBe(2 * unitById.get("freight_wagon")!.carry);
+    expect(carryCapacity({ freight_wagon: 2 }, undefined, true)).toBe(carryCapacity({ freight_wagon: 2 }));
+    expect(onTrack(["a", "b", "c"], new Set(["a", "b", "c"]))).toBe(true);
+    expect(onTrack(["a", "b", "c"], new Set(["a", "c"]))).toBe(false);
+    expect(onTrack(["a"], new Set(["a"]))).toBe(false);
   });
   it("trains run at full speed on track and as a freight wagon off it, and take the quickest way", () => {
     const pace = paceFor({ train: 3 })!;

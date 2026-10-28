@@ -109,6 +109,8 @@ export interface UnitDef {
   speed: number;
   /** A unit that runs at `speed` only on track (between two Railway regions) goes at this speed everywhere else. */
   offRailSpeed?: number;
+  /** What it carries on a trip that leaves the track anywhere: there it goes as a freight wagon, loaded as one. */
+  offRailCarry?: number;
   /** How much loot one unit can carry on a raid. */
   carry: number;
   cost: Cost;
@@ -258,7 +260,7 @@ export const UNITS: readonly UnitDef[] = [
   { id: "canoe", name: "Canoe", age: 1, description: "Dugouts and rafts along the coast: carries a scout, a few settlers or a small load across a short lane. No harbour needed, but no open sea either.", attack: 0, defense: 1, speed: 10, carry: 100, cost: { wood: 80, food: 20 }, baseSeconds: 240, requires: "sailing", naval: true, hauler: true, shortLanes: true },
   { id: "galley", name: "Galley", age: 2, description: "Oared warship. Escorts crossings and sinks what it meets on its lane.", attack: 20, defense: 15, speed: 12, carry: 400, cost: { wood: 400, food: 100 }, baseSeconds: 420, requires: "shipbuilding", naval: true, needsBuilding: "harbor" },
   // Medieval
-  { id: "train", name: "Train", age: 5, description: "Iron rails and steam: carries eight caravans' worth. On track (between two regions with Roads level 2, the Railway) it runs three times as fast as a caravan; off the track it goes on as a freight wagon. Convoys take whichever way is quickest, a longer one along the track if it is.", attack: 0, defense: 1, speed: 24, offRailSpeed: 16, carry: 4000, cost: { wood: 400, iron: 30 }, baseSeconds: 900, requires: "railways", civilian: true, hauler: true },
+  { id: "train", name: "Train", age: 5, description: "Iron rails and steam: carries eight caravans' worth on a trip that stays on track (between regions with Roads level 2, the Railway), and runs three times as fast as a caravan there. A trip that leaves the track anywhere goes as a freight wagon off it and is loaded as one, carrying half. Convoys take whichever way is quickest, a longer one along the track if it is.", attack: 0, defense: 1, speed: 24, offRailSpeed: 16, offRailCarry: 2000, carry: 4000, cost: { wood: 400, iron: 30 }, baseSeconds: 900, requires: "railways", civilian: true, hauler: true },
   { id: "lorry", name: "Lorry", age: 6, description: "An engine on every road and diesel on every rail: carries 5,000 and outruns a train. Needs Internal combustion.", attack: 0, defense: 1, speed: 30, carry: 5000, cost: { wood: 500, iron: 60 }, baseSeconds: 900, requires: "internal_combustion", civilian: true, hauler: true },
   { id: "knight", name: "Knight", age: 4, description: "The finest heavy cavalry.", attack: 32, defense: 22, speed: 12, carry: 70, cost: { food: 250, iron: 20, horses: 1 }, baseSeconds: 600, requires: "chivalry", needsResource: "horses" },
   { id: "longbowman", name: "Longbowman", age: 4, description: "Deadly at range.", attack: 24, defense: 10, speed: 6, carry: 30, cost: { food: 120, wood: 80 }, baseSeconds: 420, requires: "chivalry" },
