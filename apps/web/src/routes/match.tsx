@@ -422,7 +422,14 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
     () => (hideHaulers ? state.armies.filter((a) => a.mission === "relocate" || !Object.entries(a.units).every(([id, n]) => n <= 0 || unitById.get(id)?.hauler)) : state.armies),
     [state.armies, hideHaulers],
   );
-  const markers = useMemo(() => armyMarkers(shownArmies, state.incoming, now + clockOffsetMs, formatCountdown, state.me.techs, state.ships, new Set(state.allies)), [shownArmies, state.incoming, state.ships, state.allies, now, clockOffsetMs]);
+  // Regions with the Railway (Roads level 2), mine and those I can see: track runs between two neighbours that both have it.
+  const railRegions = useMemo(() => {
+    const rail = new Set<string>();
+    for (const o of state.owned) if (!o.frozen && (o.buildings.roads ?? 0) >= 2) rail.add(o.regionId);
+    for (const s of state.sighted) if (s.rail) rail.add(s.regionId);
+    return rail;
+  }, [state.owned, state.sighted]);
+  const markers = useMemo(() => armyMarkers(shownArmies, state.incoming, now + clockOffsetMs, formatCountdown, state.me.techs, state.ships, new Set(state.allies), railRegions), [shownArmies, state.incoming, state.ships, state.allies, now, clockOffsetMs, railRegions]);
   const finished = state.match.status === "finished";
   const eliminated = state.owned.length === 0 && !finished;
   const [summaryOpen, setSummaryOpen] = useSummaryOpen(matchId, finished);
@@ -456,16 +463,9 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
   // Railway (Roads level 2), drawn in my colour between two of mine and grey elsewhere.
   const roadLinks = useMemo(() => {
     const colour = new Map<string, string>();
-    const rail = new Set<string>();
-    for (const o of state.owned) {
-      if (o.frozen) continue;
-      if ((o.buildings.roads ?? 0) >= 1) colour.set(o.regionId, colorOf(state.me.playerId));
-      if ((o.buildings.roads ?? 0) >= 2) rail.add(o.regionId);
-    }
-    for (const s of state.sighted) {
-      if (s.roads && !colour.has(s.regionId)) colour.set(s.regionId, "#cbd5e1");
-      if (s.rail) rail.add(s.regionId);
-    }
+    const rail = railRegions;
+    for (const o of state.owned) if (!o.frozen && (o.buildings.roads ?? 0) >= 1) colour.set(o.regionId, colorOf(state.me.playerId));
+    for (const s of state.sighted) if (s.roads && !colour.has(s.regionId)) colour.set(s.regionId, "#cbd5e1");
     const out: Array<[string, string, string, "road" | "rail"]> = [];
     for (const [id, c] of colour) {
       for (const n of regionById(id)?.neighbors ?? []) {
@@ -476,7 +476,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
       }
     }
     return out;
-  }, [state.owned, state.sighted, state.me.playerId, colorOf]);
+  }, [state.owned, state.sighted, state.me.playerId, colorOf, railRegions]);
   const frontierSet = useMemo(() => new Set(state.frontier), [state.frontier]);
   const allySet = useMemo(() => new Set(state.allies), [state.allies]);
   const borderSet = useMemo(() => new Set(state.owned.flatMap((o) => regionById(o.regionId)?.neighbors ?? [])), [state.owned]);

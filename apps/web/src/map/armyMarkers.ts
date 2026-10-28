@@ -80,7 +80,26 @@ export function leadUnit(units: Record<string, number>): string | null {
   return kinds.find((id) => unitById.get(id)?.naval) ?? kinds.find((id) => unitById.get(id)?.air) ?? kinds[0] ?? null;
 }
 
-/** Point `p` (0..1) of the way along a polyline, by distance. */
+/**
+ * A train runs only on track, the leg between two regions with the Railway; anywhere else the convoy goes as freight
+ * wagons, and is drawn so. `p` (0..1) is how far along `ids` it is, by distance as drawn.
+ */
+function offTrack(units: Record<string, number>, ids: readonly string[], p: number, rail: ReadonlySet<string>): Record<string, number> {
+  if (!((units.train ?? 0) > 0) || ids.length < 2) return units;
+  const lens = ids.slice(1).map((id, i) => {
+    const pts = routePoints([ids[i]!, id]);
+    let d = 0;
+    for (let k = 1; k < pts.length; k++) d += Math.hypot(pts[k]!.x - pts[k - 1]!.x, pts[k]!.y - pts[k - 1]!.y);
+    return d;
+  });
+  let left = Math.min(1, Math.max(0, p)) * lens.reduce((x, d) => x + d, 0);
+  let leg = 0;
+  while (leg < lens.length - 1 && left > lens[leg]!) left -= lens[leg++]!;
+  if (rail.has(ids[leg]!) && rail.has(ids[leg + 1]!)) return units;
+  const { train, ...rest } = units;
+  return { ...rest, freight_wagon: (rest.freight_wagon ?? 0) + (train ?? 0) };
+}
+
 /** Which way a marker at `p` along `points` is going: the route just ahead against just behind, in degrees clockwise from east. */
 function headingAt(points: Array<{ x: number; y: number }>, p: number): number | null {
   if (points.length < 2) return null;
@@ -141,7 +160,7 @@ function upTo(points: Array<{ x: number; y: number }>, p: number): Array<{ x: nu
 }
 
 /** Where every army is right now, for drawing on the map. */
-export function armyMarkers(armies: ArmyView[], incoming: IncomingView[], nowMs: number, formatCountdown: (s: number) => string, techs?: readonly string[], ships: ShipSightingView[] = [], allies: ReadonlySet<string> = new Set()): ArmyMarker[] {
+export function armyMarkers(armies: ArmyView[], incoming: IncomingView[], nowMs: number, formatCountdown: (s: number) => string, techs?: readonly string[], ships: ShipSightingView[] = [], allies: ReadonlySet<string> = new Set(), rail: ReadonlySet<string> = new Set()): ArmyMarker[] {
   const out: ArmyMarker[] = [];
   for (const a of armies) {
     const ids = a.path.length >= 2 ? a.path : [a.originRegionId, a.targetRegionId];
@@ -168,6 +187,7 @@ export function armyMarkers(armies: ArmyView[], incoming: IncomingView[], nowMs:
     const capacity = carryCapacity(a.units, techs) + people * balance.travel.carryPerPerson;
     const cargo = goods.map(([k, n]) => `${Math.round(n)} ${k.replace("_", " ")}`).join(", ");
     const routeIds = returning ? [...passed].reverse() : ids;
+    const shown = offTrack(a.units, routeIds, progress, rail);
     out.push({
       id: a.id,
       x: pos.x,
@@ -175,14 +195,15 @@ export function armyMarkers(armies: ArmyView[], incoming: IncomingView[], nowMs:
       hostile: false,
       mission: a.mission,
       naval: Object.entries(a.units).some(([id, n]) => n > 0 && unitById.get(id)?.naval),
-      lead: leadUnit(a.units),
-      kinds: kindsOf(a.units),
-      units: a.units,
+      lead: leadUnit(shown),
+      kinds: kindsOf(shown),
+      units: shown,
       title: a.mission === "patrol" && !returning ? `Patrol on the ${laneName(a.lane ?? "")} lane` : `${missionLabel(a.mission, a.units)} ${returning ? "returning to" : "→"} ${dest}`,
       lines: [
         returning && a.note ? a.note : "",
         `from ${regionById(a.originRegionId)?.name ?? a.originRegionId}`,
         a.mission === "relocate" ? "the capital's stores and court" : fmtUnits(a.units) + (people > 0 ? ` and ${people} people` : ""),
+        shown !== a.units ? "off the track here: going as freight wagons until it reaches a Railway leg" : "",
         cargo ? `carrying ${cargo}${capacity > 0 ? ` (${Math.round(goodsTotal)} of ${Math.round(capacity)})` : ""}` : capacity > 0 && !returning ? "carrying nothing" : "",
         a.status === "fighting" ? "in battle now: click the crossed swords on the region to watch" : `${returning ? "home" : a.mission === "patrol" ? "holds the lane for" : "arrives"} ${a.mission === "patrol" && !returning ? "" : "in "}${formatCountdown((end - nowMs) / 1000)}`,
       ].filter(Boolean),
