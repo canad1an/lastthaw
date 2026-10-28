@@ -2018,6 +2018,8 @@ describe("api routes", () => {
     const annPid = annState.me.playerId;
     const [annOrder] = await db.insert(marketOrders).values({ matchId: gameId, playerId: annPid, regionId: annCap, offerResource: "stone", offerAmount: 400, askResource: "wood", askAmount: 400, status: "open" }).returning();
     const annOrderId = annOrder!.id;
+    // Supply routes left by earlier tests hold stone for their own jobs, which would cover what this order owes.
+    await db.delete(tradeRoutes).where(and(eq(tradeRoutes.matchId, gameId), eq(tradeRoutes.playerId, benPid), sql`${tradeRoutes.forJobId} is not null`));
     try {
       const regions = (await db.select({ n: sql<number>`count(*)::int` }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid), sql`${matchRegions.frozenAt} is null`)))[0]!.n;
       const hired = await Ben.call("POST", `${base}/advisors/chancellor/hire`, {});
