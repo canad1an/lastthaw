@@ -15,7 +15,7 @@ export function HeroMap({ className = "" }: { className?: string }) {
 
   useEffect(() => {
     const el = canvas.current;
-    if (!el) return;
+    if (!el || !HeroWar.supported(el)) return;
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     let newsId = 0;
     const war = new HeroWar(el, {

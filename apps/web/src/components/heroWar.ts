@@ -103,6 +103,15 @@ export class HeroWar {
   private focusAt = -99;
   gt = 0;
 
+  /**
+   * Some headless browsers (Lightpanda) have a canvas element but no Path2D, observers or 2D context; the home page
+   * then leaves the map empty instead of crashing the whole page.
+   */
+  static supported(canvas: HTMLCanvasElement): boolean {
+    return typeof Path2D === "function" && typeof ResizeObserver === "function" && typeof IntersectionObserver === "function"
+      && typeof canvas.getContext === "function" && !!canvas.getContext("2d");
+  }
+
   constructor(private canvas: HTMLCanvasElement, private on: HeroEvents, private reduce: boolean) {
     this.ctx = canvas.getContext("2d")!;
     const regions = allRegions();
