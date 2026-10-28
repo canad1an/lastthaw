@@ -327,17 +327,24 @@ export function WorldMap({ paint, selected, onSelect, focus, relief = false, fly
             const w = (unitsPerPx / view.k) * (kind === "rail" ? 4.2 : 1.6);
             return (
               <g key={`${kind}-${a}-${b}`}>
-                <line x1={ra.x} y1={ra.y} x2={rb.x} y2={rb.y} stroke="#0f172a" strokeWidth={w * (kind === "rail" ? 1.4 : 1.9)} strokeLinecap="round" opacity={0.7} />
+                {kind !== "rail" && <line x1={ra.x} y1={ra.y} x2={rb.x} y2={rb.y} stroke="#0f172a" strokeWidth={w * 1.9} strokeLinecap="round" opacity={0.7} />}
                 {kind === "rail" ? (
                   (() => {
-                    // Track: sleepers across the line (a thick dashed stroke reads as a row of ties), and two rails either side of the centre.
+                    // Track, nothing like the dashed road: dark wooden sleepers across the line (a thick dashed stroke
+                    // reads as a row of ties, outlined so they show on any ground) and two steel rails on top.
                     const len = Math.hypot(rb.x - ra.x, rb.y - ra.y) || 1;
-                    const ox = (-(rb.y - ra.y) / len) * w * 0.55, oy = ((rb.x - ra.x) / len) * w * 0.55;
+                    const ox = (-(rb.y - ra.y) / len) * w * 0.42, oy = ((rb.x - ra.x) / len) * w * 0.42;
+                    const ties = `${w * 0.38} ${w * 0.62}`;
                     return (
                       <>
-                        <line x1={ra.x} y1={ra.y} x2={rb.x} y2={rb.y} stroke="#a07d55" strokeWidth={w * 1.7} strokeDasharray={`${w * 0.35} ${w * 0.75}`} />
-                        <line x1={ra.x + ox} y1={ra.y + oy} x2={rb.x + ox} y2={rb.y + oy} stroke={colour} strokeWidth={w * 0.32} />
-                        <line x1={ra.x - ox} y1={ra.y - oy} x2={rb.x - ox} y2={rb.y - oy} stroke={colour} strokeWidth={w * 0.32} />
+                        <line x1={ra.x} y1={ra.y} x2={rb.x} y2={rb.y} stroke="#0f172a" strokeWidth={w * 1.55} strokeDasharray={`${w * 0.58} ${w * 0.42}`} strokeDashoffset={w * 0.1} />
+                        <line x1={ra.x} y1={ra.y} x2={rb.x} y2={rb.y} stroke="#7c4a24" strokeWidth={w * 1.35} strokeDasharray={ties} />
+                        {[1, -1].map((s) => (
+                          <g key={s}>
+                            <line x1={ra.x + s * ox} y1={ra.y + s * oy} x2={rb.x + s * ox} y2={rb.y + s * oy} stroke="#0f172a" strokeWidth={w * 0.34} />
+                            <line x1={ra.x + s * ox} y1={ra.y + s * oy} x2={rb.x + s * ox} y2={rb.y + s * oy} stroke="#e2e8f0" strokeWidth={w * 0.18} />
+                          </g>
+                        ))}
                       </>
                     );
                   })()
