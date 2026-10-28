@@ -132,6 +132,13 @@ export function paceFor(units: Record<string, number>): ((onTrack: boolean) => n
   return (onTrack) => (onTrack ? 1 : top / Math.max(0.1, off));
 }
 
+/** Whether one region reaches another overland through only the player's or allies' land (`friendly`) on the way. */
+export function friendlyWalk(from: string, to: string, friendly: (regionId: string) => boolean): boolean {
+  if (from === to) return true;
+  const way = findRoute(from, to, false);
+  return !!way && way.path.slice(1, -1).every((id) => friendly(id));
+}
+
 /** Whether every leg of `path` runs on track: each step between two regions with the Railway. */
 export function onTrack(path: readonly string[], rails: ReadonlySet<string>): boolean {
   if (path.length < 2) return false;

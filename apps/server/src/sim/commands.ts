@@ -5,7 +5,7 @@
  * pays costs up front and returns what it created. Errors carry statusCode.
  */
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
-import { availableUnits, armySpeed, balance, buildingBlockedBy, carryCapacity, buildingById, buildingCost, buildingSeconds, canAfford, effectsOf, findRoute, missingFor, realSeconds, regionById, techById, techCost, techSeconds, trainSeconds, travelSeconds, unitById, unitCost, type Cost, type MissionKind, caravanCarry, techEffectsOf, distanceKm, haulerCarry, HAULER_IDS, splitNaval, seaLegsOf, laneKey, laneName, resolveCombat, laneLimitKm, isAirGroup, airRangeKm, airRoute, nextHopTo, seaPath, isHaulerConvoy, paceFor, onTrack, reachableLevel, levelName } from "@lastthaw/shared";
+import { availableUnits, armySpeed, balance, buildingBlockedBy, carryCapacity, buildingById, buildingCost, buildingSeconds, canAfford, effectsOf, findRoute, missingFor, realSeconds, regionById, techById, techCost, techSeconds, trainSeconds, travelSeconds, unitById, unitCost, type Cost, type MissionKind, caravanCarry, techEffectsOf, distanceKm, haulerCarry, HAULER_IDS, splitNaval, seaLegsOf, laneKey, laneName, resolveCombat, laneLimitKm, isAirGroup, airRangeKm, airRoute, nextHopTo, seaPath, isHaulerConvoy, paceFor, onTrack, friendlyWalk, reachableLevel, levelName } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { armies, battles, jobs, matchRegions, matches, messages, players, tradeRoutes, regionSightings, playerTechs } from "../db/schema.js";
 import { matchDayAt, matchNow } from "./clock.js";
@@ -756,6 +756,7 @@ export async function placeOnConvoys(tx: Tx, m: MatchRow, playerId: string, rout
     .from(armies)
     .where(and(eq(armies.matchId, m.id), eq(armies.playerId, playerId), eq(armies.mission, "transport"), eq(armies.status, "outbound")))
     .for("update", { skipLocked: true });
+  const friendly = convoys.length ? await landableFor(tx, m.id, playerId) : () => false;
   for (const a of convoys) {
     if (Object.values(left).every((v) => v < 1)) break;
     const stops = a.stops;
@@ -769,10 +770,11 @@ export async function placeOnConvoys(tx: Tx, m: MatchRow, playerId: string, rout
     const manifest = stops.filter((s) => !s.done).reduce((x, s) => x + Object.values(s.take).reduce((y, z) => y + z, 0), 0);
     let spare = carryCapacity(a.units, techs, true) - aboard - manifest;
     if (spare < 1) continue;
-    // A new stop must be reachable by land from the convoy's last pickup; a stop it already plans needs no check.
+    // A new stop must be reached through friendly land from the convoy's last pickup, and lead on the same way to the
+    // destination; a stop it already plans needs no check.
     const pendingHere = stops.some((s) => !s.done && s.regionId === fromRegionId);
     const prev = stops.filter((s) => !s.done && s.routeId).pop()?.regionId ?? a.targetRegionId;
-    if (!pendingHere && !findRoute(prev, fromRegionId, false)) continue;
+    if (!pendingHere && (!friendlyWalk(prev, fromRegionId, friendly) || !friendlyWalk(fromRegionId, toRegionId, friendly))) continue;
     const take: Record<string, number> = {};
     for (const [k, v] of Object.entries(left)) {
       const t = Math.min(v, Math.floor(spare));

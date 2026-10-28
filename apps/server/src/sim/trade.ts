@@ -1,7 +1,7 @@
 import { and, eq, inArray, isNull, lte, sql, asc, desc } from "drizzle-orm";
 import { enterMap, mapOf } from "../map/scope.js";
 import type pino from "pino";
-import { balance, bestHauler, carryCapacity, distanceKm, findRoute, haulerCarry, haulerCount, HAULER_IDS, laneLimitKm, nextHopTo, onTrack, paceFor, regionById, reliefMoveCap, seaPath, supplyConvoyCap, unitById } from "@lastthaw/shared";
+import { balance, bestHauler, carryCapacity, distanceKm, findRoute, haulerCarry, haulerCount, HAULER_IDS, laneLimitKm, nextHopTo, onTrack, paceFor, friendlyWalk, regionById, reliefMoveCap, seaPath, supplyConvoyCap, unitById } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { armies, matchRegions, matches, playerTechs, players, tradeRoutes } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
@@ -208,7 +208,8 @@ async function dispatchSupply(db: Db, m: MatchRow, p: PlayerRow, route: TradeRou
       .where(and(eq(tradeRoutes.matchId, m.id), eq(tradeRoutes.playerId, p.id), eq(tradeRoutes.toRegionId, route.toRegionId), sql`(${tradeRoutes.forJobId} is not null or ${tradeRoutes.relayTo} is not null)`, sql`${tradeRoutes.id} <> ${route.id}`))
   ).filter((r) => Object.values(r.held).some((v) => v >= 1));
   const groupTotal = [route, ...siblings].reduce((a, r) => a + Object.values(r.held).reduce((x, y) => x + y, 0), 0);
-  const sea = seaOnly(route.fromRegionId, route.toRegionId, await landableFor(db, m.id, p.id), await sailsFor(db, m.id, p.id));
+  const friendly = await landableFor(db, m.id, p.id);
+  const sea = seaOnly(route.fromRegionId, route.toRegionId, friendly, await sailsFor(db, m.id, p.id));
   const kind = sea ? shipFor(origin.units, route.fromRegionId, route.toRegionId) : bestHauler(origin.units, false);
   if (!kind && sea) return `goods waiting at ${regionNameOf(route.fromRegionId)}: ${await fetchShips(db, m, p, route.fromRegionId, route.toRegionId, { goods: groupTotal }, now, origin.units)}`;
   if (!kind) {
@@ -248,7 +249,8 @@ async function dispatchSupply(db: Db, m: MatchRow, p: PlayerRow, route: TradeRou
     for (const [k, v] of Object.entries(cargo)) h[k] = Math.max(0, (h[k] ?? 0) - v);
     holdUpdates.set(route.id, h);
   }
-  // Then the nearest other pickups while there is room, each reachable by land from the last.
+  // Then the nearest other pickups while there is room, each reached through friendly land from the last and on to the
+  // destination: a pickup over the sea, or across strangers' country, waits for its own convoy or ship.
   let at = route.fromRegionId;
   const pool = [...siblings];
   const heldTotal = (r: TradeRouteRow) => Object.values(r.held).reduce((x, y) => x + y, 0);
@@ -261,7 +263,7 @@ async function dispatchSupply(db: Db, m: MatchRow, p: PlayerRow, route: TradeRou
     const worthwhile = pool.some((r) => heldTotal(r) >= minimum);
     const i = worthwhile ? pool.findIndex((r) => heldTotal(r) >= minimum) : 0;
     const next = pool.splice(i, 1)[0]!;
-    if (next.fromRegionId === at || !findRoute(at, next.fromRegionId, false)) continue;
+    if (next.fromRegionId === at || !friendlyWalk(at, next.fromRegionId, friendly) || !friendlyWalk(next.fromRegionId, route.toRegionId, friendly)) continue;
     const take: Record<string, number> = {};
     const h = { ...next.held };
     for (const [k, v] of Object.entries(next.held)) {
@@ -455,10 +457,7 @@ async function fetchCaravans(db: Db, m: MatchRow, p: PlayerRow, fromRegionId: st
   // Spare haulers walk over only through the player's or allies' land: a relief column marching through strangers'
   // country to a far holding would be ambushed on the way, and a far holding over the sea trains its own or waits.
   const friendly = await landableFor(db, m.id, p.id);
-  const safeWalk = (src: string) => {
-    const way = findRoute(src, fromRegionId, false);
-    return !!way && way.path.slice(1, -1).every((id) => friendly(id));
-  };
+  const safeWalk = (src: string) => friendlyWalk(src, fromRegionId, friendly);
   const candidates = mine
     .filter((r) => r.regionId !== fromRegionId && !r.frozenAt && spareOf(r) > 0)
     .filter((r) => safeWalk(r.regionId))

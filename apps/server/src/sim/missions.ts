@@ -453,7 +453,9 @@ async function sendHome(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, units: Uni
   const route = routeFor(ctx, army.targetRegionId, army.originRegionId, pathUsesSea(army.path), units) ?? { path: [army.targetRegionId, army.originRegionId], cost: 1000, usesSea: false };
   const seconds = await legSeconds(tx, m, ctx, route, units, at, 5);
   const returnsAt = new Date(at.getTime() + seconds * 1000);
-  await tx.update(armies).set({ status: "returning", units, cargo, returnsAt, note }).where(eq(armies.id, army.id));
+  // The way home is the path kept (origin first, as on the way out), so the map draws the road it really takes: a convoy
+  // that called at stops came in on the last leg only, and the way back may differ from the way out.
+  await tx.update(armies).set({ status: "returning", units, cargo, returnsAt, note, path: [...route.path].reverse() }).where(eq(armies.id, army.id));
   await tx.insert(jobs).values({ matchId: m.id, playerId: army.playerId, regionId: army.originRegionId, kind: "mission", refId: army.id, startsAt: at, endsAt: returnsAt });
 }
 
