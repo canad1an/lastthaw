@@ -77,7 +77,7 @@ export function useMenuData(matchId: string, state: MatchStateView, overlays: Se
   const proposals = state.pacts.filter((p) => p.status === "proposed" && p.bPlayerId === state.me.playerId).length;
   // Routes waiting on haulers plus builds waiting on materials: the number that needs attention.
   const logisticsBadge =
-    state.routes.filter((r) => r.enabled && (r.lastResult ?? "").startsWith("no haulers at home")).length + state.jobs.filter((j) => j.kind === "build" && j.waitingFor).length || undefined;
+    state.routes.filter((r) => r.enabled && /^no (land )?haulers at home|no (cargo )?ships at the port|no cargo ship|no cog at|no ship at/.test(r.lastResult ?? "")).length + state.jobs.filter((j) => j.kind === "build" && j.waitingFor).length || undefined;
   // Open offers on the market (everyone's, including mine), refreshed every half minute.
   const marketQ = useQuery({ queryKey: keys.market(matchId), queryFn: () => api.market(matchId), refetchInterval: 30_000 });
   const marketOpen = (marketQ.data?.open.length ?? 0) + (marketQ.data?.mine.filter((o) => o.status === "open" && !marketQ.data?.open.some((x) => x.id === o.id)).length ?? 0);

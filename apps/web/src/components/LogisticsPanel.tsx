@@ -18,7 +18,9 @@ export function LogisticsPanel({ state, onSelect }: { state: MatchStateView; onS
   const totalHome = fleet.reduce((a, r) => a + r.home, 0);
   const totalRoad = fleet.reduce((a, r) => a + r.road, 0);
 
-  const stalled = state.routes.filter((r) => r.enabled && (r.lastResult ?? "").startsWith("no haulers at home"));
+  // Routes stalled for want of land haulers, and for want of cargo ships (the older wording too, for routes not run since).
+  const stalled = state.routes.filter((r) => r.enabled && /^no (land )?haulers at home/.test(r.lastResult ?? ""));
+  const stalledSea = state.routes.filter((r) => r.enabled && /no (cargo )?ships at the port|no cargo ship|no cog at|no ship at/.test(r.lastResult ?? ""));
   const waitingBuilds = state.jobs.filter((j) => j.kind === "build" && j.waitingFor);
   const owed = useMemo(() => {
     const t: Record<string, number> = {};
@@ -33,12 +35,19 @@ export function LogisticsPanel({ state, onSelect }: { state: MatchStateView; onS
   const outConvoys = state.armies.filter((a) => a.mission === "transport" && a.status === "outbound" && a.stops.length > 0).length;
   const waitingTurn = state.routes.filter((r) => r.enabled && (r.lastResult ?? "").startsWith("waiting:")).length;
   const verdict =
-    stalled.length > 0 || fullNoHaulers.length > 0
+    stalled.length > 0 || fullNoHaulers.length > 0 || stalledSea.length > 0
       ? {
           tone: "text-amber-300",
-          text: `Short of haulers: ${stalled.length} route${stalled.length === 1 ? "" : "s"} waiting and ${fullNoHaulers.length} full region${fullNoHaulers.length === 1 ? "" : "s"} with none at home. Train more under a region's Train tab${
-            !state.me.techs.includes("wagon_building") ? ", or research Wagon building: it turns every caravan into a wagon that carries 1,200" : ", or research the next hauler tech (Wainwrights, Railways, Internal combustion): each rebuilds your whole fleet as the better kind"
-          }.`,
+          text: [
+            stalled.length > 0 || fullNoHaulers.length > 0
+              ? `Short of land haulers: ${stalled.length} route${stalled.length === 1 ? "" : "s"} waiting and ${fullNoHaulers.length} full region${fullNoHaulers.length === 1 ? "" : "s"} with none at home. Train more under a region's Train tab${
+                  !state.me.techs.includes("wagon_building") ? ", or research Wagon building: it turns every caravan into a wagon that carries 1,200" : ", or research the next hauler tech (Wainwrights, Railways, Internal combustion): each rebuilds your whole fleet as the better kind"
+                }.`
+              : "",
+            stalledSea.length > 0 ? `Short of cargo ships: ${stalledSea.length} route${stalledSea.length === 1 ? "" : "s"} with goods waiting at a harbour for a ship. Build Cogs (Shipbuilding, in a region with a Harbor) on that coast; galleys are warships and carry no goods.` : "",
+          ]
+            .filter(Boolean)
+            .join(" "),
         }
       : waitingTurn > 0
         ? {
@@ -47,7 +56,7 @@ export function LogisticsPanel({ state, onSelect }: { state: MatchStateView; onS
           }
       : totalHome > 0 && totalRoad === 0 && state.routes.length === 0
         ? { tone: "text-slate-300", text: "Your haulers are all at home with nothing to do. Set up trade routes or let overflow use them." }
-        : { tone: "text-emerald-400", text: "Hauling is keeping up: nothing is waiting on a caravan." };
+        : { tone: "text-emerald-400", text: "Hauling is keeping up: nothing is waiting on a land hauler or a cargo ship." };
 
   const have = totalHome + totalRoad;
   // Materials routes: the ones bringing goods to waiting builds, with what is still to come on each.
@@ -213,7 +222,7 @@ export function LogisticsPanel({ state, onSelect }: { state: MatchStateView; onS
                   <button className="hover:text-white" onClick={() => onSelect(o.regionId)}>
                     {regionById(o.regionId)?.name}
                   </button>
-                  <span className="text-slate-500"> · stores full, no haulers</span>
+                  <span className="text-slate-500"> · stores full, no land haulers</span>
                 </li>
               ))}
             </ul>
