@@ -337,10 +337,10 @@ async function fetchShips(db: Db, m: MatchRow, p: PlayerRow, portRegionId: strin
     .where(and(eq(armies.matchId, m.id), eq(armies.playerId, p.id), eq(armies.mission, "move"), eq(armies.status, "outbound"), eq(armies.targetRegionId, portRegionId)));
   const inFlight = coming.reduce((a, x) => a + shipsIn(x.units), 0);
   const firstComing = coming.find((a) => shipsIn(a.units) > 0);
-  if (inFlight >= wanted && firstComing) return `no ships at the port; ${inFlight} sailing in from ${regionNameOf(firstComing.origin)}`;
+  if (inFlight >= wanted && firstComing) return `no cargo ships at the port; ${inFlight} sailing in from ${regionNameOf(firstComing.origin)}`;
   let need = wanted - inFlight;
   const port = regionById(portRegionId);
-  if (!port) return "no ships at the port";
+  if (!port) return "no cargo ships at the port";
   const mine = await db
     .select({ regionId: matchRegions.regionId, units: matchRegions.units, frozenAt: matchRegions.frozenAt })
     .from(matchRegions)
@@ -365,8 +365,8 @@ async function fetchShips(db: Db, m: MatchRow, p: PlayerRow, portRegionId: strin
   const canoeNote = canoesHere > 0 && !canoeCan ? `the ${canoesHere} canoe${canoesHere === 1 ? "" : "s"} here cannot make it: the way to ${regionNameOf(toRegionId)} has ${Math.round(longestLane)} km of open water and canoes keep to lanes under ${canoeLimit} km; ` : "";
   if (candidates.length === 0) {
     return inFlight > 0 && firstComing
-      ? `no ships at the port; ${inFlight} sailing in from ${regionNameOf(firstComing.origin)}`
-      : `${canoeNote}no cog at ${regionNameOf(portRegionId)} and none spare on a lane to it: build a Cog (Harbor and Shipbuilding) on this coast${canoeCan ? ", or a Canoe" : ""}`;
+      ? `no cargo ships at the port; ${inFlight} sailing in from ${regionNameOf(firstComing.origin)}`
+      : `${canoeNote}no cargo ship (cog) at ${regionNameOf(portRegionId)} and none spare on a lane to it: build a Cog (Harbor and Shipbuilding) on this coast${canoeCan ? ", or a Canoe" : ""}`;
   }
   const sent: string[] = [];
   let soonest = Infinity;
@@ -397,9 +397,9 @@ async function fetchShips(db: Db, m: MatchRow, p: PlayerRow, portRegionId: strin
       // The lane is closed to them, or the region changed under us: try the next.
     }
   }
-  if (sent.length === 0) return `${canoeNote}no ship at ${regionNameOf(portRegionId)} can make this crossing and none spare can: build a Cog (Harbor and Shipbuilding) on this coast`;
+  if (sent.length === 0) return `${canoeNote}no cargo ship at ${regionNameOf(portRegionId)} can make this crossing and none spare can: build a Cog (Harbor and Shipbuilding) on this coast`;
   const when = soonest < 1 ? `${Math.max(1, Math.round(soonest * 60))} min` : `${soonest.toFixed(1)} h`;
-  return `no ships at the port; ${sent.join(", ")} sailing in, first in about ${when}`;
+  return `no cargo ships at the port; ${sent.join(", ")} sailing in, first in about ${when}`;
 }
 
 /** Every land hauler the player owns, at home or on the road: the convoy cap grows with it. */
@@ -422,21 +422,21 @@ async function contextFor(db: Db, m: MatchRow, p: PlayerRow): Promise<CommandCon
  * marching here counts. Nothing is ever reserved: whichever route comes due first gets the nearest spare haulers.
  */
 async function fetchCaravans(db: Db, m: MatchRow, p: PlayerRow, fromRegionId: string, wanted: number, now: Date): Promise<string> {
-  if (!balance.trade.fetchCaravans) return "no haulers at home (they may be on the road)";
+  if (!balance.trade.fetchCaravans) return "no land haulers at home (they may be on the road)";
   const coming = await db
     .select({ id: armies.id, units: armies.units, origin: armies.originRegionId })
     .from(armies)
     .where(and(eq(armies.matchId, m.id), eq(armies.playerId, p.id), eq(armies.mission, "move"), eq(armies.status, "outbound"), eq(armies.targetRegionId, fromRegionId)));
   const inFlight = coming.reduce((a, x) => a + haulerCount(x.units), 0);
   const firstComing = coming.find((a) => haulerCount(a.units) > 0);
-  if (inFlight >= wanted && firstComing) return `no haulers at home; ${inFlight} coming from ${regionNameOf(firstComing.origin)}`;
+  if (inFlight >= wanted && firstComing) return `no land haulers at home; ${inFlight} coming from ${regionNameOf(firstComing.origin)}`;
   let need = wanted - inFlight;
   const reliefOut = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(armies)
     .where(and(eq(armies.matchId, m.id), eq(armies.playerId, p.id), eq(armies.mission, "move"), eq(armies.status, "outbound"), sql`(${armies.cargo}->>'people')::float = 0`));
   const reliefCap = reliefMoveCap(await haulerFleet(db, m, p));
-  if ((reliefOut[0]?.n ?? 0) >= reliefCap) return `no haulers at home; ${reliefOut[0]!.n} of ${reliefCap} relief moves are already on the road, waiting for one to land`;
+  if ((reliefOut[0]?.n ?? 0) >= reliefCap) return `no land haulers at home; ${reliefOut[0]!.n} of ${reliefCap} relief moves are already on the road, waiting for one to land`;
 
   const mine = await db
     .select({ regionId: matchRegions.regionId, units: matchRegions.units, frozenAt: matchRegions.frozenAt })
@@ -466,7 +466,7 @@ async function fetchCaravans(db: Db, m: MatchRow, p: PlayerRow, fromRegionId: st
       const ib = claimed.has(b.regionId) ? 1 : 0;
       return ia - ib || distanceKm(a.regionId, fromRegionId) - distanceKm(b.regionId, fromRegionId);
     });
-  if (candidates.length === 0) return inFlight > 0 && firstComing ? `no haulers at home; ${inFlight} coming from ${regionNameOf(firstComing.origin)}` : "no haulers at home, and none spare anywhere: train more";
+  if (candidates.length === 0) return inFlight > 0 && firstComing ? `no land haulers at home; ${inFlight} coming from ${regionNameOf(firstComing.origin)}` : "no land haulers at home, and none spare anywhere: train more land haulers (caravans, wagons, trains) in a region on this side of the sea";
 
   const ctx = await contextFor(db, m, p);
   const sent: string[] = [];
@@ -495,9 +495,9 @@ async function fetchCaravans(db: Db, m: MatchRow, p: PlayerRow, fromRegionId: st
       // No route from there (sea without ships, say): try the next.
     }
   }
-  if (sent.length === 0) return inFlight > 0 && firstComing ? `no haulers at home; ${inFlight} coming from ${regionNameOf(firstComing.origin)}` : "no haulers at home, and none spare can reach here";
+  if (sent.length === 0) return inFlight > 0 && firstComing ? `no land haulers at home; ${inFlight} coming from ${regionNameOf(firstComing.origin)}` : "no land haulers at home, and none spare can reach here over your own land: train land haulers here";
   const when = soonest < 1 ? `${Math.max(1, Math.round(soonest * 60))} min` : `${soonest.toFixed(1)} h`;
-  return `no haulers at home; ${sent.join(", ")} coming, first in about ${when}`;
+  return `no land haulers at home; ${sent.join(", ")} coming, first in about ${when}`;
 }
 
 function regionNameOf(id: string): string {
@@ -553,7 +553,7 @@ export async function runOverflow(db: Db, publisher: Publisher, log: pino.Logger
         try {
           if (!kind || home <= 0) {
             const r = await fetchCaravans(db, m, p, row.regionId, need, now);
-            if (r.startsWith("no haulers at home;")) busy.add(row.regionId);
+            if (r.startsWith("no land haulers at home;")) busy.add(row.regionId);
             continue;
           }
           const n = Math.min(home, need);
