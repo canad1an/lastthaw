@@ -133,14 +133,13 @@ describe("the hauler ladder", () => {
     for (const u of unitById.values()) if (u.requires) expect(techById.get(u.requires)?.age, `${u.id} needs ${u.requires}`).toBeLessThanOrEqual(u.age);
     for (const b of buildingById.values()) if (b.requires) expect(techById.get(b.requires)?.age, `${b.id} needs ${b.requires}`).toBeLessThanOrEqual(b.age);
   });
-  it("the train and Railways arrive together, in the Industrial Age, and the Railway is Roads level 2", () => {
+  it("the train and Railways arrive together, in the Industrial Age, and Roads has one level (track comes with Railways)", () => {
     expect(unitById.get("train")!.age).toBe(5);
     expect(techById.get("railways")!.age).toBe(5);
     expect(buildingById.has("railway")).toBe(false);
     const roads = buildingById.get("roads")!;
-    expect(roads.maxLevel).toBe(2);
-    expect(roads.levelRequires?.[2]).toBe("railways");
-    expect(roads.levelNames?.[2]).toBe("Railway");
+    expect(roads.maxLevel).toBe(1);
+    expect(roads.levelRequires).toBeUndefined();
     // Every tech a level needs is a real tech.
     for (const b of buildingById.values()) for (const t of Object.values(b.levelRequires ?? {})) expect(techById.has(t), `${b.id} level needs ${t}`).toBe(true);
   });

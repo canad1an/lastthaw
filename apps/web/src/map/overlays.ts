@@ -17,7 +17,7 @@ export const OVERLAYS: OverlayDef[] = [
   { id: "queue", label: "Empty build queue", description: "Regions with nothing building or training.", colour: "#a78bfa", glyph: "·" },
   { id: "ice", label: "Ice within 3 days", description: "Regions the ice reaches within three days. Evacuate or accept the loss.", colour: "#e0f2fe", glyph: "❄" },
   { id: "noroads", label: "No roads", description: "Regions that could build Roads but have not.", colour: "#94a3b8", glyph: "⌁" },
-  { id: "norail", label: "No railway", description: "Once you know Railways: your regions whose Roads are not yet raised to level 2, the Railway. Trains run at full speed only on track between two Railway regions.", colour: "#a07d55", glyph: "≠" },
+  { id: "norail", label: "No railway", description: "Once you know Railways: your regions without Roads, so without track. Trains run at full speed only on track, between two road regions.", colour: "#a07d55", glyph: "≠" },
   { id: "hidehaulers", label: "Hide haulers", description: "Hides caravans, wagons, freight wagons, trains, lorries and cogs on the move. Soldiers, settlers, enemies and the capital wagon still show.", colour: "#64748b", glyph: "≡" },
   { id: "hideharbors", label: "Hide harbours", description: "Hides the harbours (the docks on your coasts) and the ships moored there. Ships at sea still show.", colour: "#94a3b8", glyph: "⚓" },
   { id: "hideroads", label: "Hide roads", description: "Hides the roads and the railway track drawn between regions.", colour: "#94a3b8", glyph: "⌁" },
@@ -135,7 +135,7 @@ export function overlayBadges(state: MatchStateView, enabled: Set<string>, match
       if (touch !== null && touch - matchDay <= 3) push("ice", r.regionId, `${name}: ice in ${Math.max(0, touch - matchDay).toFixed(1)} days`);
     }
     if (enabled.has("noroads") && state.me.techs.includes("road_building") && (r.buildings.roads ?? 0) < 1) push("noroads", r.regionId, `${name}: no roads`);
-    if (enabled.has("norail") && state.me.techs.includes("railways") && (r.buildings.roads ?? 0) < 2) push("norail", r.regionId, `${name}: no railway${(r.buildings.roads ?? 0) < 1 ? " (no roads yet)" : ""}`);
+    if (enabled.has("norail") && state.me.techs.includes("railways") && (r.buildings.roads ?? 0) < 1) push("norail", r.regionId, `${name}: no track (no roads yet)`);
     if (enabled.has("loyalty") && !r.isCapital) {
       const o = loyaltyOutlook(r.regionId, state.me.capitalRegionId, r.effects.loyalty, r.popWorkers + r.popSoldiers + r.popOccupiers, r.popOccupiers, r.loyalty, r.conquered);
       if (o.target < r.loyalty - 0.02 || r.loyalty < o.rebelBelow) push("loyalty", r.regionId, `${name}: loyalty ${Math.round(r.loyalty * 100)}% heading to ${Math.round(o.target * 100)}%${r.loyalty < o.rebelBelow ? ", may rebel" : ""}`);

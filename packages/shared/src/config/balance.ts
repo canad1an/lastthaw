@@ -150,7 +150,7 @@ export const balance = {
     /** A leg is this much shorter when both ends have Roads (yours or an ally's), and this much when only one end does. */
     roadBothFactor: 0.6,
     roadOneFactor: 0.8,
-    /** A leg between two Railway regions (yours or an ally's) is this much shorter. */
+    /** A leg between two road regions whose owners know Railways (yours or an ally's) is this much shorter. */
     railBothFactor: 0.4,
     /** Waystation levels never cut a hauler leg by more than this share, however many levels stack. */
     waystationMaxCut: 0.3,

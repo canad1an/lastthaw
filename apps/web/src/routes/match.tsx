@@ -422,13 +422,13 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
     () => (hideHaulers ? state.armies.filter((a) => a.mission === "relocate" || !Object.entries(a.units).every(([id, n]) => n <= 0 || unitById.get(id)?.hauler)) : state.armies),
     [state.armies, hideHaulers],
   );
-  // Regions with the Railway (Roads level 2), mine and those I can see: track runs between two neighbours that both have it.
+  // Regions with track, mine (every road, once I know Railways) and those I can see: track runs between two neighbours that both have it.
   const railRegions = useMemo(() => {
     const rail = new Set<string>();
-    for (const o of state.owned) if (!o.frozen && (o.buildings.roads ?? 0) >= 2) rail.add(o.regionId);
+    if (state.me.techs.includes("railways")) for (const o of state.owned) if (!o.frozen && (o.buildings.roads ?? 0) >= 1) rail.add(o.regionId);
     for (const s of state.sighted) if (s.rail) rail.add(s.regionId);
     return rail;
-  }, [state.owned, state.sighted]);
+  }, [state.owned, state.sighted, state.me.techs]);
   const markers = useMemo(() => armyMarkers(shownArmies, state.incoming, now + clockOffsetMs, formatCountdown, state.me.techs, state.ships, new Set(state.allies), railRegions), [shownArmies, state.incoming, state.ships, state.allies, now, clockOffsetMs, railRegions]);
   const finished = state.match.status === "finished";
   const eliminated = state.owned.length === 0 && !finished;
@@ -460,7 +460,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
 
   const incomingSet = useMemo(() => new Set(state.incoming.map((i) => i.targetRegionId)), [state.incoming]);
   // Road links: between adjacent regions that both have Roads, among mine and what I can see; track where both have the
-  // Railway (Roads level 2), drawn in my colour between two of mine and grey elsewhere.
+  // track (roads of a player who knows Railways).
   const roadLinks = useMemo(() => {
     const colour = new Map<string, string>();
     const rail = railRegions;

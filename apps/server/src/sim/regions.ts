@@ -149,16 +149,23 @@ export async function setCapital(tx: Tx, matchId: string, playerId: string, regi
   await tx.update(players).set({ capitalRegionId: regionId }).where(eq(players.id, playerId));
 }
 
-/** Regions with Roads and with Railways that this player may use: their own and their allies'. */
+/** Players in this match who know Railways: every road of theirs carries track. */
+export async function railwayOwners(db: Db | Tx, matchId: string): Promise<Set<string>> {
+  const rows = await db.select({ playerId: playerTechs.playerId }).from(playerTechs).where(and(eq(playerTechs.matchId, matchId), eq(playerTechs.techId, "railways")));
+  return new Set(rows.map((r) => r.playerId));
+}
+
+/** Regions with Roads and with track that this player may use: their own and their allies'. */
 export async function waySetsFor(db: Db | Tx, matchId: string, playerId: string, allies: readonly string[]): Promise<{ roads: Set<string>; rails: Set<string>; harbors: Set<string>; stations: Map<string, number> }> {
   const owners = [playerId, ...allies];
   const rows = await db
-    .select({ regionId: matchRegions.regionId, buildings: matchRegions.buildings })
+    .select({ regionId: matchRegions.regionId, buildings: matchRegions.buildings, ownerPlayerId: matchRegions.ownerPlayerId })
     .from(matchRegions)
     .where(and(eq(matchRegions.matchId, matchId), inArray(matchRegions.ownerPlayerId, owners), isNull(matchRegions.frozenAt)));
   const roads = new Set(rows.filter((r) => ((r.buildings as Record<string, number>).roads ?? 0) >= 1).map((r) => r.regionId));
-  // Track: Roads at level 2, the Railway.
-  const rails = new Set(rows.filter((r) => ((r.buildings as Record<string, number>).roads ?? 0) >= 2).map((r) => r.regionId));
+  // Track: every road of an owner who knows Railways.
+  const railed = await railwayOwners(db, matchId);
+  const rails = new Set([...roads].filter((id) => railed.has(rows.find((r) => r.regionId === id)?.ownerPlayerId ?? "")));
   const harbors = new Set(rows.filter((r) => ((r.buildings as Record<string, number>).harbor ?? 0) >= 1).map((r) => r.regionId));
   // Waystations: the share each region cuts from hauler legs ending there.
   const stations = new Map<string, number>();

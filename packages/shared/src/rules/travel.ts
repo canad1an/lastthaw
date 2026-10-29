@@ -121,7 +121,7 @@ export function laneLimitKm(units: Record<string, number>): number | null {
 /** True when every unit in the group is a land hauler: a convoy, which waystations serve; a single soldier along makes it an army. */
 /**
  * How a convoy's pace changes with the track: for a convoy with a unit that runs at full speed only on track (the
- * Train), the factor each land leg's cost is multiplied by, 1 on track (between two Railway regions) and its top speed
+ * Train), the factor each land leg's cost is multiplied by, 1 on track (between two road regions, once Railways is known) and its top speed
  * over its off-track speed elsewhere. Undefined for every other group, which goes at one speed everywhere.
  */
 export function paceFor(units: Record<string, number>): ((onTrack: boolean) => number) | undefined {
@@ -139,7 +139,7 @@ export function friendlyWalk(from: string, to: string, friendly: (regionId: stri
   return !!way && way.path.slice(1, -1).every((id) => friendly(id));
 }
 
-/** Whether every leg of `path` runs on track: each step between two regions with the Railway. */
+/** Whether every leg of `path` runs on track: each step between two regions in `rails` (roads, with Railways known). */
 export function onTrack(path: readonly string[], rails: ReadonlySet<string>): boolean {
   if (path.length < 2) return false;
   for (let i = 1; i < path.length; i++) if (!rails.has(path[i - 1]!) || !rails.has(path[i]!)) return false;

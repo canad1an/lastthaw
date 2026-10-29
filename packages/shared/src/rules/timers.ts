@@ -30,7 +30,7 @@ export function dayCostMultiplier(day: number): number {
 
 export function buildingCost(def: BuildingDef, level: number, day = 0, neighbors = 1): Cost {
   const t = balance.timers;
-  // A level with its own price (Roads level 2, the Railway) is not on the level curve.
+  // A level with its own price is not on the level curve.
   const own = def.levelCost?.[level];
   const g = own ? 1 : Math.pow(t.costGrowth, Math.max(0, level - 1)) * Math.pow(t.lateCostGrowth, Math.max(0, level - t.lateLevel));
   return scaleCost(own ?? def.cost, g * (def.wonder ? 1 : dayCostMultiplier(day)) * (def.perNeighbor ? Math.max(1, neighbors) : 1));

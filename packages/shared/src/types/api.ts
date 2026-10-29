@@ -417,7 +417,7 @@ export const sightedRegionView = z.object({
   seenAt: z.string(),
   /** The region had Roads when last seen (allies: live). */
   roads: z.boolean().default(false),
-  /** Track: Roads at level 2, the Railway. */
+  /** Track: Roads, held by a player who knows Railways. */
   rail: z.boolean().default(false),
   /** Strongest defensive building seen there (palisade, walls, fort, castle, arsenal, bunker), or null. */
   wall: z.string().nullable().default(null),

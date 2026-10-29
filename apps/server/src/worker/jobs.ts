@@ -96,7 +96,7 @@ export async function runDueJobs(db: Db, publisher: Publisher, log: pino.Logger)
     if (!def) throw new Error(`unknown building ${job.refId}`);
     const row = await settleAndLockRegion(tx, m.id, job.regionId, job.endsAt, m.speed);
     // If the region changed hands while building, the new owner keeps the building.
-    const level = Math.max(row.buildings[job.refId] ?? 0, job.level ?? 1);
+    const level = Math.min(def.maxLevel, Math.max(row.buildings[job.refId] ?? 0, job.level ?? 1));
     await tx
       .update(matchRegions)
       .set({ buildings: { ...row.buildings, [job.refId]: level } })

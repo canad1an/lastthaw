@@ -81,7 +81,7 @@ export function leadUnit(units: Record<string, number>): string | null {
 }
 
 /**
- * A train runs only on track, the leg between two regions with the Railway; anywhere else the convoy goes as freight
+ * A train runs only on track, the leg between two road regions (once Railways is known); anywhere else the convoy goes as freight
  * wagons, and is drawn so. `p` (0..1) is how far along `ids` it is, by distance as drawn.
  */
 function offTrack(units: Record<string, number>, ids: readonly string[], p: number, rail: ReadonlySet<string>): Record<string, number> {
@@ -203,7 +203,7 @@ export function armyMarkers(armies: ArmyView[], incoming: IncomingView[], nowMs:
         returning && a.note ? a.note : "",
         `from ${regionById(a.originRegionId)?.name ?? a.originRegionId}`,
         a.mission === "relocate" ? "the capital's stores and court" : fmtUnits(a.units) + (people > 0 ? ` and ${people} people` : ""),
-        shown !== a.units ? "off the track here: going as freight wagons until it reaches a Railway leg" : "",
+        shown !== a.units ? "off the track here: going as freight wagons until it reaches a leg between two road regions" : "",
         cargo ? `carrying ${cargo}${capacity > 0 ? ` (${Math.round(goodsTotal)} of ${Math.round(capacity)})` : ""}` : capacity > 0 && !returning ? "carrying nothing" : "",
         a.status === "fighting" ? "in battle now: click the crossed swords on the region to watch" : `${returning ? "home" : a.mission === "patrol" ? "holds the lane for" : "arrives"} ${a.mission === "patrol" && !returning ? "" : "in "}${formatCountdown((end - nowMs) / 1000)}`,
       ].filter(Boolean),

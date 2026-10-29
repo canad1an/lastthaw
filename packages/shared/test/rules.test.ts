@@ -97,15 +97,11 @@ describe("travel", () => {
     expect(oneSided.cost).toBeLessThanOrEqual(plain.cost);
     expect(oneSided.cost).toBeGreaterThanOrEqual(road.cost);
   });
-  it("Roads level 2 is the Railway: its own price and time, and out of reach without Railways", () => {
+  it("Roads has one level, with or without Railways", () => {
     const roads = buildingById.get("roads")!;
     expect(reachableLevel(roads, new Set())).toBe(1);
-    expect(reachableLevel(roads, new Set(["railways"]))).toBe(2);
-    expect(levelName(roads, 2)).toBe("Railway");
+    expect(reachableLevel(roads, new Set(["railways"]))).toBe(1);
     expect(levelName(roads, 1)).toBeNull();
-    // Priced on the Railway's own cost, per neighbour, not on the level curve.
-    { const { levelCost: _lc, ...plain } = roads; void _lc; expect(buildingCost(roads, 2, 0, 3)).toEqual(buildingCost({ ...plain, cost: roads.levelCost![2]! }, 1, 0, 3)); }
-    expect(buildingSeconds(roads, 2)).toBe(roads.levelSeconds![2]);
   });
   it("a train carries in full only on a trip that stays on track, as a freight wagon otherwise", () => {
     expect(carryCapacity({ train: 2 })).toBe(2 * unitById.get("train")!.carry);

@@ -1,7 +1,7 @@
 import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { claimBounties } from "./objectives.js";
 import { tribeBattleTalk } from "./tribeVoice.js";
-import { balance, effectsOf, emptySpecial, storageCaps, regionById, resolveCombat, carryCapacity, travelSeconds, findRoute, armySpeed, type UnitCounts, HAULER_IDS, haulerCount, unitById, laneName, applyTechEffects, wallBonusAgainst, breachOf, buildingById, seededRng, availableTechs, scoutCatchChance, soldierCount, wallOf, battleSchedule, type BattleRound, type CombatResult, isAirGroup, nextHopTo, haulerCarry, splitNaval, distanceKm } from "@lastthaw/shared";
+import { balance, effectsOf, emptySpecial, storageCaps, regionById, resolveCombat, carryCapacity, travelSeconds, findRoute, armySpeed, type UnitCounts, HAULER_IDS, haulerCount, unitById, laneName, applyTechEffects, wallBonusAgainst, breachOf, buildingById, seededRng, availableTechs, scoutCatchChance, soldierCount, wallOf, battleSchedule, type BattleRound, type CombatResult, isAirGroup, nextHopTo, haulerCarry, splitNaval, distanceKm, type Cost } from "@lastthaw/shared";
 import { matchDayAt, matchNow } from "./clock.js";
 import { advisors, armies, battles, jobs, matchRegions, players, regionSightings, playerTechs, tradeRoutes, events } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
@@ -1274,6 +1274,52 @@ export async function cancelJobsInLostRegions(db: Db): Promise<number> {
     if (!m) continue;
     enterMap(mapOf(m));
     n += await db.transaction((tx) => dropLostJobs(tx, m, s.playerId!, s.regionId!, matchNow(m)));
+  }
+  return n;
+}
+
+/**
+ * Builds queued for a level a building no longer has (Roads level 2, the old Railway, from before every road carried
+ * track): cancelled, what was paid handed back to the region and what was set aside for them returned. Run by the
+ * worker every minute; it finds nothing once they are gone.
+ */
+export async function cancelObsoleteLevels(db: Db): Promise<number> {
+  const { matches } = await import("../db/schema.js");
+  const tops = [...buildingById.values()].map((d) => sql`(${jobs.refId} = ${d.id} and ${jobs.level} > ${d.maxLevel})`);
+  const stale = await db
+    .select()
+    .from(jobs)
+    .innerJoin(matches, eq(matches.id, jobs.matchId))
+    .where(and(eq(matches.status, "running"), eq(jobs.kind, "build"), isNull(jobs.completedAt), isNull(jobs.cancelledAt), isNotNull(jobs.regionId), sql.join([sql`(`, sql.join(tops, sql` or `), sql`)`])))
+    .limit(100);
+  let n = 0;
+  for (const { jobs: j, matches: m } of stale) {
+    enterMap(mapOf(m));
+    await db.transaction(async (tx) => {
+      const at = matchNow(m);
+      await tx.update(jobs).set({ cancelledAt: at }).where(eq(jobs.id, j.id));
+      const row = await settleAndLockRegion(tx, m.id, j.regionId!, at, m.speed, resourceMultOf(m));
+      const paid = ((j.payload ?? {}) as { paid?: Record<string, number> }).paid ?? {};
+      if (j.playerId && row.ownerPlayerId === j.playerId && Object.keys(paid).length) {
+        await applyCost(tx, row, paid as Cost, -1);
+        await recordSpend(tx, m, j.playerId, "build", paid, -1);
+      }
+      const routes = await tx.select().from(tradeRoutes).where(and(eq(tradeRoutes.matchId, m.id), eq(tradeRoutes.forJobId, j.id))).for("update");
+      for (const r of routes) {
+        const held = Object.fromEntries(Object.entries(r.held).filter(([, v]) => v > 0));
+        if (Object.keys(held).length) {
+          const src = await settleAndLockRegion(tx, m.id, r.fromRegionId, at, m.speed, resourceMultOf(m));
+          if (src.ownerPlayerId === r.playerId) {
+            await applyCost(tx, src, held, -1);
+            await recordSpend(tx, m, r.playerId, "build", held, -1);
+          }
+        }
+        await tx.delete(tradeRoutes).where(eq(tradeRoutes.id, r.id));
+      }
+      const name = buildingById.get(j.refId ?? "")?.name ?? j.refId;
+      if (j.playerId) await notify(tx, m.id, j.playerId, "system", `${name} level ${j.level} at ${regionById(j.regionId!)?.name ?? j.regionId} cancelled and refunded: Roads has one level now, and once you know Railways every road carries track`, { regionId: j.regionId });
+    });
+    n += 1;
   }
   return n;
 }

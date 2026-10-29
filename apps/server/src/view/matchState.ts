@@ -7,7 +7,7 @@ import { OBJECTIVES } from "../sim/objectives.js";
 import { matchNow, matchDayAt } from "../sim/clock.js";
 import { alliesOf } from "../sim/alliances.js";
 import { enterMap, mapOf } from "../map/scope.js";
-import { countOwnedRegions, projectRegion, resourceMultOf } from "../sim/regions.js";
+import { countOwnedRegions, projectRegion, railwayOwners, resourceMultOf } from "../sim/regions.js";
 import { parseSettings, wageFor } from "../sim/advisors.js";
 import { liveBattleOf } from "../matches/battlesApi.js";
 
@@ -37,6 +37,8 @@ export async function buildMatchState(db: Db, matchId: string, userId: string, o
   if (!me) return opts.observer ? buildObserverState(db, m, matchId) : null;
 
   const now = matchNow(m);
+  // Track runs on every road of a player who knows Railways.
+  const railed = await railwayOwners(db, matchId);
   const techRows = await db.select({ id: playerTechs.techId }).from(playerTechs).where(eq(playerTechs.playerId, me.id));
   const myTechFx = techEffectsOf(new Set(techRows.map((t) => t.id)));
   const ownedRows = await db
@@ -100,7 +102,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string, o
       population: snap.population ?? null,
       seenAt: s.seenAt.toISOString(),
       roads: (snap.buildings?.roads ?? 0) >= 1,
-      rail: (snap.buildings?.roads ?? 0) >= 2,
+      rail: (snap.buildings?.roads ?? 0) >= 1 && railed.has(snap.ownerPlayerId ?? ""),
       wall: wallOf(snap.buildings),
       storm: false,
     };
@@ -130,7 +132,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string, o
         population: economy.popWorkers + economy.popSoldiers + economy.popOccupiers,
         seenAt: now.toISOString(),
         roads: ((row.buildings as Record<string, number>).roads ?? 0) >= 1,
-        rail: ((row.buildings as Record<string, number>).roads ?? 0) >= 2,
+        rail: ((row.buildings as Record<string, number>).roads ?? 0) >= 1 && railed.has(row.ownerPlayerId ?? ""),
         wall: wallOf(row.buildings as Record<string, number>),
         storm: false,
       };
@@ -166,7 +168,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string, o
           population: economy.popWorkers + economy.popSoldiers + economy.popOccupiers,
           seenAt: now.toISOString(),
           roads: ((row.buildings as Record<string, number>).roads ?? 0) >= 1,
-          rail: ((row.buildings as Record<string, number>).roads ?? 0) >= 2,
+          rail: ((row.buildings as Record<string, number>).roads ?? 0) >= 1 && railed.has(row.ownerPlayerId ?? ""),
           wall: wallOf(row.buildings as Record<string, number>),
           storm: false,
           units,
@@ -209,7 +211,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string, o
           population: economy.popWorkers + economy.popSoldiers + economy.popOccupiers,
           seenAt: now.toISOString(),
           roads: ((row.buildings as Record<string, number>).roads ?? 0) >= 1,
-          rail: ((row.buildings as Record<string, number>).roads ?? 0) >= 2,
+          rail: ((row.buildings as Record<string, number>).roads ?? 0) >= 1 && railed.has(row.ownerPlayerId ?? ""),
           wall: wallOf(row.buildings as Record<string, number>),
           storm: false,
         };
@@ -486,6 +488,7 @@ function roundBand(n: number): number {
  */
 async function buildObserverState(db: Db, m: typeof matches.$inferSelect, matchId: string): Promise<MatchStateView> {
   const now = matchNow(m);
+  const railed = await railwayOwners(db, matchId);
   const all = await db.select().from(players).where(and(eq(players.matchId, matchId), eq(players.hidden, false))).orderBy(asc(players.createdAt), asc(players.id));
   const nameOf = new Map(all.map((p) => [p.id, p.name]));
   const counts = await countOwnedRegions(db, matchId);
@@ -499,7 +502,7 @@ async function buildObserverState(db: Db, m: typeof matches.$inferSelect, matchI
       population: economy.popWorkers + economy.popSoldiers + economy.popOccupiers,
       seenAt: now.toISOString(),
       roads: ((row.buildings as Record<string, number>).roads ?? 0) >= 1,
-      rail: ((row.buildings as Record<string, number>).roads ?? 0) >= 2,
+      rail: ((row.buildings as Record<string, number>).roads ?? 0) >= 1 && railed.has(row.ownerPlayerId ?? ""),
       wall: wallOf(row.buildings as Record<string, number>),
       storm: !!row.stormUntil && row.stormUntil > now,
       units: Object.fromEntries(Object.entries(row.units as Record<string, number>).filter(([, n]) => n > 0)),

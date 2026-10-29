@@ -22,7 +22,7 @@ import { economyNow } from "../src/sim/ledger.js";
 import { logger } from "../src/logger.js";
 import { inviteMail } from "../src/mail.js";
 import { nameSuffix } from "./suffix.js";
-import { cancelJobsInLostRegions } from "../src/sim/missions.js";
+import { cancelJobsInLostRegions, cancelObsoleteLevels } from "../src/sim/missions.js";
 
 process.env.DATABASE_URL ??= "postgres://lastthaw:lastthaw@localhost:5432/lastthaw";
 process.env.SESSION_SECRET ??= "test-secret-test-secret-test-secret";
@@ -1258,7 +1258,7 @@ describe("api routes", () => {
     }
   });
 
-  it("the Railway is Roads level 2: out of reach before Railways, old Railways become it, and trains run faster on the track", async () => {
+  it("Railways lays track on every road: Roads has one level, trains run faster on the same roads once it is known, old level 2 roads and their queued builds are undone", async () => {
     const base = `/api/matches/${gameId}`;
     const ben = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
     const benPid = ben.me.playerId;
@@ -1281,17 +1281,13 @@ describe("api routes", () => {
     await db.insert(playerTechs).values({ matchId: gameId, playerId: benPid, techId: "road_building", completedAt: new Date() }).onConflictDoNothing();
     const sentIds: string[] = [];
     try {
-      // Without Railways, Roads stops at level 1.
-      await db.delete(playerTechs).where(and(eq(playerTechs.playerId, benPid), eq(playerTechs.techId, "railways")));
-      const early = await Ben.call("POST", `${base}/regions/${a.id}/build`, { buildingId: "roads" });
-      expect(early.statusCode).toBe(400);
-      expect(early.body).toMatch(/Railway/);
+      // Roads has one level, Railways or not: there is nothing to raise.
       await db.insert(playerTechs).values({ matchId: gameId, playerId: benPid, techId: "railways", completedAt: new Date() }).onConflictDoNothing();
-      const ok = await Ben.call("POST", `${base}/regions/${a.id}/build`, { buildingId: "roads" });
-      expect(ok.statusCode, ok.body).toBe(200);
-      await db.update(jobs).set({ cancelledAt: new Date() }).where(eq(jobs.id, (ok.json() as { jobId: string }).jobId));
+      const again = await Ben.call("POST", `${base}/regions/${a.id}/build`, { buildingId: "roads" });
+      expect(again.statusCode).toBe(400);
+      await db.delete(playerTechs).where(and(eq(playerTechs.playerId, benPid), eq(playerTechs.techId, "railways")));
 
-      // Trains: on plain roads first, then with both ends raised to the Railway.
+      // Trains: on plain roads first, then on the same roads once Railways is known: every road carries track.
       const send = async () => {
         const r = await Ben.call("POST", `${base}/regions/${a.id}/send`, { mission: "transport", targetRegionId: b, units: { train: 1 }, people: 0, cargo: { wood: 100 } });
         expect(r.statusCode, r.body).toBe(200);
@@ -1301,18 +1297,27 @@ describe("api routes", () => {
         return row!.arrivesAt.getTime() - row!.departsAt.getTime();
       };
       const onRoads = await send();
-      await claim(a.id, { roads: 2 }, { train: 1 });
-      await claim(b, { roads: 2 });
+      await claim(a.id, { roads: 1 }, { train: 1 });
+      await db.insert(playerTechs).values({ matchId: gameId, playerId: benPid, techId: "railways", completedAt: new Date() }).onConflictDoNothing();
       const onTrack = await send();
       expect(onTrack).toBeLessThan(onRoads);
 
-      // A region from before still carrying the old Railway building is converted by the migration.
-      await db.update(matchRegions).set({ buildings: { roads: 1, railway: 1 } }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, b)));
+      // A region from before with Roads level 2 is brought back to level 1 by the migration.
+      await db.update(matchRegions).set({ buildings: { roads: 2 } }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, b)));
       const { readFileSync } = await import("node:fs");
-      const sqlText = readFileSync(new URL("../drizzle/0054_roads_rail.sql", import.meta.url), "utf8");
+      const sqlText = readFileSync(new URL("../drizzle/0056_roads_one_level.sql", import.meta.url), "utf8");
       for (const stmt of sqlText.split("--> statement-breakpoint")) if (stmt.replace(/--[^\n]*\n/g, "").trim()) await db.execute(sql.raw(stmt));
       const [converted] = await db.select({ buildings: matchRegions.buildings }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, b)));
-      expect(converted!.buildings).toEqual({ roads: 2 });
+      expect(converted!.buildings).toEqual({ roads: 1 });
+
+      // And a Roads level 2 still queued from then is cancelled, its payment handed back.
+      await db.update(matchRegions).set({ stone: 0 }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, b)));
+      const [old] = await db.insert(jobs).values({ matchId: gameId, playerId: benPid, regionId: b, kind: "build", refId: "roads", level: 2, payload: { cost: { stone: 300 }, paid: { stone: 300 } }, startsAt: new Date(Date.now() + 3600_000), endsAt: new Date(Date.now() + 7200_000) }).returning();
+      expect(await cancelObsoleteLevels(db)).toBeGreaterThanOrEqual(1);
+      const [gone] = await db.select().from(jobs).where(eq(jobs.id, old!.id));
+      expect(gone!.cancelledAt).not.toBeNull();
+      const [after] = await db.select({ stone: matchRegions.stone }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, b)));
+      expect(after!.stone).toBeGreaterThanOrEqual(299);
     } finally {
       if (sentIds.length) await db.delete(armies).where(inArray(armies.id, sentIds));
       if (!hadRailways) await db.delete(playerTechs).where(and(eq(playerTechs.playerId, benPid), eq(playerTechs.techId, "railways")));
