@@ -74,7 +74,7 @@ function RegionsTable({ state, onSelect }: { state: MatchStateView; onSelect: (r
   const shownRes = RES.filter((r) => r === "food" || r === "wood" || r === "stone" || totals.res[r] > 0 || (moving.cargo[r] ?? 0) > 0);
 
   return (
-    <div className="overflow-x-auto p-3 text-sm">
+    <div className="max-h-[calc(100dvh-11.5rem)] overflow-auto px-3 pb-3 text-sm sm:max-h-[calc(88vh-8.5rem)]">
       <table className="w-full min-w-max border-collapse text-xs">
         <thead className="sticky top-0 z-10 bg-slate-950 text-slate-400 shadow-[0_1px_0_0_rgb(30_41_59)]">
           <tr>
