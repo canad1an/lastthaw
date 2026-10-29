@@ -74,7 +74,8 @@ function RegionsTable({ state, onSelect }: { state: MatchStateView; onSelect: (r
   const shownRes = RES.filter((r) => r === "food" || r === "wood" || r === "stone" || totals.res[r] > 0 || (moving.cargo[r] ?? 0) > 0);
 
   return (
-    <div className="max-h-[calc(100dvh-11.5rem)] overflow-auto px-3 pb-3 text-sm sm:max-h-[calc(88vh-8.5rem)]">
+    <div className="px-3 pb-3 text-sm">
+      <div className="max-h-[calc(100dvh-12.25rem)] overflow-auto sm:max-h-[calc(88vh-9.25rem)]">
       <table className="w-full min-w-max border-collapse text-xs">
         <thead className="sticky top-0 z-10 bg-slate-950 text-slate-400 shadow-[0_1px_0_0_rgb(30_41_59)]">
           <tr>
@@ -134,7 +135,7 @@ function RegionsTable({ state, onSelect }: { state: MatchStateView; onSelect: (r
           </tr>
           {state.armies.length > 0 && (
             <tr className="border-t border-slate-900 text-slate-400">
-              <td className="px-2 py-1">On the move ({state.armies.length} groups)</td>
+              <td className="sticky left-0 z-10 bg-slate-950 px-2 py-1">On the move ({state.armies.length} groups)</td>
               <td className="px-2 py-1 text-right tabular-nums">{fmt(state.armies.reduce((a, x) => a + (x.cargo.people ?? 0), 0))}</td>
               {shownRes.map((k) => (
                 <td key={k} className="px-2 py-1 text-right tabular-nums">
@@ -150,6 +151,7 @@ function RegionsTable({ state, onSelect }: { state: MatchStateView; onSelect: (r
           )}
         </tbody>
       </table>
+      </div>
       {state.armies.length > 0 && (
         <p className="mt-2 text-xs text-slate-500">
           Moving: {state.armies.map((a) => `${missionLabel(a.mission, a.units)} → ${regionById(a.status === "returning" ? a.originRegionId : a.targetRegionId)?.name}`).join(" · ")}
