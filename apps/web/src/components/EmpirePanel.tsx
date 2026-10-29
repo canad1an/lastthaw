@@ -77,7 +77,7 @@ function RegionsTable({ state, onSelect }: { state: MatchStateView; onSelect: (r
     <div className="px-3 pb-3 text-sm">
       <div className="max-h-[calc(100dvh-12.25rem)] overflow-auto sm:max-h-[calc(88vh-9.25rem)]">
       <table className="w-full min-w-max border-collapse text-xs">
-        <thead className="sticky top-0 z-10 bg-slate-950 text-slate-400 shadow-[0_1px_0_0_rgb(30_41_59)]">
+        <thead className="sticky top-0 z-30 bg-slate-950 text-slate-400 shadow-[0_1px_0_0_rgb(30_41_59)]">
           <tr>
             <th className="sticky left-0 z-20 bg-slate-950 px-2 py-1 text-left font-medium">Region</th>
             <th className="px-2 py-1 text-right font-medium">People</th>
@@ -151,12 +151,12 @@ function RegionsTable({ state, onSelect }: { state: MatchStateView; onSelect: (r
           )}
         </tbody>
       </table>
-      </div>
       {state.armies.length > 0 && (
-        <p className="mt-2 text-xs text-slate-500">
+        <p className="sticky left-0 mt-2 text-xs text-slate-500">
           Moving: {state.armies.map((a) => `${missionLabel(a.mission, a.units)} → ${regionById(a.status === "returning" ? a.originRegionId : a.targetRegionId)?.name}`).join(" · ")}
         </p>
       )}
+      </div>
     </div>
   );
 }
