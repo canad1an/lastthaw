@@ -332,7 +332,9 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
     const local = stockOf(row);
     const extra: Record<string, number> = {};
     const wanted: Array<{ id: string; def: NonNullable<ReturnType<typeof avail.get>>; target: number }> = [];
-    for (const id of buildOrderFor(row, economy, false)) {
+    // Once each: the order puts Huts or a Storehouse first when crowded or full without dropping its usual place, and a
+    // building listed twice went up two levels a round, past its minimum.
+    for (const id of new Set(buildOrderFor(row, economy, false))) {
       const target = Math.min(settings.minLevels[id] ?? 0, buildingById.has(id) ? reachableLevel(buildingById.get(id)!, techs) : 0);
       if (target <= 0) continue;
       const def = avail.get(id);
@@ -412,7 +414,7 @@ export async function economicPass(db: Db, m: MatchRow, p: PlayerRow, a: Advisor
       for (let lv = base + 1; lv <= base + n; lv++) for (const [k, v] of Object.entries(buildingCost(def, lv, matchDay, region.neighbors.length))) local[k] = (local[k] ?? 0) - (v ?? 0);
     }
     const wanted: Array<{ id: string; def: NonNullable<ReturnType<typeof avail.get>>; target: number }> = [];
-    for (const id of buildOrderFor(row, economy, false)) {
+    for (const id of new Set(buildOrderFor(row, economy, false))) {
       const target = Math.min(settings.minLevels[id] ?? 0, buildingById.has(id) ? reachableLevel(buildingById.get(id)!, techs) : 0);
       if (target <= 0) continue;
       const def = avail.get(id);

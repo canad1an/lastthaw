@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { and, asc, eq, inArray, sql, desc } from "drizzle-orm";
-import { allRegions, balance, effectsOf, fairAmount, matchStateView, regionById, RESOURCE_WORTH, scoutCatchChance, seededRng, storageCaps, findRoute, travelSeconds, unitById, techEffectsOf, distanceKm, seaLegsOf, seaPath, loyaltyOutlook } from "@lastthaw/shared";
+import { allRegions, balance, effectsOf, fairAmount, matchStateView, regionById, RESOURCE_WORTH, scoutCatchChance, seededRng, storageCaps, findRoute, travelSeconds, unitById, techEffectsOf, distanceKm, seaLegsOf, seaPath, loyaltyOutlook, friendlyWalk } from "@lastthaw/shared";
 import { Publisher } from "../src/realtime/publish.js";
 import { runDueJobs } from "../src/worker/jobs.js";
 import { buildApp } from "../src/api/app.js";
@@ -777,8 +777,21 @@ describe("api routes", () => {
     }
     const taken = new Set((await db.select({ regionId: matchRegions.regionId }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), inArray(matchRegions.regionId, near), sql`${matchRegions.ownerPlayerId} is not null`))).map((r) => r.regionId));
     const free = near.filter((n) => !taken.has(n));
-    expect(free.length).toBeGreaterThanOrEqual(3);
-    const [S, S2, D] = free as [string, string, string];
+    // Collecting convoys and relief haulers walk only through friendly land, so the three must reach each other, and be
+    // reached from the capital, through Ben's land or one another; any three free regions often lay a stranger between.
+    const own = new Set((await db.select({ regionId: matchRegions.regionId }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid)))).map((r) => r.regionId));
+    const triple = (() => {
+      const pool = free.slice(0, 15); // nearest first, as the ring search found them
+      for (const a of pool) for (const b of pool) for (const c of pool) {
+        if (a === b || b === c || a === c) continue;
+        const ok = (id: string) => own.has(id) || id === a || id === b || id === c;
+        const walks: [string, string][] = [[a, b], [b, a], [a, c], [b, c], [benCap, a], [benCap, b]];
+        if (walks.every(([x, y]) => friendlyWalk(x, y, ok))) return [a, b, c] as const;
+      }
+      return undefined;
+    })();
+    expect(triple, "three free regions within friendly reach of each other").toBeDefined();
+    const [S, S2, D] = triple!;
     const claim = async (regionId: string, set: Partial<typeof matchRegions.$inferInsert>) => {
       await db
         .insert(matchRegions)
@@ -1510,11 +1523,16 @@ describe("api routes", () => {
         const have = (capHuts!.buildings as { huts?: number }).huts ?? 0;
         expect((await Ben.call("PUT", `${base}/advisors/economic/settings`, { minLevels: { quarry: 1, huts: have + 3 }, useOtherRegions: true, skipRegions: [], population: "balanced" })).statusCode).toBe(200);
         await fill(12000, 12000, 9000, 100, 100);
+        // Crowded, so the build order also puts Huts first: that must not make it two entries, two levels a round, and four.
+        {
+          const capView = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json()).owned.find((o) => o.regionId === cap)!;
+          await db.update(matchRegions).set({ popWorkers: Math.ceil(capView.capacity * 0.95) - capView.popSoldiers - capView.popOccupiers }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
+        }
         await db.update(advisors).set({ lastPassAt: null }).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
         const runH = await forcePassAs(ben, "economic", gameId);
         expect(runH.statusCode, runH.body).toBe(200);
         const hutJobs = await db.select().from(jobs).where(and(eq(jobs.matchId, gameId), eq(jobs.playerId, benPid), eq(jobs.regionId, cap), eq(jobs.kind, "build"), eq(jobs.refId, "huts"), sql`${jobs.completedAt} is null`, sql`${jobs.cancelledAt} is null`));
-        expect(hutJobs.length).toBe(3);
+        expect(hutJobs.length, `levels queued: ${hutJobs.map((j) => j.level).join(", ")}`).toBe(3);
         expect(hutJobs.every((j) => !j.waitingFor)).toBe(true);
         // Her history has a line for each of them.
         const hist = await Ben.call("GET", `${base}/advisors/economic/history`);
