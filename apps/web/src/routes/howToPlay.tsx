@@ -110,7 +110,7 @@ const ADVANCED: Array<{ title: string; body: React.ReactNode }> = [
         </div>
         <p className="mt-2">
           Special resources stack on top: fertile soil {mult(eco.resourceBonus.fertile_soil!.food!)} food, fish {mult(eco.resourceBonus.fish!.food!)} food, timber {mult(eco.resourceBonus.timber!.wood!)} wood, a stone quarry{" "}
-          {mult(eco.resourceBonus.stone_quarry!.stone!)} stone. Copper, tin, iron and horses produce nothing by themselves; a Mine or Stables turns them into stock, capped at {eco.specialStorage} per region.
+          {mult(eco.resourceBonus.stone_quarry!.stone!)} stone. Copper, tin, iron and horses produce nothing by themselves; a Mine or Stables turns them into stock, capped at {eco.specialStorage} per region. A Forge works the iron too, and in a region with no iron it smelts scrap: {buildingById.get("forge")!.effect.scrap!.iron} iron an hour per level, raised by the same mining techs.
         </p>
       </>
     ),
@@ -121,7 +121,7 @@ const ADVANCED: Array<{ title: string; body: React.ReactNode }> = [
       <>
         <p>
           Building and research costs scale with the match day: {mult(balance.timers.dayCost[1]!.mult)} by day {balance.timers.dayCost[1]!.day} and {mult(balance.timers.dayCost[2]!.mult)} by day{" "}
-          {balance.timers.dayCost[2]!.day}. Unit costs rise by the square root of the same curve. Income grows with your empire, so a thing bought early is always the cheapest it will ever be.
+          {balance.timers.dayCost[2]!.day}, except the ore and horses in a tech’s price, which stay as listed all match. Unit costs rise by the square root of the same curve. Income grows with your empire, so a thing bought early is always the cheapest it will ever be.
         </p>
         <p className="mt-2">
           Each building level costs {mult(balance.timers.costGrowth)} the last and takes {mult(balance.timers.levelGrowth)} as long; from level {balance.timers.lateLevel} both climb faster still. No single job runs longer

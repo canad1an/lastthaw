@@ -62,6 +62,16 @@ describe("costs and timers", () => {
     expect(techCost(t).food).toBe(t.cost.food);
     expect(scaleCost({ food: 10, wood: 4 }, 0.5)).toEqual({ food: 5, wood: 2 });
   });
+  it("a tech's ore stays at its listed price all match while its food, wood and stone grow with the day", () => {
+    const aviation = techById.get("aviation")!;
+    expect(techCost(aviation, 20).iron).toBe(aviation.cost.iron);
+    expect(techCost(aviation, 20).wood).toBe(Math.ceil(aviation.cost.wood! * dayCostMultiplier(20)));
+    expect(techCost(techById.get("iron_working")!, 10).copper).toBe(techById.get("iron_working")!.cost.copper);
+    // Modern Age iron is half what it was; the step into it, Electronics, is 3,000.
+    expect(techById.get("satellites")!.cost.iron).toBe(4000);
+    expect(techById.get("nuclear_power")!.cost.iron).toBe(5000);
+    expect(techById.get("electronics")!.cost.iron).toBe(3000);
+  });
   it("affordability and the shortfall list", () => {
     expect(canAfford({ food: 100, wood: 50 }, { food: 60, wood: 40 })).toBe(true);
     expect(canAfford({ food: 100, wood: 10 }, { food: 60, wood: 40 })).toBe(false);

@@ -35,6 +35,8 @@ export interface RegionEconomy {
   yieldMult: Record<BaseResource, number>;
   /** Extraction per game hour from buildings, applied only for resources the region has. */
   extract: Partial<Record<SpecialResource, number>>;
+  /** Made per game hour where the region lacks the resource (forge scrap). */
+  scrap?: Partial<Record<SpecialResource, number>>;
   /** Production multiplier from the advancing ice (1 = untouched, 0.25 at the centre, then frozen). */
   iceFactor: number;
   /** Population growth multiplier from the owner's techs (1 = none). */
@@ -107,7 +109,8 @@ export function computeRates(traits: RegionTraits, e: RegionEconomy): Rates {
       gross[res] = e.popWorkers * assignment[res] * yieldPerWorker(traits, res) * (e.yieldMult[res] ?? 1) * e.iceFactor * weather * (e.boom === res ? balance.events.boom.mult : 1);
     }
     for (const s of SPECIAL_RESOURCES) {
-      if (traits.resources.includes(s)) special[s] = (e.extract[s] ?? 0) * e.iceFactor * weather * (e.boom === s ? balance.events.boom.mult : 1);
+      const made = traits.resources.includes(s) ? (e.extract[s] ?? 0) : (e.scrap?.[s] ?? 0);
+      if (made) special[s] = made * e.iceFactor * weather * (e.boom === s ? balance.events.boom.mult : 1);
     }
   }
   const consumption = (e.popWorkers + e.popOccupiers + e.popSoldiers * eco.soldierFoodMultiplier) * eco.foodPerPersonPerHour;

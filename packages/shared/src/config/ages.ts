@@ -26,6 +26,8 @@ export interface BuildingEffect {
   yield?: Partial<Record<"food" | "wood" | "stone", number>>;
   /** Extracts this special resource from a region that has it, units per game hour per level. */
   extract?: Partial<Record<SpecialResource, number>>;
+  /** Makes this special resource in a region that does not have it (scrap smelting), units per game hour per level. */
+  scrap?: Partial<Record<SpecialResource, number>>;
   /** Defensive multiplier bonus per level for battles in this region. */
   defense?: number;
   /** Loyalty bonus per level for occupied regions (fights rebellion). */
@@ -200,7 +202,7 @@ export const BUILDINGS: readonly BuildingDef[] = [
   { id: "stables", category: "production", name: "Stables", age: 1, description: "Breeds horses where wild herds roam.", maxLevel: 10, cost: { wood: 120, food: 150 }, baseSeconds: 160, effect: { extract: { horses: 0.6 } }, requires: "animal_husbandry", needsResource: ["horses"] },
   { id: "granary", category: "storage", name: "Granary", age: 1, description: "Dry, sealed pits for grain: 50% more food storage per level, and stock hidden from raiders.", maxLevel: 10, cost: { wood: 100, stone: 120 }, baseSeconds: 150, effect: { foodStorage: 0.5, protect: 120 } },
   // Iron
-  { id: "forge", category: "training", name: "Forge", age: 2, description: "Works iron faster; speeds up training.", maxLevel: 10, cost: { wood: 200, stone: 200, iron: 20 }, baseSeconds: 400, effect: { trainSpeed: 0.06, extract: { iron: 0.8 } }, requires: "iron_working" },
+  { id: "forge", category: "training", name: "Forge", age: 2, description: "Works iron faster; speeds up training. Where the region has no iron, it smelts scrap into a little.", maxLevel: 10, cost: { wood: 200, stone: 200, iron: 20 }, baseSeconds: 400, effect: { trainSpeed: 0.06, extract: { iron: 0.8 }, scrap: { iron: 0.3 } }, requires: "iron_working" },
   { id: "walls", category: "defense", name: "Stone walls", age: 2, description: "Solid walls around the settlement. Built once, on top of a Palisade.", maxLevel: 1, cost: { stone: 2500, wood: 600 }, baseSeconds: 900, effect: { defense: 1.2 }, requires: "masonry", requiresBuilding: "palisade" },
   { id: "anti_air", category: "defense", name: "Anti-air battery", age: 6, description: "Radar-laid guns. Each level shoots down 15% of the bombers and scout planes that come over the region, up to 75%.", maxLevel: 5, cost: { iron: 300, stone: 10000 }, baseSeconds: 1800, effect: { antiAir: 0.15 }, requires: "radar" },
   { id: "roads", category: "transport", name: "Roads", age: 1, description: "Paved roads to every neighbouring region; legs between two road regions are much faster, and the region is easier to hold. Once you know Railways every road carries track too: trains run at full speed between two road regions.", maxLevel: 1, cost: { stone: 80, wood: 40 }, perNeighbor: true, baseSeconds: 600, effect: { loyalty: 0.1 }, requires: "road_building" },
@@ -381,24 +383,24 @@ export const TECHS: readonly TechDef[] = [
   { id: "dynamite", name: "Dynamite", age: 5, description: "Blasting powder that breaks rock and walls.", cost: {iron: 1000, stone: 30000}, baseSeconds: 7200, requires: ["gunpowder"], effect: {attack: 0.1, yield: {stone: 0.1}} },
   { id: "vaccination", name: "Vaccination", age: 5, description: "Far fewer die of disease.", cost: {food: 80000, stone: 20000}, baseSeconds: 6480, requires: ["public_schools"], effect: {growth: 0.4, plagueResist: 1} },
   { id: "sanitation", name: "Sanitation", age: 5, description: "Sewers and clean water in every town.", cost: {stone: 60000, iron: 500}, baseSeconds: 7200, requires: ["vaccination"], effect: {growth: 0.2, plagueResist: 1} },
-  { id: "internal_combustion", name: "Internal combustion", age: 6, description: "Engines that run on oil. When it completes, every train you have becomes a Truck: an engine on every road and diesel on every rail.", cost: {iron: 2000, wood: 50000}, baseSeconds: 10800, requires: ["steel_mills"], effect: {travel: 0.2} },
-  { id: "electronics", name: "Electronics", age: 5, description: "Circuits and radio. Enters the Modern Age.", cost: {food: 300000, wood: 200000, iron: 4000}, baseSeconds: 21600, requires: ["telegraph", "steam_power"], advancesTo: 6, earliestDay: 13 },
+  { id: "internal_combustion", name: "Internal combustion", age: 6, description: "Engines that run on oil. When it completes, every train you have becomes a Truck: an engine on every road and diesel on every rail.", cost: {iron: 1000, wood: 50000}, baseSeconds: 10800, requires: ["steel_mills"], effect: {travel: 0.2} },
+  { id: "electronics", name: "Electronics", age: 5, description: "Circuits and radio. Enters the Modern Age.", cost: {food: 300000, wood: 200000, iron: 3000}, baseSeconds: 21600, requires: ["telegraph", "steam_power"], advancesTo: 6, earliestDay: 13 },
   // Modern
-  { id: "electricity", name: "Electricity", age: 6, description: "Power for everything: unlocks the Power plant.", cost: {iron: 3000, stone: 80000}, baseSeconds: 8640, effect: {yield: {food: 0.25, wood: 0.25, stone: 0.25}} },
-  { id: "radio", name: "Radio", age: 6, description: "Voices through the air: research goes faster.", cost: {iron: 2000, wood: 40000}, baseSeconds: 6480, effect: {researchSpeed: 0.2} },
-  { id: "mass_media", name: "Mass media", age: 6, description: "Every province hears the capital every day.", cost: {iron: 2000, food: 80000}, baseSeconds: 7200, requires: ["radio"], effect: {loyalty: 0.2} },
-  { id: "radar", name: "Radar", age: 6, description: "See every region within two hops of your borders, live.", cost: {iron: 2500, wood: 60000}, baseSeconds: 8640, requires: ["radio"], effect: {vision: 2} },
-  { id: "computers", name: "Computers", age: 6, description: "Calculating machines: research goes much faster.", cost: {iron: 4000, stone: 60000}, baseSeconds: 8640, requires: ["radio"], effect: {researchSpeed: 0.3} },
-  { id: "satellites", name: "Satellites", age: 6, description: "Eyes in orbit: the whole map, live.", cost: {iron: 8000, stone: 150000}, baseSeconds: 12960, requires: ["radar", "computers"], effect: {vision: 99} },
-  { id: "assembly_line", name: "Assembly line", age: 6, description: "Everything built on moving lines: soldiers trained far faster.", cost: {iron: 3000, wood: 60000}, baseSeconds: 8640, requires: ["mass_production", "electricity"], effect: {trainSpeed: 0.3} },
-  { id: "refrigeration", name: "Refrigeration", age: 6, description: "Cold stores that never thaw.", cost: {iron: 2500, stone: 50000}, baseSeconds: 7200, requires: ["electricity"], effect: {storage: 0.3} },
-  { id: "antibiotics", name: "Antibiotics", age: 6, description: "Infections that once killed are cured in days.", cost: {food: 150000, iron: 2000}, baseSeconds: 8640, requires: ["sanitation"], effect: {growth: 0.4} },
-  { id: "aviation", name: "Aviation", age: 6, description: "Aircraft: unlocks the Airfield, the Scout plane, the Transport plane and the Bomber.", cost: {iron: 5000, wood: 80000}, baseSeconds: 10800, requires: ["internal_combustion"], effect: {travel: 0.3} },
-  { id: "combined_arms", name: "Combined arms", age: 6, description: "Infantry, armour and guns fighting as one: unlocks Infantry and the Tank.", cost: {iron: 4000, food: 150000}, baseSeconds: 10800, requires: ["internal_combustion", "rifling"], effect: {attack: 0.3, defense: 0.2} },
-  { id: "ballistics", name: "Ballistics", age: 6, description: "Fire control for long guns: unlocks Artillery.", cost: {iron: 2000, stone: 40000}, baseSeconds: 6480, requires: ["combined_arms", "computers"] },
-  { id: "synthetic_fertilizer", name: "Synthetic fertilizer", age: 6, description: "Nitrogen from the air: fields yield more.", cost: {iron: 1500, food: 100000}, baseSeconds: 8640, requires: ["electricity"], effect: {yield: {food: 0.3}} },
-  { id: "mechanised_agriculture", name: "Mechanised agriculture", age: 6, description: "Tractors and combines on every field.", cost: {iron: 3000, food: 120000}, baseSeconds: 8640, requires: ["synthetic_fertilizer", "internal_combustion"], effect: {yield: {food: 0.2}} },
-  { id: "nuclear_power", name: "Nuclear power", age: 6, description: "Power without end for every mill and field.", cost: {iron: 10000, stone: 200000}, baseSeconds: 17280, requires: ["computers", "electricity"], effect: {yield: {food: 0.3, wood: 0.3, stone: 0.3}} },
+  { id: "electricity", name: "Electricity", age: 6, description: "Power for everything: unlocks the Power plant.", cost: {iron: 1500, stone: 80000}, baseSeconds: 8640, effect: {yield: {food: 0.25, wood: 0.25, stone: 0.25}} },
+  { id: "radio", name: "Radio", age: 6, description: "Voices through the air: research goes faster.", cost: {iron: 1000, wood: 40000}, baseSeconds: 6480, effect: {researchSpeed: 0.2} },
+  { id: "mass_media", name: "Mass media", age: 6, description: "Every province hears the capital every day.", cost: {iron: 1000, food: 80000}, baseSeconds: 7200, requires: ["radio"], effect: {loyalty: 0.2} },
+  { id: "radar", name: "Radar", age: 6, description: "See every region within two hops of your borders, live.", cost: {iron: 1250, wood: 60000}, baseSeconds: 8640, requires: ["radio"], effect: {vision: 2} },
+  { id: "computers", name: "Computers", age: 6, description: "Calculating machines: research goes much faster.", cost: {iron: 2000, stone: 60000}, baseSeconds: 8640, requires: ["radio"], effect: {researchSpeed: 0.3} },
+  { id: "satellites", name: "Satellites", age: 6, description: "Eyes in orbit: the whole map, live.", cost: {iron: 4000, stone: 150000}, baseSeconds: 12960, requires: ["radar", "computers"], effect: {vision: 99} },
+  { id: "assembly_line", name: "Assembly line", age: 6, description: "Everything built on moving lines: soldiers trained far faster.", cost: {iron: 1500, wood: 60000}, baseSeconds: 8640, requires: ["mass_production", "electricity"], effect: {trainSpeed: 0.3} },
+  { id: "refrigeration", name: "Refrigeration", age: 6, description: "Cold stores that never thaw.", cost: {iron: 1250, stone: 50000}, baseSeconds: 7200, requires: ["electricity"], effect: {storage: 0.3} },
+  { id: "antibiotics", name: "Antibiotics", age: 6, description: "Infections that once killed are cured in days.", cost: {food: 150000, iron: 1000}, baseSeconds: 8640, requires: ["sanitation"], effect: {growth: 0.4} },
+  { id: "aviation", name: "Aviation", age: 6, description: "Aircraft: unlocks the Airfield, the Scout plane, the Transport plane and the Bomber.", cost: {iron: 2500, wood: 80000}, baseSeconds: 10800, requires: ["internal_combustion"], effect: {travel: 0.3} },
+  { id: "combined_arms", name: "Combined arms", age: 6, description: "Infantry, armour and guns fighting as one: unlocks Infantry and the Tank.", cost: {iron: 2000, food: 150000}, baseSeconds: 10800, requires: ["internal_combustion", "rifling"], effect: {attack: 0.3, defense: 0.2} },
+  { id: "ballistics", name: "Ballistics", age: 6, description: "Fire control for long guns: unlocks Artillery.", cost: {iron: 1000, stone: 40000}, baseSeconds: 6480, requires: ["combined_arms", "computers"] },
+  { id: "synthetic_fertilizer", name: "Synthetic fertilizer", age: 6, description: "Nitrogen from the air: fields yield more.", cost: {iron: 750, food: 100000}, baseSeconds: 8640, requires: ["electricity"], effect: {yield: {food: 0.3}} },
+  { id: "mechanised_agriculture", name: "Mechanised agriculture", age: 6, description: "Tractors and combines on every field.", cost: {iron: 1500, food: 120000}, baseSeconds: 8640, requires: ["synthetic_fertilizer", "internal_combustion"], effect: {yield: {food: 0.2}} },
+  { id: "nuclear_power", name: "Nuclear power", age: 6, description: "Power without end for every mill and field.", cost: {iron: 5000, stone: 200000}, baseSeconds: 17280, requires: ["computers", "electricity"], effect: {yield: {food: 0.3, wood: 0.3, stone: 0.3}} },
 ];
 
 export const buildingById = new Map(BUILDINGS.map((b) => [b.id, b]));

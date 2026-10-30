@@ -63,6 +63,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string, o
       capacity: economy.capacity,
       yieldMult: economy.yieldMult,
       extract: economy.extract as Record<string, number>,
+      scrap: (economy.scrap ?? {}) as Record<string, number>,
       buildings: row.buildings,
       units: row.units,
       effects: {

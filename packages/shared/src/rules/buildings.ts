@@ -10,6 +10,8 @@ export interface RegionEffects {
   foodStorage: number;
   yield: { food: number; wood: number; stone: number };
   extract: Partial<Record<SpecialResource, number>>;
+  /** Made where the region lacks the resource (forge scrap), per game hour. */
+  scrap: Partial<Record<SpecialResource, number>>;
   defense: number;
   loyalty: number;
   researchSpeed: number;
@@ -31,6 +33,7 @@ export function effectsOf(buildings: Record<string, number>): RegionEffects {
     foodStorage: 0,
     yield: { food: 1, wood: 1, stone: 1 },
     extract: {},
+    scrap: {},
     defense: 0,
     loyalty: 0,
     researchSpeed: 0,
@@ -51,6 +54,7 @@ export function effectsOf(buildings: Record<string, number>): RegionEffects {
     if (f.foodStorage) e.foodStorage += f.foodStorage * level;
     if (f.yield) for (const k of ["food", "wood", "stone"] as const) e.yield[k] += (f.yield[k] ?? 0) * level;
     if (f.extract) for (const [k, v] of Object.entries(f.extract)) e.extract[k as SpecialResource] = (e.extract[k as SpecialResource] ?? 0) + v * level;
+    if (f.scrap) for (const [k, v] of Object.entries(f.scrap)) e.scrap[k as SpecialResource] = (e.scrap[k as SpecialResource] ?? 0) + v * level;
     if (f.defense) e.defense += f.defense * level;
     if (f.loyalty) e.loyalty += f.loyalty * level;
     if (f.researchSpeed) e.researchSpeed += f.researchSpeed * level;
@@ -176,12 +180,15 @@ export function techEffectsOf(techs: ReadonlySet<string> | readonly string[]): T
 export function applyTechEffects(e: RegionEffects, t: TechEffects): RegionEffects {
   const extract: Partial<Record<SpecialResource, number>> = {};
   for (const [k, v] of Object.entries(e.extract)) extract[k as SpecialResource] = (v ?? 0) * (1 + t.extract);
+  const scrap: Partial<Record<SpecialResource, number>> = {};
+  for (const [k, v] of Object.entries(e.scrap)) scrap[k as SpecialResource] = (v ?? 0) * (1 + t.extract);
   return {
     ...e,
     capacity: e.capacity + t.capacity,
     storage: e.storage + t.storage,
     yield: { food: e.yield.food * (1 + t.yield.food), wood: e.yield.wood * (1 + t.yield.wood), stone: e.yield.stone * (1 + t.yield.stone) },
     extract,
+    scrap,
     defense: e.defense + t.defense,
     loyalty: e.loyalty + t.loyalty,
     researchSpeed: e.researchSpeed + t.researchSpeed,

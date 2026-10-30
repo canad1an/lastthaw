@@ -380,6 +380,7 @@ export function useLiveEconomy(owned: OwnedRegionView, clockOffsetMs: number, sp
       capacity: owned.capacity,
       yieldMult: owned.yieldMult,
       extract: owned.extract as Partial<Record<SpecialResource, number>>,
+      scrap: owned.scrap as Partial<Record<SpecialResource, number>>,
       iceFactor: owned.iceFactor,
       growthMult: owned.growthMult,
       abandoned: owned.evacuated,

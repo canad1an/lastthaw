@@ -35,6 +35,7 @@ function buildingEffects(b: BuildingDef): string[] {
   if (e.foodStorage) out.push(`${pct(e.foodStorage)} food storage per level`);
   if (e.yield) for (const [k, v] of Object.entries(e.yield)) if (v) out.push(`${pct(v)} ${k} per level`);
   if (e.extract) for (const [k, v] of Object.entries(e.extract)) if (v) out.push(`${v} ${k} an hour per level`);
+  if (e.scrap) for (const [k, v] of Object.entries(e.scrap)) if (v) out.push(`${v} ${k} an hour per level where the region has none`);
   if (e.defense) out.push(`${pct(e.defense)} defence`);
   if (e.loyalty) out.push(`+${Math.round(e.loyalty * 100)} loyalty per level`);
   if (e.researchSpeed) out.push(`${pct(e.researchSpeed)} research speed per level`);

@@ -180,6 +180,7 @@ export const ownedRegionView = z.object({
   capacity: z.number(),
   yieldMult: z.object({ food: z.number(), wood: z.number(), stone: z.number() }),
   extract: z.record(z.string(), z.number()),
+  scrap: z.record(z.string(), z.number()).default({}),
   buildings: z.record(z.string(), z.number()),
   units: z.record(z.string(), z.number()),
   effects: z.object({

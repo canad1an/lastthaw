@@ -43,6 +43,15 @@ describe("settle", () => {
     expect(after.stone).toBeLessThanOrEqual(s.storage.stone);
   });
 
+  it("a forge smelts scrap iron where the region has none, and works the ore where it has some", async () => {
+    const { applyTechEffects, effectsOf, NO_TECH_EFFECTS } = await import("../src/rules/buildings.js");
+    const fx = applyTechEffects(effectsOf({ forge: 3 }), { ...NO_TECH_EFFECTS, extract: 1 });
+    const s = { ...startingEconomy(), extract: fx.extract, scrap: fx.scrap };
+    expect(computeRates(plains, s).special.iron).toBeCloseTo(0.3 * 3 * 2);
+    expect(computeRates({ ...plains, resources: ["iron"] }, s).special.iron).toBeCloseTo(0.8 * 3 * 2);
+    expect(computeRates(plains, { ...s, scrap: undefined }).special.iron).toBe(0);
+  });
+
   it("starves when nobody gathers food", () => {
     const s = { ...startingEconomy(), food: 0, assignment: { food: 0, wood: 1, stone: 0 } };
     const r = computeRates(plains, s);

@@ -20,6 +20,7 @@ export function buildingPreview(def: BuildingDef, level: number, buildings: Reco
     storage: storageCaps(f, capital),
     yieldMult: f.yield,
     extract: f.extract,
+    scrap: f.scrap,
     iceFactor: economy.iceFactor,
     storm: economy.storm,
     plague: economy.plague,
@@ -47,12 +48,13 @@ export function buildingPreview(def: BuildingDef, level: number, buildings: Reco
     }
   }
   if (e.protect) rows.push({ label: "Safe from raids (each)", before: fmt(before.protect), after: fmt(after.protect), tone: "up" });
-  if (e.extract) {
-    for (const [k, v] of Object.entries(e.extract)) {
-      if (!v || !(region.resources as readonly string[]).includes(k)) continue;
+  if (e.extract || e.scrap) {
+    for (const [k, v] of Object.entries({ ...e.scrap, ...e.extract })) {
+      const has = (region.resources as readonly string[]).includes(k);
+      if (!v || !(has ? e.extract?.[k as keyof typeof e.extract] : e.scrap?.[k as keyof typeof e.scrap])) continue;
       rows.push({ label: `${k[0]!.toUpperCase()}${k.slice(1)}`, before: perHour(rb.special[k as keyof typeof rb.special] ?? 0), after: perHour(ra.special[k as keyof typeof ra.special] ?? 0), tone: "up" });
     }
-    if (rows.every((r) => !Object.keys(e.extract!).some((k) => r.label.toLowerCase() === k))) {
+    if (e.extract && rows.every((r) => !Object.keys(e.extract!).some((k) => r.label.toLowerCase() === k))) {
       rows.push({ label: "Extracts", before: "nothing here", after: `needs ${Object.keys(e.extract).join("/")} in the region` });
     }
   }
@@ -82,6 +84,7 @@ function describeBuilding(def: BuildingDef): string {
   if (e.foodStorage) per.push(`+${pct(e.foodStorage)} food storage`);
   if (e.protect) per.push(`${e.protect} of each resource hidden from raiders`);
   if (e.extract) per.push(`extracts ${Object.entries(e.extract).map(([k, v]) => `${v} ${k}/h`).join(", ")} where available`);
+  if (e.scrap) per.push(`smelts ${Object.entries(e.scrap).map(([k, v]) => `${v} ${k}/h`).join(", ")} of scrap where there is none`);
   if (e.defense) per.push(`+${pct(e.defense)} defence`);
   if (e.loyalty) per.push(`+${pct(e.loyalty)} loyalty`);
   if (e.trainSpeed) per.push(`+${pct(e.trainSpeed)} training speed`);
