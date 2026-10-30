@@ -242,8 +242,7 @@ export const balance = {
     maxSeaLegs: 1,
   },
   capital: {
-    /** The capital wagon: slow, but it carries the old capital's stores to the new one. Speed in unit-speed units (settlers are 4). */
-    wagonSpeed: 2.5,
+    /** The capital wagon carries the old capital's stores to the new one; it moves at the best land hauler's pace (capitalSpeed). */
     wagonCarry: 25000,
   },
   settle: {

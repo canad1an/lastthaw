@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import { balance, findRoute, regionById, travelSeconds } from "@lastthaw/shared";
+import { balance, capitalMover, capitalSpeed, findRoute, paceFor, regionById, travelSeconds } from "@lastthaw/shared";
 import { armies, jobs } from "../db/schema.js";
 import { matchNow } from "./clock.js";
 import { alliesOf } from "./alliances.js";
@@ -7,7 +7,8 @@ import { httpError, requireRunning, type CommandContext } from "./commands.js";
 import { applyCost, waySetsFor, settleAndLockRegion, stockOf, resourceMultOf } from "./regions.js";
 
 /**
- * Move the capital: a slow wagon sets out from the old capital carrying as much of its stores as it can. The capital
+ * Move the capital: a wagon sets out from the old capital at the best land hauler's pace your research allows (with
+ * the movement techs), carrying as much of its stores as it can. The capital
  * changes when it arrives (missions.relocateCapital), and every idle caravan then gathers at the new capital. One
  * wagon at a time; the target must be yours and unfrozen, with a route.
  */
@@ -23,10 +24,10 @@ export async function relocateCapital(ctx: CommandContext, regionId: string): Pr
     .limit(1);
   if (inFlight[0]) throw httpError(409, `the capital wagon is already on its way to ${regionById(inFlight[0].target)?.name ?? "another region"}`);
   const { roads, rails, harbors } = await waySetsFor(db, matchId, p.id, await alliesOf(db, matchId, p.id));
-  const route = findRoute(p.capitalRegionId, regionId, false, roads, rails, harbors);
+  const route = findRoute(p.capitalRegionId, regionId, false, roads, rails, harbors, undefined, paceFor(capitalMover(techs)));
   if (!route) throw httpError(400, "no land route for the wagon: the court does not cross the sea");
   const now = matchNow(m);
-  const seconds = travelSeconds(route, balance.capital.wagonSpeed, m.speed);
+  const seconds = travelSeconds(route, capitalSpeed(techs), m.speed);
   const result = await db.transaction(async (tx) => {
     await requireRunning(tx, matchId);
     const ids = [p.capitalRegionId!, regionId].sort();

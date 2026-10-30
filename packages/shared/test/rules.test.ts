@@ -6,7 +6,7 @@ import { buildingById, techById, unitById } from "../src/config/ages.js";
 import { formatCountdown, realSecondsToGameHours, scaledDuration, tickGapSeconds } from "../src/rules/time.js";
 import { buildingCost, buildingSeconds, canAfford, dayCostMultiplier, missingFor, scaleCost, techCost, trainSeconds, unitCost } from "../src/rules/timers.js";
 import { findRoute, laneKey, missionLabel, onTrack, paceFor, seaLegsOf, travelSeconds } from "../src/rules/travel.js";
-import { armySpeed, bestHauler, breachOf, carryCapacity, haulerCount, splitNaval } from "../src/rules/combat.js";
+import { armySpeed, bestHauler, breachOf, capitalMover, capitalSpeed, carryCapacity, haulerCount, splitNaval } from "../src/rules/combat.js";
 import { loyaltyBand, loyaltyOutlook } from "../src/rules/loyalty.js";
 import { seededRng } from "../src/rules/rng.js";
 import { freezeDayForLatitude, iceLatitudeOnDay } from "../src/rules/ice.js";
@@ -96,6 +96,18 @@ describe("travel", () => {
     const oneSided = findRoute(start.id, next, false, new Set([start.id]))!;
     expect(oneSided.cost).toBeLessThanOrEqual(plain.cost);
     expect(oneSided.cost).toBeGreaterThanOrEqual(road.cost);
+  });
+  it("the capital moves at the best land hauler the research allows, with the movement techs", () => {
+    expect(capitalMover([])).toEqual({ caravan: 1 });
+    expect(capitalMover(["wagon_building"])).toEqual({ wagon: 1 });
+    expect(capitalMover(["wagon_building", "wainwrights"])).toEqual({ freight_wagon: 1 });
+    expect(capitalMover(["wagon_building", "wainwrights", "railways"])).toEqual({ train: 1 });
+    expect(capitalMover(["wagon_building", "wainwrights", "railways", "internal_combustion", "shipbuilding"])).toEqual({ lorry: 1 });
+    expect(capitalSpeed([])).toBe(unitById.get("caravan")!.speed);
+    // Compass, Railway signalling and Internal combustion: +45% on a lorry's 30.
+    expect(capitalSpeed(["internal_combustion", "compass", "railway_signalling"])).toBeCloseTo(30 * 1.45);
+    // A train-paced move runs at full speed on track and at its off-track pace elsewhere.
+    expect(paceFor(capitalMover(["railways"]))).toBeDefined();
   });
   it("Roads has one level, with or without Railways", () => {
     const roads = buildingById.get("roads")!;

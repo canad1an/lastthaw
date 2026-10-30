@@ -1,6 +1,7 @@
 import { balance } from "../config/balance.js";
 import { UNITS, unitById, buildingById } from "../config/ages.js";
 import { seededRng } from "./rng.js";
+import { techEffectsOf } from "./buildings.js";
 
 export type UnitCounts = Record<string, number>;
 
@@ -133,6 +134,21 @@ export function haulerCarry(id: string, techs?: ReadonlySet<string> | readonly s
   let bonus = 0;
   for (const [tech, b] of Object.entries(balance.trade.caravanCarryTechs)) if (has(tech)) bonus += b;
   return Math.round(base * (1 + bonus));
+}
+
+/**
+ * The capital moves at the pace of the best land hauler the player's research allows, whether or not they own one:
+ * caravan, wagon, freight wagon, train (its own pace on and off the track) or lorry.
+ */
+export function capitalMover(techs: ReadonlySet<string> | readonly string[]): UnitCounts {
+  const known = new Set(techs);
+  const best = UNITS.filter((u) => u.hauler && !u.naval && !u.air && (!u.requires || known.has(u.requires))).sort((a, b) => b.speed - a.speed)[0];
+  return best ? { [best.id]: 1 } : {};
+}
+
+/** The capital's top speed: its hauler's, raised by the movement techs as every army's is. */
+export function capitalSpeed(techs: ReadonlySet<string> | readonly string[]): number {
+  return armySpeed(capitalMover(techs)) * (1 + techEffectsOf(techs).travel);
 }
 
 /** How much one caravan carries, after the owner's techs. */

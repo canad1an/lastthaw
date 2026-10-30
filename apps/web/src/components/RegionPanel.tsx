@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { reachableLevel, levelName, techById, AGES, availableBuildings, availableUnits, buildingBlockedBy, balance, buildingById, buildingCost, matchDayOf, buildingSeconds, canAfford, computeRates, normalizeAssignment, realSeconds, regionById, settle, totalPopulation, trainSeconds, unitById, unitCost, formatCountdown, type MatchStateView, type OwnedRegionView, type RegionEconomy, type SightedRegionView, type SpecialResource, distanceKm, NOTE_COLOURS, type NoteColour, loyaltyBand, loyaltyOutlook, HAULER_IDS, haulerCarry, type AgeIndex } from "@lastthaw/shared";
+import { capitalMover, reachableLevel, levelName, techById, AGES, availableBuildings, availableUnits, buildingBlockedBy, balance, buildingById, buildingCost, matchDayOf, buildingSeconds, canAfford, computeRates, normalizeAssignment, realSeconds, regionById, settle, totalPopulation, trainSeconds, unitById, unitCost, formatCountdown, type MatchStateView, type OwnedRegionView, type RegionEconomy, type SightedRegionView, type SpecialResource, distanceKm, NOTE_COLOURS, type NoteColour, loyaltyBand, loyaltyOutlook, HAULER_IDS, haulerCarry, type AgeIndex } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { useNow } from "../hooks/useNow.js";
 import { Button, Card, CardHeader, ConfirmDialog, ErrorText, fmt, signed } from "./ui.js";
@@ -1000,7 +1000,7 @@ function MakeCapital({ matchId, state, regionId, clockOffsetMs }: { matchId: str
   const route = useQuery({
     queryKey: ["route", matchId, capital, regionId, "wagon"],
     queryFn: () =>
-      fetch(`/api/matches/${matchId}/route?from=${capital}&to=${regionId}&speed=${balance.capital.wagonSpeed}`, { credentials: "include" }).then((r) => r.json() as Promise<{ seconds?: number; error?: string }>),
+      fetch(`/api/matches/${matchId}/route?from=${capital}&to=${regionId}&units=${Object.keys(capitalMover(state.me.techs)).map((id) => `${id}:1`).join(",")}`, { credentials: "include" }).then((r) => r.json() as Promise<{ seconds?: number; error?: string }>),
     enabled: confirm && !!capital,
   });
   const m = useMutation({
@@ -1038,7 +1038,7 @@ function MakeCapital({ matchId, state, regionId, clockOffsetMs }: { matchId: str
         </button>
       ) : (
         <div className="space-y-2 rounded-md border border-amber-400/30 bg-amber-400/5 p-2 text-xs">
-          <p className="text-amber-100">A capital wagon leaves {old ? regionById(old.regionId)?.name : "your capital"} carrying up to {fmt(balance.capital.wagonCarry)} of its stores ({fmt(stores)} now).</p>
+          <p className="text-amber-100">A capital wagon leaves {old ? regionById(old.regionId)?.name : "your capital"} carrying up to {fmt(balance.capital.wagonCarry)} of its stores ({fmt(stores)} now), at the pace of your best land hauler ({unitById.get(Object.keys(capitalMover(state.me.techs))[0] ?? "")?.name.toLowerCase() ?? "caravan"}) with your movement techs.</p>
           <p className="text-slate-300">
             Travel: {route.data?.seconds !== undefined ? formatCountdown(route.data.seconds) : route.data?.error ? route.data.error : "…"}. The capital changes when it arrives; research, overflow caravans and loyalty distance then key off this region, which gets{" "}
             {balance.economy.capitalStorageMult}x storage. Every idle caravan then gathers here.

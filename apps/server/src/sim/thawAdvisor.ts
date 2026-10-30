@@ -5,7 +5,7 @@
  * she settles free regions on the warm side. Nothing is spared the ice; she only gets your people out ahead of it.
  */
 import { and, eq, inArray, isNull } from "drizzle-orm";
-import { balance, distanceKm, findRoute, freezeDayForLatitude, regionById, travelSeconds, unitById, type AdvisorReport, type AdvisorSuggestion } from "@lastthaw/shared";
+import { balance, capitalMover, capitalSpeed, distanceKm, findRoute, paceFor, freezeDayForLatitude, regionById, travelSeconds, unitById, type AdvisorReport, type AdvisorSuggestion } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { advisors, armies, jobs, matchRegions, players, playerTechs } from "../db/schema.js";
 import type { Publisher } from "../realtime/publish.js";
@@ -122,7 +122,7 @@ export async function thawPass(db: Db, m: MatchRow, p: PlayerRow, a: AdvisorRow,
     }
   }
 
-  // 3. The capital: its wagon is slow, so it leaves well before the warning.
+  // 3. The capital: its wagon leaves well before the warning, at the best land hauler's pace.
   const cap = p.capitalRegionId ? info.find((x) => x.row.regionId === p.capitalRegionId) : undefined;
   if (settings.moveCapital && cap && cap.hours <= settings.capitalHours) {
     const [wagon] = await db
@@ -136,9 +136,9 @@ export async function thawPass(db: Db, m: MatchRow, p: PlayerRow, a: AdvisorRow,
       const margin = cap.hours + c.safeMarginDays * 24;
       const pick = safe
         .filter((x) => x.row.regionId !== cap.row.regionId)
-        .map((x) => ({ x, r: route(cap.row.regionId, x.row.regionId) }))
+        .map((x) => ({ x, r: findRoute(cap.row.regionId, x.row.regionId, false, roads, rails, harbors, undefined, paceFor(capitalMover(techs))) }))
         .filter((o): o is { x: typeof o.x; r: NonNullable<typeof o.r> } => !!o.r)
-        .map((o) => ({ ...o, inTime: (travelSeconds(o.r, balance.capital.wagonSpeed, m.speed) * 1000) / hourMs < cap.hours }))
+        .map((o) => ({ ...o, inTime: (travelSeconds(o.r, capitalSpeed(techs), m.speed) * 1000) / hourMs < cap.hours }))
         .sort((u, v) => Number(v.inTime) - Number(u.inTime) || Number(v.x.hours >= margin) - Number(u.x.hours >= margin) || (u.inTime ? v.x.row.popWorkers - u.x.row.popWorkers : u.r.cost - v.r.cost))[0]?.x;
       if (!pick) {
         bump("noRoute");
