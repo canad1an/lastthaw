@@ -13,7 +13,7 @@ export interface OverlayDef {
 export const OVERLAYS: OverlayDef[] = [
   { id: "full", label: "Full stores", description: "Food, wood or stone at 95% of the region's cap: spend it or ship it.", colour: "#facc15", glyph: "$" },
   { id: "soldiers", label: "Idle soldiers", description: "Regions with military units stationed and not on a mission.", colour: "#f97316", glyph: "⚔" },
-  { id: "caravans", label: "Idle caravans", description: "Regions with caravans standing at home.", colour: "#38bdf8", glyph: "≡" },
+  { id: "caravans", label: "Idle haulers", description: "Regions with caravans, wagons, trains, trucks or cargo boats standing at home.", colour: "#38bdf8", glyph: "≡" },
   { id: "queue", label: "Empty build queue", description: "Regions with nothing building or training.", colour: "#a78bfa", glyph: "·" },
   { id: "ice", label: "Ice within 3 days", description: "Regions the ice reaches within three days. Evacuate or accept the loss.", colour: "#e0f2fe", glyph: "❄" },
   { id: "noroads", label: "No roads", description: "Regions that could build Roads but have not.", colour: "#94a3b8", glyph: "⌁" },
@@ -124,10 +124,14 @@ export function overlayBadges(state: MatchStateView, enabled: Set<string>, match
       if (full.length) push("full", r.regionId, `${name}: ${full.join(", ")} at cap`);
     }
     if (enabled.has("soldiers")) {
-      const n = Object.entries(r.units).reduce((a, [id, c]) => a + (unitById.get(id)?.civilian ? 0 : c), 0);
+      // Haulers (caravans to trucks, canoes and cogs) are not soldiers, even the ones that can defend themselves.
+      const n = Object.entries(r.units).reduce((a, [id, c]) => a + (unitById.get(id)?.civilian || unitById.get(id)?.hauler ? 0 : c), 0);
       if (n > 0) push("soldiers", r.regionId, `${name}: ${n} soldiers stationed`);
     }
-    if (enabled.has("caravans") && (r.units.caravan ?? 0) > 0) push("caravans", r.regionId, `${name}: ${r.units.caravan} caravans idle`);
+    if (enabled.has("caravans")) {
+      const n = Object.entries(r.units).reduce((a, [id, c]) => a + (unitById.get(id)?.hauler ? c : 0), 0);
+      if (n > 0) push("caravans", r.regionId, `${name}: ${n} haulers idle`);
+    }
     if (enabled.has("queue") && !busy.has(r.regionId)) push("queue", r.regionId, `${name}: build queue empty`);
     if (enabled.has("ice")) {
       const region = regionById(r.regionId);

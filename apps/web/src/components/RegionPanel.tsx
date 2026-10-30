@@ -948,7 +948,7 @@ function Rally({ matchId, state }: { matchId: string; state: MatchStateView }) {
   const [includeMissions, setIncludeMissions] = useState(false);
   const stationed = state.owned
     .filter((o) => !o.isCapital && !o.frozen)
-    .reduce((a, o) => a + Object.entries(o.units).reduce((x, [id, n]) => x + (unitById.get(id)?.civilian ? 0 : n), 0), 0);
+    .reduce((a, o) => a + Object.entries(o.units).reduce((x, [id, n]) => x + (unitById.get(id)?.civilian || unitById.get(id)?.naval ? 0 : n), 0), 0);
   const onMissions = state.armies.filter((a) => a.status === "outbound" && ["raid", "conquer", "reinforce", "scout", "move"].includes(a.mission) && Object.entries(a.units).some(([id, n]) => n > 0 && !unitById.get(id)?.civilian)).length;
   const m = useMutation({
     mutationFn: () => api.rally(matchId, includeMissions),
