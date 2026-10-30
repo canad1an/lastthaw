@@ -6,7 +6,7 @@ import { allianceMembers, alliances, armies, jobs, matchRegions, matches, player
 import { OBJECTIVES } from "../sim/objectives.js";
 import { matchNow, matchDayAt } from "../sim/clock.js";
 import { alliesOf } from "../sim/alliances.js";
-import { enterMap, mapOf } from "../map/scope.js";
+import { enterMap, mapOf, scopeOf } from "../map/scope.js";
 import { countOwnedRegions, projectRegion, railwayOwners, resourceMultOf, techOwners } from "../sim/regions.js";
 import { parseSettings, wageFor } from "../sim/advisors.js";
 import { liveBattleOf } from "../matches/battlesApi.js";
@@ -28,7 +28,7 @@ async function liveBattles(db: Db, matchId: string, side: Set<string> | null): P
 export async function buildMatchState(db: Db, matchId: string, userId: string, opts: { observer?: boolean } = {}): Promise<MatchStateView | null> {
   const [m] = await db.select().from(matches).where(eq(matches.id, matchId)).limit(1);
   if (!m) return null;
-  enterMap(mapOf(m));
+  enterMap(scopeOf(m));
   const [me] = await db
     .select()
     .from(players)
@@ -64,6 +64,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string, o
       storage: economy.storage,
       capacity: economy.capacity,
       yieldMult: economy.yieldMult,
+      ...(economy.needs ? { needs: economy.needs } : {}),
       extract: economy.extract as Record<string, number>,
       scrap: (economy.scrap ?? {}) as Record<string, number>,
       buildings: row.buildings,

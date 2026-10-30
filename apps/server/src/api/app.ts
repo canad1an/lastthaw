@@ -1,6 +1,6 @@
 import Fastify from "fastify";
 import { DEFAULT_MAP } from "@lastthaw/shared";
-import { enterMap, loadAllMaps, mapOfMatch, mapScope } from "../map/scope.js";
+import { enterMap, loadAllMaps, mapScope, scopeOfMatch } from "../map/scope.js";
 import cors from "@fastify/cors";
 import cookie from "@fastify/cookie";
 import websocket from "@fastify/websocket";
@@ -93,7 +93,7 @@ export async function buildApp(deps: AppDeps = {}) {
     if (id === "bad") return reply.code(400).send({ error: "bad match id" });
     if (!id) return reply.code(404).send({ error: "match not found" });
     params.id = id;
-    enterMap(await mapOfMatch(db, id));
+    enterMap(await scopeOfMatch(db, id));
   });
   app.addHook("onRequest", async (req, reply) => {
     if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") return;

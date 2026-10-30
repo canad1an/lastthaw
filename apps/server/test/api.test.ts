@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { and, asc, eq, inArray, sql, desc } from "drizzle-orm";
-import { allRegions, balance, effectsOf, fairAmount, matchStateView, regionById, RESOURCE_WORTH, scoutCatchChance, seededRng, storageCaps, findRoute, travelSeconds, unitById, techEffectsOf, distanceKm, seaLegsOf, seaPath, loyaltyOutlook, friendlyWalk } from "@lastthaw/shared";
+import { allRegions, balance, effectsOf, fairAmount, matchStateView, regionById, RESOURCE_WORTH, scoutCatchChance, seededRng, storageCaps, findRoute, travelSeconds, unitById, techEffectsOf, distanceKm, seaLegsOf, seaPath, loyaltyOutlook, friendlyWalk, ECONOMY_RULES_LATEST } from "@lastthaw/shared";
 import { Publisher } from "../src/realtime/publish.js";
 import { runDueJobs } from "../src/worker/jobs.js";
 import { buildApp } from "../src/api/app.js";
@@ -171,7 +171,7 @@ describe("api routes", () => {
     expect(welcome!.startsAt.getTime() - Date.now()).toBeGreaterThan(25 * 60_000);
     expect(welcome!.startsAt.getTime() - Date.now()).toBeLessThanOrEqual(30 * 60_000);
     const [wm] = await db.select().from(matches).where(eq(matches.id, welcome!.id));
-    expect(wm!.settings).toMatchObject({ createdBy: uid, kind: "public", welcome: true, welcomeFor: uid });
+    expect(wm!.settings).toMatchObject({ createdBy: uid, kind: "public", welcome: true, welcomeFor: uid, economy: ECONOMY_RULES_LATEST });
     expect(wm!.speed).toBe(1);
     expect((await db.select({ id: players.id }).from(players).where(and(eq(players.matchId, welcome!.id), eq(players.userId, uid)))).length).toBe(1);
     // Asking again gives the same game, never a second; and the cap, once reached, gives nothing.

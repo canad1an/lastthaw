@@ -69,6 +69,12 @@ export const balance = {
     foodPerPersonPerHour: 1.2,
     /** Soldiers eat this many times a worker's ration: armies are a real food sink. */
     soldierFoodMultiplier: 3,
+    /**
+     * Economy rules 2 (new matches): every age a tribe enters adds this much to what each person uses per game hour, so
+     * a large late-game people really draws on its stores: food 1.2 in the Stone Age to 8.4 in the Modern Age, wood and
+     * stone from nothing to 3 and 1.8. Matches made before keep rules 1 (food 1.2, no wood or stone).
+     */
+    needsPerAge: { food: 1.2, wood: 0.5, stone: 0.3 },
     /** Population growth per game hour as a fraction of current population, when fed. */
     growthPerHour: 0.08,
     /** Newcomers per game hour that arrive in any fed region with room, so small colonies take off too. */

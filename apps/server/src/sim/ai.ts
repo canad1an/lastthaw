@@ -1,11 +1,11 @@
 import { and, eq, gt, inArray, isNotNull, isNull, sql } from "drizzle-orm";
-import { reachableLevel, availableBuildings, availableTechs, buildingBlockedBy, availableUnits, balance, buildingById, buildingCost, dayCostMultiplier, effectsOf, freezeDayForLatitude, distanceKm, regionById, seededRng, techById, techCost, normalizeAssignment, type Cost, techEffectsOf, haulerCount, unitById, TECHS, breachOf, wallBonusAgainst, SPECIAL_RESOURCES, unitCost } from "@lastthaw/shared";
+import { reachableLevel, availableBuildings, availableTechs, buildingBlockedBy, availableUnits, balance, buildingById, buildingCost, dayCostMultiplier, effectsOf, freezeDayForLatitude, distanceKm, regionById, seededRng, techById, techCost, normalizeAssignment, computeRates, economyRules, type Cost, type RegionEconomy, type RegionTraits, techEffectsOf, haulerCount, unitById, TECHS, breachOf, wallBonusAgainst, SPECIAL_RESOURCES, unitCost } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { armies, bounties, jobs, marketOrders, matchRegions, mercenaryOffers, playerTechs, players, refugeeOffers, pacts } from "../db/schema.js";
 import { hireMercenaries } from "./worldEvents.js";
 import { lastStand } from "./lastStand.js";
 import type { Publisher } from "../realtime/publish.js";
-import { applyCost, projectRegion, settleAndLockRegion, stockOf, type MatchRegionRow, resourceMultOf } from "./regions.js";
+import { applyCost, projectRegion, settleAndLockRegion, stockOf, traitsOf, type MatchRegionRow, resourceMultOf } from "./regions.js";
 import { queueBuild, queueResearch, queueTrain, sendArmy, type CommandContext, type PlayerRow } from "./commands.js";
 import { areAllied } from "./alliances.js";
 import { acceptMarketOrder } from "../matches/marketApi.js";
@@ -281,7 +281,8 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
     // Economy: hard tribes steer workers toward what the next building needs; others use a fixed split.
     // Hard tribes with nothing to build steer toward the next age instead of a fixed split, so a quiet tribe never stalls at age 2.
     if (tier.adaptiveResearch && !wanted && ageTechCost && !techs.has(ageTech!.id)) wanted = ageTechCost;
-    const want = tier.adaptiveEconomy && wanted ? steerToward(economy, rates, wanted) : rates.food < 0 || economy.food < 60 ? { food: 0.7, wood: 0.2, stone: 0.1 } : { food: 0.3, wood: 0.4, stone: 0.3 };
+    const split = tier.adaptiveEconomy && wanted ? steerToward(economy, rates, wanted) : rates.food < 0 || economy.food < 60 ? { food: 0.7, wood: 0.2, stone: 0.1 } : { food: 0.3, wood: 0.4, stone: 0.3 };
+    const want = economyRules() >= 2 ? coverNeeds(traitsOf(row.regionId), economy, split) : split;
     const cur = normalizeAssignment(row.assignment);
     if (Math.abs(cur.food - want.food) > 0.05 || Math.abs(cur.stone - want.stone) > 0.05 || Math.abs(cur.wood - want.wood) > 0.05) {
       await attempt(() =>
@@ -521,6 +522,23 @@ function steerToward(e: { food: number; wood: number; stone: number }, rates: { 
   const split = { food: 0.15 + 0.7 * (deficit.food / total), wood: 0.075 + 0.7 * (deficit.wood / total), stone: 0.075 + 0.7 * (deficit.stone / total) };
   if (rates.food < 0 || e.food < 100) split.food = Math.max(split.food, 0.45);
   return normalizeAssignment(split);
+}
+
+/**
+ * Raises each share of a worker split to at least what covers the region's own use of that resource, with a margin: under
+ * economy rules 2 a late-age people eats several times the Stone Age ration and uses wood and stone too, and a fixed split
+ * would starve it. Matches on rules 1 keep the fixed splits.
+ */
+function coverNeeds(traits: RegionTraits, e: RegionEconomy, split: { food: number; wood: number; stone: number }): { food: number; wood: number; stone: number } {
+  const now = computeRates(traits, e);
+  const out = { ...split };
+  for (const k of ["food", "wood", "stone"] as const) {
+    const used = now.gross[k] - now[k];
+    if (used <= 0) continue;
+    const full = computeRates(traits, { ...e, assignment: { food: 0, wood: 0, stone: 0, [k]: 1 } }).gross[k];
+    if (full > 0) out[k] = Math.max(out[k], Math.min(0.8, (used * 1.2) / full));
+  }
+  return normalizeAssignment(out);
 }
 
 /** Move people, units and goods out of regions about to freeze into the safest owned region. */

@@ -33,6 +33,8 @@ export interface RegionEconomy {
   capacity: number;
   /** Yield multipliers from buildings (1 = none). */
   yieldMult: Record<BaseResource, number>;
+  /** What each person uses per game hour (absent: the original ration of food and nothing else). */
+  needs?: Record<BaseResource, number>;
   /** Extraction per game hour from buildings, applied only for resources the region has. */
   extract: Partial<Record<SpecialResource, number>>;
   /** Made per game hour where the region lacks the resource (forge scrap). */
@@ -113,9 +115,14 @@ export function computeRates(traits: RegionTraits, e: RegionEconomy): Rates {
       if (made) special[s] = made * e.iceFactor * weather * (e.boom === s ? balance.events.boom.mult : 1);
     }
   }
-  const consumption = (e.popWorkers + e.popOccupiers + e.popSoldiers * eco.soldierFoodMultiplier) * eco.foodPerPersonPerHour;
+  const needs = e.needs ?? { food: eco.foodPerPersonPerHour, wood: 0, stone: 0 };
+  const consumption = (e.popWorkers + e.popOccupiers + e.popSoldiers * eco.soldierFoodMultiplier) * needs.food;
   const foodNet = gross.food - consumption;
+  const woodNet = gross.wood - pop * needs.wood;
+  const stoneNet = gross.stone - pop * needs.stone;
   const starving = e.food <= 0 && foodNet < 0;
+  // Out of wood or stone people go cold and roofless: nobody new settles, though nobody dies of it.
+  const shortOfGoods = (e.wood <= 0 && woodNet < 0) || (e.stone <= 0 && stoneNet < 0);
 
   let population: number;
   if (e.frozen) {
@@ -126,12 +133,14 @@ export function computeRates(traits: RegionTraits, e: RegionEconomy): Rates {
     population = -pop * eco.starvationPerHour;
   } else if (e.plague) {
     population = -pop * balance.events.plague.deathPerHour;
+  } else if (shortOfGoods) {
+    population = 0;
   } else {
     const room = Math.max(0, 1 - pop / Math.max(1, e.capacity));
     population = (pop * eco.growthPerHour + eco.arrivalsPerHour) * room * e.growthMult;
   }
 
-  return { food: foodNet, wood: gross.wood, stone: gross.stone, population, special, gross, starving };
+  return { food: foodNet, wood: woodNet, stone: stoneNet, population, special, gross, starving };
 }
 
 /**

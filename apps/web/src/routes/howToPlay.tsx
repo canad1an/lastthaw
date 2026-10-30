@@ -73,6 +73,11 @@ const ADVANCED: Array<{ title: string; body: React.ReactNode }> = [
           {pct(eco.starvationPerHour)} of its people die each hour. A frozen region loses {pct(eco.frozenDeathPerHour)} an hour; nothing survives the ice.
         </p>
         <p className="mt-2">
+          In games created after the economy update, a richer people needs more: every age you enter adds {eco.needsPerAge.food} food, {eco.needsPerAge.wood} wood and {eco.needsPerAge.stone} stone to what each person uses an hour (so in the
+          Modern Age a person eats {Math.round((eco.foodPerPersonPerHour + eco.needsPerAge.food * 6) * 10) / 10} food and uses {eco.needsPerAge.wood * 6} wood and {Math.round(eco.needsPerAge.stone * 6 * 10) / 10} stone). A region out of wood or stone stops growing, though nobody dies of it. Tech bonuses to food,
+          wood and stone also add to what your buildings give instead of multiplying it. Older games keep the old rules.
+        </p>
+        <p className="mt-2">
           Base output per worker per hour is {eco.perWorkerPerHour.food} food, {eco.perWorkerPerHour.wood} wood and {eco.perWorkerPerHour.stone} stone before terrain, so one food worker feeds about{" "}
           {Math.floor(eco.perWorkerPerHour.food / eco.foodPerPersonPerHour)} people on plain ground. Coastal and river regions add {pct(eco.coastalFoodBonus - 1)} food each.
         </p>

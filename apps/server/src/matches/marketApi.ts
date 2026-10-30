@@ -13,7 +13,7 @@ import { recordSpend } from "../sim/ledger.js";
 import { httpError } from "../sim/commands.js";
 import { applyCost, settleAndLockRegion, stockOf, type MatchRegionRow, type Tx, resourceMultOf } from "../sim/regions.js";
 import { idParams, orderParams } from "./params.js";
-import { enterMap, mapOf } from "../map/scope.js";
+import { enterMap, scopeOf } from "../map/scope.js";
 
 const MAX_OPEN_ORDERS = 10;
 
@@ -317,7 +317,7 @@ export async function settlePendingOrders(db: Db, publisher: Publisher | null, l
     .limit(200);
   let settled = 0;
   for (const { id, m } of waiting) {
-    enterMap(mapOf(m));
+    enterMap(scopeOf(m));
     try {
       const out = await db.transaction(async (tx) => {
         const o = await lockOrder(tx, m.id, id);

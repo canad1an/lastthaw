@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { pastMatches, pastSearchOf } from "./pastMatches.js";
-import { enterMap, mapOf } from "../map/scope.js";
+import { enterMap, mapOf, scopeOf } from "../map/scope.js";
 import { parseProfile } from "../sim/ai.js";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { AGES, allRegions, balance, buildingById, iceLatitudeOnDay, regionById } from "@lastthaw/shared";
@@ -193,7 +193,7 @@ export async function leaderboardRoutes(app: FastifyInstance, opts: { db: Db }) 
     const [m] = await db.select().from(matches).where(eq(matches.id, matchId)).limit(1);
     if (!m) return reply.code(404).send({ error: "match not found" });
     await guardPrivate(m, req.user ?? null);
-    enterMap(mapOf(m));
+    enterMap(scopeOf(m));
     // The whole map, with every owner, is only for finished matches: during play it would be total vision.
     if (m.status !== "finished" && !req.user?.isAdmin) throw httpError(403, "the replay is published when the match ends");
     const ps = await db.select({ id: players.id, name: players.name, isAi: players.isAi }).from(players).where(and(eq(players.matchId, matchId), eq(players.hidden, false))).orderBy(players.createdAt);

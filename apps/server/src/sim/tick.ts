@@ -1,5 +1,5 @@
 import { and, asc, eq, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
-import { enterMap, mapOf, mapOfMatch } from "../map/scope.js";
+import { enterMap, scopeOf, scopeOfMatch } from "../map/scope.js";
 import { tribesChat, tribesSpeak } from "./tribeVoice.js";
 import { placeBounty } from "./objectives.js";
 import type pino from "pino";
@@ -38,7 +38,7 @@ export async function runMatchTicks(db: Db, publisher: Publisher, log: pino.Logg
       ),
     );
   for (const { id } of due) {
-    enterMap(await mapOfMatch(db, id));
+    enterMap(await scopeOfMatch(db, id));
     try {
       await tickMatch(db, publisher, id, log);
     } catch (err) {
@@ -95,7 +95,7 @@ export async function runAiDecisions(db: Db, publisher: Publisher, log: pino.Log
   const running = await db.select().from(matches).where(and(eq(matches.status, "running"), isNull(matches.pausedAt)));
   let acted = 0;
   for (const m of running) {
-    enterMap(mapOf(m));
+    enterMap(scopeOf(m));
     const now = matchNow(m);
     const dueAi = await db
       .select()

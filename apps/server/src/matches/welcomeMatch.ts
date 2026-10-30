@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { and, eq, inArray, lt, sql } from "drizzle-orm";
+import { ECONOMY_RULES_LATEST } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { matches, players, sessions, users } from "../db/schema.js";
 import { config } from "../config.js";
@@ -55,7 +56,7 @@ export async function createWelcomeMatch(
           seed: randomBytes(8).toString("hex"),
           startsAt,
           endsAt,
-          settings: { createdBy: user.id, kind: "public", aiFillTo: 20, welcome: true, welcomeFor: user.id },
+          settings: { createdBy: user.id, kind: "public", aiFillTo: 20, welcome: true, welcomeFor: user.id, economy: ECONOMY_RULES_LATEST },
         })
         .returning({ id: matches.id, slug: matches.slug, name: matches.name, startsAt: matches.startsAt, speed: matches.speed });
       if (!m) throw new Error("welcome match insert returned nothing");

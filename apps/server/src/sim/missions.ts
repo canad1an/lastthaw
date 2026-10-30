@@ -12,7 +12,7 @@ import { receiveMaterials } from "./commands.js";
 import { legContextFor, legSeconds, routeFor, type LegContext } from "./legs.js";
 import { clearMilitaryTargets } from "./advisorTargets.js";
 import { causeForWar } from "./diplomacy.js";
-import { enterMap, mapOf } from "../map/scope.js";
+import { enterMap, scopeOf } from "../map/scope.js";
 import type { Db } from "../db/client.js";
 import { recordSpend } from "./ledger.js";
 
@@ -1282,7 +1282,7 @@ export async function cancelJobsInLostRegions(db: Db): Promise<number> {
     if (!s.playerId || !s.regionId) continue;
     const [m] = await db.select().from(matches).where(eq(matches.id, s.matchId)).limit(1);
     if (!m) continue;
-    enterMap(mapOf(m));
+    enterMap(scopeOf(m));
     n += await db.transaction((tx) => dropLostJobs(tx, m, s.playerId!, s.regionId!, matchNow(m)));
   }
   return n;
@@ -1304,7 +1304,7 @@ export async function cancelObsoleteLevels(db: Db): Promise<number> {
     .limit(100);
   let n = 0;
   for (const { jobs: j, matches: m } of stale) {
-    enterMap(mapOf(m));
+    enterMap(scopeOf(m));
     await db.transaction(async (tx) => {
       const at = matchNow(m);
       await tx.update(jobs).set({ cancelledAt: at }).where(eq(jobs.id, j.id));

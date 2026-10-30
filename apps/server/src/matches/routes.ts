@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { mapOf } from "../map/scope.js";
-import { isMapLoaded, MAP_NAMES } from "@lastthaw/shared";
+import { isMapLoaded, MAP_NAMES, ECONOMY_RULES_LATEST } from "@lastthaw/shared";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import { assignBody, balance, createMatchBody, normalizeAssignment, pickStartBody, regionById, timeSkipBody, type MatchSummary, joinMatchBody, joinByCodeBody } from "@lastthaw/shared";
@@ -149,6 +149,7 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
           ...(body.resourceMult && body.resourceMult !== 1 && kind !== "tournament" ? { resourceMult: body.resourceMult } : {}),
           ...(body.map && body.map !== "earth" ? { map: body.map } : {}),
           kind,
+          economy: ECONOMY_RULES_LATEST,
           ...(kind === "tournament" ? { weekly: true } : {}),
           ...(inviteCode ? { inviteCode } : {}),
         },

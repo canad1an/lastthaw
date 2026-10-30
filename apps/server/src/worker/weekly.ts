@@ -1,7 +1,7 @@
 import { and, eq, gt, inArray, sql } from "drizzle-orm";
 import { createHash, randomBytes } from "node:crypto";
 import type pino from "pino";
-import { balance } from "@lastthaw/shared";
+import { balance, ECONOMY_RULES_LATEST } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { matches } from "../db/schema.js";
 import { matchLengthSeconds } from "../matches/start.js";
@@ -43,7 +43,7 @@ export async function ensureWeeklyMatch(db: Db, log: pino.Logger): Promise<void>
     const seed = randomBytes(8).toString("hex");
     const name = pickMatchName(taken, seed);
     taken.add(name.toLowerCase());
-    await db.insert(matches).values({ name, slug: await uniqueSlug(db, name, startsAt), speed: balance.match.defaultSpeed, seed, startsAt, endsAt, settings: { weekly: true, kind: "tournament" } });
+    await db.insert(matches).values({ name, slug: await uniqueSlug(db, name, startsAt), speed: balance.match.defaultSpeed, seed, startsAt, endsAt, settings: { weekly: true, kind: "tournament", economy: ECONOMY_RULES_LATEST } });
     log.info({ name, startsAt }, "tournament scheduled");
     startsAt = nextWeeklyStart(startsAt, s.weekday, s.hourUtc);
   }

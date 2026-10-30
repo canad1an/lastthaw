@@ -1,5 +1,6 @@
 import { balance } from "../config/balance.js";
 import { BUILDINGS, buildingById, type BuildingDef, type SpecialResource, UNITS, TECHS, type UnitDef, type TechDef } from "../config/ages.js";
+import { economyRules } from "./economyRules.js";
 
 /** Aggregate effect of every building level in a region. */
 export interface RegionEffects {
@@ -9,6 +10,8 @@ export interface RegionEffects {
   /** Additional multiplier applied to food storage only. */
   foodStorage: number;
   yield: { food: number; wood: number; stone: number };
+  /** What each person uses per game hour (soldiers eat several rations of the food). */
+  needs: { food: number; wood: number; stone: number };
   extract: Partial<Record<SpecialResource, number>>;
   /** Made where the region lacks the resource (forge scrap), per game hour. */
   scrap: Partial<Record<SpecialResource, number>>;
@@ -32,6 +35,7 @@ export function effectsOf(buildings: Record<string, number>): RegionEffects {
     storage: 1,
     foodStorage: 0,
     yield: { food: 1, wood: 1, stone: 1 },
+    needs: { food: balance.economy.foodPerPersonPerHour, wood: 0, stone: 0 },
     extract: {},
     scrap: {},
     defense: 0,
@@ -147,14 +151,17 @@ export interface TechEffects {
   vision: number;
   /** 0 none, 0.5 halves the plague chance, 1 immune. */
   plagueResist: number;
+  /** The age the techs reach (the highest age tech known). */
+  age: number;
 }
 
-export const NO_TECH_EFFECTS: TechEffects = { yield: { food: 0, wood: 0, stone: 0 }, capacity: 0, storage: 0, growth: 0, extract: 0, attack: 0, defense: 0, trainSpeed: 0, researchSpeed: 0, travel: 0, loyalty: 0, vision: 0, plagueResist: 0 };
+export const NO_TECH_EFFECTS: TechEffects = { age: 0, yield: { food: 0, wood: 0, stone: 0 }, capacity: 0, storage: 0, growth: 0, extract: 0, attack: 0, defense: 0, trainSpeed: 0, researchSpeed: 0, travel: 0, loyalty: 0, vision: 0, plagueResist: 0 };
 
 export function techEffectsOf(techs: ReadonlySet<string> | readonly string[]): TechEffects {
   const has = techs instanceof Set ? (id: string) => techs.has(id) : (id: string) => (techs as readonly string[]).includes(id);
   const t: TechEffects = { ...NO_TECH_EFFECTS, yield: { food: 0, wood: 0, stone: 0 } };
   for (const def of TECHS) {
+    if (def.advancesTo !== undefined && has(def.id)) t.age = Math.max(t.age, def.advancesTo);
     if (!def.effect || !has(def.id)) continue;
     const e = def.effect;
     t.yield.food += e.yield?.food ?? 0;
@@ -182,11 +189,17 @@ export function applyTechEffects(e: RegionEffects, t: TechEffects): RegionEffect
   for (const [k, v] of Object.entries(e.extract)) extract[k as SpecialResource] = (v ?? 0) * (1 + t.extract);
   const scrap: Partial<Record<SpecialResource, number>> = {};
   for (const [k, v] of Object.entries(e.scrap)) scrap[k as SpecialResource] = (v ?? 0) * (1 + t.extract);
+  // Rules 2: tech yields add to what the buildings give rather than multiply it, and every age entered adds to what a person uses.
+  const additive = economyRules() >= 2;
+  const per = balance.economy.needsPerAge;
   return {
     ...e,
     capacity: e.capacity + t.capacity,
     storage: e.storage + t.storage,
-    yield: { food: e.yield.food * (1 + t.yield.food), wood: e.yield.wood * (1 + t.yield.wood), stone: e.yield.stone * (1 + t.yield.stone) },
+    yield: additive
+      ? { food: e.yield.food + t.yield.food, wood: e.yield.wood + t.yield.wood, stone: e.yield.stone + t.yield.stone }
+      : { food: e.yield.food * (1 + t.yield.food), wood: e.yield.wood * (1 + t.yield.wood), stone: e.yield.stone * (1 + t.yield.stone) },
+    needs: additive ? { food: e.needs.food + per.food * t.age, wood: e.needs.wood + per.wood * t.age, stone: e.needs.stone + per.stone * t.age } : e.needs,
     extract,
     scrap,
     defense: e.defense + t.defense,

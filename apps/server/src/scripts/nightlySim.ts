@@ -8,7 +8,7 @@
  *   npx tsx src/scripts/nightlySim.ts          (local)
  */
 import { randomBytes } from "node:crypto";
-import { balance } from "@lastthaw/shared";
+import { balance, ECONOMY_RULES_LATEST } from "@lastthaw/shared";
 import { createDb, type Db } from "../db/client.js";
 import { matches } from "../db/schema.js";
 import { matchLengthSeconds } from "../matches/start.js";
@@ -31,7 +31,7 @@ export async function createSimMatch(db: Db, now = new Date()): Promise<{ id: st
       seed: randomBytes(8).toString("hex"),
       startsAt: now,
       endsAt,
-      settings: { kind: "public", aiFillTo: balance.match.maxAiTribes, aiDifficulty: "mixed", simulation: true },
+      settings: { kind: "public", aiFillTo: balance.match.maxAiTribes, aiDifficulty: "mixed", simulation: true, economy: ECONOMY_RULES_LATEST },
     })
     .returning({ id: matches.id, name: matches.name });
   return m!;

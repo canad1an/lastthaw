@@ -179,6 +179,8 @@ export const ownedRegionView = z.object({
   storage: z.object({ food: z.number(), wood: z.number(), stone: z.number() }),
   capacity: z.number(),
   yieldMult: z.object({ food: z.number(), wood: z.number(), stone: z.number() }),
+  /** What each person uses per game hour. */
+  needs: z.object({ food: z.number(), wood: z.number(), stone: z.number() }).optional(),
   extract: z.record(z.string(), z.number()),
   scrap: z.record(z.string(), z.number()).default({}),
   buildings: z.record(z.string(), z.number()),

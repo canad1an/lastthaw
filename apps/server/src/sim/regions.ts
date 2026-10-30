@@ -33,6 +33,7 @@ export function economyOf(row: MatchRegionRow, effects: RegionEffects = effectsO
     storage: storageCaps(effects, row.isCapital),
     capacity: balance.economy.baseCapacity + effects.capacity,
     yieldMult: effects.yield,
+    needs: effects.needs,
     extract: effects.extract,
     scrap: effects.scrap,
     iceFactor: row.frozenAt ? 0 : row.iceFactor,

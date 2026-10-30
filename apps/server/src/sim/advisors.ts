@@ -4,7 +4,7 @@
  * materials routes and convoys supply what a region cannot pay, moves people the way the player chose, and writes
  * a short report with suggestions after every pass. Wages are charged by the match tick; passes run in the AI process.
  */
-import { enterMap, mapOf } from "../map/scope.js";
+import { enterMap, scopeOf } from "../map/scope.js";
 import { and, asc, eq, isNull, lte, sql } from "drizzle-orm";
 import type pino from "pino";
 import { balance, reachableLevel, availableBuildings, buildingBlockedBy, buildingById, buildingCost, canAfford, computeRates, normalizeAssignment, regionById, unitById, HAULER_IDS, type AdvisorKind, type AdvisorSettings, type AdvisorReport, type AdvisorSuggestion, type Cost, type RegionEconomy, advisorSettings as advisorSettingsSchema, RESOURCE_WORTH, findRoute, loyaltyOutlook, distanceKm } from "@lastthaw/shared";
@@ -196,7 +196,7 @@ export async function runAdvisors(db: Db, publisher: Publisher, log: pino.Logger
   const running = await db.select().from(matches).where(and(eq(matches.status, "running"), isNull(matches.pausedAt)));
   let passes = 0;
   for (const m of running) {
-    enterMap(mapOf(m));
+    enterMap(scopeOf(m));
     const now = matchNow(m);
     const rows = await db.select().from(advisors).where(and(eq(advisors.matchId, m.id), isNull(advisors.firedAt), isNull(advisors.unpaidSince)));
     for (const a of rows) {
@@ -700,8 +700,11 @@ export async function rebalanceWorkers(db: Db, m: MatchRow, regions: Array<{ row
       const starving = r.food < 0 && e.food < consumption * 12;
       if (starving) continue;
       any = true;
-      // Food beyond what the region eats is worth its store-weighted value; what it eats is worth keeping no matter what.
-      const score = Math.min(r.gross.food, consumption) * 1.5 + Math.max(0, r.gross.food - consumption) * worth("food") + r.gross.wood * worth("wood") + r.gross.stone * worth("stone");
+      // Beyond what the region uses each resource is worth its store-weighted value; what it uses (food eaten, and under
+      // rules 2 wood and stone too) is worth keeping no matter what.
+      const used = { food: consumption, wood: r.gross.wood - r.wood, stone: r.gross.stone - r.stone };
+      const part = (k: "food" | "wood" | "stone") => Math.min(r.gross[k], used[k]) * 1.5 + Math.max(0, r.gross[k] - used[k]) * worth(k);
+      const score = part("food") + part("wood") + part("stone");
       if (score > bestScore + 1e-9) {
         bestScore = score;
         best = a;
