@@ -18,7 +18,7 @@ export const OVERLAYS: OverlayDef[] = [
   { id: "ice", label: "Ice within 3 days", description: "Regions the ice reaches within three days. Evacuate or accept the loss.", colour: "#e0f2fe", glyph: "❄" },
   { id: "noroads", label: "No roads", description: "Regions that could build Roads but have not.", colour: "#94a3b8", glyph: "⌁" },
   { id: "norail", label: "No railway", description: "Once you know Railways: your regions without Roads, so without track. Trains run at full speed only on track, between two road regions.", colour: "#a07d55", glyph: "≠" },
-  { id: "hidehaulers", label: "Hide haulers", description: "Hides caravans, wagons, freight wagons, trains, lorries and cogs on the move. Soldiers, settlers, enemies and the capital wagon still show.", colour: "#64748b", glyph: "≡" },
+  { id: "hidehaulers", label: "Hide haulers", description: "Hides caravans, wagons, freight wagons, trains, trucks and cogs on the move. Soldiers, settlers, enemies and the capital wagon still show.", colour: "#64748b", glyph: "≡" },
   { id: "hideharbors", label: "Hide harbours", description: "Hides the harbours (the docks on your coasts) and the ships moored there. Ships at sea still show.", colour: "#94a3b8", glyph: "⚓" },
   { id: "hideroads", label: "Hide roads", description: "Hides the roads and the railway track drawn between regions.", colour: "#94a3b8", glyph: "⌁" },
   { id: "flat", label: "Flat map", description: "Hides the terrain relief under the regions and paints them in plain colours. Lighter on an old phone.", colour: "#475569", glyph: "▭" },

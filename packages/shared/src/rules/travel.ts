@@ -177,7 +177,7 @@ export function missionLabel(mission: string, units?: Record<string, number>): s
       return "Airstrike";
     case "transport": {
       if (units?.transport_plane) return "Transport planes";
-      if (units?.lorry) return "Lorries";
+      if (units?.lorry) return "Trucks";
       if (units?.train) return "Trains";
       if (units?.freight_wagon) return "Freight wagons";
       if (units?.wagon) return "Wagons";

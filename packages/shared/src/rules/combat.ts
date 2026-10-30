@@ -138,7 +138,7 @@ export function haulerCarry(id: string, techs?: ReadonlySet<string> | readonly s
 
 /**
  * The capital moves at the pace of the best land hauler the player's research allows, whether or not they own one:
- * caravan, wagon, freight wagon, train (its own pace on and off the track) or lorry.
+ * caravan, wagon, freight wagon, train (its own pace on and off the track) or truck.
  */
 export function capitalMover(techs: ReadonlySet<string> | readonly string[]): UnitCounts {
   const known = new Set(techs);

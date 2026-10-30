@@ -104,7 +104,7 @@ describe("travel", () => {
     expect(capitalMover(["wagon_building", "wainwrights", "railways"])).toEqual({ train: 1 });
     expect(capitalMover(["wagon_building", "wainwrights", "railways", "internal_combustion", "shipbuilding"])).toEqual({ lorry: 1 });
     expect(capitalSpeed([])).toBe(unitById.get("caravan")!.speed);
-    // Compass, Railway signalling and Internal combustion: +45% on a lorry's 30.
+    // Compass, Railway signalling and Internal combustion: +45% on a truck's 30.
     expect(capitalSpeed(["internal_combustion", "compass", "railway_signalling"])).toBeCloseTo(30 * 1.45);
     // A train-paced move runs at full speed on track and at its off-track pace elsewhere.
     expect(paceFor(capitalMover(["railways"]))).toBeDefined();
@@ -268,8 +268,8 @@ describe("legs of a march", () => {
 });
 
 describe("moving groups are named by their best hauler", () => {
-  it("lorries, trains, freight wagons, wagons, caravans", () => {
-    expect(missionLabel("transport", { lorry: 1, wagon: 2 })).toBe("Lorries");
+  it("trucks, trains, freight wagons, wagons, caravans", () => {
+    expect(missionLabel("transport", { lorry: 1, wagon: 2 })).toBe("Trucks");
     expect(missionLabel("transport", { train: 1 })).toBe("Trains");
     expect(missionLabel("transport", { freight_wagon: 3 })).toBe("Freight wagons");
     expect(missionLabel("transport", { wagon: 3 })).toBe("Wagons");
