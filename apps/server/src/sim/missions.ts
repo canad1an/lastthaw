@@ -181,7 +181,10 @@ export async function migrateCrowded(tx: Tx, m: MatchRow, now: Date, hours: numb
     // Over capacity: the surplus goes to any neighbour with room. Nearly full: down to migrationKeeps, to empty neighbours only.
     const excess = over ? popOf(r) - cap : popOf(r) >= cap * e.migrationFullAbove ? popOf(r) - cap * e.migrationKeeps : 0;
     if (excess < 1) continue;
-    const movers = Math.min(Math.floor(excess * share), Math.max(0, Math.floor(r.popWorkers) - 1));
+    // A tick at 1x is a few game minutes, so the share is often a fraction of a person: round it up by chance, so the
+    // hourly rate holds on average instead of rounding to nobody.
+    const want = excess * share;
+    const movers = Math.min(Math.floor(want) + (Math.random() < want % 1 ? 1 : 0), Math.max(0, Math.floor(r.popWorkers) - 1));
     if (movers < 1) continue;
     // Neighbours of mine with room, weighted by room.
     const dests: Array<{ row: MatchRegionRow; room: number }> = [];
@@ -200,7 +203,7 @@ export async function migrateCrowded(tx: Tx, m: MatchRow, now: Date, hours: numb
     let left = movers;
     const src = await settleAndLockRegion(tx, m.id, r.regionId, now, m.speed, resourceMultOf(m));
     for (const d of dests) {
-      const take = Math.min(Math.floor(d.room), Math.max(0, Math.round((movers * d.room) / totalRoom)), left, Math.max(0, Math.floor(src.popWorkers) - 1));
+      const take = Math.min(Math.floor(d.room), Math.max(0, Math.ceil((movers * d.room) / totalRoom)), left, Math.max(0, Math.floor(src.popWorkers) - 1));
       if (take < 1) continue;
       const dst = await settleAndLockRegion(tx, m.id, d.row.regionId, now, m.speed, resourceMultOf(m));
       await tx.update(matchRegions).set({ popWorkers: dst.popWorkers + take }).where(and(eq(matchRegions.matchId, m.id), eq(matchRegions.regionId, d.row.regionId)));
