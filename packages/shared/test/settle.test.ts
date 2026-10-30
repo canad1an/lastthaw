@@ -49,7 +49,7 @@ describe("settle", () => {
     const s = { ...startingEconomy(), extract: fx.extract, scrap: fx.scrap };
     expect(computeRates(plains, s).special.iron).toBeCloseTo(0.3 * 3 * 2);
     expect(computeRates({ ...plains, resources: ["iron"] }, s).special.iron).toBeCloseTo(0.8 * 3 * 2);
-    expect(computeRates(plains, { ...s, scrap: undefined }).special.iron).toBe(0);
+    expect(computeRates(plains, { ...s, scrap: {} }).special.iron).toBe(0);
   });
 
   it("starves when nobody gathers food", () => {

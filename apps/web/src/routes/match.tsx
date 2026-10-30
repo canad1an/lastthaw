@@ -429,6 +429,12 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
     for (const s of state.sighted) if (s.rail) rail.add(s.regionId);
     return rail;
   }, [state.owned, state.sighted, state.me.techs]);
+  const highwayRegions = useMemo(() => {
+    const hw = new Set<string>();
+    if (state.me.techs.includes("internal_combustion")) for (const o of state.owned) if (!o.frozen && (o.buildings.roads ?? 0) >= 1) hw.add(o.regionId);
+    for (const s of state.sighted) if (s.highway) hw.add(s.regionId);
+    return hw;
+  }, [state.owned, state.sighted, state.me.techs]);
   const markers = useMemo(() => armyMarkers(shownArmies, state.incoming, now + clockOffsetMs, formatCountdown, state.me.techs, state.ships, new Set(state.allies), railRegions), [shownArmies, state.incoming, state.ships, state.allies, now, clockOffsetMs, railRegions]);
   const finished = state.match.status === "finished";
   const eliminated = state.owned.length === 0 && !finished;
@@ -460,23 +466,23 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
 
   const incomingSet = useMemo(() => new Set(state.incoming.map((i) => i.targetRegionId)), [state.incoming]);
   // Road links: between adjacent regions that both have Roads, among mine and what I can see; track where both have the
-  // track (roads of a player who knows Railways).
+  // track (roads of a player who knows Railways), and a highway where both know Internal combustion.
   const roadLinks = useMemo(() => {
     const colour = new Map<string, string>();
     const rail = railRegions;
     for (const o of state.owned) if (!o.frozen && (o.buildings.roads ?? 0) >= 1) colour.set(o.regionId, colorOf(state.me.playerId));
     for (const s of state.sighted) if (s.roads && !colour.has(s.regionId)) colour.set(s.regionId, "#cbd5e1");
-    const out: Array<[string, string, string, "road" | "rail"]> = [];
+    const out: Array<[string, string, string, "road" | "rail" | "highway"]> = [];
     for (const [id, c] of colour) {
       for (const n of regionById(id)?.neighbors ?? []) {
         if (id < n && colour.has(n)) {
-          const both = rail.has(id) && rail.has(n);
-          out.push([id, n, c === colour.get(n) ? c : "#cbd5e1", both ? "rail" : "road"]);
+          const kind = highwayRegions.has(id) && highwayRegions.has(n) ? "highway" : rail.has(id) && rail.has(n) ? "rail" : "road";
+          out.push([id, n, c === colour.get(n) ? c : "#cbd5e1", kind]);
         }
       }
     }
     return out;
-  }, [state.owned, state.sighted, state.me.playerId, colorOf, railRegions]);
+  }, [state.owned, state.sighted, state.me.playerId, colorOf, railRegions, highwayRegions]);
   const frontierSet = useMemo(() => new Set(state.frontier), [state.frontier]);
   const allySet = useMemo(() => new Set(state.allies), [state.allies]);
   const borderSet = useMemo(() => new Set(state.owned.flatMap((o) => regionById(o.regionId)?.neighbors ?? [])), [state.owned]);

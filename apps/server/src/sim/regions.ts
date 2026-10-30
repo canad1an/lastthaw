@@ -152,7 +152,12 @@ export async function setCapital(tx: Tx, matchId: string, playerId: string, regi
 
 /** Players in this match who know Railways: every road of theirs carries track. */
 export async function railwayOwners(db: Db | Tx, matchId: string): Promise<Set<string>> {
-  const rows = await db.select({ playerId: playerTechs.playerId }).from(playerTechs).where(and(eq(playerTechs.matchId, matchId), eq(playerTechs.techId, "railways")));
+  return techOwners(db, matchId, "railways");
+}
+
+/** Players in the match who know this tech. */
+export async function techOwners(db: Db | Tx, matchId: string, techId: string): Promise<Set<string>> {
+  const rows = await db.select({ playerId: playerTechs.playerId }).from(playerTechs).where(and(eq(playerTechs.matchId, matchId), eq(playerTechs.techId, techId)));
   return new Set(rows.map((r) => r.playerId));
 }
 

@@ -20,7 +20,7 @@ export const OVERLAYS: OverlayDef[] = [
   { id: "norail", label: "No railway", description: "Once you know Railways: your regions without Roads, so without track. Trains run at full speed only on track, between two road regions.", colour: "#a07d55", glyph: "≠" },
   { id: "hidehaulers", label: "Hide haulers", description: "Hides caravans, wagons, freight wagons, trains, trucks and cogs on the move. Soldiers, settlers, enemies and the capital wagon still show.", colour: "#64748b", glyph: "≡" },
   { id: "hideharbors", label: "Hide harbours", description: "Hides the harbours (the docks on your coasts) and the ships moored there. Ships at sea still show.", colour: "#94a3b8", glyph: "⚓" },
-  { id: "hideroads", label: "Hide roads", description: "Hides the roads and the railway track drawn between regions.", colour: "#94a3b8", glyph: "⌁" },
+  { id: "hideroads", label: "Hide roads", description: "Hides the roads, railway track and highways drawn between regions.", colour: "#94a3b8", glyph: "⌁" },
   { id: "flat", label: "Flat map", description: "Hides the terrain relief under the regions and paints them in plain colours. Lighter on an old phone.", colour: "#475569", glyph: "▭" },
   { id: "loyalty", label: "Loyalty", description: "Tints your regions by loyalty: green secure, amber uneasy, red at risk of rebellion. Badge on regions heading down.", colour: "#f43f5e", glyph: "!" },
 ];

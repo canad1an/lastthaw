@@ -44,8 +44,8 @@ export interface WorldMapProps {
   dashed?: string[];
   /** Armies to draw as moving markers. */
   armies?: ArmyMarker[];
-  /** Road or rail links to draw between adjacent regions: [a, b, colour, kind]. */
-  roads?: Array<[string, string, string, "road" | "rail"]>;
+  /** Road, rail or highway links to draw between adjacent regions: [a, b, colour, kind]. */
+  roads?: Array<[string, string, string, "road" | "rail" | "highway"]>;
   /** Overlay badges (View menu): small glyph markers at region centres; a pulsing one is clickable when it carries an action. */
   badges?: Array<{ regionId: string; colour: string; glyph: string; label: string; pulse?: boolean; battleId?: string }>;
   onBadgeClick?: (badge: { regionId: string; battleId?: string }) => void;
@@ -324,11 +324,30 @@ export function WorldMap({ paint, selected, onSelect, focus, relief = false, fly
             const ra = regionById(a);
             const rb = regionById(b);
             if (!ra || !rb) return null;
-            const w = (unitsPerPx / view.k) * (kind === "rail" ? 4.2 : 1.6);
+            const w = (unitsPerPx / view.k) * (kind === "rail" ? 4.2 : kind === "highway" ? 5.6 : 1.6);
             return (
               <g key={`${kind}-${a}-${b}`}>
-                {kind !== "rail" && <line x1={ra.x} y1={ra.y} x2={rb.x} y2={rb.y} stroke="#0f172a" strokeWidth={w * 1.9} strokeLinecap="round" opacity={0.7} />}
-                {kind === "rail" ? (
+                {kind === "road" && <line x1={ra.x} y1={ra.y} x2={rb.x} y2={rb.y} stroke="#0f172a" strokeWidth={w * 1.9} strokeLinecap="round" opacity={0.7} />}
+                {kind === "highway" ? (
+                  // A divided highway, nothing like the dashed road or the track: a dark asphalt band edged in white,
+                  // an amber centre line, and a dashed white lane line in each carriageway.
+                  (() => {
+                    const len = Math.hypot(rb.x - ra.x, rb.y - ra.y) || 1;
+                    const nx = -(rb.y - ra.y) / len, ny = (rb.x - ra.x) / len;
+                    const at = (d: number) => ({ x1: ra.x + nx * w * d, y1: ra.y + ny * w * d, x2: rb.x + nx * w * d, y2: rb.y + ny * w * d });
+                    return (
+                      <>
+                        <line x1={ra.x} y1={ra.y} x2={rb.x} y2={rb.y} stroke="#0f172a" strokeWidth={w * 1.5} strokeLinecap="round" opacity={0.8} />
+                        <line x1={ra.x} y1={ra.y} x2={rb.x} y2={rb.y} stroke="#e2e8f0" strokeWidth={w * 1.3} strokeLinecap="round" />
+                        <line x1={ra.x} y1={ra.y} x2={rb.x} y2={rb.y} stroke="#334155" strokeWidth={w * 1.16} strokeLinecap="round" />
+                        <line x1={ra.x} y1={ra.y} x2={rb.x} y2={rb.y} stroke="#facc15" strokeWidth={w * 0.24} />
+                        {[0.36, -0.36].map((d) => (
+                          <line key={d} {...at(d)} stroke="#f8fafc" strokeWidth={w * 0.06} strokeDasharray={`${w * 0.5} ${w * 0.5}`} />
+                        ))}
+                      </>
+                    );
+                  })()
+                ) : kind === "rail" ? (
                   (() => {
                     // Track, nothing like the dashed road: dark wooden sleepers across the line (a thick dashed stroke
                     // reads as a row of ties, outlined so they show on any ground) and two steel rails on top.

@@ -420,6 +420,8 @@ export const sightedRegionView = z.object({
   roads: z.boolean().default(false),
   /** Track: Roads, held by a player who knows Railways. */
   rail: z.boolean().default(false),
+  /** Highway: Roads, held by a player who knows Internal combustion. */
+  highway: z.boolean().default(false),
   /** Strongest defensive building seen there (palisade, walls, fort, castle, arsenal, bunker), or null. */
   wall: z.string().nullable().default(null),
   /** A blizzard is blowing there now. */
