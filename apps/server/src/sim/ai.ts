@@ -1,5 +1,5 @@
 import { and, eq, gt, inArray, isNotNull, isNull, sql } from "drizzle-orm";
-import { reachableLevel, availableBuildings, availableTechs, buildingBlockedBy, availableUnits, balance, buildingById, buildingCost, dayCostMultiplier, effectsOf, freezeDayForLatitude, distanceKm, regionById, seededRng, techById, techCost, normalizeAssignment, type Cost, techEffectsOf, haulerCount, unitById, TECHS, breachOf, wallBonusAgainst } from "@lastthaw/shared";
+import { reachableLevel, availableBuildings, availableTechs, buildingBlockedBy, availableUnits, balance, buildingById, buildingCost, dayCostMultiplier, effectsOf, freezeDayForLatitude, distanceKm, regionById, seededRng, techById, techCost, normalizeAssignment, type Cost, techEffectsOf, haulerCount, unitById, TECHS, breachOf, wallBonusAgainst, SPECIAL_RESOURCES, unitCost } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { armies, bounties, jobs, marketOrders, matchRegions, mercenaryOffers, playerTechs, players, refugeeOffers, pacts } from "../db/schema.js";
 import { hireMercenaries } from "./worldEvents.js";
@@ -153,6 +153,23 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
   // The tech that opens the next age, and what it costs today: the economy and the market keep it in view.
   const ageTech = TECHS.find((t) => t.advancesTo === p.age + 1);
   const ageTechCost = ageTech ? techCost(ageTech, matchDay) : null;
+  // The ore the rest of the way to the next age costs is kept back from soldiers, or every bit of iron the mines bring
+  // in becomes swordsmen and the age tech is never paid for. A region under attack still trains what it needs.
+  const oreReserve: Record<string, number> = {};
+  if (ageTech) {
+    const queuedResearch = new Set(pendingJobs.filter((j) => j.kind === "research").map((j) => j.refId ?? ""));
+    const path = new Set<string>();
+    const walk = (id: string) => {
+      if (techs.has(id) || queuedResearch.has(id) || path.has(id)) return;
+      for (const r of techById.get(id)?.requires ?? []) walk(r);
+      path.add(id);
+    };
+    walk(ageTech.id);
+    for (const id of path) for (const [k, v] of Object.entries(techCost(techById.get(id)!, matchDay))) if ((SPECIAL_RESOURCES as readonly string[]).includes(k)) oreReserve[k] = (oreReserve[k] ?? 0) + (v ?? 0);
+  }
+  const oreStock: Record<string, number> = {};
+  for (const r of owned) if (!r.frozenAt) for (const [k, v] of Object.entries(r.special as Record<string, number>)) oreStock[k] = (oreStock[k] ?? 0) + v;
+  const oreSpareFor = (cost: Cost) => Object.entries(cost).every(([k, v]) => !(k in oreReserve) || (oreStock[k] ?? 0) - (v ?? 0) >= oreReserve[k]!);
 
   // Threats: hostile armies heading for my regions (medium and hard react).
   const threatened = new Set<string>();
@@ -289,14 +306,19 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
     // The capital is the realm: losing it loses the game, so it keeps twice the usual garrison.
     const share = (balance.ai.soldierShare[temperament] ?? 0.2) * (underThreat ? 2 : 1) * (row.regionId === p.capitalRegionId ? 2 : 1);
     if (queueLen(row.regionId) < balance.queue.slotsPerRegion && economy.popSoldiers < pop * share && economy.popWorkers > 8) {
-      const units = availableUnits(p.age, techs).filter((u) => !u.naval && !u.air && !u.civilian && (!u.needsResource || region.resources.includes(u.needsResource)));
+      const units = availableUnits(p.age, techs).filter((u) => !u.naval && !u.air && !u.civilian && (!u.needsResource || region.resources.includes(u.needsResource)) && (underThreat || oreSpareFor(unitCost(u, 1, matchDay))));
       const engine = [...units].filter((u) => (u.breach ?? 0) > 0).sort((a, b) => (b.breach ?? 0) - (a.breach ?? 0))[0];
       const enginesHere = Object.entries(row.units).reduce((acc, [id, n]) => acc + ((unitById.get(id)?.breach ?? 0) > 0 ? n : 0), 0);
       // One engine for every eight soldiers, so walls never stop an attack cold.
       const wantEngines = engine && !underThreat && enginesHere < Math.max(2, Math.floor(economy.popSoldiers / 8)) && difficulty !== "easy";
       const best = wantEngines ? engine : [...units].filter((u) => !(u.breach ?? 0)).sort((a, b) => b.attack + b.defense - (a.attack + a.defense))[0];
       const qty = wantEngines ? Math.max(1, Math.min(6, Math.floor(economy.popSoldiers / 8) - enginesHere)) : Math.max(1, Math.min(underThreat ? 20 : 10, Math.floor(economy.popWorkers * (underThreat ? 0.3 : 0.15))));
-      if (best) await attempt(() => queueTrain(ctx, row.regionId, best.id, qty));
+      // A batch that would dip into the ore kept for the next age shrinks to what it can spare.
+      let n = qty;
+      while (best && n > 1 && !underThreat && !oreSpareFor(unitCost(best, n, matchDay))) n = Math.floor(n / 2);
+      if (best && (await attempt(() => queueTrain(ctx, row.regionId, best.id, n)))) {
+        for (const [k, v] of Object.entries(unitCost(best, n, matchDay))) if (k in oreStock || k in oreReserve) oreStock[k] = (oreStock[k] ?? 0) - (v ?? 0);
+      }
     }
   }
 
