@@ -154,7 +154,9 @@ async function relocateCapital(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, pub
 /**
  * Migration: a region over its capacity sends a share of the surplus, every
  * tick, to neighbouring regions of the same owner that have room, split by
- * how much room each has. Workers only; soldiers and occupiers stay.
+ * how much room each has. A nearly full one sends to nearly empty neighbours
+ * only, so a fresh conquest next to a full region fills. Workers only;
+ * soldiers and occupiers stay.
  */
 export async function migrateCrowded(tx: Tx, m: MatchRow, now: Date, hours: number, playerIds: string[]): Promise<number> {
   const share = Math.min(1, balance.economy.migrationPerHour * hours);
@@ -172,9 +174,12 @@ export async function migrateCrowded(tx: Tx, m: MatchRow, now: Date, hours: numb
   };
   const popOf = (r: MatchRegionRow) => r.popWorkers + r.popSoldiers + r.popOccupiers;
   let moved = 0;
+  const e = balance.economy;
   for (const r of rows) {
     const cap = await capacityOf(r);
-    const excess = popOf(r) - cap;
+    const over = popOf(r) - cap >= 1;
+    // Over capacity: the surplus goes to any neighbour with room. Nearly full: down to migrationKeeps, to empty neighbours only.
+    const excess = over ? popOf(r) - cap : popOf(r) >= cap * e.migrationFullAbove ? popOf(r) - cap * e.migrationKeeps : 0;
     if (excess < 1) continue;
     const movers = Math.min(Math.floor(excess * share), Math.max(0, Math.floor(r.popWorkers) - 1));
     if (movers < 1) continue;
@@ -183,9 +188,11 @@ export async function migrateCrowded(tx: Tx, m: MatchRow, now: Date, hours: numb
     for (const n of regionById(r.regionId)?.neighbors ?? []) {
       const d = byId.get(n);
       if (!d || d.ownerPlayerId !== r.ownerPlayerId) continue;
-      // More workers in a conquered region short of occupiers only lowers its loyalty further.
-      if (d.conquered && d.popOccupiers < (popOf(d) / 100) * balance.conquest.occupiersPerHundred) continue;
-      const room = (await capacityOf(d)) - popOf(d);
+      // More workers in a conquered region short of occupiers only lowers its loyalty further, unless its Temple turns them into occupiers.
+      if (d.conquered && !(d.buildings.temple ?? 0) && d.popOccupiers < (popOf(d) / 100) * balance.conquest.occupiersPerHundred) continue;
+      const dCap = await capacityOf(d);
+      if (!over && popOf(d) >= dCap * e.migrationEmptyBelow) continue;
+      const room = (over ? dCap : dCap * e.migrationFillTo) - popOf(d);
       if (room >= 1) dests.push({ row: d, room });
     }
     if (dests.length === 0) continue;

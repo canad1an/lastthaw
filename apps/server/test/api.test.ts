@@ -1817,6 +1817,22 @@ describe("api routes", () => {
       await tickOnce();
       const [spilled] = await db.select({ popWorkers: matchRegions.popWorkers }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
       expect(spilled!.popWorkers).toBeLessThan(still!.popWorkers);
+      // Nearly full, not over: people still go to a nearly empty neighbour, even a conquest short of occupiers that has a Temple.
+      {
+        const st = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
+        const capRow = st.owned.find((o) => o.regionId === cap)!;
+        const nb = st.owned.find((o) => o.regionId !== cap && (regionById(cap)?.neighbors ?? []).includes(o.regionId))!;
+        expect(nb).toBeTruthy();
+        await db.update(matchRegions).set({ popWorkers: 3, popSoldiers: 0, popOccupiers: 0, conquered: true, buildings: { ...nb.buildings, temple: 1 } }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, nb.regionId)));
+        const near = Math.floor(capRow.capacity * 0.97) - capRow.popSoldiers - capRow.popOccupiers;
+        await db.update(matchRegions).set({ popWorkers: near }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
+        await tickOnce();
+        const [fed] = await db.select({ popWorkers: matchRegions.popWorkers }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, nb.regionId)));
+        expect(fed!.popWorkers).toBeGreaterThan(3);
+        // The Military advisor test below works this border: give the neighbour back as it was.
+        await db.update(matchRegions).set({ popWorkers: nb.popWorkers, popSoldiers: nb.popSoldiers, popOccupiers: nb.popOccupiers, conquered: false, buildings: nb.buildings }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, nb.regionId)));
+        await db.update(matchRegions).set({ popWorkers: capRow.popWorkers }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
+      }
       expect((await Ben.call("POST", `${base}/advisors/economic/fire`, {})).statusCode).toBe(200);
     } finally {
       await redis.quit().catch(() => {});

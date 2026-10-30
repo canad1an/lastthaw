@@ -77,6 +77,14 @@ export const balance = {
     baseCapacity: 50,
     /** Share of the people above capacity who leave for a neighbouring region of yours with room, per game hour. */
     migrationPerHour: 0.1,
+    /**
+     * A region this full (share of capacity) also sends people to a neighbour of yours emptier than `migrationEmptyBelow`,
+     * at the same hourly share, down to `migrationKeeps` of its capacity and filling the empty one up to `migrationFillTo`.
+     */
+    migrationFullAbove: 0.95,
+    migrationEmptyBelow: 0.25,
+    migrationKeeps: 0.9,
+    migrationFillTo: 0.5,
     /** Population lost per game hour as a fraction of current population while starving. */
     starvationPerHour: 0.01,
     /** Population lost per game hour in a frozen region: the ice is not survivable. */

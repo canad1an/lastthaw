@@ -58,7 +58,7 @@ const ADVANCED: Array<{ title: string; body: React.ReactNode }> = [
           soldiers and occupiers are fixed headcounts.
         </p>
         <p className="mt-2">
-          A region above capacity does not empty itself: with an Economic advisor set to overflow it sends {pct(eco.migrationPerHour)} of the overflow per hour to a neighbouring region of yours with room (balanced mode evens out every region instead); without one you move people by hand. Above {mult(ev.plague.crowding)} capacity it may catch
+          A region above capacity does not empty itself: with an Economic advisor set to overflow it sends {pct(eco.migrationPerHour)} of the overflow per hour to a neighbouring region of yours with room, and a nearly full one feeds a nearly empty neighbour (balanced mode evens out every region instead); without one you move people by hand. Above {mult(ev.plague.crowding)} capacity it may catch
           plague: no growth and {pct(ev.plague.deathPerHour)} of its people lost per hour for {ev.plague.hours} hours. Plague resistance from the medicine techs lowers the odds.
         </p>
       </>
@@ -342,7 +342,7 @@ function AdvisorsSection() {
             <b>Worker shares.</b> Each pass she sets every region's split between food, wood and stone from what the region and the empire need: a store near its cap gets no more, a resource your waiting builds owe gets more, and no region is left to starve. Switch it off and your own sliders stand.
           </p>
           <p>
-            <b>People.</b> Nobody moves on their own any more. Choose Off, Overflow (a region over its capacity sends {Math.round(balance.economy.migrationPerHour * 100)}% of the surplus an hour to neighbouring regions of yours with room, as the game once did for everyone) or Balanced (every region toward the same share of its capacity: columns of people leave the fullest regions for the emptiest, at most {Math.round(ecoAdv.balanceSharePerPass * 100)}% of a region's people a pass). Without her hired, a crowded region stays crowded until you move people by hand.
+            <b>People.</b> Nobody moves on their own any more. Choose Off, Overflow (a region over its capacity sends {Math.round(balance.economy.migrationPerHour * 100)}% of the surplus an hour to neighbouring regions of yours with room, as the game once did for everyone; one over {Math.round(balance.economy.migrationFullAbove * 100)}% full also sends people to a neighbour under {Math.round(balance.economy.migrationEmptyBelow * 100)}% full, until that one is half full) or Balanced (every region toward the same share of its capacity: columns of people leave the fullest regions for the emptiest, at most {Math.round(ecoAdv.balanceSharePerPass * 100)}% of a region's people a pass). Without her hired, a crowded region stays crowded until you move people by hand.
           </p>
           <p>
             <b>Her report</b> after every pass says what was queued, what was skipped and why (unaffordable, queue full, cannot stand there, hauling busy), and leaves suggestions with an Open region button: stores near their cap with no route out, regions nearly full, ore with no Mine, haulers idle, builds that have waited too long. Regions you tick under "leaves alone" she never touches.

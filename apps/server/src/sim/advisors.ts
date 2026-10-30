@@ -736,8 +736,9 @@ export async function balancePeople(ctx: CommandContext, regions: Array<{ row: M
   const totalCap = live.reduce((a, x) => a + Math.max(1, x.economy.capacity), 0);
   const mean = totalPop / totalCap;
   const givers = live.filter((x) => fill(x) > mean + c.balanceBand && x.economy.popWorkers > 1).sort((x, y) => fill(y) - fill(x));
-  // A conquered region short of occupiers takes no workers: more people there only raise the occupiers it needs.
-  const shortOfOccupiers = (x: (typeof live)[number]) => x.row.conquered && x.economy.popOccupiers < (pop(x) / 100) * balance.conquest.occupiersPerHundred;
+  // A conquered region short of occupiers takes no workers: more people there only raise the occupiers it needs. One
+  // with a Temple does, since the Temple turns workers into occupiers.
+  const shortOfOccupiers = (x: (typeof live)[number]) => x.row.conquered && !(x.row.buildings.temple ?? 0) && x.economy.popOccupiers < (pop(x) / 100) * balance.conquest.occupiersPerHundred;
   const takers = live.filter((x) => fill(x) < mean - c.balanceBand && !shortOfOccupiers(x));
   let moved = 0;
   const promised = new Map<string, number>();
