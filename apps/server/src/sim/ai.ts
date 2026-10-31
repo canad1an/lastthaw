@@ -169,6 +169,30 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
   }
   const oreStock: Record<string, number> = {};
   for (const r of owned) if (!r.frozenAt) for (const [k, v] of Object.entries(r.special as Record<string, number>)) oreStock[k] = (oreStock[k] ?? 0) + v;
+  // The next tech on the path to the next age (its prerequisites met) and, when the empire's pooled food, wood and stone
+  // cannot pay it, what it is short of. Between ages the stepping techs cost several times their base price late in the
+  // match (Coal mining about 160,000 stone by day 15), and an AI that kept spending stone on builds and side techs sat in
+  // the Industrial Age with an empty research queue. While a path tech is short, every region works toward it and builds
+  // and side research that spend what it lacks wait (a region under attack still builds).
+  let pathTech: string | null = null;
+  if (ageTech) {
+    const queued = new Set(pendingJobs.filter((j) => j.kind === "research").map((j) => j.refId ?? ""));
+    const known = new Set([...techs, ...queued]);
+    const order: string[] = [];
+    const walk = (id: string) => {
+      if (known.has(id) || order.includes(id)) return;
+      for (const r of techById.get(id)?.requires ?? []) walk(r);
+      order.push(id);
+    };
+    walk(ageTech.id);
+    pathTech = order.find((id) => (techById.get(id)?.requires ?? []).every((r) => known.has(r)) && (techById.get(id)?.earliestDay ?? 0) <= matchDay + 0.5) ?? null;
+  }
+  const pathCost = pathTech ? techCost(techById.get(pathTech)!, matchDay) : null;
+  const pooledBase = { food: 0, wood: 0, stone: 0 };
+  for (const r of owned) if (!r.frozenAt) for (const k of ["food", "wood", "stone"] as const) pooledBase[k] += r[k];
+  const pathShort = new Set<string>();
+  if (pathCost) for (const k of ["food", "wood", "stone"] as const) if (pooledBase[k] < (pathCost[k] ?? 0)) pathShort.add(k);
+  const spendsShort = (cost: Cost) => Object.entries(cost).some(([k, v]) => (v ?? 0) > 0 && pathShort.has(k));
   const oreSpareFor = (cost: Cost) => Object.entries(cost).every(([k, v]) => !(k in oreReserve) || (oreStock[k] ?? 0) - (v ?? 0) >= oreReserve[k]!);
 
   // Threats: hostile armies heading for my regions (medium and hard react).
@@ -272,6 +296,7 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
       if (!wanted) wanted = cost;
       if (slots <= 0) break;
       if (tier.hoards && !comfortablyAffordable(economy, cost)) continue;
+      if (!underThreat && spendsShort(cost)) continue;
       // AI tribes may have one build per region waiting on materials, so their late-game queues do not go dead.
       const waitingHere = pendingJobs.some((j) => j.regionId === row.regionId && j.kind === "build" && j.waitingFor);
       if (await attempt(() => queueBuild(ctx, row.regionId, id, { allowWait: !waitingHere, maxOwed: balance.ai.maxWaitingShipment }))) slots -= 1;
@@ -281,7 +306,10 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
     // Economy: hard tribes steer workers toward what the next building needs; others use a fixed split.
     // Hard tribes with nothing to build steer toward the next age instead of a fixed split, so a quiet tribe never stalls at age 2.
     if (tier.adaptiveResearch && !wanted && ageTechCost && !techs.has(ageTech!.id)) wanted = ageTechCost;
-    const want = tier.adaptiveEconomy && wanted ? steerToward(economy, rates, wanted) : rates.food < 0 || economy.food < 60 ? { food: 0.7, wood: 0.2, stone: 0.1 } : { food: 0.3, wood: 0.4, stone: 0.3 };
+    // Every tier saves for a path tech the empire cannot pay.
+    const saving = pathShort.size > 0 && !underThreat;
+    if (saving) wanted = pathCost;
+    const want = (tier.adaptiveEconomy || saving) && wanted ? steerToward(economy, rates, wanted) : rates.food < 0 || economy.food < 60 ? { food: 0.7, wood: 0.2, stone: 0.1 } : { food: 0.3, wood: 0.4, stone: 0.3 };
     const cur = normalizeAssignment(row.assignment);
     if (Math.abs(cur.food - want.food) > 0.05 || Math.abs(cur.stone - want.stone) > 0.05 || Math.abs(cur.wood - want.wood) > 0.05) {
       await attempt(() =>
@@ -366,6 +394,7 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
       const def = techById.get(id)!;
       // Hoarders wait for a cushion on side techs, never on the path to the next age: an easy tribe still leaves the Bronze Age.
       if (tier.hoards && id !== next && !comfortablyAffordable(economy, techCost(def, matchDay))) continue;
+      if (id !== pathTech && spendsShort(techCost(def, matchDay))) continue;
       tries += 1;
       if (await attempt(() => queueResearch(ctx, id))) break;
     }
