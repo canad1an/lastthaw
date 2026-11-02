@@ -30,14 +30,14 @@ const RESEARCH_ORDER = [
 
 /**
  * The order buildings are considered in a region: the priority list, with walls first under threat, Huts first when
- * crowded and a Storehouse first when the stores are nearly full. Shared by AI tribes and the Economic advisor.
+ * crowded and a Storehouse first when any store (food, wood or stone) is nearly full. Shared by AI tribes and the Economic advisor.
  */
-export function buildOrderFor(row: { isCapital: boolean }, economy: { popWorkers: number; popSoldiers: number; popOccupiers: number; capacity: number; food: number; wood: number; storage: { food: number; wood: number } }, underThreat: boolean): string[] {
+export function buildOrderFor(row: { isCapital: boolean }, economy: { popWorkers: number; popSoldiers: number; popOccupiers: number; capacity: number; food: number; wood: number; storage: { food: number; wood: number; stone: number } }, underThreat: boolean): string[] {
   const order = [...BUILD_ORDER];
   const pop = economy.popWorkers + economy.popSoldiers + economy.popOccupiers;
   if (underThreat) order.unshift("walls", "palisade");
   if (pop / Math.max(1, economy.capacity) > 0.75) order.unshift("huts");
-  if (economy.food > economy.storage.food * 0.85 || economy.wood > economy.storage.wood * 0.85) order.unshift("storehouse");
+  if (economy.food > economy.storage.food * 0.85 || economy.wood > economy.storage.wood * 0.85 || economy.stone > economy.storage.stone * 0.85) order.unshift("storehouse");
   void row;
   return order;
 }
