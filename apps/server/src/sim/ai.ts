@@ -192,6 +192,15 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
   for (const r of owned) if (!r.frozenAt) for (const k of ["food", "wood", "stone"] as const) pooledBase[k] += r[k];
   const pathShort = new Set<string>();
   if (pathCost) for (const k of ["food", "wood", "stone"] as const) if (pooledBase[k] < (pathCost[k] ?? 0)) pathShort.add(k);
+  // Late path techs can cost more than the whole empire can hold, and saving then never ends: its stocks sit at the cap
+  // with an empty research queue. Storage is what it builds first, and saving never holds a storage build back.
+  const pooledCap = { food: 0, wood: 0, stone: 0 };
+  if (pathCost) for (const r of owned) if (!r.frozenAt) {
+    const { economy } = projectRegion(r, now, m.speed, techFx, resourceMultOf(m));
+    for (const k of ["food", "wood", "stone"] as const) pooledCap[k] += economy.storage[k];
+  }
+  const capShort = new Set<string>();
+  if (pathCost) for (const k of ["food", "wood", "stone"] as const) if (pooledCap[k] < (pathCost[k] ?? 0) * 1.1) capShort.add(k);
   const spendsShort = (cost: Cost) => Object.entries(cost).some(([k, v]) => (v ?? 0) > 0 && pathShort.has(k));
   const oreSpareFor = (cost: Cost) => Object.entries(cost).every(([k, v]) => !(k in oreReserve) || (oreStock[k] ?? 0) - (v ?? 0) >= oreReserve[k]!);
 
@@ -282,6 +291,8 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
     let slots = balance.queue.slotsPerRegion - queueLen(row.regionId);
     const avail = new Map(availableBuildings(p.age, techs).map((b) => [b.id, b]));
     const order = buildOrderFor(row, economy, underThreat);
+    if (!underThreat && (capShort.has("wood") || capShort.has("stone"))) order.unshift("storehouse");
+    if (!underThreat && capShort.has("food")) order.unshift("granary", "storehouse");
     // The race for the wonder: once the age allows it, a hard tribe's capital builds the Great Hearth before anything else.
     if (row.isCapital && difficulty === "hard" && p.age >= (buildingById.get(balance.win.wonderBuilding)?.age ?? 99)) order.unshift(balance.win.wonderBuilding);
     void pop;
@@ -296,7 +307,7 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
       if (!wanted) wanted = cost;
       if (slots <= 0) break;
       if (tier.hoards && !comfortablyAffordable(economy, cost)) continue;
-      if (!underThreat && spendsShort(cost)) continue;
+      if (!underThreat && def.category !== "storage" && spendsShort(cost)) continue;
       // AI tribes may have one build per region waiting on materials, so their late-game queues do not go dead.
       const waitingHere = pendingJobs.some((j) => j.regionId === row.regionId && j.kind === "build" && j.waitingFor);
       if (await attempt(() => queueBuild(ctx, row.regionId, id, { allowWait: !waitingHere, maxOwed: balance.ai.maxWaitingShipment }))) slots -= 1;
