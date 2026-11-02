@@ -341,11 +341,12 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
       await attempt(() => queueTrain(ctx, row.regionId, bestKind, wantCaravans - haulerCount(row.units)));
     }
 
-    // Soldiers: keep a share under arms; double it while threatened.
+    // Soldiers: keep a share under arms; double it while threatened. While the empire saves for a path tech, a region
+    // that is not threatened trains nobody who costs what it lacks, or the stock tops out below the price for days.
     // The capital is the realm: losing it loses the game, so it keeps twice the usual garrison.
     const share = (balance.ai.soldierShare[temperament] ?? 0.2) * (underThreat ? 2 : 1) * (row.regionId === p.capitalRegionId ? 2 : 1);
     if (queueLen(row.regionId) < balance.queue.slotsPerRegion && economy.popSoldiers < pop * share && economy.popWorkers > 8) {
-      const units = availableUnits(p.age, techs).filter((u) => !u.naval && !u.air && !u.civilian && (!u.needsResource || region.resources.includes(u.needsResource)) && (underThreat || oreSpareFor(unitCost(u, 1, matchDay))));
+      const units = availableUnits(p.age, techs).filter((u) => !u.naval && !u.air && !u.civilian && (!u.needsResource || region.resources.includes(u.needsResource)) && (underThreat || (oreSpareFor(unitCost(u, 1, matchDay)) && !spendsShort(unitCost(u, 1, matchDay)))));
       const engine = [...units].filter((u) => (u.breach ?? 0) > 0).sort((a, b) => (b.breach ?? 0) - (a.breach ?? 0))[0];
       const enginesHere = Object.entries(row.units).reduce((acc, [id, n]) => acc + ((unitById.get(id)?.breach ?? 0) > 0 ? n : 0), 0);
       // One engine for every eight soldiers, so walls never stop an attack cold.
