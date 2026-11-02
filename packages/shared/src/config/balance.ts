@@ -71,10 +71,10 @@ export const balance = {
     soldierFoodMultiplier: 3,
     /**
      * Economy rules 2 (new matches): every age a tribe enters adds this much to what each person uses per game hour, so
-     * a large late-game people really draws on its stores: food 1.2 in the Stone Age to 8.4 in the Modern Age, wood and
-     * stone from nothing to 3 and 1.8. Matches made before keep rules 1 (food 1.2, no wood or stone).
+     * a large late-game people really draws on its stores: food 1.2 in the Stone Age to 4.8 in the Modern Age, wood and
+     * stone from nothing to 1.5 and 0.9. Matches made before keep rules 1 (food 1.2, no wood or stone).
      */
-    needsPerAge: { food: 1.2, wood: 0.5, stone: 0.3 },
+    needsPerAge: { food: 0.6, wood: 0.25, stone: 0.15 },
     /** Population growth per game hour as a fraction of current population, when fed. */
     growthPerHour: 0.08,
     /** Newcomers per game hour that arrive in any fed region with room, so small colonies take off too. */
