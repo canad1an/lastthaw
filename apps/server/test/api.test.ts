@@ -1764,11 +1764,13 @@ describe("api routes", () => {
       expect(told.length).toBe(1);
       // Paid again: back at work, billed one slice and not the idle hour before it.
       await fill(12000, 12000, 9000, 100, 100);
-      const bBack = await totalStock();
       await tickOnce();
       const [row3] = await db.select().from(advisors).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
       expect(row3!.unpaidSince).toBeNull();
-      expect(valueDrop(bBack, await totalStock())).toBeLessThan(worthOf(liveWage) / 2);
+      // Paid from now, one slice ahead, though paidUntil had been left an hour behind.
+      const backAt = Date.parse(await nowIso());
+      expect(row3!.paidUntil.getTime()).toBeGreaterThan(backAt - 1000);
+      expect(row3!.paidUntil.getTime()).toBeLessThanOrEqual(backAt + (balance.advisors.billMinutes * 60_000) / benState.match.speed);
 
       // Stores worth well under an hour's wage (a big empire's capped stores) still pay: the charge is a slice at a time.
       const [mrowNow] = await db.select().from(matches).where(eq(matches.id, gameId));
