@@ -4,6 +4,7 @@ import { computeRates, startingEconomy, type RegionTraits } from "../src/rules/s
 import { setEconomyRulesResolver } from "../src/rules/economyRules.js";
 import { balance } from "../src/config/balance.js";
 import { TECHS } from "../src/config/ages.js";
+import { dayCostMultiplier, techCost } from "../src/rules/timers.js";
 
 const plains: RegionTraits = { terrain: "plains", resources: [], coastal: false, river: false };
 // Every tech up to and including the one that enters the Industrial Age.
@@ -48,5 +49,14 @@ describe("economy rules", () => {
     const e = { ...startingEconomy(), popWorkers: 0, popSoldiers: 10, needs: { food: 6, wood: 0, stone: 0 } };
     const r = computeRates(plains, e);
     expect(r.gross.food - r.food).toBeCloseTo(10 * balance.economy.soldierFoodMultiplier * 6);
+  });
+  it("rules 2: a tech's price rises by the square root of the day curve; an age tech still never scales", () => {
+    const coal = TECHS.find((t) => t.id === "coal_mining")!;
+    const age = TECHS.find((t) => t.advancesTo === 6)!;
+    expect(techCost(coal, 16).stone).toBe(Math.ceil(coal.cost.stone! * dayCostMultiplier(16)));
+    setEconomyRulesResolver(() => 2);
+    expect(techCost(coal, 16).stone).toBe(Math.ceil(coal.cost.stone! * Math.sqrt(dayCostMultiplier(16))));
+    expect(techCost(coal, 16).iron).toBe(coal.cost.iron);
+    expect(techCost(age, 16)).toEqual(techCost(age, 0));
   });
 });

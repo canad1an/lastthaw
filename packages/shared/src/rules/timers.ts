@@ -1,6 +1,7 @@
 import { balance } from "../config/balance.js";
 import { SPECIAL_RESOURCES, type BuildingDef, type Cost, type TechDef, type UnitDef } from "../config/ages.js";
 import { scaledDuration } from "./time.js";
+import { economyRules } from "./economyRules.js";
 
 /**
  * Timer curve: level 1 takes `baseSeconds`, each level multiplies by
@@ -39,10 +40,11 @@ export function buildingCost(def: BuildingDef, level: number, day = 0, neighbors
 /**
  * Age advances are priced in absolute empire wealth (paid from every region) and do not scale with the day; other
  * techs do, but only in food, wood and stone: ore and horses come from a few mines whose output does not grow with
- * the people, so their share of a tech's price stays as listed all match.
+ * the people, so their share of a tech's price stays as listed all match. Under economy rules 2 the day scales a tech
+ * by its square root, as it does units: at the full rate a late tech cost more than a mid-sized empire can store.
  */
 export function techCost(def: TechDef, day = 0): Cost {
-  const mult = def.advancesTo !== undefined ? 1 : dayCostMultiplier(day);
+  const mult = def.advancesTo !== undefined ? 1 : economyRules() >= 2 ? Math.sqrt(dayCostMultiplier(day)) : dayCostMultiplier(day);
   const out: Cost = {};
   for (const [k, v] of Object.entries(def.cost)) out[k as keyof Cost] = Math.ceil(v * ((SPECIAL_RESOURCES as readonly string[]).includes(k) ? 1 : mult));
   return out;
