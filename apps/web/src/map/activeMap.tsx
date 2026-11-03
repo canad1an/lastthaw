@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { DEFAULT_MAP, isMapLoaded, registerWorld, setMapResolver, type MapId, type WorldMap } from "@lastthaw/shared";
+import { DEFAULT_MAP, isMapLoaded, registerWorld, setEconomyRulesResolver, setMapResolver, type MapId, type WorldMap } from "@lastthaw/shared";
 import earthCoast from "./earth/coastPoints.json";
 import earthLanes from "./earth/lanePaths.json";
 
@@ -33,6 +33,9 @@ async function fetchMap(id: MapId, relief: boolean): Promise<{ world: WorldMap; 
 
 let current: MapId = DEFAULT_MAP;
 setMapResolver(() => current);
+// The match's economy rules, so previews and tooltips work out the same numbers the server does.
+let economy = 1;
+setEconomyRulesResolver(() => economy);
 
 /** The map on screen; Earth outside a match. */
 export function activeMap(): MapId {
@@ -55,9 +58,9 @@ export async function ensureMap(id: MapId): Promise<void> {
 
 /**
  * Puts a map in scope for everything rendered inside, loading it first if needed, and returns to Earth on unmount
- * (the home page and the lobby draw Earth).
+ * (the home page and the lobby draw Earth). The match's economy rules go in scope with it.
  */
-export function MapScope({ map, children, fallback = null }: { map: MapId; children: ReactNode; fallback?: ReactNode }) {
+export function MapScope({ map, economy: rules = 1, children, fallback = null }: { map: MapId; economy?: number; children: ReactNode; fallback?: ReactNode }) {
   const [ready, setReady] = useState(isMapLoaded(map) && !!assets[map]);
   useEffect(() => {
     let live = true;
@@ -72,8 +75,10 @@ export function MapScope({ map, children, fallback = null }: { map: MapId; child
   }, [map]);
   useEffect(() => () => {
     current = DEFAULT_MAP;
+    economy = 1;
   }, []);
   if (!ready) return <>{fallback}</>;
   current = map;
+  economy = rules;
   return <>{children}</>;
 }

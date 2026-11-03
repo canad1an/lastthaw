@@ -75,6 +75,12 @@ export const balance = {
      * stone from nothing to 1.5 and 0.9. Matches made before keep rules 1 (food 1.2, no wood or stone).
      */
     needsPerAge: { food: 0.6, wood: 0.25, stone: 0.15 },
+    /**
+     * Economy rules 2: each level of a storage building (Storehouse, Granary, Market) adds this share more than the
+     * level before, so storage keeps up with a building's rising price and a late tech's: a Storehouse adds 50% at
+     * level 1, 75% at level 2, 100% at level 3, and level 10 holds 17 times the base where it held 6 times.
+     */
+    storageLevelGrowth: 0.5,
     /** Population growth per game hour as a fraction of current population, when fed. */
     growthPerHour: 0.08,
     /** Newcomers per game hour that arrive in any fed region with room, so small colonies take off too. */

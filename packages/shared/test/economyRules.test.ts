@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { applyTechEffects, effectsOf, techEffectsOf } from "../src/rules/buildings.js";
+import { applyTechEffects, effectsOf, storageCaps, techEffectsOf } from "../src/rules/buildings.js";
 import { computeRates, startingEconomy, type RegionTraits } from "../src/rules/settle.js";
 import { setEconomyRulesResolver } from "../src/rules/economyRules.js";
 import { balance } from "../src/config/balance.js";
@@ -58,5 +58,12 @@ describe("economy rules", () => {
     expect(techCost(coal, 16).stone).toBe(Math.ceil(coal.cost.stone! * Math.sqrt(dayCostMultiplier(16))));
     expect(techCost(coal, 16).iron).toBe(coal.cost.iron);
     expect(techCost(age, 16)).toEqual(techCost(age, 0));
+  });
+  it("rules 2: each storage level adds more than the last; rules 1 adds the same each level", () => {
+    expect(storageCaps(effectsOf({ storehouse: 10 })).wood).toBeCloseTo(balance.economy.baseStorage.wood * 6);
+    setEconomyRulesResolver(() => 2);
+    expect(storageCaps(effectsOf({ storehouse: 1 })).wood).toBeCloseTo(balance.economy.baseStorage.wood * 1.5);
+    expect(storageCaps(effectsOf({ storehouse: 10 })).wood).toBeCloseTo(balance.economy.baseStorage.wood * 17.25);
+    expect(storageCaps(effectsOf({ granary: 2 })).food).toBeCloseTo(balance.economy.baseStorage.food * (1 + 0.5 * 2.5));
   });
 });

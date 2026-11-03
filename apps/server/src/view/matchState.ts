@@ -6,7 +6,7 @@ import { allianceMembers, alliances, armies, jobs, matchRegions, matches, player
 import { OBJECTIVES } from "../sim/objectives.js";
 import { matchNow, matchDayAt } from "../sim/clock.js";
 import { alliesOf } from "../sim/alliances.js";
-import { enterMap, mapOf, scopeOf } from "../map/scope.js";
+import { economyRulesOf, enterMap, mapOf, scopeOf } from "../map/scope.js";
 import { countOwnedRegions, projectRegion, railwayOwners, resourceMultOf, techOwners } from "../sim/regions.js";
 import { parseSettings, wageFor } from "../sim/advisors.js";
 import { liveBattleOf } from "../matches/battlesApi.js";
@@ -417,6 +417,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string, o
       tournament: ((m.settings ?? {}) as { kind?: string }).kind === "tournament",
       resourceMult: resourceMultOf(m),
       map: mapOf(m),
+      economy: economyRulesOf(m),
     },
     me: {
       playerId: me.id,
@@ -579,6 +580,7 @@ async function buildObserverState(db: Db, m: typeof matches.$inferSelect, matchI
       tournament: ((m.settings ?? {}) as { kind?: string }).kind === "tournament",
       resourceMult: resourceMultOf(m),
       map: mapOf(m),
+      economy: economyRulesOf(m),
     },
     me: { playerId: "", name: "Admin view", capitalRegionId: null, protectionUntil: null, age: 0, techs: [], allianceId: null, allianceTag: null },
     owned: [],

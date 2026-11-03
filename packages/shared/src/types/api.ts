@@ -622,6 +622,8 @@ export const matchStateView = z.object({
     resourceMult: z.number().default(1),
     /** The map this match is played on. */
     map: mapIdSchema.default("earth"),
+    /** The economy rules the match was made under (1 before the economy update). */
+    economy: z.number().default(1),
     startsAt: z.string(),
     endsAt: z.string(),
     /** Match clock (server time plus any dev time skip), ISO. While paused this is the moment the pause began. */

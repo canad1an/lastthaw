@@ -133,7 +133,7 @@ const ADVANCED: Array<{ title: string; body: React.ReactNode }> = [
           than {balance.timers.maxSeconds / 3600} game hours. Training a batch of N units takes base time times N to the power {balance.timers.batchExponent}, so big batches are cheaper per unit than many small ones.
         </p>
         <p className="mt-2">
-          Storage caps a region at {eco.baseStorage.food} food, {eco.baseStorage.wood} wood and {eco.baseStorage.stone} stone before Storehouses; the capital holds {eco.capitalStorageMult} times that. A full region
+          Storage caps a region at {eco.baseStorage.food} food, {eco.baseStorage.wood} wood and {eco.baseStorage.stone} stone before Storehouses; the capital holds {eco.capitalStorageMult} times that. In games created after the economy update each level of a Storehouse, Granary or Market adds more than the one before ({pct(eco.storageLevelGrowth)} of its first level more each time), so a level 10 Storehouse holds about {Math.round(1 + 0.5 * (10 + (eco.storageLevelGrowth * 10 * 9) / 2))} times the base. A full region
           sends {pct(balance.trade.overflowShare)} of its cap to the capital by caravan on its own.
         </p>
       </>

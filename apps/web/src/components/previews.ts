@@ -1,4 +1,4 @@
-import { BUILDINGS, TECHS, UNITS, balance, computeRates, effectsOf, regionById, storageCaps, techById, type BuildingDef, type RegionEconomy, type TechDef, type UnitDef, AGES, unitById } from "@lastthaw/shared";
+import { BUILDINGS, TECHS, UNITS, balance, computeRates, economyRules, effectsOf, regionById, storageCaps, techById, type BuildingDef, type RegionEconomy, type TechDef, type UnitDef, AGES, unitById } from "@lastthaw/shared";
 import type { Delta } from "./Tooltip.js";
 import { fmt, signed } from "./ui.js";
 
@@ -80,8 +80,10 @@ function describeBuilding(def: BuildingDef): string {
   if (e.yield?.food) per.push(`+${pct(e.yield.food)} food`);
   if (e.yield?.wood) per.push(`+${pct(e.yield.wood)} wood`);
   if (e.yield?.stone) per.push(`+${pct(e.yield.stone)} stone`);
-  if (e.storage) per.push(`+${pct(e.storage)} storage`);
-  if (e.foodStorage) per.push(`+${pct(e.foodStorage)} food storage`);
+  // Under economy rules 2 each storage level adds more than the last.
+  const rising = (v: number) => (economyRules() >= 2 ? `, ${pct(v * balance.economy.storageLevelGrowth)} more each level after` : "");
+  if (e.storage) per.push(`+${pct(e.storage)} storage${rising(e.storage)}`);
+  if (e.foodStorage) per.push(`+${pct(e.foodStorage)} food storage${rising(e.foodStorage)}`);
   if (e.protect) per.push(`${e.protect} of each resource hidden from raiders`);
   if (e.extract) per.push(`extracts ${Object.entries(e.extract).map(([k, v]) => `${v} ${k}/h`).join(", ")} where available`);
   if (e.scrap) per.push(`smelts ${Object.entries(e.scrap).map(([k, v]) => `${v} ${k}/h`).join(", ")} of scrap where there is none`);

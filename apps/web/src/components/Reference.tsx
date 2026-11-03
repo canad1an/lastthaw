@@ -1,6 +1,6 @@
 import { techUnlocks } from "./previews.js";
 import { useState } from "react";
-import { AGES, BUILDINGS, BUILDING_CATEGORIES, TECHS, UNITS, buildingById, buildingSeconds, formatCountdown, techById, techSeconds, trainSeconds, type AgeIndex, type BuildingDef, type Cost, type TechDef, type UnitDef, balance } from "@lastthaw/shared";
+import { AGES, BUILDINGS, BUILDING_CATEGORIES, TECHS, UNITS, buildingById, buildingSeconds, formatCountdown, techById, techSeconds, trainSeconds, economyRules, type AgeIndex, type BuildingDef, type Cost, type TechDef, type UnitDef, balance } from "@lastthaw/shared";
 
 /**
  * The content tables of the game as cards, by age: every tech with what it
@@ -31,8 +31,10 @@ function buildingEffects(b: BuildingDef): string[] {
   const e = b.effect;
   const out: string[] = [];
   if (e.capacity) out.push(`+${e.capacity} people per level`);
-  if (e.storage) out.push(`${pct(e.storage)} storage per level`);
-  if (e.foodStorage) out.push(`${pct(e.foodStorage)} food storage per level`);
+  // Under economy rules 2 each storage level adds more than the last.
+  const rising = (v: number) => (economyRules() >= 2 ? `, ${pct(v * balance.economy.storageLevelGrowth)} more each level after the first` : "");
+  if (e.storage) out.push(`${pct(e.storage)} storage per level${rising(e.storage)}`);
+  if (e.foodStorage) out.push(`${pct(e.foodStorage)} food storage per level${rising(e.foodStorage)}`);
   if (e.yield) for (const [k, v] of Object.entries(e.yield)) if (v) out.push(`${pct(v)} ${k} per level`);
   if (e.extract) for (const [k, v] of Object.entries(e.extract)) if (v) out.push(`${v} ${k} an hour per level`);
   if (e.scrap) for (const [k, v] of Object.entries(e.scrap)) if (v) out.push(`${v} ${k} an hour per level where the region has none`);

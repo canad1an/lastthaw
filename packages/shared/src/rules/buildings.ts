@@ -54,8 +54,8 @@ export function effectsOf(buildings: Record<string, number>): RegionEffects {
     if (!def || level <= 0) continue;
     const f = def.effect;
     if (f.capacity) e.capacity += f.capacity * level;
-    if (f.storage) e.storage += f.storage * level;
-    if (f.foodStorage) e.foodStorage += f.foodStorage * level;
+    if (f.storage) e.storage += f.storage * storageLevels(level);
+    if (f.foodStorage) e.foodStorage += f.foodStorage * storageLevels(level);
     if (f.yield) for (const k of ["food", "wood", "stone"] as const) e.yield[k] += (f.yield[k] ?? 0) * level;
     if (f.extract) for (const [k, v] of Object.entries(f.extract)) e.extract[k as SpecialResource] = (e.extract[k as SpecialResource] ?? 0) + v * level;
     if (f.scrap) for (const [k, v] of Object.entries(f.scrap)) e.scrap[k as SpecialResource] = (e.scrap[k as SpecialResource] ?? 0) + v * level;
@@ -106,6 +106,11 @@ export function wallOf(buildings: Record<string, number> | undefined | null): st
 
 /** Buildings a player of `age` with `techs` may build or upgrade. */
 /** The highest level of a building these techs allow: a level needing a tech not known is out of reach, and every level above it. */
+/** How many levels' worth of storage a storage building of this level gives: one each, or more each level under economy rules 2. */
+export function storageLevels(level: number): number {
+  return economyRules() >= 2 ? level + (balance.economy.storageLevelGrowth * level * (level - 1)) / 2 : level;
+}
+
 export function reachableLevel(def: BuildingDef, techs: ReadonlySet<string>): number {
   let top = def.maxLevel;
   for (const [lv, tech] of Object.entries(def.levelRequires ?? {})) if (!techs.has(tech)) top = Math.min(top, Number(lv) - 1);

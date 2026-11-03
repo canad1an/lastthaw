@@ -83,7 +83,7 @@ export function MatchPage() {
   const s = state.data;
   if (s.match.status === "lobby") return <Navigate to="/match/$matchId/lobby" params={{ matchId }} replace />;
   return (
-    <MapScope map={s.match.map} fallback={<p className="p-6 text-slate-400">Loading the map...</p>}>
+    <MapScope map={s.match.map} economy={s.match.economy} fallback={<p className="p-6 text-slate-400">Loading the map...</p>}>
       <GameView matchId={matchId} state={s} rtStatus={rt.status} />
     </MapScope>
   );
@@ -108,7 +108,7 @@ export function MatchLobbyPage() {
   }
   if (state.data.match.status !== "lobby") return <Navigate to="/match/$matchId" params={{ matchId }} replace />;
   return (
-    <MapScope map={state.data.match.map} fallback={<p className="p-6 text-slate-400">Loading the map...</p>}>
+    <MapScope map={state.data.match.map} economy={state.data.match.economy} fallback={<p className="p-6 text-slate-400">Loading the map...</p>}>
       <LobbyRoom matchId={matchId} state={state.data} />
     </MapScope>
   );
