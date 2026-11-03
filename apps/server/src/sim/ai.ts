@@ -308,6 +308,8 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
       if (slots <= 0) break;
       if (tier.hoards && !comfortablyAffordable(economy, cost)) continue;
       if (!underThreat && def.category !== "storage" && spendsShort(cost)) continue;
+      // The ore the next age needs is not spent on buildings either (a Factory or an Arsenal), or no age is ever paid for.
+      if (!underThreat && !oreSpareFor(cost)) continue;
       // AI tribes may have one build per region waiting on materials, so their late-game queues do not go dead.
       const waitingHere = pendingJobs.some((j) => j.regionId === row.regionId && j.kind === "build" && j.waitingFor);
       if (await attempt(() => queueBuild(ctx, row.regionId, id, { allowWait: !waitingHere, maxOwed: balance.ai.maxWaitingShipment }))) slots -= 1;
@@ -408,6 +410,8 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
       // Hoarders wait for a cushion on side techs, never on the path to the next age: an easy tribe still leaves the Bronze Age.
       if (tier.hoards && id !== next && !comfortablyAffordable(economy, techCost(def, matchDay))) continue;
       if (id !== pathTech && spendsShort(techCost(def, matchDay))) continue;
+      // Side research that costs ore (Steel mills, Mass production) waits until the path to the next age is paid for.
+      if (id !== pathTech && !oreSpareFor(techCost(def, matchDay))) continue;
       tries += 1;
       if (await attempt(() => queueResearch(ctx, id))) break;
     }
