@@ -72,9 +72,9 @@ export function wageValue(wage: Record<string, number>): number {
  * stores decide the mix, never the wage's own shape, so one empty store never stops an advisor while the others are
  * full. Every region of the player is locked in ascending order (the lock order used everywhere). Returns what was
  * taken; when the three together are worth less than `value`, nothing is taken and null is returned, unless
- * `partial`, in which case everything held is taken.
+ * `partial`, in which case everything held is taken, or only whole multiples of `unit` when one is given.
  */
-async function drawValue(tx: Tx, m: MatchRow, p: PlayerRow, value: number, partial: boolean): Promise<Record<string, number> | null> {
+async function drawValue(tx: Tx, m: MatchRow, p: PlayerRow, value: number, partial: boolean, unit = 0): Promise<Record<string, number> | null> {
   const mine = await tx
     .select({ regionId: matchRegions.regionId })
     .from(matchRegions)
@@ -88,7 +88,10 @@ async function drawValue(tx: Tx, m: MatchRow, p: PlayerRow, value: number, parti
   const pooled: Record<string, number> = {};
   for (const r of ordered) for (const k of WAGE_RESOURCES) pooled[k] = (pooled[k] ?? 0) + (stockOf(r)[k] ?? 0);
   const held = wageValue(pooled);
-  if (held + 1e-9 < value && !partial) return null;
+  if (held + 1e-9 < value) {
+    if (!partial) return null;
+    if (unit > 0) value = Math.floor((held + 1e-9) / unit) * unit;
+  }
   const taken: Record<string, number> = {};
   if (held <= 0 || value <= 0) return taken;
   // The same fraction of each store, so the mix follows what the player holds.
@@ -116,18 +119,13 @@ async function drawValue(tx: Tx, m: MatchRow, p: PlayerRow, value: number, parti
   return taken;
 }
 
-/** Take a wage's worth from the empire in any mix of food, wood and stone. Returns false, taking nothing, when the three together cannot cover it. */
-export async function drawWage(tx: Tx, m: MatchRow, p: PlayerRow, wage: Record<string, number>): Promise<boolean> {
-  return (await drawValue(tx, m, p, wageValue(wage), false)) !== null;
-}
-
 /** The parting bill: a wage's worth in any mix, as far as the stores go. Returns what was taken. */
 export async function drawWageUpTo(tx: Tx, m: MatchRow, p: PlayerRow, wage: Record<string, number>): Promise<Record<string, number>> {
   return (await drawValue(tx, m, p, wageValue(wage), true)) ?? {};
 }
 
 /**
- * An advisor works only once the first hour's wage has been charged (by the tick after the hire). Hiring is free, so
+ * An advisor works only once the first slice of its wage has been charged (by the tick after the hire). Hiring is free, so
  * without this a hire, a pass and a firing inside one tick would cost nothing.
  */
 export function startedWork(a: { hiredAt: Date; paidUntil: Date }): boolean {
@@ -139,13 +137,19 @@ export async function regionsHeld(tx: Tx | Db, m: MatchRow, playerId: string): P
   return r?.n ?? 0;
 }
 
+/** One billing slice of a wage, in match milliseconds. */
+export const billSliceMs = (m: MatchRow) => (balance.advisors.billMinutes / 60) * hourMs(m);
+
 /**
- * Wages, every tick: each advisor is paid for every whole game hour that has passed since it was last paid for.
- * One that cannot be paid stops working (no passes) and its player is told once; it goes back to work when the next
- * charge succeeds. It never leaves on its own.
+ * Wages, every tick: each advisor is paid ahead in billMinutes slices, as many as it takes to carry paidUntil past
+ * now, so each charge is a few minutes' worth and never a whole hour (the stores of a big empire, capped region by
+ * region, hold less than one hour's wage). Short stores pay the whole slices they can. One left unpaid stops working
+ * (no passes) and its player is told once; the idle time is not billed, so it goes back to work as soon as the next
+ * slice is covered. It never leaves on its own.
  */
 export async function chargeAdvisors(tx: Tx, m: MatchRow, now: Date): Promise<void> {
   const rows = await tx.select().from(advisors).where(and(eq(advisors.matchId, m.id), isNull(advisors.firedAt), lte(advisors.paidUntil, now)));
+  const slice = billSliceMs(m);
   for (const a of rows) {
     const [p] = await tx.select().from(players).where(eq(players.id, a.playerId)).limit(1);
     if (!p || p.eliminatedAt) {
@@ -153,26 +157,25 @@ export async function chargeAdvisors(tx: Tx, m: MatchRow, now: Date): Promise<vo
       continue;
     }
     const wage = await wageFor(tx, m, p.id);
-    let paidUntil = a.paidUntil;
-    let hours = 0;
-    let paid = true;
+    const sliceValue = wageValue(wage) * (slice / hourMs(m));
+    const from = a.unpaidSince ? now : a.paidUntil;
     // At most two days of arrears in one go, so a long pause never drains an empire in a single tick.
-    while (paidUntil <= now && hours < 48) {
-      if (!(await drawWage(tx, m, p, wage))) {
-        paid = false;
-        break;
-      }
-      paidUntil = new Date(paidUntil.getTime() + hourMs(m));
-      hours += 1;
+    const owed = Math.min(Math.floor((now.getTime() - from.getTime()) / slice) + 1, Math.ceil((48 * hourMs(m)) / slice));
+    let slices = owed;
+    if (sliceValue > 0) {
+      const taken = (await drawValue(tx, m, p, owed * sliceValue, true, sliceValue)) ?? {};
+      slices = Math.min(owed, Math.round(wageValue(taken) / sliceValue));
     }
-    if (hours > 0) await tx.update(advisors).set({ paidUntil }).where(eq(advisors.id, a.id));
+    const paidUntil = new Date(from.getTime() + slices * slice);
+    if (paidUntil.getTime() !== a.paidUntil.getTime()) await tx.update(advisors).set({ paidUntil }).where(eq(advisors.id, a.id));
+    const paid = slices === owed;
     if (!paid) {
       if (!a.unpaidSince) {
         await tx.update(advisors).set({ unpaidSince: now }).where(eq(advisors.id, a.id));
         const line = Object.entries(wage)
           .map(([k, v]) => `${v} ${k}`)
           .join(", ");
-        await notify(tx, m.id, p.id, "system", `Your ${ADVISOR_TITLES[a.kind]} is unpaid and has stopped working: the wage is ${line} an hour, payable in any mix of food, wood and stone worth ${Math.round(wageValue(wage)).toLocaleString("en-US")}, and your stores together hold less than that`, { advisor: a.kind, unpaid: true });
+        await notify(tx, m.id, p.id, "system", `Your ${ADVISOR_TITLES[a.kind]} is unpaid and has stopped working: the wage is ${line} an hour, payable in any mix of food, wood and stone worth ${Math.round(wageValue(wage)).toLocaleString("en-US")} an hour and charged every ${balance.advisors.billMinutes} game minutes, and your stores together cannot cover the next charge`, { advisor: a.kind, unpaid: true });
       }
     } else if (a.unpaidSince) {
       await tx.update(advisors).set({ unpaidSince: null }).where(eq(advisors.id, a.id));

@@ -1502,7 +1502,7 @@ describe("api routes", () => {
       // A pass: a Quarry is queued wherever one is missing and can stand; a second pass straight away is refused.
       const lacking = st.owned.filter((o) => !(o.buildings.quarry ?? 0)).length;
       expect(lacking).toBeGreaterThan(0);
-      // Passes wait for the first hour's wage: hiring is free, so nothing runs until the tick has charged it.
+      // Passes wait for the first slice of the wage: hiring is free, so nothing runs until the tick has charged it.
       const early = await forcePassAs(ben, "economic", gameId);
       expect(early.statusCode, early.body).toBe(409);
       {
@@ -1724,7 +1724,7 @@ describe("api routes", () => {
       const columns = await db.select().from(armies).where(and(eq(armies.matchId, gameId), eq(armies.playerId, benPid), eq(armies.mission, "move"), eq(armies.status, "outbound"), eq(armies.originRegionId, cap)));
       expect(columns.some((a) => (a.cargo.people ?? 0) > 0)).toBe(true);
 
-      // The tick charges every whole hour past paidUntil.
+      // The tick charges, in billing slices, everything from paidUntil to a slice past now.
       const tickOnce = async () => {
         await db.update(matches).set({ lastTickAt: new Date(Date.now() - 3600_000) }).where(eq(matches.id, gameId));
         await runMatchTicks(db, pub, logger);
@@ -1739,11 +1739,11 @@ describe("api routes", () => {
       expect(row!.paidUntil.getTime()).toBeGreaterThan(Date.parse(await nowIso()) - 1000);
       expect(row!.unpaidSince).toBeNull();
       const a2 = await totalStock();
-      // Three hours came due (two past plus the one just reached): the stores fell by at least two wages' worth, and not by more than four.
+      // Two hours and a slice came due: the stores fell by at least two wages' worth, and not by more than four.
       expect(valueDrop(b2, a2)).toBeGreaterThanOrEqual(2 * worthOf(liveWage) - 1);
       expect(valueDrop(b2, a2)).toBeLessThan(4 * worthOf(liveWage) + 50);
 
-      // Any mix: with no food at all but wood and stone to spare, the hour is paid from those and the advisor carries on.
+      // Any mix: with no food at all but wood and stone to spare, the hour owed is paid from those and the advisor carries on.
       await db.update(matchRegions).set({ food: 0, settledAt: new Date(await nowIso()) }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid)));
       await db.update(advisors).set({ paidUntil: new Date(Date.parse(await nowIso()) - 3600_000 / benState.match.speed) }).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
       const bMix = await totalStock();
@@ -1762,11 +1762,24 @@ describe("api routes", () => {
       expect((await forcePassAs(ben, "economic", gameId)).statusCode).toBe(409);
       const told = await db.select().from(messages).where(and(eq(messages.matchId, gameId), eq(messages.playerId, benPid), sql`${messages.payload}->>'unpaid' = 'true'`));
       expect(told.length).toBe(1);
-      // Paid again: back at work.
+      // Paid again: back at work, billed one slice and not the idle hour before it.
       await fill(12000, 12000, 9000, 100, 100);
+      const bBack = await totalStock();
       await tickOnce();
       const [row3] = await db.select().from(advisors).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
       expect(row3!.unpaidSince).toBeNull();
+      expect(valueDrop(bBack, await totalStock())).toBeLessThan(worthOf(liveWage) / 2);
+
+      // Stores worth well under an hour's wage (a big empire's capped stores) still pay: the charge is a slice at a time.
+      const [mrowNow] = await db.select().from(matches).where(eq(matches.id, gameId));
+      const hourlyNow = worthOf(await wageFor(db, mrowNow!, benPid));
+      const ownedNow = (await db.select({ n: sql<number>`count(*)::int` }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid))))[0]!.n;
+      await db.update(matchRegions).set({ food: 0, wood: (hourlyNow * 0.4) / ownedNow, stone: 0, settledAt: new Date(await nowIso()) }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid)));
+      await db.update(advisors).set({ paidUntil: new Date(Date.parse(await nowIso()) - 1000) }).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
+      await tickOnce();
+      const [row4] = await db.select().from(advisors).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
+      expect(row4!.unpaidSince).toBeNull();
+      expect(row4!.paidUntil.getTime()).toBeGreaterThan(Date.parse(await nowIso()) - 1000);
 
       // Fire: nothing refunded, and no rehire until a day has passed; then rehire works and keeps the settings.
       expect((await Ben.call("POST", `${base}/advisors/economic/fire`, {})).statusCode).toBe(200);
@@ -1787,16 +1800,17 @@ describe("api routes", () => {
       }
       st = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
       expect(st.advisors[0]!.settings.minLevels).toEqual({ quarry: 1 });
-      // Fired before the first hour was ever charged: that hour is billed on the way out, so a hire and a firing are never free.
+      // Fired before the first slice was ever charged: that slice is billed on the way out, so a hire and a firing are never free.
+      const sliceWorth = (worthOf(rehireWage) * balance.advisors.billMinutes) / 60;
       const bFire = await totalStock();
       const fired = await Ben.call("POST", `${base}/advisors/economic/fire`, {});
       expect(fired.statusCode, fired.body).toBe(200);
       const charged = (fired.json() as { charged: Record<string, number> }).charged;
-      expect(Math.abs(worthOf(charged) - worthOf(rehireWage))).toBeLessThan(1);
+      expect(Math.abs(worthOf(charged) - sliceWorth)).toBeLessThan(1);
       const aFire = await totalStock();
       // Production accrues between the two readings, so the drop is checked within a small band.
-      expect(valueDrop(bFire, aFire)).toBeGreaterThanOrEqual(worthOf(rehireWage) - 50);
-      expect(valueDrop(bFire, aFire)).toBeLessThan(worthOf(rehireWage) + 50);
+      expect(valueDrop(bFire, aFire)).toBeGreaterThanOrEqual(sliceWorth - 50);
+      expect(valueDrop(bFire, aFire)).toBeLessThan(sliceWorth + 50);
       await db.update(advisors).set({ firedAt: new Date(Date.parse(await nowIso()) - (balance.advisors.rehireCooldownHours + 1) * (3600_000 / benState.match.speed)) }).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid), eq(advisors.kind, "economic")));
 
       // No advisor: a crowded capital stays crowded through a tick; with one set to overflow, the surplus spills to a neighbour.

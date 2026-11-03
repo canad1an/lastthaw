@@ -430,6 +430,11 @@ export const balance = {
      * advisors take all of it. It is paid by value (RESOURCE_WORTH) in any mix of the three, spread over what the player holds, so one empty store never stops an advisor. Ore and horses are never charged: they are what the advisors spend for the player.
      */
     outputShare: 0.25,
+    /**
+     * Wages are billed ahead in slices this many game minutes long, a few each tick, never a whole hour at once: an
+     * empire's stores are capped region by region and a big empire's hourly wage outgrows everything it can hold.
+     */
+    billMinutes: 5,
     economic: {
       passMinutes: 30,
       /** Guard loyalty: a region is at risk below this loyalty while it is still falling... */
