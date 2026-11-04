@@ -55,10 +55,48 @@ export async function wonderStarted(tx: Tx, m: MatchRow, playerId: string, playe
   await tx.insert(events).values({ matchId: m.id, at, kind: "wonder.started", payload: { playerId, regionId, endsAt, waiting } });
   const everyone = await tx.select({ id: players.id }).from(players).where(and(eq(players.matchId, m.id), eq(players.isAi, false), eq(players.hidden, false)));
   for (const other of everyone) {
-    if (other.id === playerId) continue;
-    await notify(tx, m.id, other.id, "battle", `${playerName} has begun the ${name} in ${where}${waiting ? " and is gathering the materials" : ""}. If it is finished, they win. Take ${where} to stop it.`, { playerId, regionId, endsAt, wonder: true });
+    const text =
+      other.id === playerId
+        ? `You have begun the ${name} in ${where}${waiting ? " and are gathering the materials" : ""}. Every rival has been warned: hold ${where} until it is finished and you win.`
+        : `${playerName} has begun the ${name} in ${where}${waiting ? " and is gathering the materials" : ""}. If it is finished, they win. Take ${where} to stop it.`;
+    await notify(tx, m.id, other.id, "battle", text, { playerId, regionId, endsAt, wonder: true });
   }
   await awardMilestone(tx, m, "wonder", playerId, at);
+}
+
+/** Every wonder under way, for the map and the daily report. */
+export async function activeWonders(tx: Tx | Db, matchId: string) {
+  return tx
+    .select()
+    .from(jobs)
+    .where(and(eq(jobs.matchId, matchId), eq(jobs.kind, "build"), eq(jobs.refId, balance.win.wonderBuilding), isNull(jobs.completedAt), isNull(jobs.cancelledAt)));
+}
+
+/** Once a match day: tell everyone how far each wonder has got. */
+export async function wonderProgress(tx: Tx, m: MatchRow, at: Date): Promise<void> {
+  const wonders = await activeWonders(tx, m.id);
+  if (wonders.length === 0) return;
+  const name = buildingById.get(balance.win.wonderBuilding)?.name ?? "the wonder";
+  // The ice may have just ended the match.
+  const [live] = await tx.select({ status: matches.status }).from(matches).where(eq(matches.id, m.id)).limit(1);
+  if (live?.status === "finished") return;
+  const everyone = await tx.select({ id: players.id, name: players.name, isAi: players.isAi }).from(players).where(and(eq(players.matchId, m.id), eq(players.hidden, false)));
+  const nameOf = new Map(everyone.map((p) => [p.id, p.name]));
+  const humans = everyone.filter((p) => !p.isAi);
+  for (const j of wonders) {
+    if (!j.playerId || !j.regionId) continue;
+    const where = regionById(j.regionId)?.name ?? j.regionId;
+    const builder = nameOf.get(j.playerId) ?? "Someone";
+    const total = j.endsAt.getTime() - j.startsAt.getTime();
+    const pct = j.waitingFor ? 0 : Math.max(0, Math.min(99, Math.floor(((at.getTime() - j.startsAt.getTime()) / Math.max(1, total)) * 100)));
+    // Game hours left, as players read the clock.
+    const hours = Math.max(0, Math.round(((j.endsAt.getTime() - at.getTime()) * m.speed) / 3600_000));
+    const state = j.waitingFor ? "is still waiting for its materials" : `is ${pct}% built, ${hours} game hours to go`;
+    for (const p of humans) {
+      const text = p.id === j.playerId ? `Your ${name} in ${where} ${state}. Hold ${where} until it stands.` : `${builder}'s ${name} in ${where} ${state}. Take ${where} to stop it.`;
+      await notify(tx, m.id, p.id, "battle", text, { playerId: j.playerId, regionId: j.regionId, endsAt: j.endsAt, wonder: true, progress: pct });
+    }
+  }
 }
 
 /** Record the ownership diff for the replay, once per quarter day. */

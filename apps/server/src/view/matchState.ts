@@ -4,12 +4,20 @@ import { emptySpecial, regionById, type ArmyView, type IncomingView, type JobVie
 import type { Db } from "../db/client.js";
 import { allianceMembers, alliances, armies, jobs, matchRegions, matches, playerTechs, players, regionSightings, tradeRoutes, refugeeOffers, pacts, mercenaryOffers, dailyObjectives, bounties, regionNotes, advisors, battles } from "../db/schema.js";
 import { OBJECTIVES } from "../sim/objectives.js";
+import { activeWonders } from "../sim/endgame.js";
 import { matchNow, matchDayAt } from "../sim/clock.js";
 import { alliesOf } from "../sim/alliances.js";
 import { enterMap, mapOf } from "../map/scope.js";
 import { countOwnedRegions, projectRegion, railwayOwners, resourceMultOf, techOwners } from "../sim/regions.js";
 import { parseSettings, wageFor } from "../sim/advisors.js";
 import { liveBattleOf } from "../matches/battlesApi.js";
+
+/** The wonders under way in a match, as the map shows them. */
+async function wonderViews(db: Db, matchId: string, nameOf: Map<string, string>) {
+  return (await activeWonders(db, matchId))
+    .filter((j) => j.playerId && j.regionId)
+    .map((j) => ({ playerId: j.playerId!, playerName: nameOf.get(j.playerId!) ?? "Unknown", regionId: j.regionId!, startsAt: j.startsAt.toISOString(), endsAt: j.endsAt.toISOString(), waiting: !!j.waitingFor }));
+}
 
 /** Battles playing out right now that this side (a player and their allies; null for everyone's) may watch, for the map's crossed swords. */
 async function liveBattles(db: Db, matchId: string, side: Set<string> | null): Promise<LiveBattleView[]> {
@@ -456,6 +464,7 @@ export async function buildMatchState(db: Db, matchId: string, userId: string, o
       campaigns: campaignView.array().parse(a.campaigns ?? []),
     })),
     lastStand: { eligible: lastStandEligible, used: !!me.lastStandAt },
+    wonders: await wonderViews(db, matchId, nameOf),
     objective,
     bounties: bountyRows.map((b) => ({ id: b.id, kind: b.kind as "region" | "player", regionId: b.regionId, playerId: b.playerId, amount: b.amount, reason: b.reason, expiresAt: b.expiresAt?.toISOString() ?? null })),
     notes: noteRows.map((n) => ({ regionId: n.regionId, text: n.text, colour: n.colour as "red" | "amber" | "green" | "blue" | "purple" | null, updatedAt: n.updatedAt.toISOString() })),
@@ -597,6 +606,7 @@ async function buildObserverState(db: Db, m: typeof matches.$inferSelect, matchI
     advisorWage: {},
     battles: await liveBattles(db, matchId, null),
     lastStand: { eligible: false, used: false },
+    wonders: await wonderViews(db, matchId, nameOf),
     objective: today ? { day: today.day + 1, label: OBJECTIVES[today.key] ?? today.key, yesterday: yday ? { label: OBJECTIVES[yday.key] ?? yday.key, playerId: yday.winnerPlayerId, value: yday.value ?? 0 } : null } : null,
     bounties: bountyRows.map((b) => ({ id: b.id, kind: b.kind as "region" | "player", regionId: b.regionId, playerId: b.playerId, amount: b.amount, reason: b.reason, expiresAt: b.expiresAt?.toISOString() ?? null })),
     notes: [],

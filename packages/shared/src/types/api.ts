@@ -677,6 +677,8 @@ export const matchStateView = z.object({
   battles: z.array(liveBattleView).default([]),
   /** The last stand is open: the ice is a day from the capital and it has not been used. */
   lastStand: z.object({ eligible: z.boolean(), used: z.boolean() }).default({ eligible: false, used: false }),
+  /** Every wonder under way: shown to all on the map, since every rival is warned when one begins. */
+  wonders: z.array(z.object({ playerId: z.string(), playerName: z.string(), regionId: z.string(), startsAt: z.string(), endsAt: z.string(), waiting: z.boolean() })).default([]),
   /** Today's objective and who took yesterday's. */
   objective: z.object({ day: z.number(), label: z.string(), yesterday: z.object({ label: z.string(), playerId: z.string().nullable(), value: z.number() }).nullable() }).nullable().default(null),
   /** Open bounties anyone can claim by winning a battle against the region or player. */

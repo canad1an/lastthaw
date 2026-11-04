@@ -23,6 +23,7 @@ import { logger } from "../src/logger.js";
 import { inviteMail } from "../src/mail.js";
 import { nameSuffix } from "./suffix.js";
 import { cancelJobsInLostRegions, cancelObsoleteLevels } from "../src/sim/missions.js";
+import { wonderProgress } from "../src/sim/endgame.js";
 
 process.env.DATABASE_URL ??= "postgres://lastthaw:lastthaw@localhost:5432/lastthaw";
 process.env.SESSION_SECRET ??= "test-secret-test-secret-test-secret";
@@ -407,6 +408,29 @@ describe("api routes", () => {
     expect((await Ann.call("GET", "/api/matches/2099-01-no-such-match/state")).statusCode).toBe(404);
     expect(state.players.length).toBe(2);
     expect((await Ben.call("POST", `/api/matches/${gameId}/join`, { inviteCode: code })).statusCode).toBe(409);
+  });
+
+  it("a wonder under way is on everyone's map and reported every day", async () => {
+    const state = matchStateView.parse((await Ann.call("GET", `/api/matches/${gameId}/state`)).json());
+    const cap = state.me.capitalRegionId!;
+    const [m] = await db.select().from(matches).where(eq(matches.id, gameId));
+    const startsAt = new Date(Date.now() - 3600_000);
+    const endsAt = new Date(startsAt.getTime() + 4 * 3600_000);
+    const [j] = await db.insert(jobs).values({ matchId: gameId, playerId: state.me.playerId, regionId: cap, kind: "build", refId: balance.win.wonderBuilding, level: 1, slot: 9, payload: {}, startsAt, endsAt }).returning();
+    try {
+      // Ben sees it on his map, with its place and timing.
+      const ben = matchStateView.parse((await Ben.call("GET", `/api/matches/${gameId}/state`)).json());
+      expect(ben.wonders).toEqual([expect.objectContaining({ playerId: state.me.playerId, regionId: cap, waiting: false, endsAt: endsAt.toISOString() })]);
+      // The day's report goes to both: a quarter built.
+      await db.transaction((tx) => wonderProgress(tx, m!, new Date(startsAt.getTime() + 3600_000)));
+      const sent = await db.select().from(messages).where(and(eq(messages.matchId, gameId), sql`${messages.payload}->>'progress' is not null`));
+      const benId = ben.me.playerId;
+      expect(sent.find((x) => x.playerId === benId)?.subject).toMatch(/25% built.*Take .* to stop it/);
+      expect(sent.find((x) => x.playerId === state.me.playerId)?.subject).toMatch(/^Your .*25% built/);
+    } finally {
+      await db.update(jobs).set({ cancelledAt: new Date() }).where(eq(jobs.id, j!.id));
+    }
+    expect(matchStateView.parse((await Ben.call("GET", `/api/matches/${gameId}/state`)).json()).wonders).toEqual([]);
   });
 
   it("in-match commands validate their input and ownership", async () => {
