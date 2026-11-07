@@ -110,7 +110,10 @@ export async function queueBuild(ctx: CommandContext, regionId: string, building
       if (local > 0) paid[k] = local;
       if (v - local > 0.5) owed[k] = Math.ceil(v - local);
     }
-    if (Object.keys(paid).length) await recordSpend(tx, m, p.id, "build", paid);
+    if (Object.keys(paid).length) {
+      await applyCost(tx, row, paid as Cost);
+      await recordSpend(tx, m, p.id, "build", paid);
+    }
     const active = pending.filter((j) => !j.waitingFor);
     // A level queued behind a waiting job must not overtake it: it waits too, even if fully paid.
     const behindWaiting = pending.some((j) => j.waitingFor);
@@ -283,7 +286,10 @@ export async function queueTrain(ctx: CommandContext, regionId: string, unitId: 
         }
       }
       if (shortfall > (opts.maxOwed ?? Infinity)) throw httpError(409, `too much would have to be shipped here (${Math.round(shortfall)}); train where the stock is`);
-      if (Object.keys(paid).length) await recordSpend(tx, m, p.id, "military", paid);
+      if (Object.keys(paid).length) {
+        await applyCost(tx, row, paid as Cost);
+        await recordSpend(tx, m, p.id, "military", paid);
+      }
       const [j] = await tx
         .insert(jobs)
         .values({ matchId: m.id, playerId: p.id, regionId, kind: "train", refId: unitId, qty, slot: pending.length, payload: { cost, paid }, startsAt: now, endsAt: m.endsAt ?? new Date(now.getTime() + 365 * 86400_000), waitingFor: owed })

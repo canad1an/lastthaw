@@ -410,6 +410,26 @@ describe("api routes", () => {
     expect((await Ben.call("POST", `/api/matches/${gameId}/join`, { inviteCode: code })).statusCode).toBe(409);
   });
 
+  it("a build takes its cost from the region, and cancelling gives back only that", async () => {
+    const state = matchStateView.parse((await Ann.call("GET", `/api/matches/${gameId}/state`)).json());
+    const cap = state.me.capitalRegionId!;
+    const stockAt = async () => (await db.select({ food: matchRegions.food, wood: matchRegions.wood, stone: matchRegions.stone }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap))))[0]!;
+    // Plenty, but under the caps, so nothing clamps.
+    await db.update(matchRegions).set({ food: 1000, wood: 1000, stone: 800 }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
+    const res = await Ann.call("POST", `/api/matches/${gameId}/regions/${cap}/build`, { buildingId: "huts" });
+    expect(res.statusCode, res.body).toBe(200);
+    const [job] = await db.select().from(jobs).where(and(eq(jobs.matchId, gameId), eq(jobs.regionId, cap), eq(jobs.refId, "huts"), sql`${jobs.completedAt} is null`, sql`${jobs.cancelledAt} is null`)).orderBy(desc(jobs.createdAt)).limit(1);
+    const cost = (job!.payload as { cost: Record<string, number> }).cost;
+    const after = await stockAt();
+    // A few seconds of production may come in; the cost itself must be gone.
+    expect(after.wood).toBeLessThan(1000 - (cost.wood ?? 0) + 5);
+    expect(after.stone).toBeLessThan(800 - (cost.stone ?? 0) + 5);
+    expect((await Ann.call("POST", `/api/matches/${gameId}/jobs/${job!.id}/cancel`, {})).statusCode).toBe(200);
+    const back = await stockAt();
+    expect(back.wood).toBeLessThan(1000 + 5);
+    expect(back.wood).toBeGreaterThan(1000 - 5 - (cost.wood ?? 0) * (1 - balance.timers.cancelRefundStarted));
+  });
+
   it("a wonder under way is on everyone's map and reported every day", async () => {
     const state = matchStateView.parse((await Ann.call("GET", `/api/matches/${gameId}/state`)).json());
     const cap = state.me.capitalRegionId!;
