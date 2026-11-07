@@ -2,6 +2,7 @@ import { balance } from "../config/balance.js";
 import { UNITS, unitById, buildingById } from "../config/ages.js";
 import { seededRng } from "./rng.js";
 import { techEffectsOf } from "./buildings.js";
+import { carriersOf } from "./travel.js";
 
 export type UnitCounts = Record<string, number>;
 
@@ -220,7 +221,8 @@ export function carryCapacity(units: UnitCounts, techs?: ReadonlySet<string> | r
 export function armySpeed(units: UnitCounts): number {
   let s = Infinity;
   const { ships } = splitNaval(units);
-  const pacing = Object.keys(ships).length ? ships : units;
+  // Ships carry everyone aboard; failing that, soldiers who all fit in the trucks, trains or planes ride at their pace.
+  const pacing = Object.keys(ships).length ? ships : (carriersOf(units) ?? units);
   for (const [id, n] of Object.entries(pacing)) {
     if (n <= 0) continue;
     const def = unitById.get(id);

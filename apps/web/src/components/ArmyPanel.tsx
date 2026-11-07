@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { armySpeed, balance, regionById, unitById, formatCountdown, type MatchStateView, type MissionKind, type OwnedRegionView, missionLabel } from "@lastthaw/shared";
+import { armySpeed, balance, ridersOf, seatsOf, carriersOf, regionById, unitById, formatCountdown, type MatchStateView, type MissionKind, type OwnedRegionView, missionLabel } from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { play } from "../audio/sound.js";
 import { Button, Card, ErrorText, fmt } from "./ui.js";
@@ -101,6 +101,13 @@ export function SendArmy({
       {route.data?.seconds !== undefined && (
         <p className="text-xs text-slate-400">
           Travel: {formatCountdown(route.data.seconds)} · {route.data.path!.length - 1} legs{route.data.usesSea ? " · by sea" : ""}
+        </p>
+      )}
+      {seatsOf(chosen) > 0 && ridersOf(chosen) > 0 && (
+        <p className={`text-xs ${carriersOf(chosen) ? "text-emerald-300" : "text-amber-300"}`}>
+          {carriersOf(chosen)
+            ? `${ridersOf(chosen)} of ${seatsOf(chosen)} seats taken: everyone rides${mission === "move" || mission === "reinforce" ? "" : " (on a move or reinforcement only)"}.`
+            : `${ridersOf(chosen)} riders for ${seatsOf(chosen)} seats: not everyone fits, so the column marches at foot pace.`}
         </p>
       )}
       {route.data?.error && <p className="text-xs text-rose-400">{route.data.error}</p>}

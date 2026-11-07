@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { and, eq, inArray, isNull } from "drizzle-orm";
-import { balance, colonizeBody, findRoute, paceFor, armySpeed, sendArmyBody, travelSeconds, setCapitalBody, regionById, rallyBody, unitById, techEffectsOf } from "@lastthaw/shared";
+import { balance, colonizeBody, findRoute, paceFor, isAirGroup, airRoute, armySpeed, sendArmyBody, travelSeconds, setCapitalBody, regionById, rallyBody, unitById, techEffectsOf } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { armies, jobs, matchRegions, matches, playerTechs, players, tradeRoutes } from "../db/schema.js";
 import { matchNow } from "../sim/clock.js";
@@ -42,7 +42,8 @@ export async function armyRoutes(app: FastifyInstance, opts: { db: Db; publisher
     const { roads, rails, harbors } = await waySetsFor(db, m.id, p.id, await alliesOf(db, m.id, p.id));
     // The units chosen ("train:3,wagon:1"), when given: a train convoy is priced at its pace on and off the track.
     const units = Object.fromEntries((q.units ?? "").split(",").map((x) => x.split(":")).filter(([id, n]) => id && Number(n) > 0).map(([id, n]) => [id!, Number(n)]));
-    const route = findRoute(q.from, q.to, techs.has(balance.travel.seaTech), roads, rails, harbors, undefined, paceFor(units));
+    // Aircraft, and soldiers flown in by Transport plane, go straight.
+    const route = isAirGroup(units) ? airRoute(q.from, q.to) : findRoute(q.from, q.to, techs.has(balance.travel.seaTech), roads, rails, harbors, undefined, paceFor(units));
     if (!route) throw httpError(400, techs.has(balance.travel.seaTech) ? "no route" : "no land route; Shipbuilding allows sea crossings");
     const speed = (Object.keys(units).length ? armySpeed(units) : Number(q.speed ?? 5) || 5) * (1 + techEffectsOf(techs).travel);
     return { path: route.path, seconds: travelSeconds(route, speed, m.speed), usesSea: route.usesSea };

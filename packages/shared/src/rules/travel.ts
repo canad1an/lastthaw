@@ -94,10 +94,50 @@ export function findRoute(origin: string, target: string, allowSea: boolean, roa
   return { path, cost: real.get(target)!, usesSea, weight: dist.get(target)! };
 }
 
-/** True when every unit in the group flies: aircraft go straight, alone, and only between airfields' reach. */
+/** Soldiers and settlers in a group: everyone who could ride rather than carry or sail. */
+export function ridersOf(units: Record<string, number>): number {
+  let n = 0;
+  for (const [id, q] of Object.entries(units)) {
+    const u = unitById.get(id);
+    if (q > 0 && u && !u.hauler && !u.naval && !u.air) n += q;
+  }
+  return n;
+}
+
+/** Seats in a group: what its Trucks, Trains and Transport planes take aboard. */
+export function seatsOf(units: Record<string, number>): number {
+  let n = 0;
+  for (const [id, q] of Object.entries(units)) if (q > 0) n += q * (unitById.get(id)?.seats ?? 0);
+  return n;
+}
+
+/**
+ * The units that set a group's pace when its riders all fit aboard (haulers and aircraft only, every one of them,
+ * so a caravan along still holds the column back); null when nobody rides or not everyone fits.
+ */
+export function carriersOf(units: Record<string, number>): Record<string, number> | null {
+  const riders = ridersOf(units);
+  if (riders === 0 || riders > seatsOf(units)) return null;
+  const out: Record<string, number> = {};
+  for (const [id, q] of Object.entries(units)) {
+    const u = unitById.get(id);
+    if (q > 0 && u && !u.naval && (u.hauler || u.air)) out[id] = q;
+  }
+  return out;
+}
+
+/** An airlift: Transport planes with soldiers or settlers aboard, every one seated, and nothing else along. */
+export function isAirlift(units: Record<string, number>): boolean {
+  const carriers = carriersOf(units);
+  if (!carriers) return false;
+  const ids = Object.entries(units).filter(([, n]) => n > 0).map(([id]) => unitById.get(id));
+  return Object.keys(carriers).length > 0 && Object.keys(carriers).every((id) => unitById.get(id)?.air) && ids.every((u) => !!u && !u.naval && (u.air ? (u.seats ?? 0) > 0 : !u.hauler));
+}
+
+/** True when the group flies: aircraft go straight, alone (or with the riders of an airlift), and only between airfields' reach. */
 export function isAirGroup(units: Record<string, number>): boolean {
   const ids = Object.entries(units).filter(([, n]) => n > 0).map(([id]) => id);
-  return ids.length > 0 && ids.every((id) => unitById.get(id)?.air);
+  return ids.length > 0 && (ids.every((id) => unitById.get(id)?.air) || isAirlift(units));
 }
 
 /** How far a flight may go, in km: the shortest range among the aircraft in the group. */
@@ -125,8 +165,11 @@ export function laneLimitKm(units: Record<string, number>): number | null {
  * over its off-track speed elsewhere. Undefined for every other group, which goes at one speed everywhere.
  */
 export function paceFor(units: Record<string, number>): ((onTrack: boolean) => number) | undefined {
-  const moving = Object.entries(units).filter(([, n]) => n > 0).map(([id]) => unitById.get(id)).filter((u): u is NonNullable<typeof u> => !!u);
-  if (!moving.length || !moving.some((u) => u.offRailSpeed !== undefined) || !isHaulerConvoy(units)) return undefined;
+  // Soldiers riding a train go as the train does, off the track too.
+  const pacing = isHaulerConvoy(units) ? units : carriersOf(units);
+  if (!pacing) return undefined;
+  const moving = Object.entries(pacing).filter(([, n]) => n > 0).map(([id]) => unitById.get(id)).filter((u): u is NonNullable<typeof u> => !!u);
+  if (!moving.length || !moving.some((u) => u.offRailSpeed !== undefined)) return undefined;
   const top = Math.min(...moving.map((u) => u.speed));
   const off = Math.min(...moving.map((u) => u.offRailSpeed ?? u.speed));
   return (onTrack) => (onTrack ? 1 : top / Math.max(0.1, off));
