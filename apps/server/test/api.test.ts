@@ -324,6 +324,32 @@ describe("api routes", () => {
         .where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, r.regionId)));
     }
   }
+  it("a new account plays one match before confirming its email; confirming lifts the limit", async () => {
+    const fresh = { email: `new-${suffix}@example.test`, password: pw, displayName: `New${suffix}` };
+    const New = new Client(app);
+    expect((await New.call("POST", "/api/auth/register", fresh)).statusCode).toBe(201);
+    const made: string[] = [];
+    try {
+      for (const n of [1, 2]) {
+        const g = await A.call("POST", "/api/matches", { name: `Newbie ${n} ${suffix}`, speed: 10, startsInMinutes: 60, kind: "public" });
+        expect(g.statusCode, g.body).toBe(201);
+        made.push((g.json() as { id: string }).id);
+      }
+      expect((await New.call("GET", "/api/auth/me")).json()).toMatchObject({ emailVerified: false, approved: false });
+      expect((await New.call("POST", `/api/matches/${made[0]}/join`, {})).statusCode).toBe(201);
+      // Joining the same match again is fine; a second match waits for the confirmation.
+      expect((await New.call("POST", `/api/matches/${made[0]}/join`, {})).statusCode).toBe(200);
+      expect((await New.call("POST", `/api/matches/${made[1]}/join`, {})).statusCode).toBe(403);
+      // Creating games and chatting still need a confirmed email.
+      expect((await New.call("POST", "/api/matches", { name: `NewGame ${suffix}`, speed: 10, startsInMinutes: 60, kind: "public" })).statusCode).toBe(403);
+      await db.update(users).set({ emailVerifiedAt: new Date() }).where(eq(users.email, fresh.email));
+      expect((await New.call("POST", `/api/matches/${made[1]}/join`, {})).statusCode).toBe(201);
+    } finally {
+      for (const id of made) await db.delete(matches).where(eq(matches.id, id));
+      await db.delete(users).where(eq(users.email, fresh.email));
+    }
+  });
+
   it("games: a private game needs its invite code, speed and AI counts are capped, one open game at a time, and the creator may end it", async () => {
     const fast = await Ann.call("POST", "/api/matches", { name: `Fast ${suffix}`, speed: balance.match.maxGameSpeed + 1, startsInMinutes: 0, kind: "public" });
     expect(fast.statusCode, JSON.stringify(fast.json())).toBe(400);
@@ -353,7 +379,8 @@ describe("api routes", () => {
     expect((await Ben.call("POST", `/api/matches/${gameId}/join`, { inviteCode: code })).statusCode).toBe(201);
     // Joining again is harmless.
     expect((await Ben.call("POST", `/api/matches/${gameId}/join`, { inviteCode: code })).statusCode).toBe(200);
-    expect((await Out.call("POST", `/api/matches/${gameId}/join`, { inviteCode: code })).statusCode).toBe(403);
+    // Out (unverified) needs the code like anyone else; with it he could play here (see the one-match rule below), but stays out of this one.
+    expect((await Out.call("POST", `/api/matches/${gameId}/join`, { inviteCode: "NOPE1234" })).statusCode).toBe(403);
     // One open game per player: Ann's private game is open, so a second is refused.
     expect((await Ann.call("POST", "/api/matches", { name: `Second ${suffix}`, speed: 10, startsInMinutes: 60, kind: "public" })).statusCode).toBe(409);
     expect((await Ann.call("POST", `/api/matches/${"00000000-0000-0000-0000-000000000000"}/join`, {})).statusCode).toBe(404);
@@ -2533,7 +2560,9 @@ describe("api routes", () => {
     created.push(cupId);
     // Not open yet: joining is refused, registering works once, the listing shows it.
     expect((await Ann.call("POST", `/api/matches/${cupId}/join`, {})).statusCode).toBe(409);
-    expect((await Out.call("POST", `/api/matches/${cupId}/register`, {})).statusCode).toBe(403);
+    // An unconfirmed account may register (its one match); withdrawn again so the rest of this test runs as before.
+    expect((await Out.call("POST", `/api/matches/${cupId}/register`, {})).statusCode).toBe(201);
+    expect((await Out.call("DELETE", `/api/matches/${cupId}/register`)).statusCode).toBe(200);
     expect((await Ann.call("POST", `/api/matches/${cupId}/register`, {})).statusCode).toBe(201);
     expect((await Ann.call("POST", `/api/matches/${cupId}/register`, {})).statusCode).toBe(200);
     expect((await Ann.call("POST", `/api/matches/${gameId}/register`, {})).statusCode).toBe(400);
@@ -2573,8 +2602,16 @@ describe("api routes", () => {
     const [benAgain] = await db.select().from(players).where(and(eq(players.matchId, cupId), eq(players.userId, benId2)));
     expect(benAgain?.capitalRegionId).toBeTruthy();
     expect(benAgain?.protectionUntil && benAgain.protectionUntil.getTime()).toBeGreaterThan(Date.now());
-    // Not registered: still refused once it runs.
-    expect((await Out.call("POST", `/api/matches/${cupId}/join`, {})).statusCode).toBeGreaterThanOrEqual(400);
+    // Not registered: comes in too during the first week, so a newcomer never waits for the next tournament.
+    expect(((await Out.call("GET", "/api/matches")).json() as Array<{ id: string; lateJoinOpen: boolean }>).find((m) => m.id === cupId)!.lateJoinOpen).toBe(true);
+    const outLate = await Out.call("POST", `/api/matches/${cupId}/join`, {});
+    expect(outLate.statusCode, outLate.body).toBe(201);
+    // Past the window: refused, and the listing says so.
+    const outId2 = await idOf(outsider.email);
+    await db.delete(players).where(and(eq(players.matchId, cupId), eq(players.userId, outId2)));
+    await db.update(matches).set({ startsAt: new Date(Date.now() - (balance.schedule.lateJoinDays + 1) * 86400_000) }).where(eq(matches.id, cupId));
+    expect((await Out.call("POST", `/api/matches/${cupId}/join`, {})).statusCode).toBe(409);
+    expect(((await Out.call("GET", "/api/matches")).json() as Array<{ id: string; lateJoinOpen: boolean }>).find((m) => m.id === cupId)!.lateJoinOpen).toBe(false);
     expect(((await Ann.call("GET", "/api/matches")).json() as Array<{ id: string; registered: boolean }>).find((m) => m.id === cupId)!.registered).toBe(false);
   });
 

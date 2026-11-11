@@ -34,7 +34,7 @@ export function AboutPage() {
         </Card>
         <Card>
           <h2 className="font-medium text-white">Matches</h2>
-          <p className="mt-1 text-sm text-slate-400">A new match opens every week and lasts exactly thirty days, so several run at once. You join before the start; nobody joins mid-match.</p>
+          <p className="mt-1 text-sm text-slate-400">A new match opens every week and lasts exactly thirty days, so several run at once. You can join before the start, or during a tournament's first week, so there is always one to start today.</p>
         </Card>
         <Card>
           <h2 className="font-medium text-white">Fair play</h2>

@@ -5,7 +5,8 @@ import type pino from "pino";
 import type { Db } from "../db/client.js";
 import type { Redis } from "ioredis";
 import { matches, players, tournamentRegistrations, users } from "../db/schema.js";
-import { requireVerified } from "../auth/session.js";
+import { requireUser } from "../auth/session.js";
+import { assertMayPlay } from "./mayPlay.js";
 import { registrationMail, reminderMail, sendMail } from "../mail.js";
 import { httpError } from "../sim/commands.js";
 import { idParams } from "./params.js";
@@ -31,7 +32,7 @@ export async function registrationRoutes(app: FastifyInstance, opts: { db: Db; r
 
   /** Who has this match open right now (connected over the websocket), for the waiting room. Members only. */
   app.get("/api/matches/:id/presence", async (req) => {
-    const user = requireVerified(req);
+    const user = requireUser(req);
     const matchId = idParams.parse(req.params).id;
     const [me] = await db.select({ id: players.id }).from(players).where(and(eq(players.matchId, matchId), eq(players.userId, user.id))).limit(1);
     if (!me && !user.isAdmin) throw httpError(403, "not your match");
@@ -54,9 +55,9 @@ export async function registrationRoutes(app: FastifyInstance, opts: { db: Db; r
   });
 
   app.post("/api/matches/:id/register", async (req, reply) => {
-    const user = requireVerified(req);
-    if (!user.approved) throw httpError(403, "verify your email first; the code is in your inbox");
+    const user = requireUser(req);
     const matchId = idParams.parse(req.params).id;
+    await assertMayPlay(db, user, matchId);
     const [m] = await db.select().from(matches).where(eq(matches.id, matchId)).limit(1);
     if (!m) throw httpError(404, "match not found");
     if (!isTournament(m.settings)) throw httpError(400, "only tournaments take registrations; games are joined directly");
@@ -69,7 +70,7 @@ export async function registrationRoutes(app: FastifyInstance, opts: { db: Db; r
   });
 
   app.delete("/api/matches/:id/register", async (req) => {
-    const user = requireVerified(req);
+    const user = requireUser(req);
     const matchId = idParams.parse(req.params).id;
     await db.delete(tournamentRegistrations).where(and(eq(tournamentRegistrations.matchId, matchId), eq(tournamentRegistrations.userId, user.id)));
     return { ok: true, registered: false };
