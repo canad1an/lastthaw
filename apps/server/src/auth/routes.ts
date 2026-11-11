@@ -11,7 +11,7 @@ import type { Publisher } from "../realtime/publish.js";
 import { emailTokens, sessions, users, players, matches } from "../db/schema.js";
 import { hashPassword, hashToken, newToken, verifyPassword } from "./password.js";
 import { createSession, destroySession, requireUser } from "./session.js";
-import { resetMail, sendMail, verificationMail, welcomeMail } from "../mail.js";
+import { matchNewsToken, resetMail, sendMail, verificationMail, welcomeMail } from "../mail.js";
 import { createWelcomeMatch } from "../matches/welcomeMatch.js";
 
 const VERIFY_HOURS = 24;
@@ -123,6 +123,15 @@ export async function authRoutes(app: FastifyInstance, opts: { db: Db; redis: Re
     await destroySession(db, req, reply);
     if (userId) await publisher.sessionsEnded(userId);
     return { ok: true };
+  });
+
+  // The one-click opt-out from match-result mail: signed per account, so it works from the inbox without a login.
+  app.get("/api/mail/match-news/off", tight(20, "1 minute"), async (req, reply) => {
+    const q = req.query as { u?: string; t?: string };
+    const ok = !!q.u && /^[0-9a-f-]{36}$/.test(q.u) && q.t === matchNewsToken(q.u);
+    if (ok) await db.update(users).set({ matchNewsOptOut: true }).where(eq(users.id, q.u!));
+    reply.type("text/html; charset=utf-8");
+    return `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Last Thaw</title><body style="font-family:system-ui;background:#0b1a2b;color:#e2e8f0;padding:32px"><p>${ok ? "Done: you will get no more mail about matches you are not in." : "That link is not valid."}</p><p><a style="color:#fbbf24" href="${config().PUBLIC_URL}">Back to Last Thaw</a></p></body>`;
   });
 
   app.get("/api/auth/me", async (req, reply) => {

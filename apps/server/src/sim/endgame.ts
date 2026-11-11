@@ -1,6 +1,7 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { AGES, allRegions, balance, buildingById, regionById, type AgeIndex } from "@lastthaw/shared";
-import { allianceMembers, alliances, events, jobs, matchMilestones, matchRegions, matches, players, scoreHistory, userMatchResults, ownershipFrames, ownershipLatest } from "../db/schema.js";
+import { allianceMembers, alliances, events, jobs, matchMilestones, matchRegions, matches, players, scoreHistory, userMatchResults, ownershipFrames, ownershipLatest, users } from "../db/schema.js";
+import { sendMail, winnerMail } from "../mail.js";
 import { matchNow } from "./clock.js";
 import type { Publisher } from "../realtime/publish.js";
 import type { Tx } from "./regions.js";
@@ -262,6 +263,43 @@ export async function finishMatch(tx: Tx, m: MatchRow, at: Date, publisher: Publ
   }
   await tx.insert(events).values({ matchId: m.id, at, kind: "match.finished", payload: { winnerPlayerId: winner } });
   after(() => publisher.toMatch(m.id, "match.finished", { winnerPlayerId: winner }));
+  if (!endedEarly) {
+    const mails = await resultMails(tx, m, ps, winner, winKind, at);
+    if (mails.length) after(async () => {
+      for (const x of mails) await sendMail(x.to, x.subject, x.text, x.html).catch(() => {});
+    });
+  }
+}
+
+/**
+ * The winner announcement for a public match or tournament: one mail for every registered account with a confirmed
+ * email that has not turned match news off. Private games and the nightly simulations send none.
+ */
+export async function resultMails(tx: Tx | Db, m: MatchRow, ps: Array<{ id: string; userId: string | null; name: string }>, winner: string | null, winKind: string, at: Date) {
+  const s = (m.settings ?? {}) as { kind?: string; simulation?: boolean };
+  if (s.simulation === true || s.kind === "private") return [];
+  const readers = await tx
+    .select({ id: users.id, email: users.email, name: users.displayName })
+    .from(users)
+    .where(and(sql`${users.emailVerifiedAt} is not null`, isNull(users.suspendedAt), eq(users.matchNewsOptOut, false)));
+  const inMatch = new Set(ps.map((p) => p.userId).filter((id): id is string => !!id));
+  const w = ps.find((p) => p.id === winner);
+  const days = Math.max(1, Math.round(((at.getTime() - m.startsAt.getTime()) * m.speed) / 86400_000));
+  return readers.map((r) => ({ to: r.email, ...winnerMail(r.name, r.id, { name: m.name, slug: m.slug ?? m.id, winner: w?.name ?? null, how: winVerb(winKind), tribes: ps.length, days, played: inMatch.has(r.id) }) }));
+}
+
+/** How a match was won, as it reads after the winner's name. */
+function winVerb(kind: string): string {
+  switch (kind) {
+    case "wonder":
+      return `raised the ${buildingById.get(balance.win.wonderBuilding)?.name ?? "Great Hearth"}`;
+    case "hold":
+      return "held most of the world";
+    case "survival":
+      return "kept the most people alive as the ice stopped";
+    default:
+      return "finished with the highest score";
+  }
 }
 
 export async function winHoldExpired(tx: Tx, m: MatchRow, job: JobRow, publisher: Publisher, after: (fn: () => Promise<void>) => void): Promise<void> {

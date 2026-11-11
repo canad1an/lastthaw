@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import nodemailer, { type Transporter } from "nodemailer";
 import { balance, DISCORD_INVITE_URL } from "@lastthaw/shared";
 import { config } from "./config.js";
@@ -200,6 +201,34 @@ export function startedMail(displayName: string, matchName: string, slug: string
     ],
     cta: { label: "Open the map", url },
     note: "You get no further mail about this match; the site and the Last Thaw Discord carry the news.",
+  });
+}
+
+/** A signed token for the one-click opt-out from match news, so the link needs no login. */
+export function matchNewsToken(userId: string): string {
+  return createHmac("sha256", config().SESSION_SECRET).update(`match-news:${userId}`).digest("hex").slice(0, 32);
+}
+
+/** Everyone registered hears who won a public match or tournament, and how. */
+export function winnerMail(displayName: string, userId: string, game: { name: string; slug: string; winner: string | null; how: string; tribes: number; days: number; played: boolean }) {
+  const url = `${config().PUBLIC_URL}/match/${game.slug}`;
+  const unsubscribe = `${config().PUBLIC_URL}/api/mail/match-news/off?u=${userId}&t=${matchNewsToken(userId)}`;
+  const headline = game.winner ? `${game.winner} has won ${game.name}` : `${game.name} is over`;
+  return renderMail({
+    subject: headline,
+    preheader: game.winner ? `${game.winner} ${game.how}. See the final map and standings.` : "The match has ended. See the final map and standings.",
+    greeting: `Hi ${displayName}`,
+    paragraphs: [
+      game.winner ? `"${game.name}" is over: ${game.winner} ${game.how}, ahead of ${game.tribes - 1} other tribes after ${game.days} game days.` : `"${game.name}" has ended after ${game.days} game days, with no winner named.`,
+      game.played ? "Your own finish and the full standings are on the match page." : "The final map, the standings and the replay are on the match page, and the next public match is open to join from the home page.",
+    ],
+    facts: [
+      { label: "Match", value: game.name },
+      ...(game.winner ? [{ label: "Winner", value: game.winner }] : []),
+      { label: "Tribes", value: String(game.tribes) },
+    ],
+    cta: { label: "See how it ended", url },
+    note: `You get this because you have a Last Thaw account. To stop mail about matches you are not in: ${unsubscribe}`,
   });
 }
 

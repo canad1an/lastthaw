@@ -23,7 +23,8 @@ import { logger } from "../src/logger.js";
 import { inviteMail } from "../src/mail.js";
 import { nameSuffix } from "./suffix.js";
 import { cancelJobsInLostRegions, cancelObsoleteLevels } from "../src/sim/missions.js";
-import { wonderProgress } from "../src/sim/endgame.js";
+import { resultMails, wonderProgress } from "../src/sim/endgame.js";
+import { matchNewsToken } from "../src/mail.js";
 
 process.env.DATABASE_URL ??= "postgres://lastthaw:lastthaw@localhost:5432/lastthaw";
 process.env.SESSION_SECRET ??= "test-secret-test-secret-test-secret";
@@ -455,6 +456,36 @@ describe("api routes", () => {
     const back = await stockAt();
     expect(back.wood).toBeLessThan(1000 + 5);
     expect(back.wood).toBeGreaterThan(1000 - 5 - (cost.wood ?? 0) * (1 - balance.timers.cancelRefundStarted));
+  });
+
+  it("a public match's winner is mailed to everyone registered; private games and simulations are not", async () => {
+    const annId = await idOf(ann.email);
+    const benId = await idOf(ben.email);
+    let n = 0;
+    const mailsFor = async (settings: Record<string, unknown>) => {
+      const now = new Date();
+      n += 1;
+      const [m] = await db.insert(matches).values({ name: `Mailtest ${suffix}`, slug: `2026-11-mailtest-${n}-${suffix}`.toLowerCase(), speed: 10, seed: "mailtest", startsAt: new Date(now.getTime() - 3 * 86400_000 / 10), endsAt: now, status: "finished", settings }).returning();
+      created.push(m!.id);
+      const [w] = await db.insert(players).values({ matchId: m!.id, userId: benId, name: `Ben${suffix}`, isAi: false }).returning();
+      return resultMails(db, m!, [w!], w!.id, "survival", now);
+    };
+    const sent = await mailsFor({ kind: "public" });
+    // Ann was not in it and still hears; Out never confirmed an email and does not.
+    const toAnn = sent.find((x) => x.to === ann.email);
+    expect(toAnn?.subject).toBe(`Ben${suffix} has won Mailtest ${suffix}`);
+    expect(toAnn?.text).toContain("kept the most people alive");
+    expect(toAnn?.text).toContain(`/api/mail/match-news/off?u=${annId}&t=${matchNewsToken(annId)}`);
+    expect(sent.find((x) => x.to === ben.email)?.text).toContain("Your own finish");
+    expect(sent.some((x) => x.to === outsider.email)).toBe(false);
+    expect((await mailsFor({ kind: "tournament", weekly: true })).some((x) => x.to === ann.email)).toBe(true);
+    expect(await mailsFor({ kind: "private" })).toEqual([]);
+    expect(await mailsFor({ kind: "public", simulation: true })).toEqual([]);
+    // The link in the mail turns it off; a forged one does nothing.
+    expect((await Out.call("GET", `/api/mail/match-news/off?u=${annId}&t=${"0".repeat(32)}`)).body).toContain("not valid");
+    expect((await Out.call("GET", `/api/mail/match-news/off?u=${annId}&t=${matchNewsToken(annId)}`)).body).toContain("Done");
+    expect((await mailsFor({ kind: "public" })).some((x) => x.to === ann.email)).toBe(false);
+    await db.update(users).set({ matchNewsOptOut: false }).where(eq(users.id, annId));
   });
 
   it("a wonder under way is on everyone's map and reported every day", async () => {

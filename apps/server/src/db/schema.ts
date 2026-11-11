@@ -27,6 +27,8 @@ export const users = pgTable(
     tagline: text("tagline"),
     bio: text("bio"),
     location: text("location"),
+    /** Set from the link in a match-result mail: no more mail about matches the player was not in. */
+    matchNewsOptOut: boolean("match_news_opt_out").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
   },

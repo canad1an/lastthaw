@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "match_news_opt_out" boolean DEFAULT false NOT NULL;
