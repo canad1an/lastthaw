@@ -144,7 +144,7 @@ export function verificationMail(displayName: string, token: string, code: strin
     preheader: `Your code is ${code}. Enter it on the site, or click the button, and the ice is yours to beat.`,
     greeting: `Hi ${displayName}`,
     paragraphs: [
-      "Your account is ready. Confirm your email and you can join matches: pick a capital on the real map, set your five settlers to work, and build before the frost reaches your latitude.",
+      "Your account is ready, and you can play one match straight away: pick a capital on the real map, set your five settlers to work, and build before the frost reaches your latitude. Confirm your email to keep your account, chat, and play more than one match at once.",
       `Enter this code where the site asks for it: ${code}. Or press the button below; either one confirms you.`,
     ],
     facts: [{ label: "Your code", value: code }],

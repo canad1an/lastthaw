@@ -2,6 +2,7 @@ import { APP_VERSION } from "../version.js";
 import { useQuery } from "@tanstack/react-query";
 import { usePageMeta } from "../seo.js";
 import { Link } from "@tanstack/react-router";
+import { useState } from "react";
 import { AGES, balance, formatCountdown } from "@lastthaw/shared";
 import { useMe } from "../api/auth.js";
 import { api, keys } from "../api/client.js";
@@ -103,6 +104,7 @@ export function HomePage() {
           <div>
             <h2 className="display text-2xl font-semibold text-white sm:text-3xl">A world to win before the ice takes it</h2>
             <p className="mt-2 max-w-xl text-slate-300">Thirty days on the real map. Claim land, conquer rivals, cross the seas, and keep your people south of the ice.</p>
+            <Trailer />
             <dl className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
               <Stat n="408" label="real regions" />
               <Stat n="30" label="days per match" />
@@ -123,7 +125,7 @@ export function HomePage() {
             ) : (
               <>
                 <h2 className="display text-2xl font-semibold text-white">Raise your tribe</h2>
-                <p className="mb-5 mt-1 text-sm text-slate-400">Thirty seconds to sign up. A match opens every week.</p>
+                <p className="mb-5 mt-1 text-sm text-slate-400">Thirty seconds to sign up, and you are playing today: a running tournament takes new tribes for its first week.</p>
                 <SignupForm compact />
               </>
             )}
@@ -216,9 +218,9 @@ export function HomePage() {
             <h2 className="display relative text-3xl font-bold sm:text-5xl">
               <span className="frost-text">Somewhere on Earth, five settlers are waiting for you.</span>
             </h2>
-            <p className="relative mx-auto mt-4 max-w-xl text-slate-300">Sign up, pick a capital, and start building before the line reaches your latitude.</p>
+            <p className="relative mx-auto mt-4 max-w-xl text-slate-300">Sign up and start building today, before the line reaches your latitude.</p>
             <a href="#signup" className="btn-ember display relative mt-8 inline-block rounded-md px-8 py-3.5 text-lg font-semibold">
-              Claim your land
+              Play free
             </a>
           </div>
         </section>
@@ -248,6 +250,35 @@ export function HomePage() {
         </div>
       </footer>
     </main>
+  );
+}
+
+/**
+ * The 45-second trailer, all real play. Only a still and a play button until clicked, so YouTube sets nothing and
+ * loads nothing for visitors who never press play (the CSP allows i.ytimg.com and youtube-nocookie.com for this).
+ */
+const TRAILER_ID = "Sqa29uhHn2I";
+function Trailer() {
+  const [playing, setPlaying] = useState(false);
+  return (
+    <div className="mt-6 overflow-hidden rounded-xl border border-slate-700/60 bg-slate-950">
+      {playing ? (
+        <iframe
+          className="aspect-video w-full"
+          src={`https://www.youtube-nocookie.com/embed/${TRAILER_ID}?autoplay=1&rel=0`}
+          title="Last Thaw trailer"
+          allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+          allowFullScreen
+        />
+      ) : (
+        <button type="button" onClick={() => setPlaying(true)} className="group relative block w-full" aria-label="Play the 45-second trailer">
+          <img src={`https://i.ytimg.com/vi/${TRAILER_ID}/hqdefault.jpg`} alt="A Last Thaw match: the ice line crossing the real map of Earth" className="aspect-video w-full object-cover opacity-90 transition group-hover:opacity-100" loading="lazy" />
+          <span className="absolute inset-0 flex items-center justify-center">
+            <span className="btn-ember display rounded-full px-5 py-3 text-sm font-semibold shadow-lg">▶ Watch 45 seconds of real play</span>
+          </span>
+        </button>
+      )}
+    </div>
   );
 }
 

@@ -1,10 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePageMeta } from "../seo.js";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useChatAlert } from "../components/chatAlert.js";
 import { balance, formatCountdown, type MatchSummary , MAP_IDS, MAP_NAMES, MAP_BLURBS, type MapId } from "@lastthaw/shared";
 import { useMe } from "../api/auth.js";
+import { trackFunnel } from "../analytics.js";
 import { api, keys } from "../api/client.js";
 import { Button, Card, ErrorText, Field, Input } from "../components/ui.js";
 import { PastMatchRow, type PastMatchesPage } from "./pastMatches.js";
@@ -96,7 +97,7 @@ export function LobbyPage() {
         </h1>
         <p className="shadow-copy max-w-prose text-slate-200">
           Thirty days. One freezing Earth. Grow five settlers into an empire before the ice reaches you. Tournaments start every week and are
-          the only games that count toward the Hall of Fame. Join before the start; nobody joins mid-match.
+          the only games that count toward the Hall of Fame. A running tournament takes new tribes for its first week, so you can always start today.
         </p>
       </section>
 
@@ -118,7 +119,7 @@ export function LobbyPage() {
       <div className="space-y-3">
         {matches.isLoading && <p className="text-slate-400">Loading tournaments...</p>}
         {matches.data?.filter((m) => m.kind === "tournament").length === 0 && !matches.isLoading && <p className="text-slate-400">No tournament is open right now.</p>}
-        {matches.data?.filter((m) => m.kind === "tournament").map((m) => <MatchRow key={m.id} m={m} canJoin={!!me.data?.approved} admin={!!me.data?.isAdmin} />)}
+        {matches.data?.filter((m) => m.kind === "tournament").map((m) => <MatchRow key={m.id} m={m} canJoin={!!me.data} admin={!!me.data?.isAdmin} />)}
       </div>
 
       <section className="space-y-3">
@@ -127,10 +128,10 @@ export function LobbyPage() {
             <h2 className="text-xl font-semibold tracking-tight">Games</h2>
             <p className="text-sm text-slate-400">Player-made matches, public or private. Fun, not ranked.</p>
           </div>
-          {me.data?.emailVerified && me.data.approved && <JoinByCode />}
+          {me.data && <JoinByCode />}
         </div>
         {matches.data?.filter((m) => m.kind !== "tournament").length === 0 && <p className="text-sm text-slate-500">No games open. Create one below.</p>}
-        {matches.data?.filter((m) => m.kind !== "tournament").map((m) => <MatchRow key={m.id} m={m} canJoin={!!me.data?.approved} admin={!!me.data?.isAdmin} />)}
+        {matches.data?.filter((m) => m.kind !== "tournament").map((m) => <MatchRow key={m.id} m={m} canJoin={!!me.data} admin={!!me.data?.isAdmin} />)}
       </section>
 
       {me.data?.emailVerified && (me.data.approved || me.data.isAdmin || info.data?.devTools) && <CreateMatch admin={!!me.data.isAdmin} />}
@@ -185,7 +186,7 @@ function VerifyBanner() {
   return (
     <Card className="border-amber-500/40 bg-amber-500/10">
       <p className="text-sm text-amber-100">
-        Verify your email to join matches: we sent you a six-digit code.{" "}
+        You can play one match now. Confirm your email to keep your account, chat and join more: we sent you a six-digit code.{" "}
         <Link to="/verify" search={{ token: undefined }} className="underline hover:text-white">
           Enter the code
         </Link>{" "}
@@ -237,16 +238,25 @@ function MatchRow({ m, canJoin, admin }: { m: MatchSummary; canJoin: boolean; ad
   const qc = useQueryClient();
   const now = useNow(1000);
   const [copied, setCopied] = useState(false);
+  const nav = useNavigate();
   const join = useMutation({
     mutationFn: () => {
       const code = m.kind === "private" && !m.createdByMe ? window.prompt("This is a private game. Enter its invite code:") ?? "" : undefined;
       return api.joinMatch(m.id, code || undefined);
     },
-    onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matches }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.matches });
+      trackFunnel("Joined match", m.kind ?? "game");
+      // Joining a running tournament places the tribe at once: straight into the match.
+      if (m.status === "running") void nav({ to: "/match/$matchId", params: { matchId: m.slug || m.id } });
+    },
   });
   const register = useMutation({
     mutationFn: () => (m.registered ? api.unregisterTournament(m.id) : api.registerTournament(m.id)),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: keys.matches }),
+    onSuccess: () => {
+      if (!m.registered) trackFunnel("Registered for tournament");
+      void qc.invalidateQueries({ queryKey: keys.matches });
+    },
   });
   const startsIn = (Date.parse(m.startsAt) - now) / 1000;
   const endsIn = (Date.parse(m.endsAt) - now) / 1000;
@@ -308,13 +318,19 @@ function MatchRow({ m, canJoin, admin }: { m: MatchSummary; canJoin: boolean; ad
             {m.status === "lobby" ? (m.capitalRegionId ? "Lobby" : "Pick your start") : "Play"}
           </Link>
         ) : registering ? (
-          <Button variant={m.registered ? "ghost" : "primary"} onClick={() => register.mutate()} disabled={!canJoin || register.isPending} title={canJoin ? (m.registered ? "You will get a reminder a day ahead and when the lobby opens" : "We mail you a day ahead and when the lobby opens") : "Verify your email first"}>
+          <Button variant={m.registered ? "ghost" : "primary"} onClick={() => register.mutate()} disabled={!canJoin || register.isPending} title={canJoin ? (m.registered ? "You will get a reminder a day ahead and when the lobby opens" : "We mail you a day ahead and when the lobby opens") : "Sign up free to register"}>
             {m.registered ? "Registered ✓" : "Register"}
           </Button>
-        ) : m.status === "lobby" ? (
-          <Button onClick={() => join.mutate()} disabled={!canJoin || join.isPending} title={canJoin ? "" : "Verify your email first"}>
-            Join
-          </Button>
+        ) : m.status === "lobby" || m.lateJoinOpen ? (
+          canJoin ? (
+            <Button onClick={() => join.mutate()} disabled={join.isPending} title={m.lateJoinOpen ? "Join now: a starting region is picked for you and nobody can attack you for your first days" : ""}>
+              {m.lateJoinOpen ? "Join now" : "Join"}
+            </Button>
+          ) : (
+            <Link to="/register" className="btn-ember display rounded-md px-3 py-2 text-sm font-semibold">
+              Play free
+            </Link>
+          )
         ) : (
           admin && (
             <Link to="/match/$matchId" params={{ matchId: m.slug || m.id }} className="btn-ice rounded-md px-3 py-2 text-sm font-semibold" title="Admin view: every region, army and march, read-only">

@@ -120,6 +120,8 @@ export const matchSummary = z.object({
   registrations: z.number().default(0),
   registered: z.boolean().default(false),
   joinOpensAt: z.string().nullable().default(null),
+  /** A running tournament still in its first days, which anyone may join now. */
+  lateJoinOpen: z.boolean().default(false),
 });
 export const joinMatchBody = z.object({ inviteCode: z.string().trim().max(32).optional() });
 export const joinByCodeBody = z.object({ code: z.string().trim().min(4).max(32) });

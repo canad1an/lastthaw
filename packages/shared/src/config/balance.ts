@@ -294,8 +294,13 @@ export const balance = {
     upcoming: 6,
     /** Tournaments take registrations from the start; joining (and the lobby itself) opens this many hours before the start. */
     joinOpensHours: 1,
-    /** A registered player who is somehow not in when the tournament starts may still come in during its first days. */
-    lateJoinDays: 3,
+    /**
+     * Anyone may still join a running tournament during its first days (registered or not), so a newcomer never waits
+     * for the next Monday: with a tournament every week and this at 7, one is always open to join.
+     */
+    lateJoinDays: 7,
+    /** An account whose email is not yet confirmed may play in this many matches at once; confirming lifts the limit. */
+    unverifiedMatchLimit: 1,
     /** 0 = Sunday ... 6 = Saturday. */
     weekday: 1,
     hourUtc: 0,
