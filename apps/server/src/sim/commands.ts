@@ -5,7 +5,7 @@
  * pays costs up front and returns what it created. Errors carry statusCode.
  */
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
-import { availableUnits, armySpeed, balance, buildingBlockedBy, carryCapacity, buildingById, buildingCost, buildingSeconds, canAfford, effectsOf, findRoute, missingFor, realSeconds, regionById, techById, techCost, techSeconds, trainSeconds, travelSeconds, unitById, unitCost, type Cost, type MissionKind, caravanCarry, techEffectsOf, distanceKm, haulerCarry, HAULER_IDS, splitNaval, seaLegsOf, laneKey, laneName, resolveCombat, laneLimitKm, isAirGroup, airRangeKm, airRoute, nextHopTo, seaPath, isHaulerConvoy, paceFor, onTrack, friendlyWalk, reachableLevel, levelName } from "@lastthaw/shared";
+import { availableUnits, armySpeed, balance, buildingBlockedBy, carryCapacity, buildingById, buildingCost, buildingSeconds, canAfford, effectsOf, findRoute, missingFor, realSeconds, regionById, techById, techCost, techSeconds, trainSeconds, travelSeconds, unitById, unitCost, type Cost, type MissionKind, caravanCarry, techEffectsOf, distanceKm, haulerCarry, HAULER_IDS, splitNaval, seaLegsOf, laneKey, laneName, resolveCombat, laneLimitKm, isAirGroup, airRangeKm, airRoute, nextHopTo, seaPath, isHaulerConvoy, paceFor, isAirlift, seatsOf, ridersOf, onTrack, friendlyWalk, reachableLevel, levelName } from "@lastthaw/shared";
 import type { Db } from "../db/client.js";
 import { armies, battles, jobs, matchRegions, matches, messages, players, tradeRoutes, regionSightings, playerTechs } from "../db/schema.js";
 import { matchDayAt, matchNow } from "./clock.js";
@@ -110,7 +110,10 @@ export async function queueBuild(ctx: CommandContext, regionId: string, building
       if (local > 0) paid[k] = local;
       if (v - local > 0.5) owed[k] = Math.ceil(v - local);
     }
-    if (Object.keys(paid).length) await recordSpend(tx, m, p.id, "build", paid);
+    if (Object.keys(paid).length) {
+      await applyCost(tx, row, paid as Cost);
+      await recordSpend(tx, m, p.id, "build", paid);
+    }
     const active = pending.filter((j) => !j.waitingFor);
     // A level queued behind a waiting job must not overtake it: it waits too, even if fully paid.
     const behindWaiting = pending.some((j) => j.waitingFor);
@@ -283,7 +286,10 @@ export async function queueTrain(ctx: CommandContext, regionId: string, unitId: 
         }
       }
       if (shortfall > (opts.maxOwed ?? Infinity)) throw httpError(409, `too much would have to be shipped here (${Math.round(shortfall)}); train where the stock is`);
-      if (Object.keys(paid).length) await recordSpend(tx, m, p.id, "military", paid);
+      if (Object.keys(paid).length) {
+        await applyCost(tx, row, paid as Cost);
+        await recordSpend(tx, m, p.id, "military", paid);
+      }
       const [j] = await tx
         .insert(jobs)
         .values({ matchId: m.id, playerId: p.id, regionId, kind: "train", refId: unitId, qty, slot: pending.length, payload: { cost, paid }, startsAt: now, endsAt: m.endsAt ?? new Date(now.getTime() + 365 * 86400_000), waitingFor: owed })
@@ -403,10 +409,15 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
     if (Object.keys(units).every((id) => id === "settler")) throw httpError(400, "settlers cannot fight: send soldiers with them");
     if (body.people > 0) throw httpError(400, "conquest takes settlers as occupiers, not people");
   }
-  // Aircraft fly alone, straight, and only to scout, carry goods or strike.
+  // Aircraft fly alone, straight, and only to scout, carry goods or strike; Transport planes also fly soldiers in, all of them seated.
   const air = isAirGroup(units);
-  if (!air && Object.keys(units).some((id) => unitById.get(id)?.air)) throw httpError(400, "aircraft fly alone: send ground units separately");
-  if (air && !["scout", "transport", "airstrike"].includes(body.mission)) throw httpError(400, "aircraft scout, carry goods or strike; they cannot move, settle, conquer or patrol");
+  const airlift = air && isAirlift(units);
+  if (!air && Object.keys(units).some((id) => unitById.get(id)?.air)) {
+    const seats = seatsOf(units);
+    throw httpError(400, seats > 0 ? `not enough seats: these planes seat ${seats} and you are sending ${ridersOf(units)} soldiers and settlers; send more Transport planes or fewer riders` : "aircraft fly alone: send ground units separately");
+  }
+  if (airlift && !["move", "reinforce"].includes(body.mission)) throw httpError(400, "an airlift flies soldiers in to move or reinforce; it cannot attack or settle");
+  if (air && !airlift && !["scout", "transport", "airstrike"].includes(body.mission)) throw httpError(400, "aircraft scout, carry goods or strike; they cannot move, settle, conquer or patrol unless Transport planes fly soldiers in");
   if (body.mission === "airstrike" && !air) throw httpError(400, "only aircraft strike from the air");
   if (body.mission === "airstrike" && !Object.keys(units).some((id) => (unitById.get(id)?.attack ?? 0) >= 10)) throw httpError(400, "an airstrike needs bombers");
   if (air && body.people > 0) throw httpError(400, "aircraft carry goods, not people");
@@ -496,7 +507,7 @@ export async function sendArmy(ctx: CommandContext, regionId: string, body: Send
       .limit(1);
     const targetOwner = target?.ownerPlayerId ?? null;
     const friendly = targetOwner === p.id || (targetOwner ? await areAllied(tx, m.id, p.id, targetOwner) : false);
-    if (air && body.mission === "transport" && !effectsOf(target?.buildings ?? {}).airfield) throw httpError(400, "a transport plane lands only where there is an Airfield");
+    if (air && (body.mission === "transport" || airlift) && !effectsOf(target?.buildings ?? {}).airfield) throw httpError(400, "a transport plane lands only where there is an Airfield");
     if ((body.mission === "reinforce" || body.mission === "move" || body.mission === "transport") && !friendly) {
       throw httpError(400, "that region is not yours or an ally's");
     }

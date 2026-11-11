@@ -53,6 +53,8 @@ export interface WorldMapProps {
   storms?: string[];
   /** Thaw pockets: amber outline until the ice finally takes them. */
   thaws?: Array<{ regionId: string; until: string }>;
+  /** Wonders under way: a fire marker with its progress that no View setting hides. */
+  wonders?: Array<{ regionId: string; label: string; progress: string }>;
 }
 
 /** Missions drawn as military (orange, sword) rather than civil traffic. */
@@ -119,7 +121,7 @@ const MAX_K = 28;
  * Rendering ~400 paths is cheap; the expensive part is re-rendering on every
  * state change, so the static layer is memoized and only the paint changes.
  */
-export function WorldMap({ paint, selected, onSelect, focus, relief = false, flyTo, className = "", ice, flags = [], harbors = [], dashed = [], armies = [], roads = [], badges = [], storms = [], thaws = [], onBadgeClick }: WorldMapProps) {
+export function WorldMap({ paint, selected, onSelect, focus, relief = false, flyTo, className = "", ice, flags = [], harbors = [], dashed = [], armies = [], roads = [], badges = [], storms = [], thaws = [], wonders = [], onBadgeClick }: WorldMapProps) {
   const [hoverArmy, setHoverArmy] = useState<string | null>(null);
   const [hoverHarbor, setHoverHarbor] = useState<string | null>(null);
   // Where each region meets the sea (harbour points) and the relief tiles, for the map in play.
@@ -292,6 +294,10 @@ export function WorldMap({ paint, selected, onSelect, focus, relief = false, fly
           const r = regionById(t.regionId);
           return r ? <path key={`thaw-${t.regionId}`} d={r.path} fill="#fbbf24" fillOpacity={0.18} stroke="#fbbf24" strokeWidth={2.4 / view.k} strokeDasharray={`${5 / view.k} ${3 / view.k}`} pointerEvents="none" /> : null;
         })}
+        {wonders.map((w) => {
+          const r = regionById(w.regionId);
+          return r ? <path key={`wonder-${w.regionId}`} d={r.path} fill="#ef4444" fillOpacity={0.2} stroke="#f97316" strokeWidth={2.4 / view.k} strokeLinejoin="round" pointerEvents="none" /> : null;
+        })}
         {ice && <IceLayer ice={ice} k={view.k / unitsPerPx} />}
         <g pointerEvents="none">
           {dashed.map((id) => {
@@ -399,6 +405,22 @@ export function WorldMap({ paint, selected, onSelect, focus, relief = false, fly
                 <circle cx={dx} cy={battle ? 0 : -9} r={b.pulse ? 7 : 5.5} fill={b.colour} stroke="#0b1a2b" strokeWidth={battle ? 0.6 : 1.2} />
                 <text x={dx} y={battle ? 0 : -9} textAnchor="middle" dominantBaseline="central" fontSize={7} fontWeight={700} fill="#0b1a2b">
                   {b.glyph}
+                </text>
+              </g>
+            );
+          })}
+          {wonders.map((w) => {
+            const r = regionById(w.regionId);
+            if (!r) return null;
+            const s = (unitsPerPx / view.k) * BADGE_SCALE * 1.6;
+            return (
+              <g key={`wonder-mark-${w.regionId}`} transform={`translate(${r.x} ${r.y}) scale(${s})`}>
+                <title>{w.label}</title>
+                <circle r={11} fill="none" stroke="#f97316" strokeWidth={1.5} className="animate-ping" />
+                <circle r={10} fill="#7c2d12" stroke="#fdba74" strokeWidth={1.2} />
+                <text y={0.5} textAnchor="middle" dominantBaseline="central" fontSize={12}>🔥</text>
+                <text y={17} textAnchor="middle" dominantBaseline="central" fontSize={7} fontWeight={700} fill="#fed7aa" stroke="#0b1a2b" strokeWidth={2} paintOrder="stroke">
+                  {w.progress}
                 </text>
               </g>
             );

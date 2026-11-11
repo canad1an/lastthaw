@@ -7,7 +7,7 @@ import { advisorEvents, advisors, jobs, marketOrders, matches, players } from ".
 import { requireUser } from "../auth/session.js";
 import type { Publisher } from "../realtime/publish.js";
 import { matchNow } from "../sim/clock.js";
-import { drawWageUpTo, runPass, startedWork, wageFor } from "../sim/advisors.js";
+import { billSliceMs, drawWageUpTo, runPass, startedWork, wageFor } from "../sim/advisors.js";
 import { config } from "../config.js";
 import { advisorTargetBody, balance, regionById, RESOURCE_WORTH, type ChancellorEvent } from "@lastthaw/shared";
 import { matchRegions } from "../db/schema.js";
@@ -22,8 +22,8 @@ function httpError(statusCode: number, message: string) {
 const kindParams = idParams.extend({ kind: advisorKind });
 
 /**
- * Advisors: hire, set up, fire and prod the Economic advisor. No hiring fee: the first hour's wage is charged on
- * hiring and then every game hour by the tick; fire and rehire freely.
+ * Advisors: hire, set up, fire and prod the Economic advisor. No hiring fee: the wage is charged by the tick in
+ * billMinutes slices, the first at the tick after the hire; fire and rehire freely.
  */
 /**
  * A pass right now, with the same rules the advisor's own clock applies: the match must be running, the advisor hired,
@@ -39,7 +39,7 @@ export async function forcePass(db: Db, publisher: Publisher, matchId: string, u
   const [a] = await db.select().from(advisors).where(and(eq(advisors.matchId, matchId), eq(advisors.playerId, p.id), eq(advisors.kind, kind), isNull(advisors.firedAt))).limit(1);
   if (!a) throw httpError(404, "no such advisor");
   if (a.unpaidSince) throw httpError(409, "your advisor is unpaid and will not work until the wage is met");
-  if (!startedWork(a)) throw httpError(409, "the first hour's wage is charged at the next tick, within five minutes of hiring; passes start once it is paid");
+  if (!startedWork(a)) throw httpError(409, "the first slice of the wage is charged at the next tick, within five minutes of hiring; passes start once it is paid");
   const now = matchNow(m);
   if (a.lastPassAt && now.getTime() - a.lastPassAt.getTime() < (balance.advisors.runEveryMinutes * 60_000) / m.speed) throw httpError(429, `the advisor made a pass ${Math.max(1, Math.round(((now.getTime() - a.lastPassAt.getTime()) / 60_000) * m.speed))} game minutes ago`);
   const report = await runPass(db, m, p, a, now, publisher);
@@ -71,7 +71,7 @@ export async function advisorRoutes(app: FastifyInstance, opts: { db: Db; publis
       if (back > now) throw httpError(409, `you fired this advisor; they will take you back in ${Math.max(1, Math.ceil(((back.getTime() - now.getTime()) / 3600_000) * m.speed))} game hour${Math.ceil(((back.getTime() - now.getTime()) / 3600_000) * m.speed) === 1 ? "" : "s"}`);
     }
     const wage = await wageFor(db, m, p.id);
-    // Nothing is paid on hiring: the first hour's wage is charged by the next tick like every hour after it. Hiring and
+    // Nothing is paid on hiring: the first slice of the wage is charged by the next tick like every slice after it. Hiring and
     // firing to dodge a wage buys nothing, since a fired advisor stays away for rehireCooldownHours.
     const paidUntil = now;
     if (existing) await db.update(advisors).set({ hiredAt: now, paidUntil, firedAt: null, unpaidSince: null, lastPassAt: null, campaigns: [] }).where(eq(advisors.id, existing.id));
@@ -89,10 +89,11 @@ export async function advisorRoutes(app: FastifyInstance, opts: { db: Db; publis
     const charged = await db.transaction(async (tx) => {
       const [a] = await tx.select().from(advisors).where(and(eq(advisors.matchId, matchId), eq(advisors.playerId, p.id), eq(advisors.kind, kind), isNull(advisors.firedAt))).for("update");
       if (!a) throw httpError(404, "no such advisor");
-      // The hours used since the last charge are billed on the way out, and at least one if none was ever charged, so a
-      // hire, a pass and a firing are never free. What the stores cannot cover is let go.
-      const used = Math.ceil(Math.max(0, now.getTime() - a.paidUntil.getTime()) / hourMs);
-      const hours = startedWork(a) ? used : Math.max(1, used);
+      // The billing slices used since the last charge are billed on the way out, and at least one if none was ever
+      // charged, so a hire, a pass and a firing are never free. What the stores cannot cover is let go.
+      const slice = billSliceMs(m);
+      const used = Math.ceil(Math.max(0, now.getTime() - a.paidUntil.getTime()) / slice);
+      const hours = ((startedWork(a) ? used : Math.max(1, used)) * slice) / hourMs;
       let taken: Record<string, number> = {};
       if (hours > 0) {
         const wage = await wageFor(tx, m, p.id);

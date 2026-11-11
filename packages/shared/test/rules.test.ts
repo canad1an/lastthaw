@@ -138,7 +138,9 @@ describe("travel", () => {
     expect(pace(true)).toBe(1);
     expect(pace(false)).toBeCloseTo(unitById.get("train")!.speed / unitById.get("train")!.offRailSpeed!);
     expect(paceFor({ freight_wagon: 2 })).toBeUndefined();
-    expect(paceFor({ train: 1, swordsman: 1 })).toBeUndefined();
+    // Soldiers ride a train at its pace only when every one has a seat; past that the column marches.
+    expect(paceFor({ train: 1, swordsman: 101 })).toBeUndefined();
+    expect(paceFor({ train: 1, swordsman: 1 })).toBeDefined();
     // Somewhere on the map: A and D two hops apart through B or through C. Track on A, C and D (not B): the shortest way
     // goes by B, the quickest for a train by C.
     let found: { a: string; b: string; c: string; d: string } | null = null;
@@ -430,5 +432,35 @@ describe("voyages", () => {
     expect(atlantic!.path.length).toBeLessThanOrEqual(6);
     expect(atlantic!.path.some((id) => id === "is-iceland" || id.startsWith("gl-"))).toBe(false);
     check(atlantic!.path);
+  });
+});
+
+import { carriersOf, isAirlift, ridersOf, seatsOf } from "../src/rules/travel.js";
+
+describe("riding", () => {
+  it("soldiers who all have a seat go at the carriers' pace; one too many and the column marches", () => {
+    const truck = unitById.get("lorry")!;
+    const warrior = unitById.get("warrior")!;
+    expect(truck.seats).toBe(20);
+    expect(seatsOf({ lorry: 2, train: 1 })).toBe(140);
+    expect(ridersOf({ lorry: 2, warrior: 5, settler: 3, caravan: 4, galley: 1 })).toBe(8);
+    expect(armySpeed({ lorry: 1, warrior: 20 })).toBe(truck.speed);
+    expect(armySpeed({ lorry: 1, warrior: 21 })).toBe(warrior.speed);
+    // A caravan along holds the riders back to its pace.
+    expect(armySpeed({ lorry: 1, caravan: 1, warrior: 5 })).toBe(unitById.get("caravan")!.speed);
+    expect(carriersOf({ lorry: 1 })).toBeNull();
+    // Soldiers aboard a train go at freight-wagon pace off the track, as the train does.
+    expect(paceFor({ train: 1, warrior: 50 })?.(false)).toBeGreaterThan(1);
+    expect(paceFor({ train: 1, warrior: 101 })).toBeUndefined();
+  });
+
+  it("Transport planes fly seated soldiers in; anything unseated or another aircraft keeps them on the ground", () => {
+    expect(isAirlift({ transport_plane: 1, warrior: 30 })).toBe(true);
+    expect(isAirGroup({ transport_plane: 1, warrior: 30 })).toBe(true);
+    expect(armySpeed({ transport_plane: 1, warrior: 30 })).toBe(unitById.get("transport_plane")!.speed);
+    expect(isAirGroup({ transport_plane: 1, warrior: 31 })).toBe(false);
+    expect(isAirlift({ transport_plane: 1, lorry: 1, warrior: 5 })).toBe(false);
+    expect(isAirlift({ transport_plane: 1 })).toBe(false);
+    expect(isAirGroup({ transport_plane: 1 })).toBe(true);
   });
 });

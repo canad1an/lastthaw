@@ -8,7 +8,7 @@ import type { Publisher } from "../realtime/publish.js";
 import { settleAndLockRegion, type Tx } from "../sim/regions.js";
 import { resolveMission, playBattleRound } from "../sim/missions.js";
 import { applyIceStep } from "../sim/ice.js";
-import { awardMilestone, finishMatch, winHoldExpired } from "../sim/endgame.js";
+import { awardMilestone, finishMatch, winHoldExpired, wonderProgress } from "../sim/endgame.js";
 import { stormHits, mercenariesLeave } from "../sim/worldEvents.js";
 
 export type JobRow = typeof jobs.$inferSelect;
@@ -74,7 +74,8 @@ export async function runDueJobs(db: Db, publisher: Publisher, log: pino.Logger)
       case "mission":
         return resolveMission(tx, m, job, publisher, after);
       case "ice_step":
-        return applyIceStep(tx, m, job, publisher, after);
+        await applyIceStep(tx, m, job, publisher, after);
+        return wonderProgress(tx, m, job.endsAt);
       case "win_hold":
         return winHoldExpired(tx, m, job, publisher, after);
       case "match_end":

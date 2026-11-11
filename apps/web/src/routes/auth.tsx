@@ -1,4 +1,5 @@
 import { useMe } from "../api/auth.js";
+import { trackFunnel } from "../analytics.js";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { usePageMeta } from "../seo.js";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
@@ -115,7 +116,10 @@ export function VerifyPage() {
   const [code, setCode] = useState("");
   const m = useMutation({
     mutationFn: (b: { token?: string; code?: string }) => api.verify(b),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: keys.me }),
+    onSuccess: () => {
+      trackFunnel("Confirmed email");
+      void qc.invalidateQueries({ queryKey: keys.me });
+    },
   });
   const resend = useMutation({ mutationFn: api.resendVerification });
   useEffect(() => {

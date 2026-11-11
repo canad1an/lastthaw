@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePageMeta, useSlugAddress } from "../seo.js";
 import { Link, Navigate, useNavigate, useParams } from "@tanstack/react-router";
 import { useCallback, useMemo, useState, useRef, useEffect } from "react";
-import { balance, formatCountdown, iceLatitudeOnDay, regionById, type MapRegion, type MatchStateView, loyaltyBand, wallOf, unitById , MAP_NAMES} from "@lastthaw/shared";
+import { balance, buildingById, formatCountdown, iceLatitudeOnDay, regionById, type MapRegion, type MatchStateView, loyaltyBand, wallOf, unitById , MAP_NAMES} from "@lastthaw/shared";
 import { api, keys } from "../api/client.js";
 import { useMatchRealtime } from "../api/realtime.js";
 import { RegionPanel, ageName } from "../components/RegionPanel.js";
@@ -454,6 +454,17 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
   const ownedSet = useMemo(() => new Set(state.owned.map((o) => o.regionId)), [state.owned]);
   const ownedById = useMemo(() => new Map(state.owned.map((o) => [o.regionId, o])), [state.owned]);
   const badges = useMemo(() => [...noteBadges(state), ...advisorBadges(state), ...battleBadges(state), ...overlayBadges(state, overlays, matchDay)], [state, overlays, matchDay]);
+  // Every wonder under way, always on the map: its builder, where, and how far it has got.
+  const wonderMarks = useMemo(() => {
+    const now = Date.parse(state.match.now);
+    const name = buildingById.get(balance.win.wonderBuilding)?.name ?? "Wonder";
+    return state.wonders.map((w) => {
+      const start = Date.parse(w.startsAt);
+      const pct = w.waiting ? 0 : Math.max(0, Math.min(99, Math.floor(((now - start) / Math.max(1, Date.parse(w.endsAt) - start)) * 100)));
+      const progress = w.waiting ? "gathering" : `${pct}%`;
+      return { regionId: w.regionId, progress, label: `${w.playerName} is building the ${name} here (${w.waiting ? "gathering the materials" : `${pct}% built`}). If it is finished, they win.` };
+    });
+  }, [state.wonders, state.match.now]);
   const [battleId, setBattleId] = useState<string | null>(null);
   // The music follows the age, and stops when the match screen goes.
   const age = state.me.age;
@@ -616,6 +627,7 @@ function GameView({ matchId, state, rtStatus }: { matchId: string; state: MatchS
           onBadgeClick={(b) => b.battleId && setBattleId(b.battleId)}
           storms={state.storms}
           thaws={state.thaws}
+          wonders={wonderMarks}
         />
         {picking && (
           <div className="pointer-events-none absolute inset-x-0 top-14 flex items-center justify-center gap-3 text-sm text-amber-300 lg:top-2">

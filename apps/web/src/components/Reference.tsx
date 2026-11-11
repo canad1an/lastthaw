@@ -191,7 +191,7 @@ export function UnitList() {
             rows={[
               ["needs", [u.requires && name(u.requires), u.needsBuilding && name(u.needsBuilding), u.needsResource && (u.cost[u.needsResource] ? `${u.needsResource} in store (bred where herds roam, or hauled in)` : `${u.needsResource} in the region`)].filter(Boolean).join(", ") || "nothing"],
               ["fight", `attack ${u.attack}, defence ${u.defense}${u.breach ? `, siege ${u.breach}` : ""}`],
-              ["move", u.speed > 0 ? `${u.speed} km/h, carries ${u.carry}` : "stays home"],
+              ["move", u.speed > 0 ? `${u.speed} km/h, carries ${u.carry}${u.seats ? `, seats ${u.seats} soldiers or settlers` : ""}` : "stays home"],
               ...(u.naval ? [["sails", u.shortLanes ? `lanes up to ${balance.travel.canoeMaxLaneKm} km only, chained along a coast when one reaches the far shore; no open sea` : "any lane, lane to lane along the coasts; crosses open sea"] as [string, string]] : []),
               ["cost", `${costText(u.cost)} each`],
               ["time", u.baseSeconds > 0 ? `${formatCountdown(trainSeconds(u, 1))} for one` : "not trained"],

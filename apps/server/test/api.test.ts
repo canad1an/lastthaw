@@ -23,6 +23,8 @@ import { logger } from "../src/logger.js";
 import { inviteMail } from "../src/mail.js";
 import { nameSuffix } from "./suffix.js";
 import { cancelJobsInLostRegions, cancelObsoleteLevels } from "../src/sim/missions.js";
+import { resultMails, wonderProgress } from "../src/sim/endgame.js";
+import { matchNewsToken } from "../src/mail.js";
 
 process.env.DATABASE_URL ??= "postgres://lastthaw:lastthaw@localhost:5432/lastthaw";
 process.env.SESSION_SECRET ??= "test-secret-test-secret-test-secret";
@@ -323,6 +325,32 @@ describe("api routes", () => {
         .where(and(eq(matchRegions.matchId, matchId), eq(matchRegions.regionId, r.regionId)));
     }
   }
+  it("a new account plays one match before confirming its email; confirming lifts the limit", async () => {
+    const fresh = { email: `new-${suffix}@example.test`, password: pw, displayName: `New${suffix}` };
+    const New = new Client(app);
+    expect((await New.call("POST", "/api/auth/register", fresh)).statusCode).toBe(201);
+    const made: string[] = [];
+    try {
+      for (const n of [1, 2]) {
+        const g = await A.call("POST", "/api/matches", { name: `Newbie ${n} ${suffix}`, speed: 10, startsInMinutes: 60, kind: "public" });
+        expect(g.statusCode, g.body).toBe(201);
+        made.push((g.json() as { id: string }).id);
+      }
+      expect((await New.call("GET", "/api/auth/me")).json()).toMatchObject({ emailVerified: false, approved: false });
+      expect((await New.call("POST", `/api/matches/${made[0]}/join`, {})).statusCode).toBe(201);
+      // Joining the same match again is fine; a second match waits for the confirmation.
+      expect((await New.call("POST", `/api/matches/${made[0]}/join`, {})).statusCode).toBe(200);
+      expect((await New.call("POST", `/api/matches/${made[1]}/join`, {})).statusCode).toBe(403);
+      // Creating games and chatting still need a confirmed email.
+      expect((await New.call("POST", "/api/matches", { name: `NewGame ${suffix}`, speed: 10, startsInMinutes: 60, kind: "public" })).statusCode).toBe(403);
+      await db.update(users).set({ emailVerifiedAt: new Date() }).where(eq(users.email, fresh.email));
+      expect((await New.call("POST", `/api/matches/${made[1]}/join`, {})).statusCode).toBe(201);
+    } finally {
+      for (const id of made) await db.delete(matches).where(eq(matches.id, id));
+      await db.delete(users).where(eq(users.email, fresh.email));
+    }
+  });
+
   it("games: a private game needs its invite code, speed and AI counts are capped, one open game at a time, and the creator may end it", async () => {
     const fast = await Ann.call("POST", "/api/matches", { name: `Fast ${suffix}`, speed: balance.match.maxGameSpeed + 1, startsInMinutes: 0, kind: "public" });
     expect(fast.statusCode, JSON.stringify(fast.json())).toBe(400);
@@ -352,7 +380,8 @@ describe("api routes", () => {
     expect((await Ben.call("POST", `/api/matches/${gameId}/join`, { inviteCode: code })).statusCode).toBe(201);
     // Joining again is harmless.
     expect((await Ben.call("POST", `/api/matches/${gameId}/join`, { inviteCode: code })).statusCode).toBe(200);
-    expect((await Out.call("POST", `/api/matches/${gameId}/join`, { inviteCode: code })).statusCode).toBe(403);
+    // Out (unverified) needs the code like anyone else; with it he could play here (see the one-match rule below), but stays out of this one.
+    expect((await Out.call("POST", `/api/matches/${gameId}/join`, { inviteCode: "NOPE1234" })).statusCode).toBe(403);
     // One open game per player: Ann's private game is open, so a second is refused.
     expect((await Ann.call("POST", "/api/matches", { name: `Second ${suffix}`, speed: 10, startsInMinutes: 60, kind: "public" })).statusCode).toBe(409);
     expect((await Ann.call("POST", `/api/matches/${"00000000-0000-0000-0000-000000000000"}/join`, {})).statusCode).toBe(404);
@@ -407,6 +436,79 @@ describe("api routes", () => {
     expect((await Ann.call("GET", "/api/matches/2099-01-no-such-match/state")).statusCode).toBe(404);
     expect(state.players.length).toBe(2);
     expect((await Ben.call("POST", `/api/matches/${gameId}/join`, { inviteCode: code })).statusCode).toBe(409);
+  });
+
+  it("a build takes its cost from the region, and cancelling gives back only that", async () => {
+    const state = matchStateView.parse((await Ann.call("GET", `/api/matches/${gameId}/state`)).json());
+    const cap = state.me.capitalRegionId!;
+    const stockAt = async () => (await db.select({ food: matchRegions.food, wood: matchRegions.wood, stone: matchRegions.stone }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap))))[0]!;
+    // Plenty, but under the caps, so nothing clamps.
+    await db.update(matchRegions).set({ food: 1000, wood: 1000, stone: 800 }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
+    const res = await Ann.call("POST", `/api/matches/${gameId}/regions/${cap}/build`, { buildingId: "huts" });
+    expect(res.statusCode, res.body).toBe(200);
+    const [job] = await db.select().from(jobs).where(and(eq(jobs.matchId, gameId), eq(jobs.regionId, cap), eq(jobs.refId, "huts"), sql`${jobs.completedAt} is null`, sql`${jobs.cancelledAt} is null`)).orderBy(desc(jobs.createdAt)).limit(1);
+    const cost = (job!.payload as { cost: Record<string, number> }).cost;
+    const after = await stockAt();
+    // A few seconds of production may come in; the cost itself must be gone.
+    expect(after.wood).toBeLessThan(1000 - (cost.wood ?? 0) + 5);
+    expect(after.stone).toBeLessThan(800 - (cost.stone ?? 0) + 5);
+    expect((await Ann.call("POST", `/api/matches/${gameId}/jobs/${job!.id}/cancel`, {})).statusCode).toBe(200);
+    const back = await stockAt();
+    expect(back.wood).toBeLessThan(1000 + 5);
+    expect(back.wood).toBeGreaterThan(1000 - 5 - (cost.wood ?? 0) * (1 - balance.timers.cancelRefundStarted));
+  });
+
+  it("a public match's winner is mailed to everyone registered; private games and simulations are not", async () => {
+    const annId = await idOf(ann.email);
+    const benId = await idOf(ben.email);
+    let n = 0;
+    const mailsFor = async (settings: Record<string, unknown>) => {
+      const now = new Date();
+      n += 1;
+      const [m] = await db.insert(matches).values({ name: `Mailtest ${suffix}`, slug: `2026-11-mailtest-${n}-${suffix}`.toLowerCase(), speed: 10, seed: "mailtest", startsAt: new Date(now.getTime() - 3 * 86400_000 / 10), endsAt: now, status: "finished", settings }).returning();
+      created.push(m!.id);
+      const [w] = await db.insert(players).values({ matchId: m!.id, userId: benId, name: `Ben${suffix}`, isAi: false }).returning();
+      return resultMails(db, m!, [w!], w!.id, "survival", now);
+    };
+    const sent = await mailsFor({ kind: "public" });
+    // Ann was not in it and still hears; Out never confirmed an email and does not.
+    const toAnn = sent.find((x) => x.to === ann.email);
+    expect(toAnn?.subject).toBe(`Ben${suffix} has won Mailtest ${suffix}`);
+    expect(toAnn?.text).toContain("kept the most people alive");
+    expect(toAnn?.text).toContain(`/api/mail/match-news/off?u=${annId}&t=${matchNewsToken(annId)}`);
+    expect(sent.find((x) => x.to === ben.email)?.text).toContain("Your own finish");
+    expect(sent.some((x) => x.to === outsider.email)).toBe(false);
+    expect((await mailsFor({ kind: "tournament", weekly: true })).some((x) => x.to === ann.email)).toBe(true);
+    expect(await mailsFor({ kind: "private" })).toEqual([]);
+    expect(await mailsFor({ kind: "public", simulation: true })).toEqual([]);
+    // The link in the mail turns it off; a forged one does nothing.
+    expect((await Out.call("GET", `/api/mail/match-news/off?u=${annId}&t=${"0".repeat(32)}`)).body).toContain("not valid");
+    expect((await Out.call("GET", `/api/mail/match-news/off?u=${annId}&t=${matchNewsToken(annId)}`)).body).toContain("Done");
+    expect((await mailsFor({ kind: "public" })).some((x) => x.to === ann.email)).toBe(false);
+    await db.update(users).set({ matchNewsOptOut: false }).where(eq(users.id, annId));
+  });
+
+  it("a wonder under way is on everyone's map and reported every day", async () => {
+    const state = matchStateView.parse((await Ann.call("GET", `/api/matches/${gameId}/state`)).json());
+    const cap = state.me.capitalRegionId!;
+    const [m] = await db.select().from(matches).where(eq(matches.id, gameId));
+    const startsAt = new Date(Date.now() - 3600_000);
+    const endsAt = new Date(startsAt.getTime() + 4 * 3600_000);
+    const [j] = await db.insert(jobs).values({ matchId: gameId, playerId: state.me.playerId, regionId: cap, kind: "build", refId: balance.win.wonderBuilding, level: 1, slot: 9, payload: {}, startsAt, endsAt }).returning();
+    try {
+      // Ben sees it on his map, with its place and timing.
+      const ben = matchStateView.parse((await Ben.call("GET", `/api/matches/${gameId}/state`)).json());
+      expect(ben.wonders).toEqual([expect.objectContaining({ playerId: state.me.playerId, regionId: cap, waiting: false, endsAt: endsAt.toISOString() })]);
+      // The day's report goes to both: a quarter built.
+      await db.transaction((tx) => wonderProgress(tx, m!, new Date(startsAt.getTime() + 3600_000)));
+      const sent = await db.select().from(messages).where(and(eq(messages.matchId, gameId), sql`${messages.payload}->>'progress' is not null`));
+      const benId = ben.me.playerId;
+      expect(sent.find((x) => x.playerId === benId)?.subject).toMatch(/25% built.*Take .* to stop it/);
+      expect(sent.find((x) => x.playerId === state.me.playerId)?.subject).toMatch(/^Your .*25% built/);
+    } finally {
+      await db.update(jobs).set({ cancelledAt: new Date() }).where(eq(jobs.id, j!.id));
+    }
+    expect(matchStateView.parse((await Ben.call("GET", `/api/matches/${gameId}/state`)).json()).wonders).toEqual([]);
   });
 
   it("in-match commands validate their input and ownership", async () => {
@@ -1502,7 +1604,7 @@ describe("api routes", () => {
       // A pass: a Quarry is queued wherever one is missing and can stand; a second pass straight away is refused.
       const lacking = st.owned.filter((o) => !(o.buildings.quarry ?? 0)).length;
       expect(lacking).toBeGreaterThan(0);
-      // Passes wait for the first hour's wage: hiring is free, so nothing runs until the tick has charged it.
+      // Passes wait for the first slice of the wage: hiring is free, so nothing runs until the tick has charged it.
       const early = await forcePassAs(ben, "economic", gameId);
       expect(early.statusCode, early.body).toBe(409);
       {
@@ -1724,7 +1826,7 @@ describe("api routes", () => {
       const columns = await db.select().from(armies).where(and(eq(armies.matchId, gameId), eq(armies.playerId, benPid), eq(armies.mission, "move"), eq(armies.status, "outbound"), eq(armies.originRegionId, cap)));
       expect(columns.some((a) => (a.cargo.people ?? 0) > 0)).toBe(true);
 
-      // The tick charges every whole hour past paidUntil.
+      // The tick charges, in billing slices, everything from paidUntil to a slice past now.
       const tickOnce = async () => {
         await db.update(matches).set({ lastTickAt: new Date(Date.now() - 3600_000) }).where(eq(matches.id, gameId));
         await runMatchTicks(db, pub, logger);
@@ -1739,11 +1841,11 @@ describe("api routes", () => {
       expect(row!.paidUntil.getTime()).toBeGreaterThan(Date.parse(await nowIso()) - 1000);
       expect(row!.unpaidSince).toBeNull();
       const a2 = await totalStock();
-      // Three hours came due (two past plus the one just reached): the stores fell by at least two wages' worth, and not by more than four.
+      // Two hours and a slice came due: the stores fell by at least two wages' worth, and not by more than four.
       expect(valueDrop(b2, a2)).toBeGreaterThanOrEqual(2 * worthOf(liveWage) - 1);
       expect(valueDrop(b2, a2)).toBeLessThan(4 * worthOf(liveWage) + 50);
 
-      // Any mix: with no food at all but wood and stone to spare, the hour is paid from those and the advisor carries on.
+      // Any mix: with no food at all but wood and stone to spare, the hour owed is paid from those and the advisor carries on.
       await db.update(matchRegions).set({ food: 0, settledAt: new Date(await nowIso()) }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid)));
       await db.update(advisors).set({ paidUntil: new Date(Date.parse(await nowIso()) - 3600_000 / benState.match.speed) }).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
       const bMix = await totalStock();
@@ -1762,11 +1864,26 @@ describe("api routes", () => {
       expect((await forcePassAs(ben, "economic", gameId)).statusCode).toBe(409);
       const told = await db.select().from(messages).where(and(eq(messages.matchId, gameId), eq(messages.playerId, benPid), sql`${messages.payload}->>'unpaid' = 'true'`));
       expect(told.length).toBe(1);
-      // Paid again: back at work.
+      // Paid again: back at work, billed one slice and not the idle hour before it.
       await fill(12000, 12000, 9000, 100, 100);
       await tickOnce();
       const [row3] = await db.select().from(advisors).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
       expect(row3!.unpaidSince).toBeNull();
+      // Paid from now, one slice ahead, though paidUntil had been left an hour behind.
+      const backAt = Date.parse(await nowIso());
+      expect(row3!.paidUntil.getTime()).toBeGreaterThan(backAt - 1000);
+      expect(row3!.paidUntil.getTime()).toBeLessThanOrEqual(backAt + (balance.advisors.billMinutes * 60_000) / benState.match.speed);
+
+      // Stores worth well under an hour's wage (a big empire's capped stores) still pay: the charge is a slice at a time.
+      const [mrowNow] = await db.select().from(matches).where(eq(matches.id, gameId));
+      const hourlyNow = worthOf(await wageFor(db, mrowNow!, benPid));
+      const ownedNow = (await db.select({ n: sql<number>`count(*)::int` }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid))))[0]!.n;
+      await db.update(matchRegions).set({ food: 0, wood: (hourlyNow * 0.4) / ownedNow, stone: 0, settledAt: new Date(await nowIso()) }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.ownerPlayerId, benPid)));
+      await db.update(advisors).set({ paidUntil: new Date(Date.parse(await nowIso()) - 1000) }).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
+      await tickOnce();
+      const [row4] = await db.select().from(advisors).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid)));
+      expect(row4!.unpaidSince).toBeNull();
+      expect(row4!.paidUntil.getTime()).toBeGreaterThan(Date.parse(await nowIso()) - 1000);
 
       // Fire: nothing refunded, and no rehire until a day has passed; then rehire works and keeps the settings.
       expect((await Ben.call("POST", `${base}/advisors/economic/fire`, {})).statusCode).toBe(200);
@@ -1787,16 +1904,17 @@ describe("api routes", () => {
       }
       st = matchStateView.parse((await Ben.call("GET", `${base}/state`)).json());
       expect(st.advisors[0]!.settings.minLevels).toEqual({ quarry: 1 });
-      // Fired before the first hour was ever charged: that hour is billed on the way out, so a hire and a firing are never free.
+      // Fired before the first slice was ever charged: that slice is billed on the way out, so a hire and a firing are never free.
+      const sliceWorth = (worthOf(rehireWage) * balance.advisors.billMinutes) / 60;
       const bFire = await totalStock();
       const fired = await Ben.call("POST", `${base}/advisors/economic/fire`, {});
       expect(fired.statusCode, fired.body).toBe(200);
       const charged = (fired.json() as { charged: Record<string, number> }).charged;
-      expect(Math.abs(worthOf(charged) - worthOf(rehireWage))).toBeLessThan(1);
+      expect(Math.abs(worthOf(charged) - sliceWorth)).toBeLessThan(1);
       const aFire = await totalStock();
       // Production accrues between the two readings, so the drop is checked within a small band.
-      expect(valueDrop(bFire, aFire)).toBeGreaterThanOrEqual(worthOf(rehireWage) - 50);
-      expect(valueDrop(bFire, aFire)).toBeLessThan(worthOf(rehireWage) + 50);
+      expect(valueDrop(bFire, aFire)).toBeGreaterThanOrEqual(sliceWorth - 50);
+      expect(valueDrop(bFire, aFire)).toBeLessThan(sliceWorth + 50);
       await db.update(advisors).set({ firedAt: new Date(Date.parse(await nowIso()) - (balance.advisors.rehireCooldownHours + 1) * (3600_000 / benState.match.speed)) }).where(and(eq(advisors.matchId, gameId), eq(advisors.playerId, benPid), eq(advisors.kind, "economic")));
 
       // No advisor: a crowded capital stays crowded through a tick; with one set to overflow, the surplus spills to a neighbour.
@@ -2473,7 +2591,9 @@ describe("api routes", () => {
     created.push(cupId);
     // Not open yet: joining is refused, registering works once, the listing shows it.
     expect((await Ann.call("POST", `/api/matches/${cupId}/join`, {})).statusCode).toBe(409);
-    expect((await Out.call("POST", `/api/matches/${cupId}/register`, {})).statusCode).toBe(403);
+    // An unconfirmed account may register (its one match); withdrawn again so the rest of this test runs as before.
+    expect((await Out.call("POST", `/api/matches/${cupId}/register`, {})).statusCode).toBe(201);
+    expect((await Out.call("DELETE", `/api/matches/${cupId}/register`)).statusCode).toBe(200);
     expect((await Ann.call("POST", `/api/matches/${cupId}/register`, {})).statusCode).toBe(201);
     expect((await Ann.call("POST", `/api/matches/${cupId}/register`, {})).statusCode).toBe(200);
     expect((await Ann.call("POST", `/api/matches/${gameId}/register`, {})).statusCode).toBe(400);
@@ -2513,8 +2633,16 @@ describe("api routes", () => {
     const [benAgain] = await db.select().from(players).where(and(eq(players.matchId, cupId), eq(players.userId, benId2)));
     expect(benAgain?.capitalRegionId).toBeTruthy();
     expect(benAgain?.protectionUntil && benAgain.protectionUntil.getTime()).toBeGreaterThan(Date.now());
-    // Not registered: still refused once it runs.
-    expect((await Out.call("POST", `/api/matches/${cupId}/join`, {})).statusCode).toBeGreaterThanOrEqual(400);
+    // Not registered: comes in too during the first week, so a newcomer never waits for the next tournament.
+    expect(((await Out.call("GET", "/api/matches")).json() as Array<{ id: string; lateJoinOpen: boolean }>).find((m) => m.id === cupId)!.lateJoinOpen).toBe(true);
+    const outLate = await Out.call("POST", `/api/matches/${cupId}/join`, {});
+    expect(outLate.statusCode, outLate.body).toBe(201);
+    // Past the window: refused, and the listing says so.
+    const outId2 = await idOf(outsider.email);
+    await db.delete(players).where(and(eq(players.matchId, cupId), eq(players.userId, outId2)));
+    await db.update(matches).set({ startsAt: new Date(Date.now() - (balance.schedule.lateJoinDays + 1) * 86400_000) }).where(eq(matches.id, cupId));
+    expect((await Out.call("POST", `/api/matches/${cupId}/join`, {})).statusCode).toBe(409);
+    expect(((await Out.call("GET", "/api/matches")).json() as Array<{ id: string; lateJoinOpen: boolean }>).find((m) => m.id === cupId)!.lateJoinOpen).toBe(false);
     expect(((await Ann.call("GET", "/api/matches")).json() as Array<{ id: string; registered: boolean }>).find((m) => m.id === cupId)!.registered).toBe(false);
   });
 

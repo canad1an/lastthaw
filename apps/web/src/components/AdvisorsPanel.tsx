@@ -130,7 +130,7 @@ export function AdvisorsPanel({ matchId, state, onSelect, clockOffsetMs }: { mat
             {confirm.what === "hire" ? (
               <div className="mt-2 space-y-2 text-sm text-slate-300">
                 <p>
-                  The wage, every game hour, at your empire's output today ({regions} region{regions === 1 ? "" : "s"}). Nothing is paid on hiring; the first hour is charged at the next tick:
+                  The wage, every game hour, at your empire's output today ({regions} region{regions === 1 ? "" : "s"}). Nothing is paid on hiring; it is charged in {balance.advisors.billMinutes}-minute slices from the next tick:
                 </p>
                 <ul className="grid grid-cols-2 gap-1 rounded border border-slate-800 p-2 text-slate-100 sm:grid-cols-3">
                   {Object.entries(wage).map(([k, v]) => (
@@ -140,7 +140,7 @@ export function AdvisorsPanel({ matchId, state, onSelect, clockOffsetMs }: { mat
                     </li>
                   ))}
                 </ul>
-                <p className="text-xs text-slate-400">Nothing is paid up front: the wage is charged every game hour, starting at the next tick, and {she.toLowerCase()} starts work once that first hour is charged, within five minutes. The wage is {Math.round(balance.advisors.outputShare * 100)}% of the food, wood and stone your empire gathers each hour, measured as you go, so it grows as you do; it is paid by value in any mix of the three (stone counts 1.2), spread over whatever you hold, capital first. Only if your food, wood and stone together are worth less than an hour's wage does {she.toLowerCase()} stop until it is paid. You can fire {pronoun} at any time: the hours used are billed on the way out, at least one, and {she.toLowerCase()} will not come back for {balance.advisors.rehireCooldownHours} game hours.</p>
+                <p className="text-xs text-slate-400">Nothing is paid up front: the wage is charged a few game minutes ahead, in {balance.advisors.billMinutes}-minute slices from the next tick, and {she.toLowerCase()} starts work once the first slice is charged, within five minutes. The wage is {Math.round(balance.advisors.outputShare * 100)}% of the food, wood and stone your empire gathers each hour, measured as you go, so it grows as you do; it is paid by value in any mix of the three (stone counts 1.2), spread over whatever you hold, capital first. Only if your food, wood and stone together cannot cover the next slice does {she.toLowerCase()} stop until it is paid, and the idle time is not billed. You can fire {pronoun} at any time: the time used is billed on the way out, at least one slice, and {she.toLowerCase()} will not come back for {balance.advisors.rehireCooldownHours} game hours.</p>
               </div>
             ) : (
               <p className="mt-2 text-sm text-slate-300">{she} leaves at once. Builds and training already queued, and armies and convoys already on the road, carry on. The hours used since the last charge are billed now, at least one hour. {she} will not take you back for {balance.advisors.rehireCooldownHours} game hours.</p>
@@ -186,7 +186,7 @@ export function AdvisorsPanel({ matchId, state, onSelect, clockOffsetMs }: { mat
             </p>
             <p>
               Wage {wageLine(current.wage)} an hour · paid until <Countdown until={current.paidUntil} clockOffsetMs={clockOffsetMs} /> · last pass {current.lastPassAt ? <Ago at={current.lastPassAt} clockOffsetMs={clockOffsetMs} /> : "not yet"}
-              {Date.parse(current.paidUntil) <= Date.parse(current.hiredAt) && <span className="text-amber-300"> · starts at the next tick, once the first hour is charged</span>}
+              {Date.parse(current.paidUntil) <= Date.parse(current.hiredAt) && <span className="text-amber-300"> · starts at the next tick, once the first slice is charged</span>}
             </p>
             <div className="mt-1 flex flex-wrap items-center gap-2">
               <button className="rounded border border-rose-500/50 bg-rose-500/10 px-2 py-1 text-xs text-rose-200 hover:bg-rose-500/20" onClick={() => setConfirm({ what: "fire", kind: view })}>
@@ -205,7 +205,7 @@ export function AdvisorsPanel({ matchId, state, onSelect, clockOffsetMs }: { mat
 
   return (
     <div className="space-y-3 p-3 text-sm">
-      <p className="text-xs text-slate-400">Advisors take routine management off your hands for a steep hourly wage: each takes {Math.round(balance.advisors.outputShare * 100)}% of the food, wood and stone your empire gathers, measured as you grow. Nothing is paid on hiring and work starts once the first hour is charged, at the next tick; fire at any time, but the hours used are billed on the way out and a fired advisor stays away for {balance.advisors.rehireCooldownHours} game hours.</p>
+      <p className="text-xs text-slate-400">Advisors take routine management off your hands for a steep hourly wage: each takes {Math.round(balance.advisors.outputShare * 100)}% of the food, wood and stone your empire gathers, measured as you grow. Nothing is paid on hiring, the wage is charged in {balance.advisors.billMinutes}-minute slices, and work starts once the first is charged, at the next tick; fire at any time, but the time used is billed on the way out and a fired advisor stays away for {balance.advisors.rehireCooldownHours} game hours.</p>
       {ADVISORS.map((meta) => {
         const a = hired(meta.kind);
         const wage = wageOf(meta.kind);

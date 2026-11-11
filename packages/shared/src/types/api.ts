@@ -120,6 +120,8 @@ export const matchSummary = z.object({
   registrations: z.number().default(0),
   registered: z.boolean().default(false),
   joinOpensAt: z.string().nullable().default(null),
+  /** A running tournament still in its first days, which anyone may join now. */
+  lateJoinOpen: z.boolean().default(false),
 });
 export const joinMatchBody = z.object({ inviteCode: z.string().trim().max(32).optional() });
 export const joinByCodeBody = z.object({ code: z.string().trim().min(4).max(32) });
@@ -681,6 +683,8 @@ export const matchStateView = z.object({
   battles: z.array(liveBattleView).default([]),
   /** The last stand is open: the ice is a day from the capital and it has not been used. */
   lastStand: z.object({ eligible: z.boolean(), used: z.boolean() }).default({ eligible: false, used: false }),
+  /** Every wonder under way: shown to all on the map, since every rival is warned when one begins. */
+  wonders: z.array(z.object({ playerId: z.string(), playerName: z.string(), regionId: z.string(), startsAt: z.string(), endsAt: z.string(), waiting: z.boolean() })).default([]),
   /** Today's objective and who took yesterday's. */
   objective: z.object({ day: z.number(), label: z.string(), yesterday: z.object({ label: z.string(), playerId: z.string().nullable(), value: z.number() }).nullable() }).nullable().default(null),
   /** Open bounties anyone can claim by winning a battle against the region or player. */

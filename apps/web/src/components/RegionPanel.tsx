@@ -762,7 +762,7 @@ function TrainTab({ matchId, state, owned, clockOffsetMs, qty }: { matchId: stri
                       <span className="whitespace-nowrap font-medium">{u.name}</span>
                       {(owned.units[u.id] ?? 0) > 0 && <span className="rounded bg-slate-800 px-1.5 text-xs text-slate-300">{fmt(owned.units[u.id]!)} here</span>}
                       <span className="text-xs text-slate-500">
-                        atk {u.attack} · def {u.defense} · spd {u.speed}{u.carry ? ` · carry ${fmt(u.carry)}` : ""}{u.breach ? ` · siege ${u.breach}` : ""}
+                        atk {u.attack} · def {u.defense} · spd {u.speed}{u.carry ? ` · carry ${fmt(u.carry)}` : ""}{u.seats ? ` · seats ${u.seats}` : ""}{u.breach ? ` · siege ${u.breach}` : ""}
                       </span>
                       <span className="text-xs text-slate-600">ⓘ</span>
                     </div>

@@ -11,7 +11,8 @@ import { uniqueSlug } from "./slug.js";
 import { requireUser, requireVerified } from "../auth/session.js";
 import { config } from "../config.js";
 import type { Publisher } from "../realtime/publish.js";
-import { matchNow } from "../sim/clock.js";
+import { matchDayAt, matchNow } from "../sim/clock.js";
+import { assertMayPlay } from "./mayPlay.js";
 import { settleAndLockRegion, resourceMultOf } from "../sim/regions.js";
 import { buildMatchState } from "../view/matchState.js";
 import { startMatch, matchLengthSeconds, enrolRegistered } from "./start.js";
@@ -105,6 +106,7 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
         registrations: regBy.get(m.id)?.n ?? 0,
         registered: (regBy.get(m.id)?.mine ?? 0) > 0,
         joinOpensAt: kind === "tournament" ? joinOpensAt(m.startsAt).toISOString() : null,
+        lateJoinOpen: kind === "tournament" && lateJoinOpen(m),
       });
     }
     return out;
@@ -168,8 +170,7 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
 
   /** Find a private game by its invite code, so the joiner can enter it from the lobby. */
   app.post("/api/matches/join-code", async (req) => {
-    const user = requireVerified(req);
-    if (!user.approved) throw httpError(403, "verify your email first; the code is in your inbox");
+    requireUser(req);
     const { code } = joinByCodeBody.parse(req.body);
     const [m] = await db.select({ id: matches.id, name: matches.name }).from(matches).where(and(eq(matches.status, "lobby"), sql`upper(${matches.settings}->>'inviteCode') = ${code.toUpperCase()}`)).limit(1);
     if (!m) throw httpError(404, "no open game has that invite code");
@@ -177,24 +178,27 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
   });
 
   app.post("/api/matches/:id/join", async (req, reply) => {
-    const user = requireVerified(req);
+    // A new account plays before confirming its email (one match at a time): see assertMayPlay.
+    const user = requireUser(req);
     const matchId = idParams.parse(req.params).id;
     const { inviteCode } = joinMatchBody.parse(req.body ?? {});
     const [m] = await db.select().from(matches).where(eq(matches.id, matchId)).limit(1);
     if (!m) throw httpError(404, "match not found");
-    if (!user.approved) throw httpError(403, "verify your email first; the code is in your inbox");
-    // A registered player who is not in a tournament that has already started comes in during its first days.
+    // Anyone, registered or not, comes into a running tournament during its first days, so nobody waits for Monday.
     if (m.status === "running" && isTournament(m.settings)) {
       const already = await myPlayer(matchId, user.id);
       if (already) return { playerId: already.id };
-      const [reg] = await db.select({ id: tournamentRegistrations.id }).from(tournamentRegistrations).where(and(eq(tournamentRegistrations.matchId, matchId), eq(tournamentRegistrations.userId, user.id))).limit(1);
-      if (reg && (await enrolRegistered(db, matchId, user.id)) > 0) {
+      if (!lateJoinOpen(m)) throw httpError(409, `the first ${balance.schedule.lateJoinDays} days have passed; join the next tournament instead`);
+      await assertMayPlay(db, user, matchId);
+      await db.insert(tournamentRegistrations).values({ matchId, userId: user.id }).onConflictDoNothing();
+      if ((await enrolRegistered(db, matchId, user.id)) > 0) {
         const p = await myPlayer(matchId, user.id);
         await publisher.toMatch(matchId, "player.joined", { name: user.displayName });
         return reply.code(201).send({ playerId: p!.id });
       }
-      throw httpError(409, reg ? `the first ${balance.schedule.lateJoinDays} days have passed; the next tournament is open for registration` : "the match has already started");
+      throw httpError(409, "this match is full; join the next tournament instead");
     }
+    await assertMayPlay(db, user, matchId);
     if (m.status !== "lobby") throw httpError(409, "the match has already started");
     const s = (m.settings ?? {}) as { kind?: string; inviteCode?: string; createdBy?: string };
     if (s.kind === "private" && s.createdBy !== user.id && (inviteCode ?? "").toUpperCase() !== (s.inviteCode ?? "").toUpperCase()) throw httpError(403, "this is a private game: enter its invite code");
@@ -379,4 +383,9 @@ export async function matchRoutes(app: FastifyInstance, opts: { db: Db; publishe
     await publisher.toMatch(matchId, "time.skipped", { seconds, clockOffsetSeconds: m.offset });
     return { ok: true, clockOffsetSeconds: m.offset };
   });
+}
+
+/** A running tournament still inside its late-join window (balance.schedule.lateJoinDays match days). */
+function lateJoinOpen(m: { status: string; startsAt: Date; speed: number; clockOffsetSeconds: number; pausedAt?: Date | null }): boolean {
+  return m.status === "running" && matchDayAt(m, matchNow(m)) <= balance.schedule.lateJoinDays;
 }
