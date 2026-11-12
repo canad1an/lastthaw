@@ -61,14 +61,13 @@ export async function ensureMap(id: MapId): Promise<void> {
  * (the home page and the lobby draw Earth). The match's economy rules go in scope with it.
  */
 export function MapScope({ map, economy: rules = 1, children, fallback = null }: { map: MapId; economy?: number; children: ReactNode; fallback?: ReactNode }) {
-  const [ready, setReady] = useState(isMapLoaded(map) && !!assets[map]);
+  // Only a signal to draw again once a fetch lands. Whether the map can be drawn is asked of the registry on every
+  // render: the replay page mounts on Earth and switches to the match's map when its data arrives, and a remembered
+  // "ready" from Earth let the children draw a map that was still on its way ("map pangaea is not loaded").
+  const [, setLoadedTick] = useState(0);
   useEffect(() => {
     let live = true;
-    if (isMapLoaded(map) && assets[map]) setReady(true);
-    else {
-      setReady(false);
-      void ensureMap(map).then(() => live && setReady(true));
-    }
+    if (!(isMapLoaded(map) && assets[map])) void ensureMap(map).then(() => live && setLoadedTick((n) => n + 1));
     return () => {
       live = false;
     };
@@ -77,7 +76,7 @@ export function MapScope({ map, economy: rules = 1, children, fallback = null }:
     current = DEFAULT_MAP;
     economy = 1;
   }, []);
-  if (!ready) return <>{fallback}</>;
+  if (!(isMapLoaded(map) && assets[map])) return <>{fallback}</>;
   current = map;
   economy = rules;
   return <>{children}</>;

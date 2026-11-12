@@ -7,7 +7,7 @@ import { buildApp } from "../src/api/app.js";
 import { forcePass } from "../src/matches/advisorsApi.js";
 import { dissolveAlliances } from "../src/sim/alliances.js";
 import { createDb, type Db } from "../src/db/client.js";
-import { emailTokens, fairplayFlags, matches, playerActions, players, users, matchRegions, regionNotes, tradeRoutes, jobs, armies, pacts, advisors, messages, marketOrders, battles, playerTechs } from "../src/db/schema.js";
+import { emailTokens, fairplayFlags, matches, playerActions, players, users, matchRegions, regionNotes, tradeRoutes, jobs, armies, pacts, advisors, messages, marketOrders, battles, playerTechs, regionSightings } from "../src/db/schema.js";
 import { runMatchTicks } from "../src/sim/tick.js";
 import { runTradeRoutes } from "../src/sim/trade.js";
 import { detectAutomation } from "../src/fairplay/detect.js";
@@ -1977,7 +1977,15 @@ describe("api routes", () => {
     await db
       .insert(matchRegions)
       .values({ matchId: gameId, regionId: N, assignment: { ...balance.start.assignment }, settledAt: new Date(await nowIso()), ownerPlayerId: null, popWorkers: 0, units: { warrior: 1 } })
-      .onConflictDoUpdate({ target: [matchRegions.matchId, matchRegions.regionId], set: { ownerPlayerId: null, popWorkers: 0, units: { warrior: 1 }, popOccupiers: 0, popSoldiers: 0, settledAt: new Date(await nowIso()) } });
+      .onConflictDoUpdate({ target: [matchRegions.matchId, matchRegions.regionId], set: { ownerPlayerId: null, popWorkers: 0, units: { warrior: 1 }, popOccupiers: 0, popSoldiers: 0, buildings: {}, settledAt: new Date(await nowIso()) } });
+    // What Ben knows of it is a rumour of a great band, older than a sighting worth attacking on: whatever an earlier owner
+    // left in his sightings is gone, the campaign still scouts first, and the border facing it is among the five most exposed
+    // however much land Ben picked up in other tests.
+    const rumourAt = new Date(Date.parse(await nowIso()) - (balance.advisors.military.sightingMaxHours + 6) * (3600_000 / benState.match.speed));
+    await db
+      .insert(regionSightings)
+      .values({ matchId: gameId, playerId: benPid, regionId: N, seenAt: rumourAt, snapshot: { ownerPlayerId: null, units: { warrior: 1000 }, population: 0, buildings: {} } })
+      .onConflictDoUpdate({ target: [regionSightings.matchId, regionSightings.playerId, regionSightings.regionId], set: { seenAt: rumourAt, snapshot: { ownerPlayerId: null, units: { warrior: 1000 }, population: 0, buildings: {} } } });
     await fillCap();
     const [capRow] = await db.select({ units: matchRegions.units, buildings: matchRegions.buildings }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
     await db.update(matchRegions).set({ units: { ...capRow!.units, tracker: 2 }, popWorkers: 60 }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
@@ -2444,6 +2452,11 @@ describe("api routes", () => {
     await db.update(matchRegions).set({ units: { ...capRow!.units, bomber: 4, warrior: (capRow!.units.warrior ?? 0) + 2 } }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
     const far = allRegions().map((r) => ({ id: r.id, km: distanceKm(cap, r.id) })).sort((a, b) => b.km - a.km)[0]!;
     const near = regionById(cap)!.neighbors[0]!;
+    // Whoever holds the region next door may still be under beginner protection (it depends on which capitals the match dealt
+    // and on what earlier tests moved), and a strike on them is refused: lift it for the flight and put it back after.
+    const [nearRow] = await db.select({ owner: matchRegions.ownerPlayerId }).from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, near)));
+    const nearOwner = nearRow?.owner && nearRow.owner !== annId ? (await db.select({ id: players.id, protectionUntil: players.protectionUntil }).from(players).where(eq(players.id, nearRow.owner)))[0] : undefined;
+    if (nearOwner) await db.update(players).set({ protectionUntil: null }).where(eq(players.id, nearOwner.id));
     try {
       // Ground units cannot strike; planes do not mix with them; and nothing flies without an Airfield.
       expect((await Ann.call("POST", `${base}/regions/${cap}/send`, { mission: "airstrike", targetRegionId: near, units: { warrior: 2 }, people: 0, cargo: {} })).body).toContain("only aircraft strike");
@@ -2462,6 +2475,7 @@ describe("api routes", () => {
       await db.update(jobs).set({ cancelledAt: new Date() }).where(and(eq(jobs.refId, army!.id), eq(jobs.kind, "mission")));
     } finally {
       await db.update(players).set({ age: annRow!.age }).where(eq(players.id, annId));
+      if (nearOwner) await db.update(players).set({ protectionUntil: nearOwner.protectionUntil }).where(eq(players.id, nearOwner.id));
       await db.update(matchRegions).set({ units: capRow!.units, buildings: capRow!.buildings }).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, cap)));
     }
   });
