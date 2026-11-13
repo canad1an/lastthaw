@@ -82,5 +82,20 @@ stats.lastthaw.com {
     encode zstd gzip
     header Strict-Transport-Security "max-age=31536000; includeSubDomains"
     header X-Content-Type-Options "nosniff"
-    reverse_proxy matomo:80
+
+    # Everyone's browser may send page views, or no visit would be counted.
+    @tracker path /matomo.php /matomo.js /piwik.php /piwik.js
+    handle @tracker {
+        reverse_proxy matomo:80
+    }
+    # The reports and the sign-in page answer only to Matt's address and to this server itself (private ranges,
+    # for anything on the box that talks to Matomo). Everyone else gets "Not found".
+    # If Matt's address changes, change it here and deploy, or he is locked out of the reports.
+    @owner remote_ip 23.114.17.254 private_ranges
+    handle @owner {
+        reverse_proxy matomo:80
+    }
+    handle {
+        respond "Not found" 404
+    }
 }
