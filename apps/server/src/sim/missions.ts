@@ -658,6 +658,7 @@ async function deliverCargo(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publis
     await tx.update(armies).set({ status: "done" }).where(eq(armies.id, army.id));
     return;
   }
+  let arrivedAt: MatchRegionRow | undefined;
   // A collecting convoy: at a pickup, load what the materials route there set aside and head for the next stop.
   if (army.stops.length) {
     const stops = army.stops.map((s) => ({ ...s }));
@@ -689,6 +690,9 @@ async function deliverCargo(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publis
       // The destination: credit each materials route with what the convoy took from it, and retire the ones that are complete.
       // Goods bound for a further shore are handed over here, into the next leg's route, and never touch the stores.
       const { tradeRoutes } = await import("../db/schema.js");
+      // The region before its routes, the order a build or training order takes them in (regions first, then the
+      // materials route it adds to): routes first deadlocked with a build queued for the same destination.
+      arrivedAt = await lockRegion(tx, m, army.targetRegionId, at);
       const relayed: Record<string, number> = {};
       for (const s of stops) {
         if (!s.routeId) continue;
@@ -708,7 +712,7 @@ async function deliverCargo(tx: Tx, m: MatchRow, army: ArmyRow, at: Date, publis
       await tx.update(armies).set({ cargo, stops }).where(eq(armies.id, army.id));
     }
   }
-  const target = await lockRegion(tx, m, army.targetRegionId, at);
+  const target = arrivedAt ?? (await lockRegion(tx, m, army.targetRegionId, at));
   const friendly = target.ownerPlayerId === army.playerId || (target.ownerPlayerId ? await areAllied(tx, m.id, army.playerId, target.ownerPlayerId) : false);
   if (!friendly) {
     await notify(tx, m.id, army.playerId, "trade", `${regionById(army.targetRegionId)?.name} is no longer friendly; the goods are coming back`, { regionId: army.targetRegionId });

@@ -1016,7 +1016,36 @@ describe("api routes", () => {
       const [convoy3] = await db.select().from(armies).where(eq(armies.id, convoy!.id));
       expect(convoy3!.targetRegionId).toBe(D);
       expect(convoy3!.cargo[otherRes]).toBe(rOther.target![otherRes]);
-      await skip(convoy3!.arrivesAt.toISOString());
+      // The delivery takes the destination region before its materials routes, the order a build takes them in: while
+      // a build request holds the destination, the arriving convoy waits on it without holding any of the routes
+      // (routes first, then the region, deadlocked on production with a build queued for the same destination).
+      {
+        const before = (await routesTo(D)).length;
+        expect(before).toBeGreaterThan(0);
+        let release!: () => void;
+        const released = new Promise<void>((r) => (release = r));
+        let locked!: () => void;
+        const isLocked = new Promise<void>((r) => (locked = r));
+        const holder = db.transaction(async (tx) => {
+          await tx.select().from(matchRegions).where(and(eq(matchRegions.matchId, gameId), eq(matchRegions.regionId, D))).for("update");
+          locked();
+          await released;
+        });
+        await isLocked;
+        const delivery = skip(convoy3!.arrivesAt.toISOString());
+        try {
+          await new Promise((r) => setTimeout(r, 750));
+          const free = await db.transaction(async (tx) => (await tx.select({ id: tradeRoutes.id }).from(tradeRoutes).where(and(eq(tradeRoutes.matchId, gameId), eq(tradeRoutes.toRegionId, D))).for("update", { skipLocked: true })).length);
+          expect(free).toBe(before);
+          // The convoy has not been delivered behind the lock either.
+          const [waiting] = await db.select().from(armies).where(eq(armies.id, convoy!.id));
+          expect(waiting!.status).toBe("outbound");
+        } finally {
+          release();
+          await holder;
+        }
+        await delivery;
+      }
       const [after] = await db.select().from(jobs).where(eq(jobs.id, jobId));
       expect(after!.waitingFor).toBeNull();
       const [after2] = await db.select().from(jobs).where(eq(jobs.id, job2));
