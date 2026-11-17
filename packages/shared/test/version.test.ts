@@ -30,6 +30,11 @@ describe("isBrowserExtensionNoise", () => {
     expect(isBrowserExtensionNoise("boom", "Error: boom\n    at x (chrome-extension://abc/inject.js:1:2)")).toBe(true);
   });
 
+  it("drops an error thrown from a Safari app extension's bundle on disk (PayPal Honey on a Mac, 2026-11-17)", () => {
+    expect(isBrowserExtensionNoise("UnavailableError", "v@file:///Applications/PayPal%20Honey.app/Contents/PlugIns/Extension.appex/Contents/Resources/Honey.safariextension/h0.js:135:840407")).toBe(true);
+    expect(isBrowserExtensionNoise("UnavailableError", "v@https://lastthaw.com/assets/index.js:135:840407")).toBe(false);
+  });
+
   it("keeps the game's own errors", () => {
     expect(isBrowserExtensionNoise("armies.24.status: Invalid option", "Error\n    at K (https://lastthaw.com/assets/index.js:64:41966)")).toBe(false);
     expect(isBrowserExtensionNoise("Cannot read properties of undefined (reading 'units')")).toBe(false);

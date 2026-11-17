@@ -12,6 +12,7 @@ import { acceptMarketOrder } from "../matches/marketApi.js";
 import { decideRefugees } from "../matches/eventsApi.js";
 import { payTribute, proposePact, respondPact } from "./diplomacy.js";
 import type { MatchRow } from "../worker/jobs.js";
+import { logger } from "../logger.js";
 
 export type Difficulty = "easy" | "medium" | "hard";
 export type Temperament = "peaceful" | "balanced" | "raider";
@@ -80,6 +81,23 @@ export function randomProfile(rng: () => number, setting: string | undefined): s
  * One round of decisions for an AI tribe. Uses the same commands as humans.
  * Each action is independent: a failure (cannot afford, queue full) is ignored.
  */
+/**
+ * Runs one AI command. A refusal by the rules (every one carries a statusCode: not enough wood, the
+ * region changed hands) is the tribe guessing wrong and is dropped quietly; it tries again next pass.
+ * Anything else (a deadlock, a broken query) is the server's own fault, so it is logged as a warning
+ * for the nightly logs before being dropped the same way: a deadlock that took an AI command as its
+ * victim used to leave no trace outside Postgres's own log (2026-11-17).
+ */
+export async function attemptCommand(fn: () => Promise<unknown>, who: { matchId: string; playerId: string }, log: Pick<typeof logger, "warn"> = logger): Promise<boolean> {
+  try {
+    await fn();
+    return true;
+  } catch (err) {
+    if (typeof (err as { statusCode?: unknown } | null)?.statusCode !== "number") log.warn({ err, ...who, proc: "ai" }, "ai command failed");
+    return false;
+  }
+}
+
 export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, _publisher: Publisher): Promise<void> {
   const { difficulty, temperament } = parseProfile(p.aiProfile);
   const tier = TIER[difficulty];
@@ -91,14 +109,7 @@ export async function runAiPlayer(db: Db, m: MatchRow, p: PlayerRow, now: Date, 
   const techs = new Set(techRows.map((t) => t.id));
   const techFx = techEffectsOf(techs);
   const ctx: CommandContext = { db, m, p, techs };
-  const attempt = async (fn: () => Promise<unknown>): Promise<boolean> => {
-    try {
-      await fn();
-      return true;
-    } catch {
-      return false;
-    }
-  };
+  const attempt = (fn: () => Promise<unknown>): Promise<boolean> => attemptCommand(fn, { matchId: m.id, playerId: p.id });
 
   const owned = await db
     .select()

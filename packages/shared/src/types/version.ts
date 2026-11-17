@@ -16,6 +16,9 @@ export function shouldReloadForNewVersion(clientVersion: string, serverVersion: 
  */
 export function isBrowserExtensionNoise(message: string, stack?: string | null): boolean {
   if (/(chrome|moz|safari(-web)?)-extension:\/\//.test(stack ?? "") || /(chrome|moz|safari(-web)?)-extension:\/\//.test(message)) return true;
+  // A Safari app extension on a Mac runs from the app's own bundle on disk (PayPal Honey, 2026-11-17:
+  // file:///Applications/PayPal%20Honey.app/.../Honey.safariextension/h0.js); the game never loads a file: script.
+  if (/file:\/\/\/[^\s)]*\.(safariextension|appex)\//.test(stack ?? "")) return true;
   return /\bruntime\.sendMessage\b|Extension context invalidated/.test(message);
 }
 
