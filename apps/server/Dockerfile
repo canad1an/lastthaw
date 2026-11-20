@@ -1,5 +1,5 @@
 # Builds both the api and worker entrypoints; the compose file picks which one to run.
-FROM node:26-alpine@sha256:6f08a523443ddedf52941874c203475b0ad503e859ad70cb26ab8be9a517dbd5 AS build
+FROM node:26-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5 AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY packages/shared/package.json packages/shared/
@@ -12,7 +12,7 @@ COPY packages/shared packages/shared
 COPY apps/server apps/server
 RUN npm run build --workspace=@lastthaw/server
 
-FROM node:26-alpine@sha256:6f08a523443ddedf52941874c203475b0ad503e859ad70cb26ab8be9a517dbd5
+FROM node:26-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5
 WORKDIR /app
 ARG APP_VERSION=0.0
 ENV NODE_ENV=production APP_VERSION=$APP_VERSION
